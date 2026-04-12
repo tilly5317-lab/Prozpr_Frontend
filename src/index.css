@@ -1,0 +1,135 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=Instrument+Serif:ital@0;1&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 220 15% 97%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --primary: 222 47% 14%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 220 20% 95%;
+    --secondary-foreground: 222 47% 14%;
+
+    --muted: 220 14% 94%;
+    --muted-foreground: 220 10% 46%;
+
+    --accent: 215 60% 48%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 222 47% 14%;
+
+    --radius: 0.75rem;
+
+    --wealth-navy: 222 47% 14%;
+    --wealth-navy-light: 220 35% 28%;
+    --wealth-blue: 215 60% 48%;
+    --wealth-blue-light: 215 40% 94%;
+    --wealth-green: 160 50% 38%;
+    --wealth-green-light: 160 30% 93%;
+    --wealth-amber: 38 80% 48%;
+    --wealth-amber-light: 38 60% 93%;
+    --wealth-surface: 220 15% 98%;
+    --wealth-card-shadow: 222 30% 78%;
+    --tilly-bubble: 40 9% 96%;
+    --tilly-accent-border: 222 47% 14%;
+    --user-bubble: 222 47% 20%;
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'DM Sans', system-ui, sans-serif;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: 'Instrument Serif', Georgia, serif;
+  }
+
+  .wealth-card {
+    @apply bg-card rounded-2xl shadow-wealth p-4;
+  }
+
+  .wealth-gradient {
+    background: linear-gradient(135deg, hsl(var(--wealth-navy)) 0%, hsl(var(--wealth-navy-light)) 100%);
+  }
+
+  .wealth-gradient-light {
+    background: linear-gradient(135deg, hsl(var(--wealth-blue-light)) 0%, hsl(var(--wealth-green-light)) 100%);
+  }
+
+  .mobile-container {
+    @apply max-w-md mx-auto min-h-screen relative;
+  }
+}
+
+@keyframes goal-tip-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 hsl(var(--primary) / 0.5);
+    opacity: 0.9;
+  }
+  50% {
+    box-shadow: 0 0 8px 4px hsl(var(--primary) / 0.25);
+    opacity: 1;
+  }
+}
+
+@keyframes ticker {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-ticker {
+  display: inline-block;
+  animation: ticker 28s linear infinite;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Allocation slider thumb — uses CSS var for dynamic color */
+.alloc-slider::-webkit-slider-thumb {
+  border-color: var(--slider-fill, #1A3A6B) !important;
+}
+.alloc-slider::-moz-range-thumb {
+  border-color: var(--slider-fill, #1A3A6B) !important;
+}
