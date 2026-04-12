@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "build:dev": "vite build --mode development",
+    "verify:dist": "node scripts/check-dist.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",

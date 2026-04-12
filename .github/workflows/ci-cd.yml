@@ -55,6 +55,9 @@ jobs:
       - name: Unit tests
         run: npm run test
 
+      - name: Production build (ensures dist/index.html exists)
+        run: npm run build && npm run verify:dist
+
   docker:
     name: Docker build
     runs-on: ubuntu-latest

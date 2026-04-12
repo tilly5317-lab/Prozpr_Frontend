@@ -1,4 +1,5 @@
-const API = "/api/v1";
+const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").trim().replace(/\/$/, "");
+const API = `${API_BASE}/api/v1`;
 const TOKEN_KEY = "asktilly_token";
 const FAMILY_MEMBER_KEY = "asktilly_family_member_id";
 
