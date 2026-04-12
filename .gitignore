@@ -11,8 +11,20 @@ node_modules
 dist
 dist-ssr
 *.local
+
+# Env files (keep `.env.example` tracked)
 .env
 .env.*
+!.env.example
+
+# Tooling / caches
+.turbo
+.vite
+.eslintcache
+*.tsbuildinfo
+coverage
+playwright-report
+test-results
 
 # Editor directories and files
 .vscode/*
