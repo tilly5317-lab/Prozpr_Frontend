@@ -352,6 +352,18 @@ export async function sendChatMessage(
   );
 }
 
+export async function listChatSessions(): Promise<ChatSessionInfo[]> {
+  return request<ChatSessionInfo[]>("/chat/sessions");
+}
+
+export async function getChatSession(sessionId: string): Promise<ChatSessionDetail> {
+  return request<ChatSessionDetail>(`/chat/sessions/${sessionId}`);
+}
+
+export async function deleteChatSession(sessionId: string): Promise<void> {
+  await request<void>(`/chat/sessions/${sessionId}`, { method: "DELETE" });
+}
+
 // ── Shared constants ────────────────────────────────────
 
 export const RISK_CATEGORIES = [

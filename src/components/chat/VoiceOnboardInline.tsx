@@ -8,11 +8,9 @@ interface SectionNotes {
 }
 
 const DUMMY_NOTES: { [key: number]: string[] } = {
-  0: ["Wants to build long-term wealth", "Interested in retirement planning", "Children's education is a priority", "Looking at 15-year horizon for goals"],
-  1: ["Comfortable with moderate fluctuations", "Prefers not to check portfolio daily", "Can tolerate 15-20% drawdowns", "Wants steady growth over quick gains"],
-  2: ["Monthly income ₹1.8L", "Expenses around ₹90K/month", "Existing FD of ₹12L", "No major liabilities"],
-  3: ["Planning for 10-15 years", "May need partial liquidity in 5 years", "Retirement target age: 55"],
-  4: ["Mid-career, age 38", "Two dependents", "Spouse is also earning", "Has employer PF and gratuity"],
+  0: ["Monthly income ₹1.8L", "Expenses around ₹90K/month", "Existing FD of ₹12L", "Property valued at ₹85L, no major liabilities"],
+  1: ["Retirement by 55 — primary goal", "Children's education fund in 8 years", "Target corpus: ₹2Cr", "Secondary: vacation fund"],
+  2: ["Moderate experience with mutual funds", "Comfortable with 15-20% drawdowns", "Prefers steady growth over quick gains", "10-15 year horizon"],
 };
 
 const formatTime = (seconds: number) => {
@@ -107,7 +105,7 @@ const VoiceOnboardInline = ({ onComplete }: VoiceOnboardInlineProps) => {
           ))}
         </div>
         <div className="flex justify-between mt-1.5">
-          <span className="text-[10px] text-muted-foreground">Section {currentSection + 1} of 5</span>
+          <span className="text-[10px] text-muted-foreground">Section {currentSection + 1} of {ONBOARDING_SECTIONS.length}</span>
           <span className="text-[10px] font-medium text-primary">{section.name}</span>
         </div>
       </div>

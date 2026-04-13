@@ -1,7 +1,5 @@
 export const ONBOARDING_SECTIONS = [
-  { name: "Investment Goals", prompt: "What are you hoping to achieve with your investments?" },
-  { name: "Risk Appetite", prompt: "How comfortable are you when your investments go up and down?" },
-  { name: "Financial Snapshot", prompt: "Can you tell us about your current income, expenses, and savings?" },
-  { name: "Time Horizon", prompt: "How long are you planning to stay invested before you need this money?" },
-  { name: "Life Stage", prompt: "Where are you in life right now — early career, settled, or approaching retirement?" },
+  { name: "Your financial picture", prompt: "Tell me about your finances — your income, savings, assets, and any large expenses coming up." },
+  { name: "What are you trying to achieve?", prompt: "What are your main investment goals? Think about what you're saving for, how much you need, and when." },
+  { name: "Your investment preference and focus", prompt: "Let's talk about risk — how would you react if your portfolio dropped 20% in a month?" },
 ];

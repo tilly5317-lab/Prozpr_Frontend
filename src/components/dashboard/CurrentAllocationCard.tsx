@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { motion, AnimatePresence } from "framer-motion";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import type { PortfolioDetail } from "@/lib/api";
 import { formatInrCompact } from "@/lib/utils";
 
@@ -23,7 +24,14 @@ const HOLDINGS_BAR_COLORS: Record<string, { bg: string; border?: string }> = {
   Equity: { bg: "#4F46E5" },
   Debt: { bg: "#E8D5B7", border: "#D4B896" },
   Gold: { bg: "#C9A84C" },
+  "Mutual Fund": { bg: "#4F46E5" },
+  ETF: { bg: "#C9A84C" },
 };
+
+function computeReturn(avgCost: number | null, currentValue: number): number | null {
+  if (!avgCost || avgCost <= 0) return null;
+  return ((currentValue - avgCost) / avgCost) * 100;
+}
 
 interface CurrentAllocationCardProps {
   portfolio: PortfolioDetail | null;
@@ -33,6 +41,7 @@ interface CurrentAllocationCardProps {
 
 const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: CurrentAllocationCardProps) => {
   const [holdingsOpen, setHoldingsOpen] = useState(false);
+  const [expandedHolding, setExpandedHolding] = useState<string | null>(null);
   const hasAllocations = portfolio && portfolio.allocations.length > 0;
 
   const allocations = hasAllocations
@@ -57,23 +66,27 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
     { label: "Horizon", value: horizonLabel ?? "—" },
   ];
 
-  // Build holdings rows from portfolio or demo
   const holdingsRows = portfolio && portfolio.holdings.length > 0
     ? portfolio.holdings.map((h) => {
         const colors = HOLDINGS_BAR_COLORS[h.instrument_type] ?? HOLDINGS_BAR_COLORS["Equity"];
+        const returnPct = computeReturn(h.average_cost, h.current_value);
         return {
+          id: h.id,
           name: h.instrument_name,
           sub: h.instrument_type + (h.ticker_symbol ? ` · ${h.ticker_symbol}` : ""),
           value: formatInrCompact(h.current_value),
-          pct: null as string | null,
+          pct: h.allocation_percentage ? `${h.allocation_percentage}%` : null as string | null,
+          returnPct,
+          avgCost: h.average_cost,
+          currentValue: h.current_value,
           barBg: colors!.bg,
           barBorder: colors!.border,
         };
       })
     : [
-        { name: "Equity", sub: "Large & Mid Cap", value: "₹4.8L", pct: "48%", barBg: "#4F46E5", barBorder: undefined },
-        { name: "Debt", sub: "Govt & Corp Bonds", value: "₹2.8L", pct: "28%", barBg: "#E8D5B7", barBorder: "#D4B896" },
-        { name: "Gold", sub: "Sovereign Gold Bond", value: "₹1.6L", pct: "16%", barBg: "#C9A84C", barBorder: undefined },
+        { id: "d1", name: "Equity", sub: "Large & Mid Cap", value: "₹4.8L", pct: "48%", returnPct: 18.2, avgCost: 406000, currentValue: 480000, barBg: "#4F46E5", barBorder: undefined },
+        { id: "d2", name: "Debt", sub: "Govt & Corp Bonds", value: "₹2.8L", pct: "28%", returnPct: 7.1, avgCost: 261000, currentValue: 280000, barBg: "#E8D5B7", barBorder: "#D4B896" },
+        { id: "d3", name: "Gold", sub: "Sovereign Gold Bond", value: "₹1.6L", pct: "16%", returnPct: 12.4, avgCost: 142000, currentValue: 160000, barBg: "#C9A84C", barBorder: undefined },
       ];
 
   return (
@@ -166,27 +179,93 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
             className="overflow-hidden"
           >
             <div className="pt-2" style={{ borderTop: "1px solid #f5f5f5" }}>
-              {holdingsRows.map((row, i) => (
-                <div key={i} className="flex items-center gap-2.5 py-2">
-                  <div
-                    className="w-1 h-8 rounded-full shrink-0"
-                    style={{
-                      backgroundColor: row.barBg,
-                      border: row.barBorder ? `1px solid ${row.barBorder}` : undefined,
-                    }}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium text-foreground">{row.name}</p>
-                    <p className="text-[9px] text-muted-foreground">{row.sub}</p>
+              {holdingsRows.map((row) => {
+                const isExpanded = expandedHolding === row.id;
+                const returnColor = row.returnPct !== null
+                  ? row.returnPct >= 0 ? "hsl(142 71% 35%)" : "hsl(0 84% 50%)"
+                  : undefined;
+                const returnText = row.returnPct !== null
+                  ? `${row.returnPct >= 0 ? "+" : ""}${row.returnPct.toFixed(1)}%`
+                  : null;
+
+                return (
+                  <div key={row.id}>
+                    <button
+                      onClick={() => setExpandedHolding(isExpanded ? null : row.id)}
+                      className="flex w-full items-center gap-2.5 py-2 text-left active:scale-[0.99] transition-transform"
+                    >
+                      <div
+                        className="w-1 h-8 rounded-full shrink-0"
+                        style={{
+                          backgroundColor: row.barBg,
+                          border: row.barBorder ? `1px solid ${row.barBorder}` : undefined,
+                        }}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-foreground">{row.name}</p>
+                        <p className="text-[9px] text-muted-foreground">{row.sub}</p>
+                      </div>
+                      <div className="text-right shrink-0 flex items-center gap-2">
+                        <div>
+                          <p className="text-xs font-semibold text-foreground">{row.value}</p>
+                          {returnText && (
+                            <span className="text-[10px] font-medium" style={{ color: returnColor }}>
+                              {returnText} YoY
+                            </span>
+                          )}
+                        </div>
+                        {isExpanded ? (
+                          <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
+                        ) : (
+                          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                        )}
+                      </div>
+                    </button>
+
+                    <AnimatePresence>
+                      {isExpanded && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: "auto", opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.2 }}
+                          className="overflow-hidden"
+                        >
+                          <div className="ml-6 mb-3 rounded-lg bg-muted/30 p-3 space-y-2">
+                            {row.returnPct !== null && (
+                              <div className="flex justify-between text-[11px]">
+                                <span className="text-muted-foreground">1Y Performance</span>
+                                <span className="font-medium" style={{ color: returnColor }}>
+                                  {returnText}
+                                </span>
+                              </div>
+                            )}
+                            {row.avgCost && (
+                              <div className="flex justify-between text-[11px]">
+                                <span className="text-muted-foreground">Invested</span>
+                                <span className="font-medium text-foreground">{formatInrCompact(row.avgCost)}</span>
+                              </div>
+                            )}
+                            <div className="flex justify-between text-[11px]">
+                              <span className="text-muted-foreground">Gain / Loss</span>
+                              <span className="font-medium" style={{ color: returnColor }}>
+                                {row.currentValue - (row.avgCost || 0) >= 0 ? "+" : ""}
+                                {formatInrCompact(Math.abs(row.currentValue - (row.avgCost || 0)))}
+                              </span>
+                            </div>
+                            {row.pct && (
+                              <div className="flex justify-between text-[11px]">
+                                <span className="text-muted-foreground">Portfolio weight</span>
+                                <span className="font-medium text-foreground">{row.pct}</span>
+                              </div>
+                            )}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-xs font-semibold text-foreground">{row.value}</p>
-                    {row.pct && (
-                      <span className="text-[9px] text-muted-foreground">{row.pct}</span>
-                    )}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </motion.div>
         )}
