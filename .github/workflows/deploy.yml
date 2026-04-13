@@ -1,11 +1,18 @@
-# Build frontend Docker image, push to GHCR, optionally SSH to EC2 and docker compose pull/up.
+# Deploy frontend on the server over SSH: git pull, npm install, build, copy to nginx docroot.
+# No Docker — static files served from /var/www/html (or your path below).
 #
-# Requires: Workflow permissions → Read and write (for GHCR).
-# Variables: VITE_API_BASE_URL (repo Variables or Secrets — baked into the static build).
+# GitHub Secrets (repository or "production" environment):
+#   HOST, USERNAME, KEY   — preferred
+#   EC2_HOST, EC2_USER, EC2_SSH_PRIVATE_KEY — fallbacks (same as older workflows)
 #
-# Secrets: EC2_HOST, EC2_USER, EC2_SSH_PRIVATE_KEY
-# Variables (optional SSH): DEPLOY_ENABLED=true, DEPLOY_PATH, DEPLOY_SERVICE
-#   Optional: DEPLOY_COMPOSE_FILE, DEPLOY_SSH_PORT, secret GHCR_PULL_TOKEN
+# Optional repository variable:
+#   SSH_PORT          — SSH port if not 22
+#
+# Vite env: set VITE_API_BASE_URL (and any other VITE_*) in ~/Prozpr_Frontend/.env on the
+# server before deploy, or the build will not embed the correct API URL.
+#
+# Server layout:
+#   ~/Prozpr_Frontend — git clone; npm run build writes dist/
 
 name: Deploy
 
@@ -20,76 +27,43 @@ concurrency:
 
 permissions:
   contents: read
-  packages: write
-
-env:
-  VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL != '' && vars.VITE_API_BASE_URL || secrets.VITE_API_BASE_URL }}
 
 jobs:
-  publish:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Check VITE_API_BASE_URL
-        run: |
-          if [ -z "$VITE_API_BASE_URL" ]; then
-            echo "Set VITE_API_BASE_URL in repository Variables or Secrets."
-            exit 1
-          fi
-
-      - id: image
-        run: echo "full=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
-
-      - uses: docker/setup-buildx-action@v3
-
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile
-          push: true
-          build-args: |
-            VITE_API_BASE_URL=${{ env.VITE_API_BASE_URL }}
-            GIT_COMMIT=${{ github.sha }}
-          tags: |
-            ${{ steps.image.outputs.full }}:main
-            ${{ steps.image.outputs.full }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  remote:
-    needs: publish
-    if: vars.DEPLOY_ENABLED == 'true'
+  deploy:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - uses: appleboy/ssh-action@v1.2.0
+      - name: Require SSH host and credentials
         env:
-          GHCR_PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
+          SSH_HOST: ${{ secrets.HOST || secrets.EC2_HOST }}
+          SSH_USER: ${{ secrets.USERNAME || secrets.EC2_USER }}
+          SSH_KEY: ${{ secrets.KEY || secrets.EC2_SSH_PRIVATE_KEY }}
+        run: |
+          if [ -z "$SSH_HOST" ]; then
+            echo "::error::Missing server host. Add secret HOST or EC2_HOST on the repo or production environment."
+            exit 1
+          fi
+          if [ -z "$SSH_USER" ]; then
+            echo "::error::Missing SSH user. Add secret USERNAME or EC2_USER."
+            exit 1
+          fi
+          if [ -z "$SSH_KEY" ]; then
+            echo "::error::Missing SSH private key. Add secret KEY or EC2_SSH_PRIVATE_KEY."
+            exit 1
+          fi
+
+      - uses: appleboy/ssh-action@v1.2.0
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-          port: ${{ vars.DEPLOY_SSH_PORT != '' && vars.DEPLOY_SSH_PORT || 22 }}
-          envs: GHCR_PULL_TOKEN
+          host: ${{ secrets.HOST || secrets.EC2_HOST }}
+          username: ${{ secrets.USERNAME || secrets.EC2_USER }}
+          key: ${{ secrets.KEY || secrets.EC2_SSH_PRIVATE_KEY }}
+          port: ${{ vars.SSH_PORT != '' && vars.SSH_PORT || 22 }}
           script_stop: true
           script: |
             set -euo pipefail
-            if [ -n "${GHCR_PULL_TOKEN:-}" ]; then
-              echo "$GHCR_PULL_TOKEN" | docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin
-            fi
-            DEPLOY_PATH='${{ vars.DEPLOY_PATH }}'
-            if [ -z "$DEPLOY_PATH" ]; then echo "DEPLOY_PATH is not set"; exit 1; fi
-            cd "$DEPLOY_PATH"
-            COMPOSE_FILE='${{ vars.DEPLOY_COMPOSE_FILE }}'
-            [ -z "$COMPOSE_FILE" ] && COMPOSE_FILE=docker-compose.yml
-            SERVICE='${{ vars.DEPLOY_SERVICE }}'
-            if [ -z "$SERVICE" ]; then echo "DEPLOY_SERVICE is not set"; exit 1; fi
-            docker compose -f "$COMPOSE_FILE" pull "$SERVICE"
-            docker compose -f "$COMPOSE_FILE" up -d "$SERVICE"
+            cd ~/Prozpr_Frontend
+            git fetch --all
+            git reset --hard origin/main
+            npm install
+            npm run build
+            sudo cp -r dist/* /var/www/html/
