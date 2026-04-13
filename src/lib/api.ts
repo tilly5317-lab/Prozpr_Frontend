@@ -321,6 +321,14 @@ export interface ChatSendResponse {
   ideal_allocation_snapshot_id?: string | null;
 }
 
+export interface ChatSessionDetail extends ChatSessionInfo {
+  messages: ChatMessageInfo[];
+}
+
+export async function getOrCreateActiveSession(): Promise<ChatSessionDetail> {
+  return request<ChatSessionDetail>("/chat/sessions/active");
+}
+
 export async function createChatSession(title?: string): Promise<ChatSessionInfo> {
   return request<ChatSessionInfo>("/chat/sessions", {
     method: "POST",
@@ -633,6 +641,55 @@ export interface PortfolioDetail {
 /** Primary portfolio for the logged-in user (from DB). */
 export async function getMyPortfolio(): Promise<PortfolioDetail> {
   return request<PortfolioDetail>("/portfolio/");
+}
+
+/**
+ * Heuristic: profile rows in DB look filled even if `is_onboarding_complete` was never flipped.
+ * Used to skip redundant onboarding / account-link nudges in the chat shell.
+ */
+export function inferProfileSectionsComplete(profile: FullProfileResponse | null): boolean {
+  if (!profile) return false;
+  const pi = profile.personal_info;
+  const inv = profile.investment_profile;
+  const risk = profile.risk_profile;
+  const hasPersonal = !!(
+    pi
+    && ((pi.occupation && String(pi.occupation).trim()) || (pi.family_status && String(pi.family_status).trim()))
+  );
+  const hasInv = !!(
+    inv
+    && ((inv.annual_income != null && inv.annual_income > 0)
+      || (inv.investable_assets != null && inv.investable_assets > 0))
+  );
+  const hasRisk = !!(risk && risk.risk_category && String(risk.risk_category).trim());
+  return hasPersonal && hasInv && hasRisk;
+}
+
+export function inferOnboardingComplete(me: UserInfo, profile: FullProfileResponse | null): boolean {
+  if (me.is_onboarding_complete) return true;
+  return inferProfileSectionsComplete(profile);
+}
+
+/** User has linked an institution or already has portfolio value / holdings in DB. */
+export function inferAccountLinkingComplete(
+  portfolio: PortfolioDetail | null | undefined,
+  linkedAccounts: LinkAccountInfo[] | null | undefined,
+): boolean {
+  if (linkedAccounts && linkedAccounts.length > 0) return true;
+  if (!portfolio) return false;
+  if (portfolio.total_value > 0) return true;
+  if (portfolio.holdings?.length) return true;
+  return false;
+}
+
+/** Skip post-setup completion toasts when both profile onboarding and account data exist. */
+export function shouldSkipPostSetupChatPrompts(
+  me: UserInfo,
+  profile: FullProfileResponse | null,
+  portfolio: PortfolioDetail | null,
+  linkedAccounts: LinkAccountInfo[],
+): boolean {
+  return inferOnboardingComplete(me, profile) && inferAccountLinkingComplete(portfolio, linkedAccounts);
 }
 
 /** Ideal allocation pipeline output (mirrors ``Ideal_asset_allocation.models.AllocationOutput``). */
