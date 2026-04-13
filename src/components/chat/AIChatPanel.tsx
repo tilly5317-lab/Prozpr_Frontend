@@ -1,13 +1,16 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Send, Mic, MicOff, AlertCircle, Loader2, Sparkles, Check, Square, ChevronDown, ChevronUp, Pencil, ArrowRight } from "lucide-react";
+import { X, Send, Mic, MicOff, AlertCircle, Loader2, Sparkles, Check, Square, ChevronDown, ChevronUp, Pencil, ArrowRight, Plus, Clock, Trash2, MessageSquare } from "lucide-react";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   createChatSession,
   sendChatMessage,
   getOrCreateActiveSession,
+  getChatSession,
+  listChatSessions,
+  deleteChatSession,
   getMe,
   getFullProfile,
   getMyPortfolio,
@@ -15,6 +18,7 @@ import {
   inferOnboardingComplete,
   inferAccountLinkingComplete,
   shouldSkipPostSetupChatPrompts,
+  type ChatSessionInfo,
   type PortfolioDetail,
   type UserInfo,
   type FullProfileResponse,
@@ -216,23 +220,17 @@ const suggestedQuestions = [
 
 /* ── Onboarding sections (matches /profile/complete) ── */
 const CHAT_ONBOARDING_SECTIONS = [
-  { name: "Who are you?", prompt: "Let's start with the basics — tell me about yourself. Where do you live, what's your family situation, and who depends on you financially?", estimate: "~2 minutes" },
-  { name: "Your financial picture", prompt: "Now let's talk about your finances. Walk me through your income, savings, assets, any property you own, and any large expenses coming up.", estimate: "~3 minutes" },
-  { name: "What are you trying to achieve?", prompt: "What are your main investment goals? Think about what you're saving for, how much you need, and when you'll need the money.", estimate: "~2 minutes" },
-  { name: "How much risk can you handle?", prompt: "Let's talk about risk. How much investing experience do you have, and how would you react if your portfolio dropped 20% in a month?", estimate: "~2 minutes" },
-  { name: "Rules & limits", prompt: "Are there any rules or constraints for your investments? For example, asset classes to avoid, ethical preferences, or minimum allocations you'd like.", estimate: "~3 minutes" },
-  { name: "Tax situation", prompt: "Tell me about your tax situation — your tax residency, approximate bracket, and whether you use any tax-advantaged accounts.", estimate: "~2 minutes" },
-  { name: "Staying involved", prompt: "Last one — how hands-on do you want to be? How often would you like portfolio reviews and what's your preferred way to stay updated?", estimate: "~1 minute" },
+  { name: "Your financial picture", prompt: "Let's talk about your finances. Walk me through your income, savings, assets, any property you own, and any large expenses coming up.", estimate: "~5 minutes" },
+  { name: "What are you trying to achieve?", prompt: "What are your main investment goals? Think about what you're saving for, how much you need, and when you'll need the money.", estimate: "~5 minutes" },
+  { name: "Your investment preference and focus", prompt: "Let's talk about risk. How would you describe your investment experience, and how would you react if your portfolio dropped 20% in a month?", estimate: "~1 minute" },
 ];
 
+const CHAT_ONBOARDING_SECTIONS_COUNT = CHAT_ONBOARDING_SECTIONS.length;
+
 const CHAT_ONBOARDING_NOTES: Record<number, string[]> = {
-  0: ["Primary residence: Mumbai", "Married, spouse also earning", "Two dependents (children)", "Age 38, mid-career professional"],
-  1: ["Monthly income ₹1.8L", "Expenses around ₹90K/month", "Existing FD of ₹12L", "Property valued at ₹85L, no major liabilities"],
-  2: ["Retirement by 55 — primary goal", "Children's education fund in 8 years", "Target corpus: ₹2Cr", "Secondary: vacation fund"],
-  3: ["Moderate experience with mutual funds", "Comfortable with 15-20% drawdowns", "Prefers steady growth over quick gains", "10-15 year horizon"],
-  4: ["No crypto or speculative assets", "Prefers ESG-compliant options", "Minimum 20% in fixed income", "Open to international diversification"],
-  5: ["Indian tax resident", "30% tax bracket", "Has PPF and NPS accounts", "Interested in ELSS for tax saving"],
-  6: ["Quarterly review preferred", "Email updates are fine", "Wants alerts for major rebalancing", "Comfortable with advisor-led decisions"],
+  0: ["Monthly income ₹1.8L", "Expenses around ₹90K/month", "Existing FD of ₹12L", "Property valued at ₹85L, no major liabilities"],
+  1: ["Retirement by 55 — primary goal", "Children's education fund in 8 years", "Target corpus: ₹2Cr", "Secondary: vacation fund"],
+  2: ["Moderate experience with mutual funds", "Comfortable with 15-20% drawdowns", "Prefers steady growth over quick gains", "10-15 year horizon"],
 };
 
 const KUDOS_MESSAGES = [
@@ -467,6 +465,134 @@ const GOAL_DEMO_INTRO = `Hi — I'm **Tilly**. I'll help you shape a clear, inve
 
 Let's start with outcomes: what financial goals are you planning for (for example: retirement, home, education, travel, business)? You can share one or multiple goals.`;
 
+/* ── Session history sidebar ── */
+function formatSessionDate(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return "Just now";
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffH = Math.floor(diffMin / 60);
+  if (diffH < 24) return `${diffH}h ago`;
+  const diffD = Math.floor(diffH / 24);
+  if (diffD === 1) return "Yesterday";
+  if (diffD < 7) return `${diffD}d ago`;
+  return d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+}
+
+const SessionHistoryPanel = ({
+  open,
+  onClose,
+  onSelectSession,
+  activeSessionId,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSelectSession: (id: string) => void;
+  activeSessionId: string | null;
+}) => {
+  const [sessions, setSessions] = useState<ChatSessionInfo[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    listChatSessions()
+      .then(setSessions)
+      .catch(() => setSessions([]))
+      .finally(() => setLoading(false));
+  }, [open]);
+
+  const handleDelete = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    setDeletingId(id);
+    try {
+      await deleteChatSession(id);
+      setSessions((prev) => prev.filter((s) => s.id !== id));
+    } catch { /* ignore */ }
+    setDeletingId(null);
+  };
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="absolute inset-0 z-30 bg-black/40"
+            onClick={onClose}
+          />
+          <motion.div
+            initial={{ x: "-100%" }}
+            animate={{ x: 0 }}
+            exit={{ x: "-100%" }}
+            transition={{ type: "spring", damping: 28, stiffness: 320 }}
+            className="absolute left-0 top-0 bottom-0 z-40 w-[280px] max-w-[80%] flex flex-col bg-background border-r border-border/40 shadow-xl"
+          >
+            <div className="flex items-center justify-between px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 border-b border-border/30">
+              <h3 className="text-sm font-semibold text-foreground">Chat History</h3>
+              <button onClick={onClose} className="p-1 rounded-md hover:bg-muted/60 transition-colors">
+                <X className="h-4 w-4 text-muted-foreground" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto">
+              {loading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : sessions.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
+                  <MessageSquare className="h-8 w-8 text-muted-foreground/30 mb-2" />
+                  <p className="text-xs text-muted-foreground">No conversations yet</p>
+                </div>
+              ) : (
+                <div className="py-1">
+                  {sessions.map((s) => (
+                    <button
+                      key={s.id}
+                      onClick={() => { onSelectSession(s.id); onClose(); }}
+                      className={`group flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-muted/50 ${
+                        s.id === activeSessionId ? "bg-primary/8 border-l-2 border-primary" : ""
+                      }`}
+                    >
+                      <MessageSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-foreground truncate">
+                          {s.title || "Untitled"}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground/70 mt-0.5">
+                          {formatSessionDate(s.updated_at)}
+                        </p>
+                      </div>
+                      <button
+                        onClick={(e) => handleDelete(e, s.id)}
+                        disabled={deletingId === s.id}
+                        className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-destructive/10 transition-all"
+                      >
+                        {deletingId === s.id ? (
+                          <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                        ) : (
+                          <Trash2 className="h-3 w-3 text-muted-foreground/60 hover:text-destructive" />
+                        )}
+                      </button>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+};
+
 const AIChatPanel = ({
   isOpen,
   onClose,
@@ -489,11 +615,13 @@ const AIChatPanel = ({
   const [showFirstUseHint, setShowFirstUseHint] = useState(true);
   const [micError, setMicError] = useState(false);
   const [clientContext, setClientContext] = useState<Record<string, unknown> | null>(null);
-  const [chatStartTime] = useState(formatTimestamp);
+  const [chatStartTime, setChatStartTime] = useState(formatTimestamp);
   const scrollRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
   const sessionIdRef = useRef<string | null>(null);
   const kudosCounterRef = useRef(0);
+
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const [demoCheckpoint, setDemoCheckpoint] = useState(0);
   const [demoIncome, setDemoIncome] = useState(100000);
@@ -530,6 +658,39 @@ const AIChatPanel = ({
   const [completedSections, setCompletedSections] = useState<number[]>([]);
   const [expandedReviewSection, setExpandedReviewSection] = useState<number | null>(null);
   const [reviewChipOpen, setReviewChipOpen] = useState(false);
+
+  const handleNewChat = useCallback(async () => {
+    try {
+      const session = await createChatSession("New conversation");
+      sessionIdRef.current = session.id;
+      setMessages([]);
+      setChatStartTime(formatTimestamp());
+      setShowFirstUseHint(true);
+      setOnboardingActive(false);
+      setCompletedSections([]);
+    } catch { /* ignore */ }
+  }, []);
+
+  const handleSelectSession = useCallback(async (sessionId: string) => {
+    try {
+      const session = await getChatSession(sessionId);
+      sessionIdRef.current = session.id;
+      setMessages(
+        session.messages.map((m) => ({
+          role: m.role === "assistant" ? ("ai" as const) : ("user" as const),
+          content: m.content,
+        })),
+      );
+      setChatStartTime(
+        new Date(session.created_at).toLocaleString("en-IN", {
+          day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true,
+        }),
+      );
+      setShowFirstUseHint(false);
+      setOnboardingActive(false);
+      setCompletedSections([]);
+    } catch { /* ignore */ }
+  }, []);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -669,7 +830,7 @@ const AIChatPanel = ({
       const section = CHAT_ONBOARDING_SECTIONS[0];
       setMessages((prev) => [
         ...prev,
-        { role: "ai", content: `Section 1 of 7 · ${section.name}`, type: "section-start", sectionName: section.name },
+        { role: "ai", content: `Section 1 of ${CHAT_ONBOARDING_SECTIONS_COUNT} · ${section.name}`, type: "section-start", sectionName: section.name },
         { role: "ai", content: section.prompt },
       ]);
       setAwaitingResponse(true);
@@ -720,7 +881,7 @@ const AIChatPanel = ({
           const section = CHAT_ONBOARDING_SECTIONS[next];
           setMessages((prev) => [
             ...prev,
-            { role: "ai", content: `Section ${next + 1} of 7 · ${section.name}`, type: "section-start", sectionName: section.name },
+            { role: "ai", content: `Section ${next + 1} of ${CHAT_ONBOARDING_SECTIONS_COUNT} · ${section.name}`, type: "section-start", sectionName: section.name },
             { role: "ai", content: section.prompt },
           ]);
         } else {
@@ -1128,7 +1289,36 @@ const AIChatPanel = ({
 
   if (embedded) {
     return (
-      <div className="flex h-full min-h-0 flex-col bg-background">
+      <div className="relative flex h-full min-h-0 flex-col bg-background">
+        {/* Session history sidebar */}
+        <SessionHistoryPanel
+          open={historyOpen}
+          onClose={() => setHistoryOpen(false)}
+          onSelectSession={handleSelectSession}
+          activeSessionId={sessionIdRef.current}
+        />
+
+        {/* Top header bar */}
+        {!goalPlanningDemo && (
+          <div className="shrink-0 z-20 flex items-center justify-between px-4 pt-[max(0.5rem,env(safe-area-inset-top))] pb-2 border-b border-border/30 bg-background/95 backdrop-blur-sm">
+            <button
+              onClick={handleNewChat}
+              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-primary transition-colors hover:bg-primary/10"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              New Chat
+            </button>
+            <p className="text-xs font-semibold text-foreground">Tilly</p>
+            <button
+              onClick={() => setHistoryOpen(true)}
+              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted/60"
+            >
+              <Clock className="h-3.5 w-3.5" />
+              History
+            </button>
+          </div>
+        )}
+
         {goalPlanningDemo && (
           <div className="shrink-0 z-20 border-b border-border/50 bg-background/95 px-4 pb-3 pt-[max(0.5rem,env(safe-area-inset-top))] backdrop-blur-sm">
             <div className="flex items-start justify-between gap-2">
@@ -1199,7 +1389,7 @@ const AIChatPanel = ({
               <div className="flex items-center justify-between px-4 py-2">
                 <div className="flex flex-col">
                   <span className="text-[10px] font-medium text-muted-foreground">
-                    Section {onboardingSection + 1} of 7 · {CHAT_ONBOARDING_SECTIONS[onboardingSection].name}
+                    Section {onboardingSection + 1} of {CHAT_ONBOARDING_SECTIONS_COUNT} · {CHAT_ONBOARDING_SECTIONS[onboardingSection].name}
                   </span>
                   <span className="text-[9px] text-muted-foreground/70 italic">
                     takes {CHAT_ONBOARDING_SECTIONS[onboardingSection].estimate}
@@ -1246,7 +1436,7 @@ const AIChatPanel = ({
                       <Check className="h-2.5 w-2.5 text-emerald-500" />
                     </div>
                     <span className="text-[11px] font-medium text-foreground">
-                      {completedSections.length} of 7 done
+                      {completedSections.length} of {CHAT_ONBOARDING_SECTIONS_COUNT} done
                     </span>
                   </div>
                   <div className="flex items-center gap-0.5">
