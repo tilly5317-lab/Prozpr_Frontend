@@ -2,15 +2,23 @@
 
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Send, Mic, MicOff, AlertCircle, Loader2, Sparkles, Check, Square, ChevronDown, ChevronUp, Pencil, ArrowRight } from "lucide-react";
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   createChatSession,
   sendChatMessage,
+  getOrCreateActiveSession,
   getMe,
   getFullProfile,
   getMyPortfolio,
+  listLinkedAccounts,
+  inferOnboardingComplete,
+  inferAccountLinkingComplete,
+  shouldSkipPostSetupChatPrompts,
   type PortfolioDetail,
+  type UserInfo,
+  type FullProfileResponse,
+  type LinkAccountInfo,
 } from "@/lib/api";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -529,12 +537,28 @@ const AIChatPanel = ({
     }
   }, [messages, isTyping, interimTranscript]);
 
-  // Inject completion message from voice onboarding
+  const showVoiceOnboardingChips = useMemo(() => {
+    if (!clientContext?.user) return true;
+    const me = clientContext.user as UserInfo;
+    const profile = clientContext.profile as FullProfileResponse | null | undefined;
+    return !inferOnboardingComplete(me, profile ?? null);
+  }, [clientContext]);
+
+  // Inject completion message from voice onboarding (skip if profile + accounts already in DB)
   useEffect(() => {
     if (goalPlanningDemo || !completionMessage) return;
+    if (!clientContext?.user) return;
+    const me = clientContext.user as UserInfo;
+    const profile = (clientContext.profile as FullProfileResponse | null) ?? null;
+    const portfolio = (clientContext.portfolio as PortfolioDetail | null) ?? null;
+    const linked = (clientContext.linkedAccounts as LinkAccountInfo[] | undefined) ?? [];
+    if (shouldSkipPostSetupChatPrompts(me, profile, portfolio, linked)) {
+      onCompletionShown?.();
+      return;
+    }
     setMessages((prev) => [...prev, { role: "ai", content: completionMessage }]);
     onCompletionShown?.();
-  }, [completionMessage, onCompletionShown, goalPlanningDemo]);
+  }, [completionMessage, onCompletionShown, goalPlanningDemo, clientContext]);
 
   // Inject initial AI message (e.g. from /execute portfolio context)
   const initialMessageSentRef = useRef(false);
@@ -556,21 +580,18 @@ const AIChatPanel = ({
     let mounted = true;
     const loadContext = async () => {
       try {
-        const [me, profile, portfolio] = await Promise.all([
+        const [me, profile, portfolio, linkedRes] = await Promise.all([
           getMe(),
           getFullProfile(),
           getMyPortfolio().catch(() => null),
+          listLinkedAccounts().catch(() => ({ accounts: [] as LinkAccountInfo[] })),
         ]);
         if (!mounted) return;
         setClientContext({
-          user: {
-            id: me.id,
-            first_name: me.first_name,
-            last_name: me.last_name,
-            is_onboarding_complete: me.is_onboarding_complete,
-          },
+          user: me,
           profile,
           portfolio,
+          linkedAccounts: linkedRes.accounts,
         });
       } catch {
         if (mounted) setClientContext(null);
@@ -582,10 +603,38 @@ const AIChatPanel = ({
     };
   }, []);
 
+  useEffect(() => {
+    if (goalPlanningDemo) return;
+    let mounted = true;
+    const restoreSession = async () => {
+      try {
+        const session = await getOrCreateActiveSession();
+        if (!mounted) return;
+        sessionIdRef.current = session.id;
+        if (session.messages.length > 0) {
+          setMessages(
+            session.messages.map((m) => ({
+              role: m.role === "assistant" ? ("ai" as const) : ("user" as const),
+              content: m.content,
+            })),
+          );
+        }
+      } catch {
+        // Fallback: session will be created on first send
+      }
+    };
+    restoreSession();
+    return () => { mounted = false; };
+  }, [goalPlanningDemo]);
+
   const tillyInsight = (() => {
     const p = clientContext?.portfolio as PortfolioDetail | null | undefined;
-    if (!p || p.total_value <= 0) {
+    const linked = clientContext?.linkedAccounts as LinkAccountInfo[] | undefined;
+    if (!inferAccountLinkingComplete(p ?? null, linked ?? null)) {
       return "Connect your profile and portfolio to get personalised insights here.";
+    }
+    if (!p || p.total_value <= 0) {
+      return "Your profile is set up. Add holdings or sync to see portfolio-level insights.";
     }
     const fmt = (n: number) =>
       n >= 100000 ? `₹${(n / 100000).toFixed(1)}L` : `₹${Math.round(n).toLocaleString("en-IN")}`;
@@ -994,14 +1043,10 @@ const AIChatPanel = ({
             </div>
           ) : (
             <div className="flex flex-col gap-2">
-              <div className={`flex gap-2 items-start ${msg.content.length > 600 ? "max-w-[95%]" : "max-w-[88%]"}`}>
+              <div className="flex gap-2 items-start max-w-[95%]">
                 <TillyAvatar />
                 <div
-                  className={`rounded-2xl rounded-tl-sm px-3 py-2 text-[12px] leading-relaxed text-foreground/90 ${
-                    msg.content.length > 600
-                      ? "max-h-[60vh] overflow-y-auto border border-border/40 shadow-sm"
-                      : ""
-                  }`}
+                  className="rounded-2xl rounded-tl-sm px-3 py-2 text-[12px] leading-relaxed text-foreground/90"
                   style={{
                     backgroundColor: "hsl(var(--tilly-bubble))",
                     borderLeft: "2px solid hsla(38, 45%, 54%, 0.3)",
@@ -1288,7 +1333,7 @@ const AIChatPanel = ({
                   {micState === "listening" ? <MicOff className="h-4.5 w-4.5" /> : <Mic className="h-4.5 w-4.5" />}
                 </button>
                 <div className="flex flex-wrap justify-center gap-2">
-                  {!goalPlanningDemo && (
+                  {!goalPlanningDemo && showVoiceOnboardingChips && (
                     <button
                       onClick={startOnboarding}
                       className="shrink-0 whitespace-nowrap rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-[11px] font-medium text-primary shadow-sm transition-colors hover:bg-primary/20 flex items-center gap-1.5"
@@ -1309,7 +1354,7 @@ const AIChatPanel = ({
               </div>
             ) : (
               <div className="flex flex-wrap justify-center gap-2 px-4 pb-1.5">
-                {!goalPlanningDemo && (
+                {!goalPlanningDemo && showVoiceOnboardingChips && (
                   <button
                     onClick={startOnboarding}
                     className="shrink-0 whitespace-nowrap rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-[11px] font-medium text-primary shadow-sm transition-colors hover:bg-primary/20 flex items-center gap-1.5"
