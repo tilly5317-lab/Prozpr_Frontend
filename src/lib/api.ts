@@ -113,7 +113,12 @@ async function request<T>(
   if (res.status === 204 || res.status === 205) {
     return undefined as T;
   }
-  return res.json() as Promise<T>;
+  // Same as error path: read body once (never mix `.json()` then `.text()` on the same Response).
+  const okBody = await res.text();
+  if (!okBody.trim()) {
+    return undefined as T;
+  }
+  return JSON.parse(okBody) as T;
 }
 
 // ── Auth types ──────────────────────────────────────────
