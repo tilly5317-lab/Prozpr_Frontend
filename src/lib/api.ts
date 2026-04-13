@@ -82,9 +82,12 @@ async function request<T>(
   }
 
   if (!res.ok) {
+    // Read body once: `res.json()` consumes the stream; calling `res.text()` in a catch
+    // after a failed JSON parse hits "body stream already read".
+    const text = await res.text();
     let msg: string;
     try {
-      const body = (await res.json()) as unknown;
+      const body = JSON.parse(text) as unknown;
       let detail: unknown = undefined;
       if (body && typeof body === "object" && "detail" in body) {
         detail = (body as { detail?: unknown }).detail;
@@ -98,7 +101,7 @@ async function request<T>(
         msg = JSON.stringify(body);
       }
     } catch {
-      msg = await res.text();
+      msg = text.trim() || `Request failed (${res.status})`;
     }
     // Treat common gateway/unavailable statuses as "offline" to avoid noisy errors.
     if ([502, 503, 504].includes(res.status)) {
