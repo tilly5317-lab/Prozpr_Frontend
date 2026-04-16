@@ -46,6 +46,13 @@ interface AllocationRange {
   max: number;
 }
 
+interface PlannedExpense {
+  description: string;
+  year: string;
+  amount: string;
+  addAsGoal: boolean;
+}
+
 const STATUS_LABELS: Record<SectionStatus, string> = {
   not_started: "Not started",
   in_progress: "In progress",
@@ -59,21 +66,18 @@ const STATUS_COLORS: Record<SectionStatus, string> = {
 };
 
 const SECTION_TITLES = [
-  "Who are you?",
   "Your financial picture",
   "What are you trying to achieve?",
-  "How much risk can you handle?",
-  "Rules & limits",
-  "Tax situation",
+  "Your investment preference and focus",
 ];
 
 const OBJECTIVES = [
-  "Wealth Growth",
-  "Retirement Planning",
-  "Child's Education",
-  "Home Purchase",
-  "Income Generation",
-  "Estate Planning",
+  "Wealth growth",
+  "Retirement",
+  "Child's education",
+  "Wedding",
+  "Home purchase",
+  "Estate planning",
 ];
 
 const GOAL_PURPOSES = [
@@ -85,32 +89,33 @@ const GOAL_PURPOSES = [
 
 const CURRENCIES = ["INR", "USD", "GBP"];
 
-const PRIMARY_WEALTH_SOURCES = ["Salary", "Business", "Inheritance", "Investments", "Other"];
-const OCCUPATION_OPTIONS = ["Salaried", "Business", "Freelance", "Homemaker", "Retired", "Other"];
+const INCOME_SOURCE_OPTIONS = ["Salary", "Business", "Family supported", "Investments", "Pension", "Others"];
 
 const RISK_LEVELS = [...RISK_CATEGORIES];
 
-const HORIZON_OPTIONS = ["< 2 years", "2 – 7 years", "7+ years"];
+const HORIZON_OPTIONS = ["< 2 years", "2–5 years", "5+ years"];
 
 const BEHAV_Q1_OPTIONS = [
-  "Cut losses immediately and liquidate all investments. Capital preservation is paramount.",
-  "Cut your losses and transfer investments to safer asset classes.",
-  "You would be worried, but would give your investments a little more time.",
-  "You accept volatility and decline in portfolio value as a part of investing. You would keep your investments as is.",
-  "You would add to your investments to bring the average buying price lower. You are confident about your investments and are not perturbed by notional losses.",
+  "I am a novice. I am new to investing and financial markets.",
+  "I have a basic understanding of investing. I understand basic investment concepts like diversification and risks.",
+  "I am enthusiastic about investing. I understand how markets fluctuate and the pros and cons of different investment classes.",
+  "I am an experienced investor. I have invested in different markets and understand different investment strategies. I have developed my own investment philosophy.",
 ];
 
 const BEHAV_Q2_OPTIONS = [
-  "Knowing you missed a 20%+ market gain",
-  "Knowing you lost 15%+ of your capital",
+  "Preferably guaranteed returns, before tax efficiency.",
+  "Stable, reliable returns, minimal tax efficiency.",
+  "Some variability in returns, some tax efficiency.",
+  "Moderate variability in returns, reasonable tax efficiency.",
+  "Unstable, but potentially higher returns, maximizing tax efficiency.",
 ];
 
 const BEHAV_Q3_OPTIONS = [
-  "A — Worst -2% / Best 11%",
-  "B — Worst -6% / Best 18%",
-  "C — Worst -13% / Best 24%",
-  "D — Worst -20% / Best 30%",
-  "E — Worst -27% / Best 37%",
+  "Capital preservation is paramount. Cut losses immediately and liquidate all investments.",
+  "Transfer investments to safer asset classes to prevent further loss.",
+  "Would feel worried but would wait to give your investments a little more time.",
+  "Accept volatility and dips in portfolio value as part of investing. Will keep investments as they are.",
+  "Buy the dip to bring the average buying price lower. Comfortable sitting with lower portfolio values and waiting for the market to recover in the long term.",
 ];
 
 const ASSET_COMFORT = ["Equities", "Bonds", "Real Estate", "Gold", "Crypto", "International Markets"];
@@ -261,6 +266,13 @@ const RISK_TAGLINES = [
   "Growth-focused with short-term volatility",
   "Maximum growth, maximum swings",
 ];
+
+const EXPERIENCE_TAGLINES: Record<string, string> = {
+  Beginner: "New to investing, still learning the basics",
+  Intermediate: "Comfortable with common instruments and market cycles",
+  Advanced: "Confident with complex strategies and portfolio construction",
+  Expert: "Deep expertise across asset classes and risk frameworks",
+};
 
 /* ── Circular Donut Risk Dial (30% smaller) ── */
 const RiskDial = ({ level, onChangeLevel }: { level: number; onChangeLevel: (l: number) => void }) => {
@@ -441,7 +453,7 @@ const IncomeExpenseSlider = ({ label, range, onChange }: {
   );
 };
 
-/* ── Behavioural Risk Modal ── */
+/* ── Behavioural Risk Modal (step-by-step) ── */
 const BehaviouralRiskModal = ({
   open, onClose, q1, setQ1, q2, setQ2, q3, setQ3,
 }: {
@@ -450,8 +462,26 @@ const BehaviouralRiskModal = ({
   q2: string; setQ2: (v: string) => void;
   q3: string; setQ3: (v: string) => void;
 }) => {
+  const [step, setStep] = useState(0);
+
+  const questions = [
+    { label: "How would you describe your investment experience?", options: BEHAV_Q1_OPTIONS, value: q1, setter: setQ1 },
+    { label: "How would you describe your investment focus?", options: BEHAV_Q2_OPTIONS, value: q2, setter: setQ2 },
+    { label: "If in the current year the value of your investments declines by ~20%, what would you do?", options: BEHAV_Q3_OPTIONS, value: q3, setter: setQ3 },
+  ];
+
+  const totalQuestions = questions.length;
+  const current = questions[step];
+  const isLast = step === totalQuestions - 1;
+
+  const handleSelect = (option: string) => {
+    current.setter(option);
+    if (!isLast) {
+      setTimeout(() => setStep((s) => s + 1), 300);
+    }
+  };
+
   if (!open) return null;
-  const canSave = q1 !== "" && q2 !== "" && q3 !== "";
 
   const OptionCard = ({ label, selected, onClick }: { label: string; selected: boolean; onClick: () => void }) => (
     <button
@@ -465,49 +495,56 @@ const BehaviouralRiskModal = ({
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative w-full max-w-md max-h-[85vh] bg-background rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col">
+      <div className="relative w-full max-w-md max-h-[85vh] bg-background rounded-2xl overflow-hidden flex flex-col mx-4">
         <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-border">
           <div>
             <h3 className="text-sm font-semibold text-foreground">Behavioural Risk Assessment</h3>
-            <p className="text-[10px] text-muted-foreground mt-0.5">Understanding your behaviour</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">Question {step + 1} of {totalQuestions}</p>
           </div>
           <button onClick={onClose} className="flex h-7 w-7 items-center justify-center rounded-full bg-muted hover:bg-muted/80">
             <X className="h-3.5 w-3.5 text-foreground" />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
-          {/* Q1 */}
-          <div className="space-y-2">
-            <p className="text-xs font-semibold text-foreground">1. If your portfolio dropped 20%+ in one month, what would you do?</p>
-            <div className="space-y-1.5">
-              {BEHAV_Q1_OPTIONS.map((o) => <OptionCard key={o} label={o} selected={q1 === o} onClick={() => setQ1(o)} />)}
-            </div>
-          </div>
-          {/* Q2 */}
-          <div className="space-y-2">
-            <p className="text-xs font-semibold text-foreground">2. Which would keep you up more at night?</p>
-            <div className="space-y-1.5">
-              {BEHAV_Q2_OPTIONS.map((o) => <OptionCard key={o} label={o} selected={q2 === o} onClick={() => setQ2(o)} />)}
-            </div>
-          </div>
-          {/* Q3 */}
-          <div className="space-y-2">
-            <p className="text-xs font-semibold text-foreground">3. Which scenario best describes your "Risk Range"?</p>
-            <div className="space-y-1.5">
-              {BEHAV_Q3_OPTIONS.map((o) => <OptionCard key={o} label={o} selected={q3 === o} onClick={() => setQ3(o)} />)}
-            </div>
+        <div className="px-5 pt-3 pb-1">
+          <div className="h-1 w-full rounded-full bg-muted overflow-hidden">
+            <div className="h-full rounded-full bg-accent transition-all duration-300" style={{ width: `${((step + 1) / totalQuestions) * 100}%` }} />
           </div>
         </div>
-        <div className="px-5 py-4 border-t border-border">
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+          <p className="text-xs font-semibold text-foreground">{current.label}</p>
+          <div className="space-y-1.5">
+            {current.options.map((o) => (
+              <OptionCard key={o} label={o} selected={current.value === o} onClick={() => handleSelect(o)} />
+            ))}
+          </div>
+        </div>
+        <div className="px-5 py-4 border-t border-border flex items-center justify-between">
           <button
-            onClick={onClose}
-            disabled={!canSave}
-            className={`w-full rounded-xl py-3 text-sm font-semibold transition-all ${canSave ? "bg-foreground text-background hover:opacity-90" : "bg-muted text-muted-foreground cursor-not-allowed"}`}
+            onClick={() => setStep((s) => Math.max(0, s - 1))}
+            disabled={step === 0}
+            className={`rounded-lg px-3 py-2 text-xs font-medium transition-all ${step === 0 ? "text-muted-foreground/40 cursor-not-allowed" : "text-foreground hover:bg-muted"}`}
           >
-            Save responses
+            ← Back
           </button>
+          {isLast ? (
+            <button
+              onClick={onClose}
+              disabled={!current.value}
+              className={`rounded-xl px-5 py-2 text-xs font-semibold transition-all ${current.value ? "bg-foreground text-background hover:opacity-90" : "bg-muted text-muted-foreground cursor-not-allowed"}`}
+            >
+              Done
+            </button>
+          ) : (
+            <button
+              onClick={() => setStep((s) => Math.min(totalQuestions - 1, s + 1))}
+              disabled={!current.value}
+              className={`rounded-lg px-3 py-2 text-xs font-medium transition-all ${current.value ? "text-foreground hover:bg-muted" : "text-muted-foreground/40 cursor-not-allowed"}`}
+            >
+              Next →
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -518,7 +555,7 @@ const BehaviouralRiskModal = ({
 const CompleteProfile = () => {
   const navigate = useNavigate();
   const [openSection, setOpenSection] = useState(0);
-  const [statuses, setStatuses] = useState<SectionStatus[]>(Array(7).fill("not_started"));
+  const [statuses, setStatuses] = useState<SectionStatus[]>(Array(3).fill("not_started"));
   const [profileLoaded, setProfileLoaded] = useState(false);
 
   // Section 0 — Who are you?
@@ -541,11 +578,14 @@ const CompleteProfile = () => {
   const [otherAssets, setOtherAssets] = useState<OtherAsset[]>([]);
   const [ownsHome, setOwnsHome] = useState(false);
   const [properties, setProperties] = useState<Property[]>([{ value: "", mortgage: "", monthlyRepayment: "", yearPurchased: "" }]);
-  const [plannedExpenses, setPlannedExpenses] = useState("");
+  const [plannedExpenses, setPlannedExpenses] = useState<PlannedExpense[]>([{ description: "", year: "", amount: "", addAsGoal: false }]);
+  const [otherAssetsValue, setOtherAssetsValue] = useState("");
+  const [otherAssetDescription, setOtherAssetDescription] = useState("");
   const [expectingLargeIncome, setExpectingLargeIncome] = useState(false);
   const [largeIncomeAmount, setLargeIncomeAmount] = useState("");
   const [largeIncomeCurrency, setLargeIncomeCurrency] = useState("INR");
   const [largeIncomeYear, setLargeIncomeYear] = useState("");
+  const [largeIncomeDescription, setLargeIncomeDescription] = useState("");
   const [emergencyFund, setEmergencyFund] = useState("");
   const [emergencyTimeframe, setEmergencyTimeframe] = useState("6 months");
 
@@ -554,6 +594,8 @@ const CompleteProfile = () => {
   const [goalDetails, setGoalDetails] = useState<Record<string, GoalDetail>>({});
   const [customGoals, setCustomGoals] = useState<string[]>([]);
   const [customGoalInput, setCustomGoalInput] = useState("");
+  const [showGoalOtherInput, setShowGoalOtherInput] = useState(false);
+  const [goalOtherText, setGoalOtherText] = useState("");
 
   // Section 3 — How much risk?
   const [riskLevelIdx, setRiskLevelIdx] = useState(2);
@@ -606,22 +648,20 @@ const CompleteProfile = () => {
       try {
         const p = await getFullProfile();
         if (cancelled) return;
-        const newStatuses: SectionStatus[] = Array(7).fill("not_started");
+        const newStatuses: SectionStatus[] = Array(3).fill("not_started");
 
-        // Section 0 — personal info
+        // Load personal info data (no longer a separate section)
         if (p.personal_info) {
           const pi = p.personal_info;
           if (pi.occupation) setOccupation(pi.occupation);
           if (pi.family_status) {
-            // Try to parse structured family data
             setEarningMembers("");
             setDependents("");
           }
           if (pi.personal_values) setValues(pi.personal_values.join(", "));
-          if (pi.occupation || pi.family_status) newStatuses[0] = "confirmed";
         }
 
-        // Section 1 — financial picture (from investment profile)
+        // Section 0 — financial picture (from investment profile)
         if (p.investment_profile) {
           const ip = p.investment_profile;
           if (p.personal_info?.wealth_sources?.length) {
@@ -633,18 +673,18 @@ const CompleteProfile = () => {
             setOwnsHome(true);
             setProperties([{ value: parseNum(ip.property_value?.toString()), mortgage: parseNum(ip.mortgage_amount?.toString()), monthlyRepayment: "", yearPurchased: "" }]);
           }
-          setPlannedExpenses(parseNum(ip.planned_major_expenses?.toString()));
+          // plannedExpenses removed — now structured fields
           setEmergencyFund(parseNum(ip.emergency_fund?.toString()));
           if (ip.emergency_fund_months) setEmergencyTimeframe(ip.emergency_fund_months);
-          if (ip.investable_assets != null) newStatuses[1] = "confirmed";
+          if (ip.investable_assets != null) newStatuses[0] = "confirmed";
 
-          // Section 2 — goals
+          // Section 1 — goals
           if (ip.objectives?.length) setSelectedObjectives(ip.objectives);
-          if (ip.objectives?.length) newStatuses[2] = "confirmed";
+          if (ip.objectives?.length) newStatuses[1] = "confirmed";
 
         }
 
-        // Section 3 — risk
+        // Section 2 — risk
         if (p.risk_profile) {
           const rp = p.risk_profile;
           if (rp.risk_level != null) setRiskLevelIdx(rp.risk_level);
@@ -653,10 +693,19 @@ const CompleteProfile = () => {
           if (rp.investment_horizon) setInvestmentHorizon(rp.investment_horizon);
           if (rp.max_drawdown != null) setMaxDrawdown(String(rp.max_drawdown));
           if (rp.comfort_assets) setComfortAssets(rp.comfort_assets);
-          if (rp.risk_level != null) newStatuses[3] = "confirmed";
+          if (rp.risk_level != null) newStatuses[2] = "confirmed";
         }
 
-        // Section 4 — constraints
+
+        // Load review preference data
+        if (p.review_preference) {
+          const rp = p.review_preference;
+          if (rp.frequency) setReviewFreq(rp.frequency);
+          if (rp.triggers) setReviewTriggers(rp.triggers);
+          if (rp.update_process) setUpdateProcess(rp.update_process);
+        }
+
+        // Load constraints data
         if (p.investment_constraint) {
           const ic = p.investment_constraint;
           if (ic.permitted_assets?.length) setPermittedAssets(ic.permitted_assets);
@@ -674,25 +723,6 @@ const CompleteProfile = () => {
             });
             setAllocations((prev) => ({ ...prev, ...loaded }));
           }
-          if (ic.permitted_assets?.length) newStatuses[4] = "confirmed";
-        }
-
-        // Section 5 — tax
-        if (p.tax_profile) {
-          const tp = p.tax_profile;
-          if (tp.income_tax_rate != null) setIncomeTaxRate(String(tp.income_tax_rate));
-          if (tp.capital_gains_tax_rate != null) setCgtRate(String(tp.capital_gains_tax_rate));
-          if (tp.notes) setTaxNotes(tp.notes);
-          if (tp.income_tax_rate != null) newStatuses[5] = "confirmed";
-        }
-
-        // Section 6 — review
-        if (p.review_preference) {
-          const rp = p.review_preference;
-          if (rp.frequency) setReviewFreq(rp.frequency);
-          if (rp.triggers) setReviewTriggers(rp.triggers);
-          if (rp.update_process) setUpdateProcess(rp.update_process);
-          if (rp.frequency) newStatuses[6] = "confirmed";
         }
 
         setStatuses(newStatuses);
@@ -708,8 +738,8 @@ const CompleteProfile = () => {
   }, []);
 
   const confirmedCount = statuses.filter((s) => s === "confirmed").length;
-  const progressPercent = Math.round((confirmedCount / 7) * 100);
-  const allConfirmed = confirmedCount === 7;
+  const progressPercent = Math.round((confirmedCount / 3) * 100);
+  const allConfirmed = confirmedCount === 3;
 
   const totalMaxAllocation = useMemo(() => {
     return permittedAssets.reduce((sum, a) => sum + (allocations[a]?.max || 0), 0);
@@ -740,35 +770,27 @@ const CompleteProfile = () => {
     try {
       switch (idx) {
         case 0:
-          await updatePersonalInfo({
-            occupation: occupation || null,
-            family_status: `${earningMembers || "0"} earning, ${dependents || "0"} dependents`,
-            personal_values: values ? values.split(",").map((v) => v.trim()).filter(Boolean) : null,
-          });
-          break;
-        case 1:
           await updateInvestmentProfile({
             investable_assets: toNum(investableAssets),
             total_liabilities: toNum(liabilities),
             property_value: ownsHome ? toNum(properties[0]?.value) : null,
             mortgage_amount: ownsHome ? toNum(properties[0]?.mortgage) : null,
-            planned_major_expenses: toNum(plannedExpenses),
+            planned_major_expenses: plannedExpenses.reduce((sum, e) => sum + (toNum(e.amount) ?? 0), 0) || null,
             emergency_fund: toNum(emergencyFund),
             emergency_fund_months: emergencyTimeframe || null,
           });
           {
             const sources = [...primaryWealthSource];
-            if (sources.includes("Other") && wealthSourceOtherText.trim()) {
-              sources[sources.indexOf("Other")] = wealthSourceOtherText.trim();
+            if (sources.includes("Others") && wealthSourceOtherText.trim()) {
+              sources[sources.indexOf("Others")] = wealthSourceOtherText.trim();
             }
-            const occVal = occupationType === "Other" ? occupationOtherText.trim() || "Other" : occupationType;
             await updatePersonalInfo({
               wealth_sources: sources.length ? sources : null,
-              ...(occVal ? { occupation: occVal } : {}),
+              family_status: `${earningMembers || "0"} earning, ${dependents || "0"} dependents`,
             });
           }
           break;
-        case 2:
+        case 1:
           await updateInvestmentProfile({
             objectives: selectedObjectives.length ? selectedObjectives : null,
             detailed_goals: selectedObjectives.map((obj) => {
@@ -785,7 +807,7 @@ const CompleteProfile = () => {
             }),
           });
           break;
-        case 3:
+        case 2:
           await updateRiskProfile({
             risk_level: riskLevelIdx,
             risk_capacity: riskCapacity || null,
@@ -794,32 +816,6 @@ const CompleteProfile = () => {
             drop_reaction: behavQ1 || null,
             max_drawdown: maxDrawdown ? Number(maxDrawdown) : null,
             comfort_assets: comfortAssets.length ? comfortAssets : null,
-          });
-          break;
-        case 4:
-          await updateConstraints({
-            permitted_assets: permittedAssets.length ? permittedAssets : null,
-            prohibited_instruments: prohibited ? prohibited.split(",").map((s) => s.trim()).filter(Boolean) : null,
-            is_leverage_allowed: leverage,
-            is_derivatives_allowed: derivatives,
-            diversification_notes: diversificationNotes || null,
-            allocation_constraints: permittedAssets.map((asset) => ({
-              asset_class: asset,
-              min_allocation: allocations[asset]?.min ?? null,
-              max_allocation: allocations[asset]?.max ?? null,
-            })),
-          });
-          await updateReviewPreference({
-            frequency: reviewFreq || null,
-            triggers: null,
-            update_process: null,
-          });
-          break;
-        case 5:
-          await updateTaxProfile({
-            income_tax_rate: incomeTaxRate ? Number(incomeTaxRate) : null,
-            capital_gains_tax_rate: cgtRate ? Number(cgtRate) : null,
-            notes: taxNotes || null,
           });
           break;
       }
@@ -834,11 +830,11 @@ const CompleteProfile = () => {
       next[idx] = "confirmed";
       return next;
     });
-    if (idx < 6) setOpenSection(idx + 1);
+    if (idx < 2) setOpenSection(idx + 1);
     toast.success(`Section ${idx + 1} confirmed ✓`);
   }, [
     occupation, primaryResidence, earningMembers, dependents, values,
-    primaryWealthSource, investableAssets, liabilities, properties, plannedExpenses, emergencyFund, emergencyTimeframe, otherAssets, ownsHome, expectingLargeIncome, largeIncomeAmount, largeIncomeCurrency, largeIncomeYear,
+    primaryWealthSource, investableAssets, liabilities, properties, plannedExpenses, emergencyFund, emergencyTimeframe, otherAssets, otherAssetsValue, ownsHome, expectingLargeIncome, largeIncomeAmount, largeIncomeCurrency, largeIncomeYear,
     selectedObjectives, goalDetails,
     riskLevelIdx, riskCapacity, investmentExperience, investmentHorizon, horizonNotes, behavQ1, behavQ2, behavQ3, maxDrawdown, comfortAssets,
     permittedAssets, allocations, prohibited, leverage, derivatives, diversificationNotes,
@@ -897,13 +893,12 @@ const CompleteProfile = () => {
 
   const renderSection = (idx: number) => {
     switch (idx) {
-      /* ── Section 0: Who are you? ── */
+      /* ── Section 0: Your financial picture ── */
       case 0:
         return (
-          <div className="space-y-3">
-            <div><FieldLabel>Primary residence</FieldLabel><TextInput value={primaryResidence} onChange={setPrimaryResidence} placeholder="e.g. London, United Kingdom" /></div>
+           <div className="space-y-3">
+            {/* Family situation — no heading */}
             <div>
-              <FieldLabel>Family situation: earning members and dependents</FieldLabel>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10px] text-muted-foreground">Earning members</label>
@@ -929,43 +924,24 @@ const CompleteProfile = () => {
                 </div>
               </div>
             </div>
-          </div>
-        );
 
-      /* ── Section 1: Your financial picture ── */
-      case 1:
-        return (
-          <div className="space-y-3">
-            {/* Occupation */}
-            <div>
-              <FieldLabel>Occupation</FieldLabel>
-              <div className="flex flex-wrap gap-1.5">
-                {OCCUPATION_OPTIONS.map((o) => (
-                  <Chip key={o} label={o} active={occupationType === o} onClick={() => setOccupationType(occupationType === o ? "" : o)} />
-                ))}
-              </div>
-              {occupationType === "Other" && (
-                <div className="mt-2">
-                  <TextInput value={occupationOtherText} onChange={setOccupationOtherText} placeholder="Enter your occupation" />
-                </div>
-              )}
-            </div>
-
-            {/* Income & Expenses — moved up below occupation */}
+            {/* Income & Expenses */}
             <div>
               <FieldLabel>Annual income range</FieldLabel>
+              <p className="text-[10px] text-muted-foreground -mt-0.5 mb-1">Includes salary and regular income (e.g. rental income)</p>
               <IncomeExpenseSlider label="Income" range={incomeRange} onChange={setIncomeRange} />
             </div>
             <div>
               <FieldLabel>Annual expense range</FieldLabel>
+              <p className="text-[10px] text-muted-foreground -mt-0.5 mb-1">Excludes all debt obligations (e.g. loans)</p>
               <IncomeExpenseSlider label="Expenses" range={expenseRange} onChange={setExpenseRange} />
             </div>
 
-            {/* Primary Wealth Source — multi-select */}
+            {/* What makes up your primary income? — multi-select */}
             <div>
-              <FieldLabel>Primary wealth source</FieldLabel>
+              <FieldLabel>What makes up your primary income?</FieldLabel>
               <div className="flex flex-wrap gap-1.5">
-                {PRIMARY_WEALTH_SOURCES.map((s) => (
+                {INCOME_SOURCE_OPTIONS.map((s) => (
                   <Chip
                     key={s}
                     label={s}
@@ -978,14 +954,26 @@ const CompleteProfile = () => {
                   />
                 ))}
               </div>
-              {primaryWealthSource.includes("Other") && (
+              {primaryWealthSource.includes("Others") && (
                 <div className="mt-2">
-                  <TextInput value={wealthSourceOtherText} onChange={setWealthSourceOtherText} placeholder="Specify other wealth source" />
+                  <TextInput value={wealthSourceOtherText} onChange={setWealthSourceOtherText} placeholder="Specify other income source" />
                 </div>
               )}
             </div>
-            <div><FieldLabel>Financial and liquid assets</FieldLabel><TextInput value={investableAssets} onChange={setInvestableAssets} prefix="₹" placeholder="e.g. 42,00,000" /></div>
-            <div><FieldLabel>Total liabilities / debts</FieldLabel><TextInput value={liabilities} onChange={setLiabilities} prefix="₹" placeholder="e.g. 5,00,000" /></div>
+            <div><FieldLabel>Cash and financial assets</FieldLabel><TextInput value={investableAssets} onChange={setInvestableAssets} prefix="₹" placeholder="e.g. 42,00,000" /></div>
+            <div>
+              <FieldLabel>Other assets</FieldLabel>
+              <p className="text-[10px] text-muted-foreground -mt-0.5 mb-1">Includes any unlisted shares, gold and other assets</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div><label className="text-[10px] text-muted-foreground">Asset (description)</label><TextInput value={otherAssetDescription} onChange={setOtherAssetDescription} placeholder="e.g. Gold, Unlisted shares" /></div>
+                <div><label className="text-[10px] text-muted-foreground">Amount</label><TextInput value={otherAssetsValue} onChange={setOtherAssetsValue} prefix="₹" placeholder="e.g. 10,00,000" /></div>
+              </div>
+            </div>
+            <div>
+              <FieldLabel>Liabilities / debts</FieldLabel>
+              <p className="text-[10px] text-muted-foreground -mt-0.5 mb-1">Excludes mortgage repayment</p>
+              <TextInput value={liabilities} onChange={setLiabilities} prefix="₹" placeholder="e.g. 5,00,000" />
+            </div>
 
 
             {/* Property */}
@@ -1020,34 +1008,64 @@ const CompleteProfile = () => {
               )}
             </div>
 
-            <div><FieldLabel>Planned large expenses</FieldLabel><TextInput value={plannedExpenses} onChange={setPlannedExpenses} placeholder="e.g. school fees from 2026, property purchase" /></div>
+            {/* Planned large expenses */}
+            <div>
+              <FieldLabel>Planned large expenses</FieldLabel>
+              {plannedExpenses.map((expense, idx) => (
+                <div key={idx} className="mb-3">
+                  <div className="grid grid-cols-3 gap-2">
+                    <div><label className="text-[10px] text-muted-foreground">Description</label><TextInput value={expense.description} onChange={(v) => { const next = [...plannedExpenses]; next[idx] = { ...next[idx], description: v }; setPlannedExpenses(next); }} placeholder="e.g. Wedding" /></div>
+                    <div><label className="text-[10px] text-muted-foreground">Year</label><TextInput value={expense.year} onChange={(v) => { const next = [...plannedExpenses]; next[idx] = { ...next[idx], year: v }; setPlannedExpenses(next); }} placeholder="e.g. 2026" /></div>
+                    <div className="relative"><label className="text-[10px] text-muted-foreground">Amount</label><TextInput value={expense.amount} onChange={(v) => { const next = [...plannedExpenses]; next[idx] = { ...next[idx], amount: v }; setPlannedExpenses(next); }} prefix="₹" placeholder="e.g. 25L" /></div>
+                  </div>
+                  {expense.description.trim() && (
+                    <div className="mt-2 rounded-lg border border-border bg-card/50 px-3 py-2">
+                      <p className="text-[10px] text-muted-foreground mb-1">Would you like to add this as a goal so we can plan for it?</p>
+                      <Toggle value={expense.addAsGoal} onChange={(v) => {
+                        const next = [...plannedExpenses];
+                        next[idx] = { ...next[idx], addAsGoal: v };
+                        setPlannedExpenses(next);
+                        if (v && expense.description.trim()) {
+                          const goalName = expense.description.trim();
+                          if (!selectedObjectives.includes(goalName)) {
+                            setSelectedObjectives((prev) => [...prev, goalName]);
+                            setCustomGoals((prev) => prev.includes(goalName) ? prev : [...prev, goalName]);
+                            updateGoalDetail(goalName, {
+                              amount: expense.amount,
+                              year: expense.year,
+                            });
+                          }
+                        }
+                      }} labelA="No" labelB="Yes" />
+                    </div>
+                  )}
+                  {plannedExpenses.length > 1 && (
+                    <button onClick={() => setPlannedExpenses(plannedExpenses.filter((_, i) => i !== idx))} className="mt-1.5 text-[10px] text-destructive hover:underline">Remove</button>
+                  )}
+                </div>
+              ))}
+              <button onClick={() => setPlannedExpenses([...plannedExpenses, { description: "", year: "", amount: "", addAsGoal: false }])} className="flex items-center gap-1 text-xs text-accent hover:underline mt-1">
+                <Plus className="h-3 w-3" /> Add another expense
+              </button>
+            </div>
 
             {/* Expected large income */}
             <div>
-              <FieldLabel>Are you expecting any large income in the future?</FieldLabel>
-              <p className="text-[10px] text-muted-foreground mb-1.5">e.g. bonus, inheritance, property sale</p>
-              <Toggle value={expectingLargeIncome} onChange={setExpectingLargeIncome} labelA="No" labelB="Yes" />
-              {expectingLargeIncome && (
-                <div className="mt-3 space-y-2 pl-1 border-l-2 border-accent/20 ml-1">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div><label className="text-[10px] text-muted-foreground">Amount</label><TextInput value={largeIncomeAmount} onChange={setLargeIncomeAmount} placeholder="e.g. 25,00,000" /></div>
-                    <div><label className="text-[10px] text-muted-foreground">Currency</label><SelectInput value={largeIncomeCurrency} onChange={setLargeIncomeCurrency} options={CURRENCIES} /></div>
-                  </div>
-                  <div><label className="text-[10px] text-muted-foreground">Expected year</label><TextInput value={largeIncomeYear} onChange={setLargeIncomeYear} placeholder="e.g. 2026" /></div>
-                </div>
-              )}
+              <FieldLabel>Expected large income</FieldLabel>
+              <p className="text-[10px] text-muted-foreground -mt-0.5 mb-1">e.g. bonus, inheritance, property sale</p>
+              <div className="grid grid-cols-3 gap-2">
+                <div><label className="text-[10px] text-muted-foreground">Description</label><TextInput value={largeIncomeDescription} onChange={setLargeIncomeDescription} placeholder="e.g. Bonus" /></div>
+                <div><label className="text-[10px] text-muted-foreground">Year</label><TextInput value={largeIncomeYear} onChange={setLargeIncomeYear} placeholder="e.g. 2026" /></div>
+                <div><label className="text-[10px] text-muted-foreground">Amount</label><TextInput value={largeIncomeAmount} onChange={setLargeIncomeAmount} prefix="₹" placeholder="e.g. 25,00,000" /></div>
+              </div>
             </div>
 
 
-            <div className="flex gap-3">
-              <div className="flex-1"><FieldLabel>Emergency fund target</FieldLabel><TextInput value={emergencyFund} onChange={setEmergencyFund} prefix="₹" placeholder="e.g. 3,00,000" /></div>
-              <div className="w-32"><FieldLabel>Timeframe</FieldLabel><SelectInput value={emergencyTimeframe} onChange={setEmergencyTimeframe} options={EMERGENCY_TIMEFRAMES} /></div>
-            </div>
           </div>
         );
 
-      /* ── Section 2: What are you trying to achieve? ── */
-      case 2:
+      /* ── Section 1: What are you trying to achieve? ── */
+      case 1:
         return (
           <div className="space-y-4">
             <PrefilledBanner />
@@ -1147,24 +1165,13 @@ const CompleteProfile = () => {
               );
             })}
 
-            {/* Values / Exclusions */}
-            <div><FieldLabel>Values / exclusions</FieldLabel><TextInput value={values} onChange={setValues} placeholder="e.g. ESG preferred, no defence stocks" /></div>
           </div>
         );
 
-      /* ── Section 3: How much risk can you handle? ── */
-      case 3:
+      /* ── Section 2: Your investment preference and focus ── */
+      case 2:
         return (
           <div className="space-y-4">
-            <div>
-              <FieldLabel>Investment experience</FieldLabel>
-              <div className="flex flex-wrap gap-1.5">
-                {["Beginner", "Intermediate", "Advanced", "Expert"].map((e) => (
-                  <Chip key={e} label={e} active={investmentExperience === e} onClick={() => setInvestmentExperience(e)} />
-                ))}
-              </div>
-            </div>
-
             <div>
               <FieldLabel>Investment horizon</FieldLabel>
               <div className="flex flex-wrap gap-1.5">
@@ -1174,16 +1181,6 @@ const CompleteProfile = () => {
               </div>
             </div>
 
-            <div>
-              <FieldLabel>Any specifics you'd like to share about your investment horizon?</FieldLabel>
-              <textarea
-                value={horizonNotes}
-                onChange={(e) => setHorizonNotes(e.target.value)}
-                placeholder="e.g. I plan to retire in 10 years but may need some funds in 3 years for a home purchase..."
-                rows={3}
-                className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-accent transition-colors placeholder:text-[12px] resize-none"
-              />
-            </div>
 
             {/* Behavioural Risk Assessment — opens modal */}
             <div>
@@ -1203,63 +1200,6 @@ const CompleteProfile = () => {
           </div>
         );
 
-      /* ── Section 4: Rules & limits ── */
-      case 4:
-        return (
-          <div className="space-y-4">
-            <div>
-              <FieldLabel>Permitted asset types</FieldLabel>
-              <div className="flex flex-wrap gap-2">
-                {ASSET_TYPES.map((a) => (
-                  <Chip key={a} label={a} active={permittedAssets.includes(a)} onClick={() => toggleAsset(a)} />
-                ))}
-              </div>
-              <AnimatePresence>
-                {permittedAssets.map((asset) => (
-                  <AllocationBar
-                    key={asset}
-                    asset={asset}
-                    range={allocations[asset] || DEFAULT_ALLOCATIONS[asset]}
-                    onChange={(r) => updateAllocation(asset, r)}
-                  />
-                ))}
-              </AnimatePresence>
-              {permittedAssets.length > 0 && (
-                <div className={`mt-3 rounded-lg px-3 py-2 text-xs font-medium ${totalMaxAllocation > 100 ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground"}`}>
-                  {totalMaxAllocation > 100 && <AlertTriangle className="inline h-3 w-3 mr-1 -mt-0.5" />}
-                  Total max allocation: {totalMaxAllocation}%
-                  {totalMaxAllocation > 100 && " — ⚠ Total max allocation exceeds 100% — please adjust"}
-                </div>
-              )}
-            </div>
-            <div><FieldLabel>Prohibited investments</FieldLabel><TextInput value={prohibited} onChange={setProhibited} placeholder="e.g. tobacco, gambling, leveraged products" /></div>
-            <div>
-              <FieldLabel>Leverage</FieldLabel>
-              <Toggle value={leverage} onChange={setLeverage} labelA="No" labelB="Yes" />
-              {leverage && <div className="mt-2"><TextInput value={leverageNotes} onChange={setLeverageNotes} placeholder="Notes on leverage use" /></div>}
-            </div>
-            <div>
-              <FieldLabel>Derivatives</FieldLabel>
-              <Toggle value={derivatives} onChange={setDerivatives} labelA="No" labelB="Yes" />
-              {derivatives && <div className="mt-2"><TextInput value={derivativesNotes} onChange={setDerivativesNotes} placeholder="Notes on derivatives use" /></div>}
-            </div>
-            <div><FieldLabel>Diversification notes (optional)</FieldLabel><TextInput value={diversificationNotes} onChange={setDiversificationNotes} placeholder="Any specific diversification requirements" /></div>
-            <div>
-              <FieldLabel>Review frequency</FieldLabel>
-              <div className="flex flex-wrap gap-2">{REVIEW_FREQ.map((f) => <Chip key={f} label={f} active={reviewFreq === f} onClick={() => setReviewFreq(f)} />)}</div>
-            </div>
-          </div>
-        );
-
-      /* ── Section 5: Tax situation ── */
-      case 5:
-        return (
-          <div className="space-y-3">
-            <div><FieldLabel>Income tax rate</FieldLabel><TextInput value={incomeTaxRate} onChange={setIncomeTaxRate} placeholder="e.g. 30" /></div>
-            <div><FieldLabel>Capital gains tax rate</FieldLabel><TextInput value={cgtRate} onChange={setCgtRate} placeholder="e.g. 15 (LTCG) / 20 (STCG)" /></div>
-            <div><FieldLabel>Additional notes (optional)</FieldLabel><TextInput value={taxNotes} onChange={setTaxNotes} placeholder="e.g. NRI status, HUF structure" /></div>
-          </div>
-        );
 
 
       default:
@@ -1294,8 +1234,8 @@ const CompleteProfile = () => {
       {/* Progress */}
       <div className="px-5 pt-3 pb-2">
         <div className="flex items-center justify-between mb-1">
-          <span className="text-[11px] text-muted-foreground font-medium">Section {Math.min(openSection + 1, 7)} of 7</span>
-          <span className="text-[11px] text-muted-foreground">{confirmedCount}/7 confirmed</span>
+          <span className="text-[11px] text-muted-foreground font-medium">Section {Math.min(openSection + 1, 3)} of 3</span>
+          <span className="text-[11px] text-muted-foreground">{confirmedCount}/3 confirmed</span>
         </div>
         <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
           <motion.div className="h-full rounded-full bg-accent" initial={{ width: 0 }} animate={{ width: `${progressPercent}%` }} transition={{ duration: 0.5 }} />
