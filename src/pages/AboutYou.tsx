@@ -130,8 +130,8 @@ const DEFAULT_GOALS = [
 
 const HORIZON_OPTIONS = [
   { label: "< 2 years", sub: "Short-term investments" },
-  { label: "2 – 7 years", sub: "Medium-term growth" },
-  { label: "7+ years", sub: "Long-term wealth building" },
+  { label: "2–5 years", sub: "Medium-term growth" },
+  { label: "5+ years", sub: "Long-term wealth building" },
 ];
 
 const INVESTMENT_PREF_OPTIONS = [
