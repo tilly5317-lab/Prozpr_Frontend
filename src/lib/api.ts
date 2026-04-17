@@ -321,6 +321,45 @@ export interface ChatSendResponse {
   ideal_allocation_snapshot_id?: string | null;
 }
 
+export interface OnboardingExtractedValue {
+  field: string;
+  label?: string | null;
+  value?: unknown;
+  confidence?: number | null;
+  status?: string | null;
+  section?: string | null;
+}
+
+export interface OnboardingAssumptionSuggestion {
+  field: string;
+  label?: string | null;
+  suggested_value?: unknown;
+  reason?: string | null;
+}
+
+export interface OnboardingSummaryRow {
+  field: string;
+  label: string;
+  value?: unknown;
+  confidence?: number | null;
+  status?: string | null;
+  section?: string | null;
+}
+
+export interface ChatOnboardingTurnResponse {
+  user_message: ChatMessageInfo;
+  assistant_message: ChatMessageInfo;
+  phase: "collecting" | "review" | "completed";
+  next_question?: string | null;
+  extracted_values: OnboardingExtractedValue[];
+  assumptions: OnboardingAssumptionSuggestion[];
+  advisories: string[];
+  summary_rows: OnboardingSummaryRow[];
+  ready_for_confirmation: boolean;
+  committed: boolean;
+  write_payload_preview: Record<string, unknown>;
+}
+
 export interface ChatSessionDetail extends ChatSessionInfo {
   messages: ChatMessageInfo[];
 }
@@ -349,6 +388,29 @@ export async function sendChatMessage(
     },
     true,
     CHAT_REQUEST_TIMEOUT_MS
+  );
+}
+
+export async function sendOnboardingTurn(
+  sessionId: string,
+  content: string,
+  action: "answer" | "request_summary" | "confirm_summary" = "answer",
+  accumulatedValues?: OnboardingExtractedValue[],
+  clientContext?: Record<string, unknown>,
+): Promise<ChatOnboardingTurnResponse> {
+  return request<ChatOnboardingTurnResponse>(
+    `/chat/sessions/${sessionId}/onboarding/turn`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        content,
+        action,
+        accumulated_values: accumulatedValues ?? [],
+        client_context: clientContext ?? null,
+      }),
+    },
+    true,
+    CHAT_REQUEST_TIMEOUT_MS,
   );
 }
 

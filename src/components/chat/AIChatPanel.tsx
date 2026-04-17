@@ -7,6 +7,7 @@ import { useNavigate } from "react-router-dom";
 import {
   createChatSession,
   sendChatMessage,
+  sendOnboardingTurn,
   getOrCreateActiveSession,
   getChatSession,
   listChatSessions,
@@ -23,6 +24,8 @@ import {
   type UserInfo,
   type FullProfileResponse,
   type LinkAccountInfo,
+  type ChatOnboardingTurnResponse,
+  type OnboardingExtractedValue,
 } from "@/lib/api";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -79,6 +82,31 @@ function splitGoalItems(text: string): string[] {
 
 function escapeTableCell(text: string): string {
   return text.replace(/\|/g, "\\|").replace(/\n/g, " ");
+}
+
+function formatOnboardingValue(value: unknown): string {
+  if (value == null) return "-";
+  if (typeof value === "number") return Number.isFinite(value) ? value.toLocaleString("en-IN") : String(value);
+  if (Array.isArray(value)) return value.map((v) => String(v)).join(", ");
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
+function buildOnboardingSummaryTable(
+  rows: Array<{ label: string; value?: unknown; confidence?: number | null }>
+): string {
+  if (!rows.length) return "";
+  const lines = rows.map((row) => {
+    const conf = typeof row.confidence === "number" ? `${Math.round(row.confidence * 100)}%` : "-";
+    return `| ${escapeTableCell(row.label)} | ${escapeTableCell(formatOnboardingValue(row.value))} | ${escapeTableCell(conf)} |`;
+  });
+  return [
+    "**Summary of conversation**",
+    "",
+    "| Field | Value | Conf. |",
+    "|---|---|---|",
+    ...lines,
+  ].join("\n");
 }
 
 /** Interactive emergency-fund suggestion for goal-planning demo (client-side only). */
@@ -227,21 +255,29 @@ const CHAT_ONBOARDING_SECTIONS = [
 
 const CHAT_ONBOARDING_SECTIONS_COUNT = CHAT_ONBOARDING_SECTIONS.length;
 
-const CHAT_ONBOARDING_NOTES: Record<number, string[]> = {
-  0: ["Monthly income ₹1.8L", "Expenses around ₹90K/month", "Existing FD of ₹12L", "Property valued at ₹85L, no major liabilities"],
-  1: ["Retirement by 55 — primary goal", "Children's education fund in 8 years", "Target corpus: ₹2Cr", "Secondary: vacation fund"],
-  2: ["Moderate experience with mutual funds", "Comfortable with 15-20% drawdowns", "Prefers steady growth over quick gains", "10-15 year horizon"],
-};
-
-const KUDOS_MESSAGES = [
-  "Great progress — that's one more piece of the picture. 🌟",
-  "You're doing brilliantly. Keep going.",
-  "Section complete. You're ahead of 80% of people who start this.",
-  "Nice work. Every answer brings your plan closer to reality.",
-  "That was smooth — onwards! ✨",
-  "You're building something great here.",
-  "Another step closer to your financial clarity. 💎",
-];
+interface OnboardingRuntimeState {
+  phase: "collecting" | "review" | "completed";
+  nextQuestion?: string | null;
+  extractedValues: Array<{
+    field: string;
+    label?: string | null;
+    value?: unknown;
+    confidence?: number | null;
+    status?: string | null;
+    section?: string | null;
+  }>;
+  assumptions: Array<{ field: string; label?: string | null; suggested_value?: unknown; reason?: string | null }>;
+  advisories: string[];
+  summaryRows: Array<{
+    field: string;
+    label: string;
+    value?: unknown;
+    confidence?: number | null;
+    status?: string | null;
+    section?: string | null;
+  }>;
+  readyForConfirmation: boolean;
+}
 
 const formatTimestamp = () => {
   const now = new Date();
@@ -619,7 +655,6 @@ const AIChatPanel = ({
   const scrollRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
   const sessionIdRef = useRef<string | null>(null);
-  const kudosCounterRef = useRef(0);
 
   const [historyOpen, setHistoryOpen] = useState(false);
 
@@ -656,6 +691,7 @@ const AIChatPanel = ({
   const [onboardingSection, setOnboardingSection] = useState(0);
   const [awaitingResponse, setAwaitingResponse] = useState(false);
   const [completedSections, setCompletedSections] = useState<number[]>([]);
+  const [onboardingRuntime, setOnboardingRuntime] = useState<OnboardingRuntimeState | null>(null);
   const [expandedReviewSection, setExpandedReviewSection] = useState<number | null>(null);
   const [reviewChipOpen, setReviewChipOpen] = useState(false);
 
@@ -668,6 +704,7 @@ const AIChatPanel = ({
       setShowFirstUseHint(true);
       setOnboardingActive(false);
       setCompletedSections([]);
+      setOnboardingRuntime(null);
     } catch { /* ignore */ }
   }, []);
 
@@ -689,6 +726,7 @@ const AIChatPanel = ({
       setShowFirstUseHint(false);
       setOnboardingActive(false);
       setCompletedSections([]);
+      setOnboardingRuntime(null);
     } catch { /* ignore */ }
   }, []);
 
@@ -819,6 +857,7 @@ const AIChatPanel = ({
     setOnboardingSection(0);
     setAwaitingResponse(false);
     setShowFirstUseHint(false);
+    setOnboardingRuntime(null);
 
     // Show greeting first, then first question after a delay
     setMessages((prev) => [
@@ -842,59 +881,99 @@ const AIChatPanel = ({
     setAwaitingResponse(false);
     setCompletedSections([]);
     setExpandedReviewSection(null);
+    setOnboardingRuntime(null);
     setMessages((prev) => [
       ...prev,
       { role: "ai", content: "No problem — I've saved your progress. You can resume anytime by tapping **Voice onboarding** again." },
     ]);
   }, []);
 
-  const handleOnboardingResponse = useCallback((text: string) => {
-    setMessages((prev) => [...prev, { role: "user", content: text }]);
+  const accumulatedValuesRef = useRef<OnboardingExtractedValue[]>([]);
+
+  const handleOnboardingResponse = useCallback(async (text: string, action: "answer" | "request_summary" | "confirm_summary" = "answer") => {
+    if (!text.trim()) return;
+    const trimmed = text.trim();
+    setMessages((prev) => [...prev, { role: "user", content: trimmed }]);
     setInput("");
     setInterimTranscript("");
     setAwaitingResponse(false);
+    setIsTyping(true);
 
-    // Show summary card after a brief pause
-    setTimeout(() => {
-      const notes = CHAT_ONBOARDING_NOTES[onboardingSection] || ["Response captured"];
-      const sName = CHAT_ONBOARDING_SECTIONS[onboardingSection].name;
-
-      // Pick a kudos message
-      const kudosIdx = kudosCounterRef.current % KUDOS_MESSAGES.length;
-      const kudosText = KUDOS_MESSAGES[kudosIdx];
-      const kudosId = kudosCounterRef.current;
-      kudosCounterRef.current += 1;
-
-      setCompletedSections((prev) => [...new Set([...prev, onboardingSection])]);
-      setMessages((prev) => [
-        ...prev,
-        { role: "ai", content: "", type: "summary", sectionName: sName, summaryNotes: notes },
-        { role: "ai", content: kudosText, type: "kudos", kudosId },
-      ]);
-
-      // Advance to next section
-      setTimeout(() => {
-        const next = onboardingSection + 1;
-        if (next < CHAT_ONBOARDING_SECTIONS.length) {
-          setOnboardingSection(next);
-          setAwaitingResponse(true);
-          const section = CHAT_ONBOARDING_SECTIONS[next];
-          setMessages((prev) => [
-            ...prev,
-            { role: "ai", content: `Section ${next + 1} of ${CHAT_ONBOARDING_SECTIONS_COUNT} · ${section.name}`, type: "section-start", sectionName: section.name },
-            { role: "ai", content: section.prompt },
-          ]);
-        } else {
-          // All done
-          setOnboardingActive(false);
-          setMessages((prev) => [
-            ...prev,
-            { role: "ai", content: "Great — your investment profile is complete! I've saved everything. You can now ask me anything about your portfolio." },
-          ]);
+    try {
+      const sid = await ensureSession();
+      const resp: ChatOnboardingTurnResponse = await sendOnboardingTurn(
+        sid,
+        trimmed,
+        action,
+        accumulatedValuesRef.current,
+        clientContext ?? undefined,
+      );
+      setIsTyping(false);
+      const summaryTable = buildOnboardingSummaryTable(resp.summary_rows);
+      setMessages((prev) => {
+        const next = [...prev];
+        if (summaryTable) {
+          next.push({ role: "ai", content: summaryTable });
         }
-      }, 800);
-    }, 500);
-  }, [onboardingSection]);
+        if (resp.assistant_message.content?.trim()) {
+          next.push({ role: "ai", content: resp.assistant_message.content.trim() });
+        }
+        return next;
+      });
+
+      accumulatedValuesRef.current = resp.extracted_values;
+      setOnboardingRuntime({
+        phase: resp.phase,
+        nextQuestion: resp.next_question,
+        extractedValues: resp.extracted_values,
+        assumptions: resp.assumptions,
+        advisories: resp.advisories,
+        summaryRows: resp.summary_rows,
+        readyForConfirmation: resp.ready_for_confirmation,
+      });
+
+      const sectionIdxMap: Record<string, number> = {
+        financial_picture: 0,
+        goals: 1,
+        risk: 2,
+      };
+      const completed = new Set<number>();
+      resp.extracted_values.forEach((item) => {
+        const idx = sectionIdxMap[item.section ?? ""];
+        if (idx !== undefined) completed.add(idx);
+      });
+      setCompletedSections(Array.from(completed).sort((a, b) => a - b));
+
+      if (resp.phase === "completed" && resp.committed) {
+        setOnboardingActive(false);
+        setAwaitingResponse(false);
+        setMessages((prev) => [
+          ...prev,
+          { role: "ai", content: "Great — your profile has been saved. You can now ask me anything about your portfolio." },
+        ]);
+        return;
+      }
+
+      if (resp.ready_for_confirmation || resp.phase === "review") {
+        setOnboardingSection(2);
+        setAwaitingResponse(true);
+        return;
+      }
+
+      if (resp.next_question) {
+        const next = Math.min(2, completed.size);
+        setOnboardingSection(next);
+        setAwaitingResponse(true);
+      } else {
+        setAwaitingResponse(true);
+      }
+    } catch (err: any) {
+      setIsTyping(false);
+      const fallback = err?.message ? `Onboarding request failed: ${err.message}` : "Onboarding request failed. Please try again.";
+      setMessages((prev) => [...prev, { role: "ai", content: fallback }]);
+      setAwaitingResponse(true);
+    }
+  }, [clientContext, ensureSession]);
 
   const handleGoalDemoUserMessage = useCallback((text: string) => {
     setMessages((prev) => [...prev, { role: "user", content: text }]);
@@ -1008,7 +1087,9 @@ const AIChatPanel = ({
 
     // Intercept during onboarding
     if (onboardingActive && awaitingResponse) {
-      handleOnboardingResponse(trimmed);
+      const isConfirmIntent = !!onboardingRuntime?.readyForConfirmation
+        && /^(yes|y|confirm|confirmed|looks good|okay|ok|done|proceed)\b/i.test(trimmed);
+      void handleOnboardingResponse(trimmed, isConfirmIntent ? "confirm_summary" : "answer");
       return;
     }
 
@@ -1045,6 +1126,7 @@ const AIChatPanel = ({
     clientContext,
     onboardingActive,
     awaitingResponse,
+    onboardingRuntime,
     handleOnboardingResponse,
     messages,
     goalPlanningDemo,
@@ -1140,6 +1222,23 @@ const AIChatPanel = ({
       : ["Why is my portfolio up today?"];
 
   const hasMessages = messages.length > 0 || isTyping;
+  const onboardingSectionNotes = useMemo(() => {
+    const map: Record<number, string[]> = {};
+    if (!onboardingRuntime) return map;
+    const sectionIdxMap: Record<string, number> = {
+      financial_picture: 0,
+      goals: 1,
+      risk: 2,
+    };
+    onboardingRuntime.extractedValues.forEach((item) => {
+      const idx = sectionIdxMap[item.section ?? ""];
+      if (idx === undefined) return;
+      if (!map[idx]) map[idx] = [];
+      const label = item.label || item.field;
+      map[idx].push(`${label}: ${formatOnboardingValue(item.value)}`);
+    });
+    return map;
+  }, [onboardingRuntime]);
 
   /* ── Shared message renderer ── */
   const renderMessages = () => (
@@ -1479,7 +1578,7 @@ const AIChatPanel = ({
                               )}
                             </button>
                             <AnimatePresence>
-                              {expandedReviewSection === idx && CHAT_ONBOARDING_NOTES[idx] && (
+                              {expandedReviewSection === idx && onboardingSectionNotes[idx] && (
                                 <motion.div
                                   initial={{ height: 0, opacity: 0 }}
                                   animate={{ height: "auto", opacity: 1 }}
@@ -1489,7 +1588,7 @@ const AIChatPanel = ({
                                 >
                                   <div className="px-2.5 pb-1.5 pl-7">
                                     <ul className="space-y-0.5">
-                                      {CHAT_ONBOARDING_NOTES[idx].map((note, ni) => (
+                                      {onboardingSectionNotes[idx].map((note, ni) => (
                                         <li key={ni} className="text-[10px] text-muted-foreground leading-relaxed">• {note}</li>
                                       ))}
                                     </ul>
@@ -1506,6 +1605,8 @@ const AIChatPanel = ({
               </div>
             </div>
           )}
+
+          {/* Onboarding details now shown inside chat messages only */}
 
           {/* Quick-action chips — wrapped & centered */}
           {!onboardingActive && (
