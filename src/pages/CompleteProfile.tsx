@@ -607,7 +607,7 @@ const CompleteProfile = () => {
   const [behavQ1, setBehavQ1] = useState("");
   const [behavQ2, setBehavQ2] = useState("");
   const [behavQ3, setBehavQ3] = useState("");
-  const [incomeRange, setIncomeRange] = useState<[number, number]>([30000000, 70000000]);
+  const [annualIncome, setAnnualIncome] = useState<string>("");
   const [expenseRange, setExpenseRange] = useState<[number, number]>([20000000, 50000000]);
   const [maxDrawdown, setMaxDrawdown] = useState("");
   const [comfortAssets, setComfortAssets] = useState<string[]>([]);
@@ -927,9 +927,19 @@ const CompleteProfile = () => {
 
             {/* Income & Expenses */}
             <div>
-              <FieldLabel>Annual income range</FieldLabel>
+              <FieldLabel>Annual income</FieldLabel>
               <p className="text-[10px] text-muted-foreground -mt-0.5 mb-1">Includes salary and regular income (e.g. rental income)</p>
-              <IncomeExpenseSlider label="Income" range={incomeRange} onChange={setIncomeRange} />
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">₹</span>
+                <input
+                  type="number"
+                  min={0}
+                  value={annualIncome}
+                  onChange={(e) => setAnnualIncome(e.target.value)}
+                  placeholder="e.g. 5000000"
+                  className="w-full rounded-lg border border-border bg-card pl-7 pr-3 py-2 text-sm text-foreground outline-none focus:border-accent transition-colors placeholder:text-[12px]"
+                />
+              </div>
             </div>
             <div>
               <FieldLabel>Annual expense range</FieldLabel>
