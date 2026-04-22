@@ -28,9 +28,9 @@ const HOLDINGS_BAR_COLORS: Record<string, { bg: string; border?: string }> = {
   ETF: { bg: "#C9A84C" },
 };
 
-function computeReturn(avgCost: number | null, currentValue: number): number | null {
-  if (!avgCost || avgCost <= 0) return null;
-  return ((currentValue - avgCost) / avgCost) * 100;
+function computeReturn(avgCost: number | null, currentPrice: number | null): number | null {
+  if (!avgCost || avgCost <= 0 || currentPrice == null) return null;
+  return ((currentPrice - avgCost) / avgCost) * 100;
 }
 
 interface CurrentAllocationCardProps {
@@ -69,7 +69,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
   const holdingsRows = portfolio && portfolio.holdings.length > 0
     ? portfolio.holdings.map((h) => {
         const colors = HOLDINGS_BAR_COLORS[h.instrument_type] ?? HOLDINGS_BAR_COLORS["Equity"];
-        const returnPct = computeReturn(h.average_cost, h.current_value);
+        const returnPct = computeReturn(h.average_cost, h.current_price);
         return {
           id: h.id,
           name: h.instrument_name,
