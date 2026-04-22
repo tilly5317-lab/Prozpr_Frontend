@@ -62,10 +62,12 @@
     --hairline: 220 14% 94%;
     --cream-bg: 48 20% 97%;
 
-    /* Recommended Investment Plan bucket accents. */
-    --bucket-equity: 173 76% 24%;   /* teal  #0F6B6B */
-    --bucket-debt: 219 39% 40%;     /* slate #3E5C8C */
-    --bucket-hybrid: 38 64% 47%;    /* amber #C28F2C */
+    /* Recommended Investment Plan bucket accents.
+       Equity mirrors --accent (the app's blue) so it matches the donut chart
+       and the highlighted words in the narrative summary. */
+    --bucket-equity: 215 60% 48%;   /* app blue — same family as donut's India Equity navy */
+    --bucket-debt: 219 39% 40%;     /* muted slate, distinct from equity */
+    --bucket-hybrid: 38 64% 47%;    /* warm amber, matches Gold wedge */
 
     /* Semantic warning (amber) — used for "X% remaining" / neutral cautions. */
     --warning: 38 80% 40%;
@@ -129,7 +131,7 @@
     --cream-bg: 60 2% 14%;
 
     /* Brighter bucket accents for dark surfaces. */
-    --bucket-equity: 173 55% 58%;
+    --bucket-equity: 246 85% 72%;  /* mirrors --accent (bright indigo) in dark mode */
     --bucket-debt: 219 55% 72%;
     --bucket-hybrid: 38 70% 65%;
 

@@ -27,18 +27,19 @@ const NetWorthSparkline = ({ compact = false, values }: NetWorthSparklineProps) 
         <AreaChart data={data} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
           <defs>
             <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="rgba(26, 26, 46, 0.15)" />
-              <stop offset="100%" stopColor="rgba(26, 26, 46, 0)" />
+              <stop offset="0%" stopColor="hsl(var(--accent))" stopOpacity={0.22} />
+              <stop offset="100%" stopColor="hsl(var(--accent))" stopOpacity={0} />
             </linearGradient>
           </defs>
           <YAxis domain={["dataMin - 2", "dataMax + 2"]} hide />
           <Area
             type="monotone"
             dataKey="v"
-            stroke="#1a1a2e"
-            strokeWidth={compact ? 1.5 : 2}
+            stroke="hsl(var(--accent))"
+            strokeWidth={compact ? 1.75 : 2.25}
             fill="url(#sparkGrad)"
             dot={false}
+            activeDot={{ r: 3.5, fill: "hsl(var(--accent))", stroke: "hsl(var(--card))", strokeWidth: 2 }}
             isAnimationActive={false}
           />
         </AreaChart>
