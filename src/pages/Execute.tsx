@@ -1235,7 +1235,13 @@ const Execute = () => {
                                 Custom
                               </span>
                             ) : etf.houseRec ? (
-                              <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 flex items-center gap-0.5">
+                              <span
+                                className="text-[9px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-0.5"
+                                style={{
+                                  backgroundColor: `hsl(var(--bucket-${group.bucket}) / 0.14)`,
+                                  color: `hsl(var(--bucket-${group.bucket}))`,
+                                }}
+                              >
                                 <Check className="h-2.5 w-2.5" /> House rec.
                               </span>
                             ) : null}
@@ -1291,8 +1297,10 @@ const Execute = () => {
                                   minHeight: 28,
                                   backgroundColor: matchesHouse
                                     ? "hsl(var(--wealth-green) / 0.18)"
-                                    : TRACK_BG,
-                                  color: matchesHouse ? "hsl(var(--wealth-green))" : LINK_COLOR,
+                                    : `hsl(var(--bucket-${group.bucket}) / 0.12)`,
+                                  color: matchesHouse
+                                    ? "hsl(var(--wealth-green))"
+                                    : `hsl(var(--bucket-${group.bucket}))`,
                                   fontSize: "11px",
                                   fontWeight: 600,
                                 }}

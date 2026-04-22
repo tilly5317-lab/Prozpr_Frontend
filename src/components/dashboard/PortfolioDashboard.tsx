@@ -179,8 +179,8 @@ function PortfolioMainPanel({
                 }}
                 className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold transition-all ${
                   active
-                    ? "bg-primary/10 text-primary"
-                    : "bg-muted/60 text-muted-foreground/60 hover:text-muted-foreground/80"
+                    ? "bg-accent/15 text-accent"
+                    : "bg-muted/60 text-muted-foreground hover:text-foreground"
                 }`}
               >
                 {seg.label}
@@ -223,8 +223,8 @@ function PortfolioMainPanel({
               }}
               className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition-all ${
                 timePeriod === period
-                  ? "bg-primary/10 text-primary"
-                  : "bg-muted/60 text-muted-foreground/50 hover:text-muted-foreground/70"
+                  ? "bg-accent/15 text-accent"
+                  : "bg-muted/60 text-muted-foreground hover:text-foreground"
               }`}
             >
               {period}
