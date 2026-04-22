@@ -207,9 +207,7 @@ function goalOutputToETFsAndBuckets(out: GoalAllocationOutput): {
     return {
       name: fund,
       shortName: fund.length > 22 ? `${fund.slice(0, 20)}…` : fund,
-      description:
-        [row.subgroup, row.fund_mapping.sub_category].filter(Boolean).join(" · ") ||
-        row.fund_mapping.asset_class,
+      description: row.fund_mapping.sub_category || row.fund_mapping.asset_class,
       allocation: Math.round((row.total / grandTotal) * 100),
       amount: 0,
       category: row.fund_mapping.sub_category || row.fund_mapping.asset_class,
