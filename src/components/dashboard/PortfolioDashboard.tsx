@@ -1,10 +1,10 @@
 import { useState, useEffect, type ReactNode } from "react";
 import { TrendingUp, TrendingDown, Info } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useNavigate } from "react-router-dom";
 import BottomNav from "@/components/BottomNav";
 import NetWorthSparkline from "./NetWorthSparkline";
 import CurrentAllocationCard from "./CurrentAllocationCard";
+import PortfolioAnalysisModal from "./PortfolioAnalysisModal";
 import DailyInsights from "./DailyInsights";
 import SkillsQuiz from "./SkillsQuiz";
 import ProfileSwitcher from "./ProfileSwitcher";
@@ -28,10 +28,10 @@ import {
 } from "@/lib/portfolioDemoData";
 import { formatInrCompact, formatInrPaisa } from "@/lib/utils";
 
-// Unified card style
-const CARD = "bg-white rounded-[14px] p-[14px]" as const;
-const CARD_BORDER = { border: "1px solid #f0f0f0" } as const;
-const SECTION_LABEL = { fontSize: 10, fontWeight: 500, textTransform: "uppercase" as const, letterSpacing: "1.5px", color: "#b0b0b0" };
+// Unified card style — uses tokens so it flips correctly in dark mode.
+const CARD = "bg-card rounded-[14px] p-[14px]" as const;
+const CARD_BORDER = { border: "1px solid hsl(var(--border))" } as const;
+const SECTION_LABEL = { fontSize: 10, fontWeight: 500, textTransform: "uppercase" as const, letterSpacing: "1.5px", color: "hsl(var(--muted-foreground))" };
 
 type ReturnKind = "simple" | "twr" | "mwr";
 
@@ -109,7 +109,6 @@ function PortfolioMainPanel({
   riskCategory,
   horizonLabel,
   middleSlot,
-  onOpenPerformance,
 }: {
   portfolio: PortfolioDetail;
   timePeriod: "1M" | "6M" | "1Y" | "All";
@@ -118,10 +117,10 @@ function PortfolioMainPanel({
   riskCategory: string | null;
   horizonLabel: string | null;
   middleSlot?: ReactNode;
-  onOpenPerformance?: () => void;
 }) {
   const [returnKind, setReturnKind] = useState<ReturnKind>("simple");
   const [infoOpen, setInfoOpen] = useState(false);
+  const [analysisOpen, setAnalysisOpen] = useState(false);
 
   const activeGain = deriveReturnByKind(portfolio.total_gain_percentage, returnKind);
   const simpleGain = portfolio.total_gain_percentage;
@@ -235,20 +234,15 @@ function PortfolioMainPanel({
 
         <NetWorthSparkline values={displayedSparkline} />
 
-        {onOpenPerformance && (
-          <button
-            type="button"
-            onClick={onOpenPerformance}
-            className="mt-2 pt-2 block w-full cursor-pointer"
-          >
-            <p
-              className="text-[13px] font-medium text-center w-full hover:opacity-80 transition-opacity"
-              style={{ color: "#1a1a2e" }}
-            >
-              Portfolio analysis →
-            </p>
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => setAnalysisOpen(true)}
+          className="mt-2 pt-2 block w-full cursor-pointer"
+        >
+          <p className="text-[13px] font-medium text-center w-full text-foreground hover:text-accent transition-colors">
+            Portfolio analysis →
+          </p>
+        </button>
       </div>
 
       {/* Current Allocation card (with merged holdings) */}
@@ -278,7 +272,7 @@ function PortfolioMainPanel({
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
               transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-              className="fixed inset-x-0 bottom-0 z-[60] mx-auto max-w-md rounded-t-2xl bg-white px-5 pt-5 shadow-xl overflow-y-auto"
+              className="fixed inset-x-0 bottom-0 z-[60] mx-auto max-w-md rounded-t-2xl bg-card px-5 pt-5 shadow-xl overflow-y-auto"
               style={{
                 paddingBottom: "calc(4rem + env(safe-area-inset-bottom, 8px) + 16px)",
                 maxHeight: "calc(100dvh - 4rem - env(safe-area-inset-bottom, 8px))",
@@ -295,6 +289,12 @@ function PortfolioMainPanel({
           </>
         )}
       </AnimatePresence>
+
+      <PortfolioAnalysisModal
+        open={analysisOpen}
+        onClose={() => setAnalysisOpen(false)}
+        portfolio={portfolio}
+      />
     </div>
   );
 }
@@ -341,9 +341,7 @@ function CumulativeMemberBreakdownCard({ data }: { data: CumulativePortfolioResp
 
 const PortfolioDashboard = () => {
   const { activeView } = useFamily();
-  const navigate = useNavigate();
   const [timePeriod, setTimePeriod] = useState<"1M" | "6M" | "1Y" | "All">("All");
-  const openPerformance = () => navigate("/portfolio/performance");
 
   const [cumulativeData, setCumulativeData] = useState<CumulativePortfolioResponse | null>(null);
   const [memberPortfolio, setMemberPortfolio] = useState<PortfolioDetail | null>(null);
@@ -459,7 +457,6 @@ const PortfolioDashboard = () => {
                 riskCategory={null}
                 horizonLabel="Combined family"
                 middleSlot={<CumulativeMemberBreakdownCard data={cumulativeData} />}
-                onOpenPerformance={openPerformance}
               />
               <div className={CARD} style={CARD_BORDER}>
                 <p className="mb-3" style={SECTION_LABEL}>Test your skills in 2 minutes!</p>
@@ -495,7 +492,6 @@ const PortfolioDashboard = () => {
                 sparkline={[memberPortfolio.total_value / 100000]}
                 riskCategory={null}
                 horizonLabel={null}
-                onOpenPerformance={openPerformance}
               />
               <div className={CARD} style={CARD_BORDER}>
                 <p className="mb-3" style={SECTION_LABEL}>Test your skills in 2 minutes!</p>
@@ -541,7 +537,6 @@ const PortfolioDashboard = () => {
                   selfProfile?.risk_profile?.investment_horizon ??
                   null
                 }
-                onOpenPerformance={openPerformance}
               />
               <div className={CARD} style={CARD_BORDER}>
                 <p className="mb-3" style={SECTION_LABEL}>Test your skills in 2 minutes!</p>

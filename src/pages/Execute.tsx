@@ -76,17 +76,18 @@ const BUCKET_LABEL: Record<Bucket, string> = {
 };
 
 // Deep teal · slate blue · warm amber — each bucket gets its own world.
+// Colours live in CSS variables so they flip correctly between light and dark themes.
 const BUCKET_ACCENT: Record<Bucket, string> = {
-  equity: "#0F6B6B",
-  debt: "#3E5C8C",
-  hybrid: "#C28F2C",
+  equity: "hsl(var(--bucket-equity))",
+  debt: "hsl(var(--bucket-debt))",
+  hybrid: "hsl(var(--bucket-hybrid))",
 };
 
 // Barely-there wash of the accent color — just enough tint to distinguish sections at a glance.
 const BUCKET_TINT: Record<Bucket, string> = {
-  equity: "rgba(15, 107, 107, 0.035)",
-  debt: "rgba(62, 92, 140, 0.035)",
-  hybrid: "rgba(194, 143, 44, 0.04)",
+  equity: "hsl(var(--bucket-equity) / 0.05)",
+  debt: "hsl(var(--bucket-debt) / 0.05)",
+  hybrid: "hsl(var(--bucket-hybrid) / 0.06)",
 };
 
 /* ── Searchable fund universe (used for manual "+ Add fund") ── */
@@ -452,8 +453,14 @@ const DonutChart = ({ data, centerLabel }: { data: { label: string; value: numbe
 };
 
 /* ── Theme colors used across the page ── */
-const PALE_BLUE = "#E8F0FE";
-const NAVY = "#1A3A6B";
+// Neutral slider track / faint chip surface — flips cleanly in dark mode.
+const TRACK_BG = "hsl(var(--muted))";
+// Main CTA fill and link/emphasis colour. Primary = navy in light, accent-inverted in dark.
+const CTA_BG = "hsl(var(--primary))";
+const CTA_FG = "hsl(var(--primary-foreground))";
+const LINK_COLOR = "hsl(var(--accent))";
+// Legacy alias — some helpers (renderBoldText) still reference NAVY by name.
+const NAVY = LINK_COLOR;
 
 /* ── Category-based summary ── */
 function categoryTotals(etfs: ETF[], allocations: number[]): Record<string, number> {
@@ -923,7 +930,11 @@ const Execute = () => {
           ? `₹${(totalInvestment / 100000).toFixed(1)}L`
           : `₹${Math.round(totalInvestment).toLocaleString("en-IN")}`;
 
-  const statusColor = isValid ? "#0f8a5f" : overAllocated ? "#c24c3a" : "#b8860b";
+  const statusColor = isValid
+    ? "hsl(var(--wealth-green))"
+    : overAllocated
+      ? "hsl(var(--destructive))"
+      : "hsl(var(--warning))";
 
   // Tagline + cash logic — compares totalInvestment to the user's current portfolio (or recommended baseline).
   const portfolioBase =
@@ -1036,7 +1047,7 @@ const Execute = () => {
         {/* Total investment — inline editable number with ₹ prefix + tagline */}
         <div
           className="mx-5 py-3"
-          style={{ borderTop: "1px solid #f0f0f0", borderBottom: "1px solid #f0f0f0" }}
+          style={{ borderTop: "1px solid hsl(var(--hairline))", borderBottom: "1px solid hsl(var(--hairline))" }}
         >
           <div className="flex items-center justify-between gap-3">
             <span
@@ -1171,7 +1182,9 @@ const Execute = () => {
                 const etf = etfList[i];
                 const pct = allocations[i] ?? 0;
                 const rupee = Math.round((totalInvestment * pct) / 100);
-                const catColor = etf.color;
+                // Slider fill flows from the bucket accent so it's theme-aware
+                // (category hex swatches from CAT_COLORS stay too dark on dark backgrounds).
+                const catColor = BUCKET_ACCENT[group.bucket];
                 const house = houseRecs[i] ?? etf.allocation ?? 0;
                 const matchesHouse = pct === house;
                 const fillPct = Math.min((pct / maxSliderPct) * 100, 100);
@@ -1237,7 +1250,7 @@ const Execute = () => {
                           <div className="relative h-6 flex items-center mt-3">
                             <div
                               className="absolute inset-x-0 h-2 rounded-full"
-                              style={{ backgroundColor: PALE_BLUE }}
+                              style={{ backgroundColor: TRACK_BG }}
                             />
                             <div
                               className="absolute left-0 h-2 rounded-full transition-all"
@@ -1249,7 +1262,7 @@ const Execute = () => {
                                 style={{
                                   left: `${(house / maxSliderPct) * 100}%`,
                                   transform: "translateX(-50%)",
-                                  backgroundColor: "#9CA3AF",
+                                  backgroundColor: "hsl(var(--muted-foreground))",
                                 }}
                                 title={`House: ${house}%`}
                               />
@@ -1276,8 +1289,10 @@ const Execute = () => {
                                 className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 mr-auto"
                                 style={{
                                   minHeight: 28,
-                                  backgroundColor: matchesHouse ? "#E8F5EE" : PALE_BLUE,
-                                  color: matchesHouse ? "#0f8a5f" : NAVY,
+                                  backgroundColor: matchesHouse
+                                    ? "hsl(var(--wealth-green) / 0.18)"
+                                    : TRACK_BG,
+                                  color: matchesHouse ? "hsl(var(--wealth-green))" : LINK_COLOR,
                                   fontSize: "11px",
                                   fontWeight: 600,
                                 }}
@@ -1329,7 +1344,7 @@ const Execute = () => {
                     </div>
                     {/* Hairline between cards */}
                     {!isLastInGroup && (
-                      <div style={{ height: 1, backgroundColor: "#f0f0f0" }} />
+                      <div style={{ height: 1, backgroundColor: "hsl(var(--hairline))" }} />
                     )}
                   </div>
                 );
@@ -1414,7 +1429,7 @@ const Execute = () => {
                     setSearchBucket(group.bucket);
                     setSearchQuery("");
                   }}
-                  className="w-full mt-1 py-2 flex items-center justify-center gap-1 rounded-lg text-[12px] font-medium hover:bg-white/40 transition-colors"
+                  className="w-full mt-1 py-2 flex items-center justify-center gap-1 rounded-lg text-[12px] font-medium hover:bg-card/40 transition-colors"
                   style={{ color: BUCKET_ACCENT[group.bucket], minHeight: 36 }}
                 >
                   <Plus className="h-3.5 w-3.5" /> Add fund
@@ -1449,8 +1464,7 @@ const Execute = () => {
 
       {/* Footer bar — sticky bottom */}
       <div
-        className="fixed bottom-[calc(3.5rem+env(safe-area-inset-bottom,8px))] left-0 right-0 z-30 border-t border-border"
-        style={{ backgroundColor: "#FFFFFF" }}
+        className="fixed bottom-[calc(3.5rem+env(safe-area-inset-bottom,8px))] left-0 right-0 z-30 border-t border-border bg-card"
       >
         <div className="max-w-md mx-auto px-4 py-3 flex items-center justify-between gap-2">
           <div className="flex-1 min-w-0">
@@ -1475,7 +1489,7 @@ const Execute = () => {
             <button
               onClick={resetToHouse}
               className="text-xs font-medium hover:underline flex items-center gap-1"
-              style={{ color: NAVY, fontSize: "11px", minHeight: 28 }}
+              style={{ color: LINK_COLOR, fontSize: "11px", minHeight: 28 }}
             >
               <RotateCcw className="h-3 w-3" /> Reset
             </button>
@@ -1485,7 +1499,7 @@ const Execute = () => {
                 if (!isValid) return;
               }}
               className="rounded-full text-sm font-semibold flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ backgroundColor: NAVY, color: "#FFFFFF", height: "36px", padding: "0 16px" }}
+              style={{ backgroundColor: CTA_BG, color: CTA_FG, height: "36px", padding: "0 16px" }}
             >
               Confirm & invest <ArrowRight className="h-3.5 w-3.5" />
             </button>
@@ -1497,7 +1511,7 @@ const Execute = () => {
               type="button"
               onClick={rebalanceRemaining}
               className="inline-flex items-center gap-1 font-medium"
-              style={{ fontSize: "11px", color: NAVY }}
+              style={{ fontSize: "11px", color: LINK_COLOR }}
             >
               <RotateCcw className="h-3 w-3" /> Rebalance remaining
             </button>
@@ -1614,7 +1628,7 @@ const Execute = () => {
                       <div style={{ height: 150, width: "100%" }}>
                         <ResponsiveContainer width="100%" height="100%">
                           <LineChart data={series} margin={{ top: 6, right: 12, left: 0, bottom: 4 }}>
-                            <CartesianGrid stroke="#f0f0f0" vertical={false} />
+                            <CartesianGrid stroke="hsl(var(--hairline))" vertical={false} />
                             <XAxis
                               dataKey="label"
                               tick={{ fontSize: 10, fill: "#9a9a9a" }}
@@ -1632,7 +1646,7 @@ const Execute = () => {
                               contentStyle={{
                                 fontSize: 11,
                                 borderRadius: 8,
-                                border: "1px solid #ececec",
+                                border: "1px solid hsl(var(--hairline))",
                               }}
                               formatter={(v: number) => `${v}%`}
                             />
@@ -1700,7 +1714,7 @@ const Execute = () => {
                     {/* Actions */}
                     <div
                       className="px-4 py-3 flex items-center gap-2"
-                      style={{ borderTop: "1px solid #f0f0f0" }}
+                      style={{ borderTop: "1px solid hsl(var(--hairline))" }}
                     >
                       <button
                         type="button"
@@ -1716,8 +1730,8 @@ const Execute = () => {
                       <button
                         type="button"
                         onClick={() => setDetailIdx(null)}
-                        className="flex-1 rounded-full text-[13px] font-semibold text-white"
-                        style={{ backgroundColor: NAVY, padding: "8px 16px" }}
+                        className="flex-1 rounded-full text-[13px] font-semibold"
+                        style={{ backgroundColor: CTA_BG, color: CTA_FG, padding: "8px 16px" }}
                       >
                         Done
                       </button>

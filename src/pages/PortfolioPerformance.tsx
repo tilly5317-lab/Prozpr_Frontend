@@ -31,7 +31,7 @@ const BENCHMARK = { name: "Nifty 50", ticker: "NIFTY" };
 const GREEN = "hsl(160 50% 38%)";       // wealth-green
 const GREEN_FILL = "hsl(160 50% 38% / 0.18)";
 const BENCHMARK_COLOR = "#b8b8b8";
-const HAIRLINE = "#ececec";
+const HAIRLINE = "hsl(var(--hairline))";
 
 const METRIC_COPY: Record<
   MetricKey,
@@ -125,7 +125,7 @@ function TimeRangeDropdown({
       {open && (
         <>
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-[calc(100%+4px)] z-40 min-w-[84px] rounded-xl border border-border/60 bg-white p-1 shadow-lg">
+          <div className="absolute right-0 top-[calc(100%+4px)] z-40 min-w-[84px] rounded-xl border border-border/60 bg-card p-1 shadow-lg">
             {TIME_RANGES.map((r) => (
               <button
                 key={r}
@@ -177,7 +177,7 @@ function InfoSheet({
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
             transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-            className="fixed inset-x-0 bottom-0 z-[60] mx-auto max-w-md rounded-t-2xl bg-white px-5 pt-5 shadow-xl overflow-y-auto"
+            className="fixed inset-x-0 bottom-0 z-[60] mx-auto max-w-md rounded-t-2xl bg-card px-5 pt-5 shadow-xl overflow-y-auto"
             style={{
               paddingBottom: "calc(4rem + env(safe-area-inset-bottom, 8px) + 16px)",
               maxHeight: "calc(100dvh - 4rem - env(safe-area-inset-bottom, 8px))",
@@ -213,7 +213,7 @@ function ChartTooltip({ active, payload, userLabel, benchLabel }: {
   if (!active || !payload || !payload.length) return null;
   const p = payload[0].payload;
   return (
-    <div className="rounded-lg border border-border/60 bg-white px-2.5 py-1.5 shadow-sm">
+    <div className="rounded-lg border border-border/60 bg-card px-2.5 py-1.5 shadow-sm">
       <p className="text-[11px] font-semibold" style={{ color: GREEN }}>
         {userLabel}: {formatPct(p.user)}
       </p>
@@ -451,7 +451,7 @@ const PortfolioPerformance = () => {
               {/* Latest-point label */}
               <div className="relative">
                 <span
-                  className="absolute -top-[26px] right-1 rounded-md bg-white/95 px-1.5 py-0.5 text-[11px] font-semibold"
+                  className="absolute -top-[26px] right-1 rounded-md bg-card/95 px-1.5 py-0.5 text-[11px] font-semibold"
                   style={{ color: GREEN }}
                 >
                   {formatPct(latestUser)}

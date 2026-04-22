@@ -171,7 +171,7 @@ function classifySubCategory(name: string, bucket: HoldingBucket): string | null
 }
 
 // Expanded-card tokens — match the "HOLDINGS / RISK PROFILE / HORIZON" meta strip
-const HAIRLINE = "#f0f0f0";
+const HAIRLINE = "hsl(var(--hairline))";
 const POSITIVE = "#0f8a5f";
 const NEGATIVE = "#c24c3a";
 const LABEL_CLASS = "text-[10px] text-muted-foreground uppercase tracking-wide";
@@ -312,10 +312,13 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
 
   return (
     <div>
-      <p className="text-[10px] uppercase tracking-[1.5px] mb-3" style={{ color: "#b0b0b0", fontWeight: 500 }}>
+      <p
+        className="text-[10px] uppercase tracking-[1.5px] mb-3 text-muted-foreground"
+        style={{ fontWeight: 500 }}
+      >
         Current Allocation
         {!hasAllocations && (
-          <span className="ml-2 font-normal normal-case text-[10px]" style={{ color: "#b0b0b0" }}>
+          <span className="ml-2 font-normal normal-case text-[10px] text-muted-foreground">
             (sample — add allocations in Portfolio)
           </span>
         )}
@@ -381,10 +384,10 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
       {/* View holdings toggle */}
       <div
         className="mt-2 pt-2 cursor-pointer"
-        style={{ borderTop: "1px solid #f5f5f5" }}
+        style={{ borderTop: "1px solid hsl(var(--hairline))" }}
         onClick={() => setHoldingsOpen((o) => !o)}
       >
-        <p className="text-[13px] font-medium text-center w-full" style={{ color: "#1a1a2e" }}>
+        <p className="text-[13px] font-medium text-center w-full text-foreground hover:text-accent transition-colors">
           {holdingsOpen ? "Hide holdings ↑" : "View holdings →"}
         </p>
       </div>
@@ -399,7 +402,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
             transition={{ duration: 0.25, ease: "easeInOut" }}
             className="overflow-hidden"
           >
-            <div className="pt-3 space-y-2" style={{ borderTop: "1px solid #f5f5f5" }}>
+            <div className="pt-3 space-y-2" style={{ borderTop: "1px solid hsl(var(--hairline))" }}>
               {subFilter && (
                 <div className="mb-1 flex items-center gap-2 rounded-lg bg-muted/60 px-2.5 py-1.5">
                   <span className="text-[10px] text-muted-foreground">Filtering by</span>

@@ -57,6 +57,84 @@
     --sidebar-accent-foreground: 240 5.9% 10%;
     --sidebar-border: 220 13% 91%;
     --sidebar-ring: 217.2 91.2% 59.8%;
+
+    /* Portfolio-page tokens — mirrored per theme so components can stay token-driven. */
+    --hairline: 220 14% 94%;
+    --cream-bg: 48 20% 97%;
+
+    /* Recommended Investment Plan bucket accents. */
+    --bucket-equity: 173 76% 24%;   /* teal  #0F6B6B */
+    --bucket-debt: 219 39% 40%;     /* slate #3E5C8C */
+    --bucket-hybrid: 38 64% 47%;    /* amber #C28F2C */
+
+    /* Semantic warning (amber) — used for "X% remaining" / neutral cautions. */
+    --warning: 38 80% 40%;
+    --warning-foreground: 0 0% 100%;
+  }
+
+  .dark {
+    /* Warm charcoal palette — not pure black, not cold blue-grey. */
+    --background: 0 0% 8%;           /* #141414 */
+    --foreground: 48 18% 93%;        /* #f0efe9 warm off-white */
+
+    --card: 60 2% 11%;               /* #1c1c1b — lighter than page for depth */
+    --card-foreground: 48 18% 93%;
+
+    --popover: 60 2% 11%;
+    --popover-foreground: 48 18% 93%;
+
+    --primary: 48 18% 93%;
+    --primary-foreground: 0 0% 8%;
+
+    --secondary: 60 2% 14%;          /* #232322 inset panels */
+    --secondary-foreground: 48 18% 93%;
+
+    --muted: 60 2% 15%;
+    --muted-foreground: 45 4% 64%;   /* #a8a7a1 */
+
+    --accent: 246 85% 67%;           /* #6b5ff5 brighter indigo for contrast */
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 8 70% 61%;        /* #e06a56 warm red */
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 60 3% 18%;             /* #2a2a28 barely-visible */
+    --input: 60 3% 18%;
+    --ring: 246 85% 67%;
+
+    --wealth-navy: 48 18% 93%;       /* flips to light ink so nav-bg CTAs read right on dark */
+    --wealth-navy-light: 60 2% 20%;
+    --wealth-blue: 246 85% 67%;
+    --wealth-blue-light: 246 50% 18%;
+    --wealth-green: 156 51% 50%;     /* #3fbf8a brighter for legibility */
+    --wealth-green-light: 156 40% 14%;
+    --wealth-amber: 35 57% 62%;      /* #d4a868 */
+    --wealth-amber-light: 35 40% 16%;
+    --wealth-surface: 0 0% 8%;
+    --wealth-card-shadow: 0 0% 0%;
+    --tilly-bubble: 60 2% 14%;
+    --tilly-accent-border: 48 18% 93%;
+    --user-bubble: 246 85% 32%;
+
+    --sidebar-background: 0 0% 8%;
+    --sidebar-foreground: 48 18% 93%;
+    --sidebar-primary: 48 18% 93%;
+    --sidebar-primary-foreground: 0 0% 8%;
+    --sidebar-accent: 60 2% 14%;
+    --sidebar-accent-foreground: 48 18% 93%;
+    --sidebar-border: 60 3% 18%;
+    --sidebar-ring: 246 85% 67%;
+
+    --hairline: 60 3% 18%;
+    --cream-bg: 60 2% 14%;
+
+    /* Brighter bucket accents for dark surfaces. */
+    --bucket-equity: 173 55% 58%;
+    --bucket-debt: 219 55% 72%;
+    --bucket-hybrid: 38 70% 65%;
+
+    --warning: 38 70% 65%;
+    --warning-foreground: 0 0% 8%;
   }
 }
 
@@ -68,6 +146,17 @@
   body {
     @apply bg-background text-foreground font-sans antialiased;
     font-family: 'DM Sans', system-ui, sans-serif;
+    transition: background-color 200ms ease, color 200ms ease;
+  }
+
+  /* Smooth colour swap on the surfaces that carry the theme. */
+  [data-theme-surface],
+  .bg-background,
+  .bg-card,
+  .bg-popover,
+  .bg-secondary,
+  .bg-muted {
+    transition: background-color 200ms ease, border-color 200ms ease;
   }
 }
 
