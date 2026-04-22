@@ -704,37 +704,92 @@ export function shouldSkipPostSetupChatPrompts(
   return inferOnboardingComplete(me, profile) && inferAccountLinkingComplete(portfolio, linkedAccounts);
 }
 
-/** Ideal allocation pipeline output (mirrors ``Ideal_asset_allocation.models.AllocationOutput``). */
-export interface SubgroupItem {
-  subgroup: string;
-  asset_class: string;
+/** Goal-based allocation output (mirrors ``goal_based_allocation_pydantic.models.GoalAllocationOutput``). */
+export interface GoalAllocationGoal {
+  goal_name: string;
+  time_to_goal_months: number;
+  amount_needed: number;
+  goal_priority: string;
+  investment_goal: string;
+}
+
+export interface GoalAllocationFutureInvestment {
+  bucket?: string | null;
+  future_investment_amount: number;
+  message?: string | null;
+}
+
+export interface GoalAllocationSubgroupFundMapping {
+  asset_class: "equity" | "debt" | "others";
+  asset_subgroup: string;
+  sub_category: string;
   recommended_fund: string;
-  asset_class_subcategory: string;
   isin: string;
-  pct: number;
   amount: number;
 }
 
-export interface IdealAllocationOutput {
-  client_summary?: {
+export interface AggregatedSubgroupRow {
+  subgroup: string;
+  sub_category?: string | null;
+  emergency: number;
+  short_term: number;
+  medium_term: number;
+  long_term: number;
+  total: number;
+  fund_mapping?: GoalAllocationSubgroupFundMapping | null;
+}
+
+export interface GoalAllocationBucket {
+  bucket: "emergency" | "short_term" | "medium_term" | "long_term";
+  goals: GoalAllocationGoal[];
+  total_goal_amount: number;
+  allocated_amount: number;
+  future_investment?: GoalAllocationFutureInvestment | null;
+  subgroup_amounts: Record<string, number>;
+  rationale?: string | null;
+  goal_rationales: Record<string, string>;
+}
+
+export interface GoalAllocationAssetClassSplit {
+  bucket: "emergency" | "short_term" | "medium_term" | "long_term";
+  equity: number;
+  debt: number;
+  others: number;
+  equity_pct: number;
+  debt_pct: number;
+  others_pct: number;
+}
+
+export interface GoalAllocationAssetClassBlock {
+  per_bucket: GoalAllocationAssetClassSplit[];
+  equity_total: number;
+  debt_total: number;
+  others_total: number;
+  equity_total_pct: number;
+  debt_total_pct: number;
+  others_total_pct: number;
+}
+
+export interface GoalAllocationAssetClassBreakdown {
+  planned: GoalAllocationAssetClassBlock;
+  actual: GoalAllocationAssetClassBlock;
+  actual_sum_matches_grand_total: boolean;
+}
+
+export interface GoalAllocationOutput {
+  client_summary: {
     age: number;
     occupation?: string | null;
-    investment_horizon: string;
-    investment_goal: string;
     effective_risk_score: number;
     total_corpus: number;
+    goals: GoalAllocationGoal[];
   };
-  asset_class_allocation?: {
-    equities: { pct: number; amount: number };
-    debt: { pct: number; amount: number };
-    others: { pct: number; amount: number };
-  };
-  subgroup_allocation?: {
-    equity: SubgroupItem[];
-    debt: SubgroupItem[];
-    others: SubgroupItem[];
-  };
-  grand_total?: number;
+  bucket_allocations: GoalAllocationBucket[];
+  aggregated_subgroups: AggregatedSubgroupRow[];
+  future_investments_summary: GoalAllocationFutureInvestment[];
+  grand_total: number;
+  all_amounts_in_multiples_of_100: boolean;
+  asset_class_breakdown?: GoalAllocationAssetClassBreakdown | null;
 }
 
 export interface RecommendedPlanSnapshot {
@@ -745,7 +800,7 @@ export interface RecommendedPlanSnapshot {
     equity_pct?: number;
     debt_pct?: number;
     others_pct?: number;
-    ideal_allocation_output?: IdealAllocationOutput;
+    goal_allocation_output?: GoalAllocationOutput;
   };
   effective_at: string;
   source?: string | null;

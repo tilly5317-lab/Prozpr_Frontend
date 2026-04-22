@@ -6,9 +6,9 @@ import BottomNav from "@/components/BottomNav";
 import {
   getMyPortfolio,
   getRecommendedPlan,
-  type IdealAllocationOutput,
+  type AggregatedSubgroupRow,
+  type GoalAllocationOutput,
   type PortfolioDetail,
-  type SubgroupItem,
 } from "@/lib/api";
 
 /* ── ETF Data (original) ── */
@@ -175,18 +175,20 @@ function generateSummary(allocations: number[]): string {
 
 type AssetBucket = "equity" | "debt" | "others";
 
-function idealOutputToETFsAndBuckets(out: IdealAllocationOutput): {
+function goalOutputToETFsAndBuckets(out: GoalAllocationOutput): {
   etfs: ETF[];
   buckets: AssetBucket[];
   houseRecs: number[];
 } | null {
-  const sg = out.subgroup_allocation;
-  if (!sg) return null;
-  const pairs: { item: SubgroupItem; bucket: AssetBucket }[] = [];
-  (sg.equity ?? []).forEach((item) => pairs.push({ item, bucket: "equity" }));
-  (sg.debt ?? []).forEach((item) => pairs.push({ item, bucket: "debt" }));
-  (sg.others ?? []).forEach((item) => pairs.push({ item, bucket: "others" }));
-  if (pairs.length === 0) return null;
+  const rows = (out.aggregated_subgroups ?? []).filter(
+    (r): r is AggregatedSubgroupRow & {
+      fund_mapping: NonNullable<AggregatedSubgroupRow["fund_mapping"]>;
+    } => r.fund_mapping != null,
+  );
+  if (rows.length === 0) return null;
+  const grandTotal = out.grand_total || rows.reduce((s, r) => s + r.total, 0);
+  if (grandTotal <= 0) return null;
+
   const ROW_COLORS = [
     "#1B3A6B",
     "#4A7FA5",
@@ -199,34 +201,42 @@ function idealOutputToETFsAndBuckets(out: IdealAllocationOutput): {
     "#ec4899",
     "#14b8a6",
   ];
-  const etfs: ETF[] = pairs.map(({ item }, i) => ({
-    name: item.recommended_fund,
-    shortName:
-      item.recommended_fund.length > 22
-        ? `${item.recommended_fund.slice(0, 20)}…`
-        : item.recommended_fund,
-    description: [item.subgroup, item.asset_class_subcategory].filter(Boolean).join(" · ") || item.asset_class,
-    allocation: item.pct,
-    amount: 0,
-    category: item.asset_class_subcategory || item.asset_class,
-    color: ROW_COLORS[i % ROW_COLORS.length],
-    exchange: "—",
-    houseRec: true,
-    returns1Y: "—",
-    returns2Y: "—",
-    returns3Y: "—",
-    expenseRatio: "—",
-    exitLoad: "—",
-    minInvestment: "—",
-  }));
+
+  const etfs: ETF[] = rows.map((row, i) => {
+    const fund = row.fund_mapping.recommended_fund;
+    return {
+      name: fund,
+      shortName: fund.length > 22 ? `${fund.slice(0, 20)}…` : fund,
+      description:
+        [row.subgroup, row.fund_mapping.sub_category].filter(Boolean).join(" · ") ||
+        row.fund_mapping.asset_class,
+      allocation: Math.round((row.total / grandTotal) * 100),
+      amount: 0,
+      category: row.fund_mapping.sub_category || row.fund_mapping.asset_class,
+      color: ROW_COLORS[i % ROW_COLORS.length],
+      exchange: "—",
+      houseRec: true,
+      returns1Y: "—",
+      returns2Y: "—",
+      returns3Y: "—",
+      expenseRatio: "—",
+      exitLoad: "—",
+      minInvestment: "—",
+    };
+  });
+
   return {
     etfs,
-    buckets: pairs.map((p) => p.bucket),
-    houseRecs: pairs.map((p) => p.item.pct),
+    buckets: rows.map((r) => r.fund_mapping.asset_class as AssetBucket),
+    houseRecs: etfs.map((e) => e.allocation),
   };
 }
 
-function generateAiSummary(out: IdealAllocationOutput, allocations: number[], buckets: AssetBucket[]): string {
+function generateAiSummary(
+  out: GoalAllocationOutput,
+  allocations: number[],
+  buckets: AssetBucket[],
+): string {
   let eq = 0;
   let debt = 0;
   let oth = 0;
@@ -239,8 +249,15 @@ function generateAiSummary(out: IdealAllocationOutput, allocations: number[], bu
   const cs = out.client_summary;
   const parts: string[] = [];
   if (cs) {
+    const goalCount = cs.goals?.length ?? 0;
+    const goalNames = (cs.goals ?? []).slice(0, 3).map((g) => g.goal_name);
+    const goalList = goalNames.length > 0 ? `: ${goalNames.join(", ")}` : "";
     parts.push(
-      `Plan from your latest AI session: **${cs.investment_goal}**, horizon **${cs.investment_horizon}**, risk score **${cs.effective_risk_score}**.`
+      `Plan from your latest AI session — risk score **${cs.effective_risk_score.toFixed(
+        1,
+      )}**, corpus **₹${cs.total_corpus.toLocaleString()}** across **${goalCount} goal${
+        goalCount === 1 ? "" : "s"
+      }**${goalList}.`,
     );
   }
   parts.push(`Your sliders show **equity ${eq}%**, **debt ${debt}%**, **others ${oth}%**.`);
@@ -358,7 +375,7 @@ function portfolioToDonutData(p: PortfolioDetail): { label: string; value: numbe
 const Execute = () => {
   const navigate = useNavigate();
   const [useAiPlan, setUseAiPlan] = useState(false);
-  const [idealPlanOutput, setIdealPlanOutput] = useState<IdealAllocationOutput | null>(null);
+  const [goalPlanOutput, setGoalPlanOutput] = useState<GoalAllocationOutput | null>(null);
   const [aiBuckets, setAiBuckets] = useState<AssetBucket[]>([]);
   const [aiHouseRec, setAiHouseRec] = useState<number[]>([]);
   const [recommendedPlanMeta, setRecommendedPlanMeta] = useState<{
@@ -374,12 +391,12 @@ const Execute = () => {
   const [showTillyPill, setShowTillyPill] = useState(true);
 
   const etfList = useMemo(() => {
-    if (useAiPlan && idealPlanOutput) {
-      const built = idealOutputToETFsAndBuckets(idealPlanOutput);
+    if (useAiPlan && goalPlanOutput) {
+      const built = goalOutputToETFsAndBuckets(goalPlanOutput);
       if (built?.etfs.length) return built.etfs;
     }
     return defaultETFs;
-  }, [useAiPlan, idealPlanOutput]);
+  }, [useAiPlan, goalPlanOutput]);
 
   const allocAssetsForSliders = useMemo(() => {
     if (useAiPlan && etfList.length > 0) {
@@ -407,10 +424,10 @@ const Execute = () => {
       try {
         const rec = await getRecommendedPlan();
         if (cancelled) return;
-        const out = rec.snapshot?.allocation?.ideal_allocation_output;
-        const built = out ? idealOutputToETFsAndBuckets(out) : null;
+        const out = rec.snapshot?.allocation?.goal_allocation_output;
+        const built = out ? goalOutputToETFsAndBuckets(out) : null;
         if (out && built?.houseRecs.length) {
-          setIdealPlanOutput(out);
+          setGoalPlanOutput(out);
           setUseAiPlan(true);
           setAiBuckets(built.buckets);
           setAiHouseRec(built.houseRecs);
@@ -444,11 +461,11 @@ const Execute = () => {
   const maxSliderPct = useAiPlan ? 100 : 50;
 
   const summary = useMemo(() => {
-    if (useAiPlan && idealPlanOutput && aiBuckets.length > 0 && aiBuckets.length === allocations.length) {
-      return generateAiSummary(idealPlanOutput, allocations, aiBuckets);
+    if (useAiPlan && goalPlanOutput && aiBuckets.length > 0 && aiBuckets.length === allocations.length) {
+      return generateAiSummary(goalPlanOutput, allocations, aiBuckets);
     }
     return generateSummary(allocations);
-  }, [useAiPlan, idealPlanOutput, aiBuckets, allocations]);
+  }, [useAiPlan, goalPlanOutput, aiBuckets, allocations]);
 
   const updateAllocation = useCallback(
     (idx: number, val: number) => {
