@@ -640,6 +640,7 @@ const Execute = () => {
   const [searchBucket, setSearchBucket] = useState<Bucket | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [detailIdx, setDetailIdx] = useState<number | null>(null);
+  const [allocView, setAllocView] = useState<"funds" | "manual">("funds");
 
   const setTotalInvestment = useCallback((v: number) => {
     setTotalInvestmentRaw(v);
@@ -1134,14 +1135,39 @@ const Execute = () => {
           )}
         </div>
 
-        {/* Section heading */}
-        <div className="px-5 pt-4 pb-2">
+        {/* Section heading + view toggle */}
+        <div className="px-5 pt-4 pb-2 flex items-center justify-between gap-3">
           <p
             className="text-muted-foreground uppercase"
             style={{ fontSize: "10px", fontWeight: 500, letterSpacing: "1.5px" }}
           >
             Your allocation · {etfList.length} ETFs
           </p>
+          <div className="inline-flex rounded-full bg-muted/60 p-0.5">
+            {(
+              [
+                { id: "funds" as const, label: "Funds" },
+                { id: "manual" as const, label: "Manual allocation" },
+              ]
+            ).map((opt) => {
+              const active = allocView === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setAllocView(opt.id)}
+                  className={`rounded-full px-2.5 py-1 text-[10px] font-semibold transition-colors ${
+                    active
+                      ? "bg-card text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                  aria-pressed={active}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Unified ETF list — grouped by bucket */}
@@ -1231,7 +1257,7 @@ const Execute = () => {
                               {etf.exchange}
                             </span>
                             {etf.custom ? (
-                              <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400">
+                              <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 dark:bg-muted dark:text-muted-foreground">
                                 Custom
                               </span>
                             ) : etf.houseRec ? (
@@ -1246,107 +1272,111 @@ const Execute = () => {
                               </span>
                             ) : null}
                             {etf.customerPref && (
-                              <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                              <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-muted dark:text-muted-foreground">
                                 Customer preference
                               </span>
                             )}
                           </div>
 
-                          {/* Always-visible slider */}
-                          <div className="relative h-6 flex items-center mt-3">
-                            <div
-                              className="absolute inset-x-0 h-2 rounded-full"
-                              style={{ backgroundColor: TRACK_BG }}
-                            />
-                            <div
-                              className="absolute left-0 h-2 rounded-full transition-all"
-                              style={{ width: `${fillPct}%`, backgroundColor: catColor }}
-                            />
-                            {!etf.custom && (
-                              <div
-                                className="absolute h-4 w-0.5 rounded-full z-10"
-                                style={{
-                                  left: `${(house / maxSliderPct) * 100}%`,
-                                  transform: "translateX(-50%)",
-                                  backgroundColor: "hsl(var(--muted-foreground))",
-                                }}
-                                title={`House: ${house}%`}
-                              />
-                            )}
-                            <input
-                              type="range"
-                              min={0}
-                              max={maxSliderPct}
-                              value={pct}
-                              onChange={(e) => updateAllocation(i, Number(e.target.value))}
-                              className="alloc-slider absolute inset-x-0 h-6 w-full appearance-none bg-transparent cursor-pointer z-20
-                                [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:bg-card [&::-webkit-slider-thumb]:shadow-sm
-                                [&::-moz-range-thumb]:h-5 [&::-moz-range-thumb]:w-5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:bg-card"
-                              style={{ "--slider-fill": catColor } as React.CSSProperties}
-                            />
-                          </div>
+                          {allocView === "manual" && (
+                            <>
+                              {/* Allocation slider */}
+                              <div className="relative h-6 flex items-center mt-3">
+                                <div
+                                  className="absolute inset-x-0 h-2 rounded-full"
+                                  style={{ backgroundColor: TRACK_BG }}
+                                />
+                                <div
+                                  className="absolute left-0 h-2 rounded-full transition-all"
+                                  style={{ width: `${fillPct}%`, backgroundColor: catColor }}
+                                />
+                                {!etf.custom && (
+                                  <div
+                                    className="absolute h-4 w-0.5 rounded-full z-10"
+                                    style={{
+                                      left: `${(house / maxSliderPct) * 100}%`,
+                                      transform: "translateX(-50%)",
+                                      backgroundColor: "hsl(var(--muted-foreground))",
+                                    }}
+                                    title={`House: ${house}%`}
+                                  />
+                                )}
+                                <input
+                                  type="range"
+                                  min={0}
+                                  max={maxSliderPct}
+                                  value={pct}
+                                  onChange={(e) => updateAllocation(i, Number(e.target.value))}
+                                  className="alloc-slider absolute inset-x-0 h-6 w-full appearance-none bg-transparent cursor-pointer z-20
+                                    [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:bg-card [&::-webkit-slider-thumb]:shadow-sm
+                                    [&::-moz-range-thumb]:h-5 [&::-moz-range-thumb]:w-5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:bg-card"
+                                  style={{ "--slider-fill": catColor } as React.CSSProperties}
+                                />
+                              </div>
 
-                          {/* Input row: [ ✓ House chip (if not custom) ] … [ % ] [ ₹ ] */}
-                          <div className="flex items-center gap-2 flex-wrap mt-2">
-                            {!etf.custom && (
-                              <button
-                                type="button"
-                                onClick={() => resetSingleToHouse(i)}
-                                className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 mr-auto"
-                                style={{
-                                  minHeight: 28,
-                                  backgroundColor: matchesHouse
-                                    ? "hsl(var(--wealth-green) / 0.18)"
-                                    : `hsl(var(--bucket-${group.bucket}) / 0.12)`,
-                                  color: matchesHouse
-                                    ? "hsl(var(--wealth-green))"
-                                    : `hsl(var(--bucket-${group.bucket}))`,
-                                  fontSize: "11px",
-                                  fontWeight: 600,
-                                }}
-                              >
-                                {matchesHouse && <Check className="h-3 w-3" />}
-                                House: {house}%
-                              </button>
-                            )}
-                            {etf.custom && <div className="mr-auto" />}
-                            <div className="flex items-center gap-1">
-                              <input
-                                type="text"
-                                inputMode="numeric"
-                                value={pct}
-                                onChange={(e) => {
-                                  const v = parseInt(e.target.value.replace(/[^0-9]/g, ""), 10);
-                                  updateAllocation(i, isNaN(v) ? 0 : v);
-                                }}
-                                className="border border-border rounded-md bg-card text-right text-foreground px-1.5 py-1"
-                                style={{
-                                  width: "52px",
-                                  fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-                                  fontSize: "13px",
-                                }}
-                              />
-                              <span className="text-muted-foreground" style={{ fontSize: "11px" }}>%</span>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <input
-                                type="text"
-                                inputMode="numeric"
-                                value={formatINRNoSymbol(rupee)}
-                                onChange={(e) => {
-                                  const raw = e.target.value.replace(/[^0-9]/g, "");
-                                  updateFromRupee(i, Number(raw) || 0);
-                                }}
-                                className="border border-border rounded-md bg-card text-right text-foreground px-1.5 py-1"
-                                style={{
-                                  width: "90px",
-                                  fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-                                  fontSize: "13px",
-                                }}
-                              />
-                              <span className="text-muted-foreground" style={{ fontSize: "11px" }}>₹</span>
-                            </div>
-                          </div>
+                              {/* Input row: [ ✓ House chip (if not custom) ] … [ % ] [ ₹ ] */}
+                              <div className="flex items-center gap-2 flex-wrap mt-2">
+                                {!etf.custom && (
+                                  <button
+                                    type="button"
+                                    onClick={() => resetSingleToHouse(i)}
+                                    className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 mr-auto"
+                                    style={{
+                                      minHeight: 28,
+                                      backgroundColor: matchesHouse
+                                        ? "hsl(var(--wealth-green) / 0.18)"
+                                        : `hsl(var(--bucket-${group.bucket}) / 0.12)`,
+                                      color: matchesHouse
+                                        ? "hsl(var(--wealth-green))"
+                                        : `hsl(var(--bucket-${group.bucket}))`,
+                                      fontSize: "11px",
+                                      fontWeight: 600,
+                                    }}
+                                  >
+                                    {matchesHouse && <Check className="h-3 w-3" />}
+                                    House: {house}%
+                                  </button>
+                                )}
+                                {etf.custom && <div className="mr-auto" />}
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={pct}
+                                    onChange={(e) => {
+                                      const v = parseInt(e.target.value.replace(/[^0-9]/g, ""), 10);
+                                      updateAllocation(i, isNaN(v) ? 0 : v);
+                                    }}
+                                    className="border border-border rounded-md bg-card text-right text-foreground px-1.5 py-1"
+                                    style={{
+                                      width: "52px",
+                                      fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                                      fontSize: "13px",
+                                    }}
+                                  />
+                                  <span className="text-muted-foreground" style={{ fontSize: "11px" }}>%</span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={formatINRNoSymbol(rupee)}
+                                    onChange={(e) => {
+                                      const raw = e.target.value.replace(/[^0-9]/g, "");
+                                      updateFromRupee(i, Number(raw) || 0);
+                                    }}
+                                    className="border border-border rounded-md bg-card text-right text-foreground px-1.5 py-1"
+                                    style={{
+                                      width: "90px",
+                                      fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                                      fontSize: "13px",
+                                    }}
+                                  />
+                                  <span className="text-muted-foreground" style={{ fontSize: "11px" }}>₹</span>
+                                </div>
+                              </div>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>

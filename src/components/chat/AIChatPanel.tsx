@@ -223,6 +223,7 @@ const CHAT_ONBOARDING_SECTIONS = [
   { name: "Your financial picture", prompt: "Let's talk about your finances. Walk me through your income, savings, assets, any property you own, and any large expenses coming up.", estimate: "~5 minutes" },
   { name: "What are you trying to achieve?", prompt: "What are your main investment goals? Think about what you're saving for, how much you need, and when you'll need the money.", estimate: "~5 minutes" },
   { name: "Your investment preference and focus", prompt: "Let's talk about risk. How would you describe your investment experience, and how would you react if your portfolio dropped 20% in a month?", estimate: "~1 minute" },
+  { name: "Tax details", prompt: "Last bit — tax. Which slab does your income fall into (0%, 5%, 10%, 15%, 20%, or 30%), and are you on the old or new tax regime? This helps me recommend tax-efficient instruments.", estimate: "~1 minute" },
 ];
 
 const CHAT_ONBOARDING_SECTIONS_COUNT = CHAT_ONBOARDING_SECTIONS.length;
@@ -231,6 +232,7 @@ const CHAT_ONBOARDING_NOTES: Record<number, string[]> = {
   0: ["Monthly income ₹1.8L", "Expenses around ₹90K/month", "Existing FD of ₹12L", "Property valued at ₹85L, no major liabilities"],
   1: ["Retirement by 55 — primary goal", "Children's education fund in 8 years", "Target corpus: ₹2Cr", "Secondary: vacation fund"],
   2: ["Moderate experience with mutual funds", "Comfortable with 15-20% drawdowns", "Prefers steady growth over quick gains", "10-15 year horizon"],
+  3: ["Marginal tax rate: 30% slab", "Old regime — claims 80C, HRA, home loan interest", "Open to ELSS for next FY", "Will revisit after appraisal"],
 };
 
 const KUDOS_MESSAGES = [
@@ -357,11 +359,11 @@ const SummaryCard = ({ sectionName, notes }: { sectionName: string; notes: strin
         }}
       >
         <ParticleBurst active={showParticles} />
-        {/* Header */}
+        {/* Header — text stays light in both themes because the bubble itself is always dark navy. */}
         <div className="flex items-center justify-between gap-1.5 mb-1">
           <div className="flex items-center gap-1.5">
             <span className="text-[11px]">✅</span>
-            <span className="text-[11px] font-semibold text-primary-foreground/90">{sectionName} — captured</span>
+            <span className="text-[11px] font-semibold text-white/90">{sectionName} — captured</span>
           </div>
           <div className="flex items-center gap-1">
             {!editing && (
@@ -369,7 +371,7 @@ const SummaryCard = ({ sectionName, notes }: { sectionName: string; notes: strin
                 onClick={() => setEditing(true)}
                 className="p-0.5 rounded hover:bg-white/10 transition-colors"
               >
-                <Pencil className="h-2.5 w-2.5 text-primary-foreground/50" />
+                <Pencil className="h-2.5 w-2.5 text-white/60" />
               </button>
             )}
             <button
@@ -377,9 +379,9 @@ const SummaryCard = ({ sectionName, notes }: { sectionName: string; notes: strin
               className="p-0.5 rounded hover:bg-white/10 transition-colors"
             >
               {expanded ? (
-                <ChevronUp className="h-3 w-3 text-primary-foreground/50" />
+                <ChevronUp className="h-3 w-3 text-white/60" />
               ) : (
-                <ChevronDown className="h-3 w-3 text-primary-foreground/50" />
+                <ChevronDown className="h-3 w-3 text-white/60" />
               )}
             </button>
           </div>
@@ -405,7 +407,7 @@ const SummaryCard = ({ sectionName, notes }: { sectionName: string; notes: strin
                         updated[ni] = e.target.value;
                         setEditNotes(updated);
                       }}
-                      className="w-full bg-white/10 rounded px-2 py-1 text-[10px] text-primary-foreground/80 outline-none border border-white/10 focus:border-accent/50"
+                      className="w-full bg-white/10 rounded px-2 py-1 text-[10px] text-white/85 outline-none border border-white/10 focus:border-accent/50"
                     />
                   ))}
                   <button
@@ -418,7 +420,7 @@ const SummaryCard = ({ sectionName, notes }: { sectionName: string; notes: strin
               ) : (
                 <ul className="space-y-0.5">
                   {editNotes.map((note, ni) => (
-                    <li key={ni} className="text-[10px] text-primary-foreground/60 leading-relaxed">• {note}</li>
+                    <li key={ni} className="text-[10px] text-white/75 leading-relaxed">• {note}</li>
                   ))}
                 </ul>
               )}
@@ -1196,7 +1198,8 @@ const AIChatPanel = ({
             </div>
           ) : msg.role === "user" ? (
             <div className="flex justify-end">
-              <div className="max-w-[80%] rounded-2xl rounded-tr-sm px-3 py-2 text-[12px] leading-relaxed text-primary-foreground"
+              <div
+                className="max-w-[80%] rounded-2xl rounded-tr-sm px-3 py-2 text-[12px] leading-relaxed text-white"
                 style={{ backgroundColor: "hsl(var(--user-bubble) / 0.85)" }}
               >
                 {msg.content}

@@ -94,7 +94,7 @@
     --muted: 60 2% 15%;
     --muted-foreground: 45 4% 64%;   /* #a8a7a1 */
 
-    --accent: 246 85% 67%;           /* #6b5ff5 brighter indigo for contrast */
+    --accent: 215 75% 65%;           /* bright blue — keeps the app on a blue accent in dark too */
     --accent-foreground: 0 0% 100%;
 
     --destructive: 8 70% 61%;        /* #e06a56 warm red */
@@ -102,12 +102,12 @@
 
     --border: 60 3% 18%;             /* #2a2a28 barely-visible */
     --input: 60 3% 18%;
-    --ring: 246 85% 67%;
+    --ring: 215 75% 65%;
 
     --wealth-navy: 48 18% 93%;       /* flips to light ink so nav-bg CTAs read right on dark */
     --wealth-navy-light: 60 2% 20%;
-    --wealth-blue: 246 85% 67%;
-    --wealth-blue-light: 246 50% 18%;
+    --wealth-blue: 215 75% 65%;
+    --wealth-blue-light: 215 55% 18%;
     --wealth-green: 156 51% 50%;     /* #3fbf8a brighter for legibility */
     --wealth-green-light: 156 40% 14%;
     --wealth-amber: 35 57% 62%;      /* #d4a868 */
@@ -116,7 +116,7 @@
     --wealth-card-shadow: 0 0% 0%;
     --tilly-bubble: 60 2% 14%;
     --tilly-accent-border: 48 18% 93%;
-    --user-bubble: 246 85% 32%;
+    --user-bubble: 215 70% 32%;
 
     --sidebar-background: 0 0% 8%;
     --sidebar-foreground: 48 18% 93%;
@@ -125,15 +125,16 @@
     --sidebar-accent: 60 2% 14%;
     --sidebar-accent-foreground: 48 18% 93%;
     --sidebar-border: 60 3% 18%;
-    --sidebar-ring: 246 85% 67%;
+    --sidebar-ring: 215 75% 65%;
 
     --hairline: 60 3% 18%;
     --cream-bg: 60 2% 14%;
 
-    /* Brighter bucket accents for dark surfaces. */
-    --bucket-equity: 246 85% 72%;  /* mirrors --accent (bright indigo) in dark mode */
-    --bucket-debt: 219 55% 72%;
-    --bucket-hybrid: 38 70% 65%;
+    /* Dark surfaces — keep Equity as the single brand accent and let Debt / Hybrid
+       sit as quiet, low-saturation neutrals so the page doesn't feel over-coloured. */
+    --bucket-equity: 215 75% 70%;  /* clean blue (no purple), mirrors --accent */
+    --bucket-debt: 220 14% 64%;    /* muted blue-grey, near muted-foreground */
+    --bucket-hybrid: 38 22% 62%;   /* warm tan-grey, gently distinct from debt */
 
     --warning: 38 70% 65%;
     --warning-foreground: 0 0% 8%;
@@ -202,6 +203,32 @@
   100% {
     transform: translateX(-50%);
   }
+}
+
+/* Diagonal sheen sweep — used by the gold-tier event banner. */
+@keyframes shimmer-sweep {
+  0% { transform: translateX(-120%) skewX(-18deg); }
+  100% { transform: translateX(420%) skewX(-18deg); }
+}
+.animate-shimmer-sweep {
+  animation: shimmer-sweep 4s ease-in-out infinite;
+}
+
+/* Soft pulsing glow halo behind premium cards. */
+@keyframes glow-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 18px -2px rgba(218, 178, 96, 0.45),
+      0 0 42px -8px rgba(218, 178, 96, 0.28);
+  }
+  50% {
+    box-shadow:
+      0 0 28px -2px rgba(232, 196, 124, 0.65),
+      0 0 60px -8px rgba(232, 196, 124, 0.4);
+  }
+}
+.animate-glow-pulse {
+  animation: glow-pulse 3.2s ease-in-out infinite;
 }
 
 .animate-ticker {
