@@ -1230,14 +1230,18 @@ const Execute = () => {
                               <p className="text-[13px] font-semibold text-foreground leading-tight underline decoration-transparent hover:decoration-muted-foreground/40 underline-offset-4 transition-colors">
                                 {etf.name}
                               </p>
-                              <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
-                                {etf.description}
-                              </p>
+                              {allocView === "funds" && (
+                                <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
+                                  {etf.description}
+                                </p>
+                              )}
                             </button>
-                            <div className="text-right shrink-0">
-                              <p className="text-[13px] font-semibold text-foreground">{pct}%</p>
-                              <p className="text-[11px] text-muted-foreground">{formatINR(rupee)}</p>
-                            </div>
+                            {allocView === "funds" && (
+                              <div className="text-right shrink-0">
+                                <p className="text-[13px] font-semibold text-foreground">{pct}%</p>
+                                <p className="text-[11px] text-muted-foreground">{formatINR(rupee)}</p>
+                              </div>
+                            )}
                             {etf.custom && (
                               <button
                                 type="button"
@@ -1249,34 +1253,37 @@ const Execute = () => {
                               </button>
                             )}
                           </div>
-                          <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                            <span className="text-[9px] font-medium px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">
-                              {etf.category}
-                            </span>
-                            <span className="text-[9px] font-medium px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">
-                              {etf.exchange}
-                            </span>
-                            {etf.custom ? (
-                              <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 dark:bg-muted dark:text-muted-foreground">
-                                Custom
+
+                          {allocView === "funds" && (
+                            <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                              <span className="text-[9px] font-medium px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">
+                                {etf.category}
                               </span>
-                            ) : etf.houseRec ? (
-                              <span
-                                className="text-[9px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-0.5"
-                                style={{
-                                  backgroundColor: `hsl(var(--bucket-${group.bucket}) / 0.14)`,
-                                  color: `hsl(var(--bucket-${group.bucket}))`,
-                                }}
-                              >
-                                <Check className="h-2.5 w-2.5" /> House rec.
+                              <span className="text-[9px] font-medium px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">
+                                {etf.exchange}
                               </span>
-                            ) : null}
-                            {etf.customerPref && (
-                              <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-muted dark:text-muted-foreground">
-                                Customer preference
-                              </span>
-                            )}
-                          </div>
+                              {etf.custom ? (
+                                <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 dark:bg-muted dark:text-muted-foreground">
+                                  Custom
+                                </span>
+                              ) : etf.houseRec ? (
+                                <span
+                                  className="text-[9px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-0.5"
+                                  style={{
+                                    backgroundColor: `hsl(var(--bucket-${group.bucket}) / 0.14)`,
+                                    color: `hsl(var(--bucket-${group.bucket}))`,
+                                  }}
+                                >
+                                  <Check className="h-2.5 w-2.5" /> House rec.
+                                </span>
+                              ) : null}
+                              {etf.customerPref && (
+                                <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-muted dark:text-muted-foreground">
+                                  Customer preference
+                                </span>
+                              )}
+                            </div>
+                          )}
 
                           {allocView === "manual" && (
                             <>
