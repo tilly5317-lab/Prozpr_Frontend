@@ -1,9 +1,11 @@
 import { useState, useEffect, type ReactNode } from "react";
-import { TrendingUp, TrendingDown, Info } from "lucide-react";
+import { TrendingUp, TrendingDown } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import BottomNav from "@/components/BottomNav";
 import NetWorthSparkline from "./NetWorthSparkline";
 import CurrentAllocationCard from "./CurrentAllocationCard";
+import LiveEventBanner from "./LiveEventBanner";
+import PeerComparisonCard from "./PeerComparisonCard";
 import PortfolioAnalysisModal from "./PortfolioAnalysisModal";
 import DailyInsights from "./DailyInsights";
 import SkillsQuiz from "./SkillsQuiz";
@@ -32,53 +34,6 @@ import { formatInrCompact, formatInrPaisa } from "@/lib/utils";
 const CARD = "bg-card rounded-[14px] p-[14px]" as const;
 const CARD_BORDER = { border: "1px solid hsl(var(--border))" } as const;
 const SECTION_LABEL = { fontSize: 10, fontWeight: 500, textTransform: "uppercase" as const, letterSpacing: "1.5px", color: "hsl(var(--muted-foreground))" };
-
-type ReturnKind = "simple" | "twr" | "mwr";
-
-const RETURN_SEGMENTS: { id: ReturnKind; label: string }[] = [
-  { id: "simple", label: "Total" },
-  { id: "twr", label: "TWR" },
-  { id: "mwr", label: "MWR" },
-];
-
-const RETURN_INFO: Record<ReturnKind, { title: string; short: string; long: string }> = {
-  simple: {
-    title: "Total return",
-    short: "The straightforward gain or loss on your total invested amount.",
-    long: "Total return compares your current portfolio value against the total amount you've put in. It's the most intuitive number, but it doesn't account for when you added money — a large contribution last month is treated the same as one made five years ago.",
-  },
-  twr: {
-    title: "Time-Weighted Return",
-    short: "Measures how your investments performed, independent of when you added or withdrew money. Best for comparing against benchmarks.",
-    long: "Time-Weighted Return strips out the effect of your deposits and withdrawals so you're looking at pure investment performance. It's the metric fund managers report, because it lets you compare your portfolio apples-to-apples against a benchmark like the Nifty 50.",
-  },
-  mwr: {
-    title: "Money-Weighted Return",
-    short: "Reflects your actual return, factoring in the timing and size of your contributions. Best for understanding your personal experience.",
-    long: "Money-Weighted Return (sometimes called IRR) weighs the timing and size of every contribution and withdrawal. If you invested more right before a rally, your MWR will be higher than TWR; if you invested right before a drop, it will be lower. It tells you how your money, specifically, has performed.",
-  },
-};
-
-// 3Y / 5Y return style: derive TWR / MWR gain % from the simple gain until the API returns them.
-function deriveReturnByKind(simpleGain: number | null, kind: ReturnKind): number | null {
-  if (simpleGain === null) return null;
-  if (kind === "simple") return simpleGain;
-  // Typical real-world relationship: TWR strips contribution tailwind (usually lower magnitude),
-  // MWR sits between simple and TWR.
-  const factor = kind === "twr" ? 0.87 : 0.94;
-  return Math.round(simpleGain * factor * 100) / 100;
-}
-
-// Tilt the sparkline so its end-point reflects the selected metric while keeping overall shape.
-function variantSparkline(values: number[] | undefined, endFactor: number): number[] | undefined {
-  if (!values || values.length <= 1) return values;
-  const n = values.length;
-  return values.map((v, i) => {
-    const t = i / (n - 1);
-    const scale = 1 + (endFactor - 1) * t;
-    return v * scale;
-  });
-}
 
 function cumulativeToPortfolioDetail(c: CumulativePortfolioResponse): PortfolioDetail {
   return {
@@ -118,24 +73,10 @@ function PortfolioMainPanel({
   horizonLabel: string | null;
   middleSlot?: ReactNode;
 }) {
-  const [returnKind, setReturnKind] = useState<ReturnKind>("simple");
-  const [infoOpen, setInfoOpen] = useState(false);
   const [analysisOpen, setAnalysisOpen] = useState(false);
 
-  const activeGain = deriveReturnByKind(portfolio.total_gain_percentage, returnKind);
-  const simpleGain = portfolio.total_gain_percentage;
-
-  const endFactor =
-    returnKind === "simple" || simpleGain === null || activeGain === null
-      ? 1
-      : (1 + activeGain / 100) / (1 + simpleGain / 100);
-  const displayedSparkline =
-    returnKind === "simple" ? sparkline : variantSparkline(sparkline, endFactor);
-
-  const openInfo = () => {
-    setInfoOpen(true);
-  };
-
+  // Headline pill shows the simple total return; TWR / MWR breakdowns live in the Portfolio Analysis modal.
+  const activeGain = portfolio.total_gain_percentage;
   const stop = (e: React.MouseEvent) => e.stopPropagation();
 
   return (
@@ -165,52 +106,7 @@ function PortfolioMainPanel({
           )}
         </div>
 
-        {/* Return-type segmented control */}
-        <div className="flex items-center gap-1.5 mt-2" onClick={stop}>
-          {RETURN_SEGMENTS.map((seg) => {
-            const active = returnKind === seg.id;
-            return (
-              <button
-                key={seg.id}
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setReturnKind(seg.id);
-                }}
-                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold transition-all ${
-                  active
-                    ? "bg-accent/15 text-accent"
-                    : "bg-muted/60 text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {seg.label}
-                {active && (
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    aria-label={`About ${seg.label} return`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openInfo();
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        openInfo();
-                      }
-                    }}
-                    className="inline-flex items-center rounded-full hover:opacity-80"
-                  >
-                    <Info className="h-3 w-3" />
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        <p className="text-[10px] text-muted-foreground/80 mt-2 mb-3">Invested {formatInrPaisa(portfolio.total_invested)}</p>
+        <p className="text-[10px] text-muted-foreground/80 mt-1 mb-3">Invested {formatInrPaisa(portfolio.total_invested)}</p>
 
         <div className="flex gap-1.5 mb-3" onClick={stop}>
           {(["1M", "6M", "1Y", "All"] as const).map((period) => (
@@ -232,7 +128,7 @@ function PortfolioMainPanel({
           ))}
         </div>
 
-        <NetWorthSparkline values={displayedSparkline} />
+        <NetWorthSparkline values={sparkline} />
 
         <button
           type="button"
@@ -255,40 +151,6 @@ function PortfolioMainPanel({
       </div>
 
       {middleSlot}
-
-      {/* Return-type info bottom sheet — sits above BottomNav (z-50) with nav-clearance padding. */}
-      <AnimatePresence>
-        {infoOpen && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[60] bg-black/30"
-              onClick={() => setInfoOpen(false)}
-            />
-            <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-              className="fixed inset-x-0 bottom-0 z-[60] mx-auto max-w-md rounded-t-2xl bg-card px-5 pt-5 shadow-xl overflow-y-auto"
-              style={{
-                paddingBottom: "calc(4rem + env(safe-area-inset-bottom, 8px) + 16px)",
-                maxHeight: "calc(100dvh - 4rem - env(safe-area-inset-bottom, 8px))",
-              }}
-            >
-              <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-border" />
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">
-                {RETURN_INFO[returnKind].title}
-              </p>
-              <p className="text-[14px] text-foreground leading-relaxed">
-                {RETURN_INFO[returnKind].short} {RETURN_INFO[returnKind].long}
-              </p>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
 
       <PortfolioAnalysisModal
         open={analysisOpen}
@@ -458,9 +320,14 @@ const PortfolioDashboard = () => {
                 horizonLabel="Combined family"
                 middleSlot={<CumulativeMemberBreakdownCard data={cumulativeData} />}
               />
+              <LiveEventBanner />
               <div className={CARD} style={CARD_BORDER}>
                 <p className="mb-3" style={SECTION_LABEL}>Test your skills in 2 minutes!</p>
                 <SkillsQuiz />
+              </div>
+              <div className={CARD} style={CARD_BORDER}>
+                <p className="mb-3" style={SECTION_LABEL}>Head to head · 1Y</p>
+                <PeerComparisonCard portfolio={cumulativeToPortfolioDetail(cumulativeData)} />
               </div>
               <div className={`${CARD} pb-24`} style={CARD_BORDER}>
                 <DailyInsights />
@@ -493,9 +360,14 @@ const PortfolioDashboard = () => {
                 riskCategory={null}
                 horizonLabel={null}
               />
+              <LiveEventBanner />
               <div className={CARD} style={CARD_BORDER}>
                 <p className="mb-3" style={SECTION_LABEL}>Test your skills in 2 minutes!</p>
                 <SkillsQuiz />
+              </div>
+              <div className={CARD} style={CARD_BORDER}>
+                <p className="mb-3" style={SECTION_LABEL}>Head to head · 1Y</p>
+                <PeerComparisonCard portfolio={memberPortfolio} />
               </div>
               <div className={`${CARD} pb-24`} style={CARD_BORDER}>
                 <DailyInsights />
@@ -538,9 +410,14 @@ const PortfolioDashboard = () => {
                   null
                 }
               />
+              <LiveEventBanner />
               <div className={CARD} style={CARD_BORDER}>
                 <p className="mb-3" style={SECTION_LABEL}>Test your skills in 2 minutes!</p>
                 <SkillsQuiz />
+              </div>
+              <div className={CARD} style={CARD_BORDER}>
+                <p className="mb-3" style={SECTION_LABEL}>Head to head · 1Y</p>
+                <PeerComparisonCard portfolio={selfPortfolio} />
               </div>
               <div className={`${CARD} pb-24`} style={CARD_BORDER}>
                 <DailyInsights />
