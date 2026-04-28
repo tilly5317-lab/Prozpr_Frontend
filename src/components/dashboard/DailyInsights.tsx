@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { motion, AnimatePresence, PanInfo } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Sparkles, X, ExternalLink } from "lucide-react";
 
 interface NewsItem {
@@ -129,38 +129,30 @@ const DailyInsights = () => {
         </div>
       </div>
 
-      {/* Expanded 50% bottom sheet */}
+      {/* Centered article modal */}
       <AnimatePresence>
         {selectedArticle && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-end justify-center bg-foreground/30 backdrop-blur-sm"
+            className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-foreground/30 backdrop-blur-sm"
             onClick={() => setSelectedArticle(null)}
           >
             <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 30, stiffness: 300 }}
-              drag="y"
-              dragConstraints={{ top: 0, bottom: 0 }}
-              dragElastic={0.2}
-              onDragEnd={(_: unknown, info: PanInfo) => {
-                if (info.offset.y > 80) setSelectedArticle(null);
-              }}
+              initial={{ opacity: 0, y: 18, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.97 }}
+              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-md rounded-t-2xl bg-card shadow-xl overflow-hidden"
-              style={{ height: "50vh", touchAction: "none" }}
+              className="w-full max-w-md rounded-2xl bg-card shadow-2xl overflow-hidden flex flex-col"
+              style={{ maxHeight: "min(82dvh, 600px)" }}
+              role="dialog"
+              aria-modal="true"
+              aria-label={selectedArticle.headline}
             >
-              {/* Drag handle */}
-              <div className="flex justify-center pt-2.5 pb-1">
-                <div className="h-1 w-9 rounded-full bg-border" />
-              </div>
-
               {/* Header image */}
-              <div className="relative h-32 w-full overflow-hidden">
+              <div className="relative h-36 w-full overflow-hidden shrink-0">
                 <img
                   src={selectedArticle.imageUrl}
                   alt={selectedArticle.headline}
@@ -170,6 +162,7 @@ const DailyInsights = () => {
                 <button
                   onClick={() => setSelectedArticle(null)}
                   className="absolute top-3 right-3 h-7 w-7 rounded-full bg-card/80 backdrop-blur flex items-center justify-center"
+                  aria-label="Close"
                 >
                   <X className="h-3.5 w-3.5 text-foreground" />
                 </button>
@@ -182,7 +175,7 @@ const DailyInsights = () => {
               </div>
 
               {/* Content */}
-              <div className="p-4 space-y-3 overflow-y-auto" style={{ maxHeight: "calc(50vh - 180px)" }}>
+              <div className="p-4 space-y-3 overflow-y-auto flex-1">
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] text-muted-foreground">{selectedArticle.source}</span>
                   <span className="text-[10px] text-muted-foreground/40">•</span>
