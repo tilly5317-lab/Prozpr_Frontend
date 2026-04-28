@@ -64,6 +64,16 @@ interface Message {
   showViewExecutePlan?: boolean;
 }
 
+const DUMMY_USER_CONTEXT: UserInfo = {
+  id: "dummy-user",
+  country_code: "+91",
+  mobile: "0000000000",
+  email: null,
+  first_name: "Guest",
+  last_name: null,
+  is_onboarding_complete: false,
+};
+
 const GOAL_DEMO_CHECKPOINT_LABELS = ["Goals", "Corpus", "Deadline", "Inflation", "Review", "Summary"] as const;
 
 function formatDemoINR(n: number): string {
@@ -617,6 +627,7 @@ const AIChatPanel = ({
   const [showFirstUseHint, setShowFirstUseHint] = useState(true);
   const [micError, setMicError] = useState(false);
   const [clientContext, setClientContext] = useState<Record<string, unknown> | null>(null);
+  const [isClientContextLoading, setIsClientContextLoading] = useState(!goalPlanningDemo);
   const [chatStartTime, setChatStartTime] = useState(formatTimestamp);
   const scrollRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
@@ -742,6 +753,7 @@ const AIChatPanel = ({
   useEffect(() => {
     let mounted = true;
     const loadContext = async () => {
+      if (!goalPlanningDemo) setIsClientContextLoading(true);
       try {
         const [me, profile, portfolio, linkedRes] = await Promise.all([
           getMe(),
@@ -757,7 +769,18 @@ const AIChatPanel = ({
           linkedAccounts: linkedRes.accounts,
         });
       } catch {
-        if (mounted) setClientContext(null);
+        if (mounted) {
+          // Keep chat usable when personalization APIs fail.
+          setClientContext({
+            user: DUMMY_USER_CONTEXT,
+            profile: null,
+            portfolio: null,
+            linkedAccounts: [],
+            isDummy: true,
+          });
+        }
+      } finally {
+        if (mounted) setIsClientContextLoading(false);
       }
     };
     loadContext();
@@ -791,6 +814,12 @@ const AIChatPanel = ({
   }, [goalPlanningDemo]);
 
   const tillyInsight = (() => {
+    if (isClientContextLoading) {
+      return "Loading your profile and portfolio context...";
+    }
+    if (clientContext?.isDummy) {
+      return "We could not fetch live account data yet. You can still chat, and we'll personalize once your data is available.";
+    }
     const p = clientContext?.portfolio as PortfolioDetail | null | undefined;
     const linked = clientContext?.linkedAccounts as LinkAccountInfo[] | undefined;
     if (!inferAccountLinkingComplete(p ?? null, linked ?? null)) {
@@ -1361,7 +1390,14 @@ const AIChatPanel = ({
                   }}
                 >
                   <p className="mb-0.5 text-[10px] font-semibold" style={{ color: "hsl(38, 45%, 54%)" }}>💡 Tilly Insight</p>
-                  {tillyInsight}
+                  {isClientContextLoading ? (
+                    <span className="inline-flex items-center gap-1.5">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                      {tillyInsight}
+                    </span>
+                  ) : (
+                    tillyInsight
+                  )}
                 </div>
               </div>
             </motion.div>
@@ -1511,7 +1547,7 @@ const AIChatPanel = ({
           )}
 
           {/* Quick-action chips — wrapped & centered */}
-          {!onboardingActive && (
+          {!onboardingActive && !isClientContextLoading && (
             (!hasMessages && !chatFirst) ? (
               <div className="flex flex-col items-center gap-3 px-4 pb-2">
                 <button
