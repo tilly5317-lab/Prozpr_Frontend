@@ -225,9 +225,9 @@ const HOLDINGS_BAR_BY_BUCKET: Record<HoldingBucket, { bg: string; border?: strin
   hybrid: { bg: "#C9A84C" },                         // warm gold — matches donut "Gold"
 };
 
-function computeReturn(avgCost: number | null, currentValue: number): number | null {
-  if (!avgCost || avgCost <= 0) return null;
-  return ((currentValue - avgCost) / avgCost) * 100;
+function computeReturn(avgCost: number | null, currentPrice: number | null): number | null {
+  if (!avgCost || avgCost <= 0 || currentPrice == null) return null;
+  return ((currentPrice - avgCost) / avgCost) * 100;
 }
 
 interface CurrentAllocationCardProps {
