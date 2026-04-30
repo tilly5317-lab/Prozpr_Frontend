@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, ChevronRight, Mic, MicOff, Send, X, Sparkles } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import BottomNav from "@/components/BottomNav";
+import { listRebalancingRecommendations, type RebalancingRecommendationInfo } from "@/lib/api";
 
 interface ETFOption {
   ticker: string;
@@ -21,7 +22,7 @@ interface ETFOption {
   minInvestment?: string;
 }
 
-const options: ETFOption[] = [
+const DEFAULT_OPTIONS: ETFOption[] = [
   {
     ticker: "CSPX",
     name: "iShares Core S&P 500 UCITS ETF",
@@ -84,6 +85,42 @@ const options: ETFOption[] = [
   },
 ];
 
+function asString(v: unknown, fallback = ""): string {
+  if (typeof v === "string") return v;
+  if (typeof v === "number") return String(v);
+  return fallback;
+}
+
+function parseRecommendationOptions(rec: RebalancingRecommendationInfo): ETFOption[] {
+  const data = rec.recommendation_data;
+  if (!data || typeof data !== "object") return [];
+  const candidates = [
+    (data as Record<string, unknown>).options,
+    (data as Record<string, unknown>).recommendations,
+    (data as Record<string, unknown>).candidates,
+    (data as Record<string, unknown>).etfs,
+  ];
+  const arr = candidates.find((c) => Array.isArray(c)) as unknown[] | undefined;
+  if (!arr || arr.length === 0) return [];
+  return arr
+    .map((item, idx) => {
+      if (!item || typeof item !== "object") return null;
+      const it = item as Record<string, unknown>;
+      return {
+        ticker: asString(it.ticker, `OPT${idx + 1}`),
+        name: asString(it.name, "Recommended option"),
+        descriptor: asString(it.descriptor, "Generated from your mandate"),
+        fee: asString(it.fee, "—"),
+        perf1Y: asString(it.perf1Y, "—"),
+        minCost: asString(it.minCost, "—"),
+        subtext: asString(it.subtext, ""),
+        recommended: idx === 0,
+        rationale: asString(it.rationale, ""),
+      } satisfies ETFOption;
+    })
+    .filter((row): row is ETFOption => Boolean(row));
+}
+
 const TillyAvatar = () => (
   <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary">
     <Sparkles className="h-2.5 w-2.5 text-primary-foreground" />
@@ -109,11 +146,27 @@ const Rebalancing = () => {
   const [chatInput, setChatInput] = useState("");
   const [micActive, setMicActive] = useState(false);
   const [showTillyPill, setShowTillyPill] = useState(true);
+  const [options, setOptions] = useState<ETFOption[]>(DEFAULT_OPTIONS);
 
   // Auto-dismiss pill after 5 seconds
   useEffect(() => {
     const timer = setTimeout(() => setShowTillyPill(false), 5000);
     return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const recs = await listRebalancingRecommendations();
+        const latest = recs[0];
+        if (!latest) return;
+        const parsed = parseRecommendationOptions(latest);
+        if (parsed.length > 0) setOptions(parsed);
+      } catch {
+        // Keep default options as fallback.
+      }
+    };
+    load();
   }, []);
 
   const sendChat = (text: string) => {
