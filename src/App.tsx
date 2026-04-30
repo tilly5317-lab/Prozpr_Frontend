@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/context/AuthContext";
 import { FamilyProvider } from "@/context/FamilyContext";
+import { ThemeProvider } from "@/context/ThemeContext";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import Notifications from "./pages/Notifications";
@@ -24,6 +25,7 @@ import LinkAccounts from "./pages/LinkAccounts";
 import AboutYou from "./pages/AboutYou";
 import Portfolio from "./pages/Portfolio";
 import PortfolioPopup from "./pages/PortfolioPopup";
+import PortfolioPerformance from "./pages/PortfolioPerformance";
 import VoiceOnboarding from "./pages/VoiceOnboarding";
 import OnboardingLoading from "./pages/OnboardingLoading";
 import FamilyMembers from "./pages/FamilyMembers";
@@ -32,6 +34,7 @@ const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
+    <ThemeProvider>
     <AuthProvider>
       <FamilyProvider>
       <TooltipProvider>
@@ -41,6 +44,7 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/portfolio" element={<Portfolio />} />
+            <Route path="/portfolio/performance" element={<PortfolioPerformance />} />
             <Route path="/portfolio-popup" element={<PortfolioPopup />} />
             <Route path="/voice-onboarding" element={<VoiceOnboarding />} />
             <Route path="/otp" element={<OTP />} />
@@ -66,6 +70,7 @@ const App = () => (
       </TooltipProvider>
       </FamilyProvider>
     </AuthProvider>
+    </ThemeProvider>
   </QueryClientProvider>
 );
 

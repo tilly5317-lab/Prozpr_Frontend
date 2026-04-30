@@ -34,6 +34,17 @@
 </head>
 
   <body>
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('theme-mode');
+          var sys = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          var resolved = stored === 'dark' || stored === 'light' ? stored : sys;
+          if (resolved === 'dark') document.documentElement.classList.add('dark');
+          document.documentElement.style.colorScheme = resolved;
+        } catch (e) {}
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
