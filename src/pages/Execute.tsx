@@ -25,9 +25,8 @@ import BottomNav from "@/components/BottomNav";
 import {
   getMyPortfolio,
   getRecommendedPlan,
-  type IdealAllocationOutput,
+  type GoalAllocationOutput,
   type PortfolioDetail,
-  type SubgroupItem,
 } from "@/lib/api";
 
 /* ── ETF Data (original) ── */
@@ -510,18 +509,12 @@ function generateDynamicSummary(etfs: ETF[], allocations: number[]): string {
   return parts.join(" ");
 }
 
-function idealOutputToETFs(out: IdealAllocationOutput): {
+function idealOutputToETFs(out: GoalAllocationOutput): {
   etfs: ETF[];
   houseRecs: number[];
 } | null {
-  const sg = out.subgroup_allocation;
-  if (!sg) return null;
-  const items: SubgroupItem[] = [
-    ...(sg.equity ?? []),
-    ...(sg.debt ?? []),
-    ...(sg.others ?? []),
-  ];
-  if (items.length === 0) return null;
+  if (!out.grand_total || out.grand_total <= 0) return null;
+
   const ROW_COLORS = [
     "#1B3A6B",
     "#4A7FA5",
@@ -534,29 +527,103 @@ function idealOutputToETFs(out: IdealAllocationOutput): {
     "#ec4899",
     "#14b8a6",
   ];
-  const etfs: ETF[] = items.map((item, i) => ({
-    name: item.recommended_fund,
-    shortName:
-      item.recommended_fund.length > 22
-        ? `${item.recommended_fund.slice(0, 20)}…`
-        : item.recommended_fund,
-    description: [item.subgroup, item.asset_class_subcategory].filter(Boolean).join(" · ") || item.asset_class,
-    allocation: item.pct,
-    amount: 0,
-    category: item.asset_class_subcategory || item.asset_class,
-    color: ROW_COLORS[i % ROW_COLORS.length],
-    exchange: "—",
-    houseRec: true,
-    returns1Y: "—",
-    returns2Y: "—",
-    returns3Y: "—",
-    expenseRatio: "—",
-    exitLoad: "—",
-    minInvestment: "—",
-  }));
+
+  type MappedItem = {
+    recommendedFund: string;
+    assetClass: "equity" | "debt" | "others";
+    assetSubgroup: string;
+    subCategory: string | null;
+    rawTotal: number;
+  };
+
+  // Convert backend aggregated subgroups into a flat "recommended funds" list for the UI.
+  // We only include rows that have `fund_mapping.recommended_fund`.
+  const byFund = new Map<string, MappedItem>();
+  for (const r of out.aggregated_subgroups ?? []) {
+    const fm = r.fund_mapping;
+    const recommendedFund = fm?.recommended_fund;
+    if (!recommendedFund) continue;
+
+    const existing = byFund.get(recommendedFund);
+    const next: MappedItem = {
+      recommendedFund,
+      assetClass: fm.asset_class,
+      assetSubgroup: fm.asset_subgroup,
+      subCategory: fm.sub_category ?? r.sub_category ?? null,
+      rawTotal: r.total,
+    };
+
+    if (!existing) byFund.set(recommendedFund, next);
+    else existing.rawTotal += next.rawTotal;
+  }
+
+  const items = Array.from(byFund.values()).filter((x) => x.rawTotal > 0);
+  if (items.length === 0) return null;
+
+  // Stable UI: largest allocations first.
+  items.sort((a, b) => b.rawTotal - a.rawTotal);
+
+  // Compute and normalize integer allocations to exactly sum to 100.
+  const rawPcts = items.map((x) => (x.rawTotal / out.grand_total) * 100);
+  const sumRawPcts = rawPcts.reduce((s, p) => s + p, 0);
+  if (sumRawPcts <= 0) return null;
+
+  const scale = 100 / sumRawPcts;
+  const scaled = rawPcts.map((p) => p * scale);
+
+  const floors = scaled.map((p) => Math.floor(p));
+  const remainders = scaled.map((p, i) => p - floors[i]);
+  const sumFloors = floors.reduce((s, p) => s + p, 0);
+  let diff = 100 - sumFloors;
+
+  const order = remainders
+    .map((r, i) => ({ i, r }))
+    .sort((a, b) => b.r - a.r)
+    .map((x) => x.i);
+
+  let cursor = 0;
+  while (diff !== 0 && cursor < order.length * 5) {
+    const idx = order[cursor % order.length];
+    if (diff > 0) {
+      floors[idx] += 1;
+      diff -= 1;
+    } else if (floors[idx] > 0) {
+      floors[idx] -= 1;
+      diff += 1;
+    }
+    cursor += 1;
+  }
+
+  const etfs: ETF[] = items.map((item, i) => {
+    const category = item.assetClass === "equity" ? "Equity" : item.assetClass === "debt" ? "Debt" : "Others";
+    return {
+      name: item.recommendedFund,
+      shortName:
+        item.recommendedFund.length > 22
+          ? `${item.recommendedFund.slice(0, 20)}…`
+          : item.recommendedFund,
+      description:
+        [item.assetSubgroup, item.subCategory].filter(Boolean).join(" · ") ||
+        item.assetSubgroup ||
+        item.assetClass,
+      allocation: floors[i] ?? 0,
+      amount: 0,
+      category,
+      color: ROW_COLORS[i % ROW_COLORS.length],
+      exchange: "—",
+      houseRec: true,
+      returns1Y: "—",
+      returns2Y: "—",
+      returns3Y: "—",
+      expenseRatio: "—",
+      exitLoad: "—",
+      minInvestment: "—",
+    };
+  });
+
   return {
     etfs,
-    houseRecs: items.map((item) => item.pct),
+    houseRecs: etfs.map((e) => e.allocation),
   };
 }
 
@@ -613,7 +680,7 @@ function portfolioToDonutData(p: PortfolioDetail): { label: string; value: numbe
 const Execute = () => {
   const navigate = useNavigate();
   const [useAiPlan, setUseAiPlan] = useState(false);
-  const [idealPlanOutput, setIdealPlanOutput] = useState<IdealAllocationOutput | null>(null);
+  const [idealPlanOutput, setIdealPlanOutput] = useState<GoalAllocationOutput | null>(null);
   const [aiHouseRec, setAiHouseRec] = useState<number[]>([]);
   const [recommendedPlanMeta, setRecommendedPlanMeta] = useState<{
     effectiveAt: string;
@@ -692,7 +759,7 @@ const Execute = () => {
       try {
         const rec = await getRecommendedPlan();
         if (cancelled) return;
-        const out = rec.snapshot?.allocation?.ideal_allocation_output;
+        const out = rec.snapshot?.allocation?.goal_allocation_output;
         const built = out ? idealOutputToETFs(out) : null;
         if (out && built?.houseRecs.length) {
           setIdealPlanOutput(out);
