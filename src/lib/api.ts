@@ -2,6 +2,60 @@ const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").trim().replace(/\/$/,
 const API = `${API_BASE}/api/v1`;
 const TOKEN_KEY = "asktilly_token";
 const FAMILY_MEMBER_KEY = "asktilly_family_member_id";
+const USER_CONTEXT_CACHE_KEY = "asktilly.user_context_cache.v1";
+
+type UserContextCache = {
+  me?: UserInfo;
+  profile?: FullProfileResponse | null;
+  portfolio?: PortfolioDetail | null;
+  linkedAccounts?: LinkAccountInfo[];
+};
+
+let userContextCacheMemory: UserContextCache | null = null;
+
+function loadUserContextCache(): UserContextCache {
+  if (userContextCacheMemory) return userContextCacheMemory;
+  try {
+    const raw = sessionStorage.getItem(USER_CONTEXT_CACHE_KEY);
+    if (!raw) {
+      userContextCacheMemory = {};
+      return userContextCacheMemory;
+    }
+    const parsed = JSON.parse(raw) as UserContextCache;
+    userContextCacheMemory = parsed && typeof parsed === "object" ? parsed : {};
+    return userContextCacheMemory;
+  } catch {
+    userContextCacheMemory = {};
+    return userContextCacheMemory;
+  }
+}
+
+function saveUserContextCache(next: UserContextCache) {
+  userContextCacheMemory = next;
+  try {
+    sessionStorage.setItem(USER_CONTEXT_CACHE_KEY, JSON.stringify(next));
+  } catch {
+    // Ignore storage quota / privacy mode failures.
+  }
+}
+
+function getCachedUserContextValue<K extends keyof UserContextCache>(key: K): UserContextCache[K] | undefined {
+  return loadUserContextCache()[key];
+}
+
+function setCachedUserContextValue<K extends keyof UserContextCache>(key: K, value: UserContextCache[K]) {
+  const current = loadUserContextCache();
+  saveUserContextCache({ ...current, [key]: value });
+}
+
+export function invalidateUserContextCache() {
+  userContextCacheMemory = {};
+  try {
+    sessionStorage.removeItem(USER_CONTEXT_CACHE_KEY);
+  } catch {
+    // Ignore storage failures.
+  }
+}
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
@@ -9,10 +63,12 @@ export function getToken(): string | null {
 
 export function setToken(token: string) {
   localStorage.setItem(TOKEN_KEY, token);
+  invalidateUserContextCache();
 }
 
 export function clearToken() {
   localStorage.removeItem(TOKEN_KEY);
+  invalidateUserContextCache();
 }
 
 export function getActiveFamilyMemberId(): string | null {
@@ -25,6 +81,7 @@ export function setActiveFamilyMemberId(id: string | null) {
   } else {
     localStorage.removeItem(FAMILY_MEMBER_KEY);
   }
+  invalidateUserContextCache();
 }
 
 //need to remove
@@ -111,14 +168,27 @@ async function request<T>(
     throw new Error(msg || `Request failed (${res.status})`);
   }
   if (res.status === 204 || res.status === 205) {
+    const method = (init?.method ?? "GET").toUpperCase();
+    if (auth && !["GET", "HEAD", "OPTIONS"].includes(method)) {
+      invalidateUserContextCache();
+    }
     return undefined as T;
   }
   // Same as error path: read body once (never mix `.json()` then `.text()` on the same Response).
   const okBody = await res.text();
   if (!okBody.trim()) {
+    const method = (init?.method ?? "GET").toUpperCase();
+    if (auth && !["GET", "HEAD", "OPTIONS"].includes(method)) {
+      invalidateUserContextCache();
+    }
     return undefined as T;
   }
-  return JSON.parse(okBody) as T;
+  const parsed = JSON.parse(okBody) as T;
+  const method = (init?.method ?? "GET").toUpperCase();
+  if (auth && !["GET", "HEAD", "OPTIONS"].includes(method)) {
+    invalidateUserContextCache();
+  }
+  return parsed;
 }
 
 // ── Auth types ──────────────────────────────────────────
@@ -175,7 +245,11 @@ export async function login(p: LoginPayload): Promise<{ user_id: string; access_
 }
 
 export async function getMe(): Promise<UserInfo> {
-  return request<UserInfo>("/auth/me");
+  const cached = getCachedUserContextValue("me");
+  if (cached) return cached;
+  const me = await request<UserInfo>("/auth/me");
+  setCachedUserContextValue("me", me);
+  return me;
 }
 
 export async function updateMe(p: UserUpdatePayload): Promise<UserInfo> {
@@ -258,7 +332,11 @@ export interface LinkAccountInfo {
 }
 
 export async function listLinkedAccounts(): Promise<{ accounts: LinkAccountInfo[] }> {
-  return request<{ accounts: LinkAccountInfo[] }>("/linked-accounts/");
+  const cached = getCachedUserContextValue("linkedAccounts");
+  if (cached) return { accounts: cached };
+  const res = await request<{ accounts: LinkAccountInfo[] }>("/linked-accounts/");
+  setCachedUserContextValue("linkedAccounts", res.accounts ?? []);
+  return res;
 }
 
 // ── Finvu / AA bucket snapshot (post-consent totals from Finvu analytics API) ──
@@ -292,6 +370,7 @@ export async function syncFinvuPortfolio(payload: FinvuPortfolioSyncRequest): Pr
 
 export function logout() {
   clearToken();
+  invalidateUserContextCache();
 }
 
 // ── Chat API ────────────────────────────────────────────
@@ -497,7 +576,11 @@ export interface FullProfileResponse {
 // ── Profile API ─────────────────────────────────────────
 
 export async function getFullProfile(): Promise<FullProfileResponse> {
-  return request<FullProfileResponse>("/profile/");
+  const cached = getCachedUserContextValue("profile");
+  if (cached) return cached;
+  const profile = await request<FullProfileResponse>("/profile/");
+  setCachedUserContextValue("profile", profile);
+  return profile;
 }
 
 export async function getPersonalInfo(): Promise<PersonalInfoResponse> {
@@ -653,7 +736,11 @@ export interface PortfolioDetail {
 
 /** Primary portfolio for the logged-in user (from DB). */
 export async function getMyPortfolio(): Promise<PortfolioDetail> {
-  return request<PortfolioDetail>("/portfolio/");
+  const cached = getCachedUserContextValue("portfolio");
+  if (cached) return cached;
+  const portfolio = await request<PortfolioDetail>("/portfolio/");
+  setCachedUserContextValue("portfolio", portfolio);
+  return portfolio;
 }
 
 /**
@@ -1089,5 +1176,100 @@ export async function onboardFamilyMember(p: OnboardFamilyMemberPayload): Promis
   return request<FamilyMember>("/family/members/onboard", {
     method: "POST",
     body: JSON.stringify(p),
+  });
+}
+
+// ── Notifications API ───────────────────────────────────
+export interface NotificationInfo {
+  id: string;
+  title: string;
+  message: string;
+  notification_type: string;
+  is_read: boolean;
+  action_url: string | null;
+  created_at: string;
+}
+
+export async function listNotifications(): Promise<NotificationInfo[]> {
+  return request<NotificationInfo[]>("/notifications/");
+}
+
+export async function markNotificationAsRead(notificationId: string): Promise<{ message: string }> {
+  return request<{ message: string }>(`/notifications/${notificationId}/read`, {
+    method: "PUT",
+  });
+}
+
+export async function markAllNotificationsAsRead(): Promise<{ message: string }> {
+  return request<{ message: string }>("/notifications/read-all", {
+    method: "PUT",
+  });
+}
+
+// ── Meeting Notes API ───────────────────────────────────
+export interface MeetingNoteInfo {
+  id: string;
+  title: string;
+  meeting_date: string | null;
+  is_mandate_approved: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MeetingNoteItemInfo {
+  id: string;
+  item_type: "transcript" | "summary";
+  role: string | null;
+  content: string;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface MeetingNoteDetailInfo extends MeetingNoteInfo {
+  items: MeetingNoteItemInfo[];
+}
+
+export async function listMeetingNotes(): Promise<MeetingNoteInfo[]> {
+  return request<MeetingNoteInfo[]>("/meeting-notes/");
+}
+
+export async function getMeetingNote(noteId: string): Promise<MeetingNoteDetailInfo> {
+  return request<MeetingNoteDetailInfo>(`/meeting-notes/${noteId}`);
+}
+
+export async function approveMeetingMandate(noteId: string): Promise<{ message: string; meeting_note_id: string }> {
+  return request<{ message: string; meeting_note_id: string }>(`/meeting-notes/${noteId}/approve-mandate`, {
+    method: "POST",
+  });
+}
+
+// ── Rebalancing API ─────────────────────────────────────
+export type RebalancingStatus = "pending" | "approved" | "executed" | "rejected";
+
+export interface RebalancingRecommendationInfo {
+  id: string;
+  portfolio_id: string;
+  status: RebalancingStatus;
+  recommendation_data: Record<string, unknown> | null;
+  reason: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listRebalancingRecommendations(): Promise<RebalancingRecommendationInfo[]> {
+  return request<RebalancingRecommendationInfo[]>("/rebalancing/");
+}
+
+export async function getRebalancingRecommendation(recommendationId: string): Promise<RebalancingRecommendationInfo> {
+  return request<RebalancingRecommendationInfo>(`/rebalancing/${recommendationId}`);
+}
+
+export async function updateRebalancingStatus(
+  recommendationId: string,
+  status: RebalancingStatus,
+): Promise<RebalancingRecommendationInfo> {
+  return request<RebalancingRecommendationInfo>(`/rebalancing/${recommendationId}/status`, {
+    method: "PUT",
+    body: JSON.stringify({ status }),
   });
 }

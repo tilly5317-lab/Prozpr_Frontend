@@ -69,6 +69,16 @@ const SECTION_TITLES = [
   "Your financial picture",
   "What are you trying to achieve?",
   "Your investment preference and focus",
+  "Tax details",
+];
+
+const MARGINAL_TAX_RATE_OPTIONS: { value: string; label: string; slab: string }[] = [
+  { value: "0", label: "0%", slab: "Income up to ₹3,00,000" },
+  { value: "5", label: "5%", slab: "₹3,00,001 – ₹7,00,000" },
+  { value: "10", label: "10%", slab: "₹7,00,001 – ₹10,00,000" },
+  { value: "15", label: "15%", slab: "₹10,00,001 – ₹12,00,000" },
+  { value: "20", label: "20%", slab: "₹12,00,001 – ₹15,00,000" },
+  { value: "30", label: "30%", slab: "Above ₹15,00,000" },
 ];
 
 const OBJECTIVES = [
@@ -555,7 +565,7 @@ const BehaviouralRiskModal = ({
 const CompleteProfile = () => {
   const navigate = useNavigate();
   const [openSection, setOpenSection] = useState(0);
-  const [statuses, setStatuses] = useState<SectionStatus[]>(Array(3).fill("not_started"));
+  const [statuses, setStatuses] = useState<SectionStatus[]>(Array(4).fill("not_started"));
   const [profileLoaded, setProfileLoaded] = useState(false);
 
   // Section 0 — Who are you?
@@ -607,8 +617,8 @@ const CompleteProfile = () => {
   const [behavQ1, setBehavQ1] = useState("");
   const [behavQ2, setBehavQ2] = useState("");
   const [behavQ3, setBehavQ3] = useState("");
-  const [incomeRange, setIncomeRange] = useState<[number, number]>([30000000, 70000000]);
-  const [expenseRange, setExpenseRange] = useState<[number, number]>([20000000, 50000000]);
+  const [annualIncome, setAnnualIncome] = useState<string>("");
+  const [annualExpense, setAnnualExpense] = useState<string>("");
   const [maxDrawdown, setMaxDrawdown] = useState("");
   const [comfortAssets, setComfortAssets] = useState<string[]>([]);
 
@@ -632,6 +642,9 @@ const CompleteProfile = () => {
   const [incomeTaxRate, setIncomeTaxRate] = useState("");
   const [cgtRate, setCgtRate] = useState("");
   const [taxNotes, setTaxNotes] = useState("");
+  const [taxRegime, setTaxRegime] = useState<"old" | "new" | "">("");
+  const [showMarginalInfo, setShowMarginalInfo] = useState(false);
+  const [showRegimeInfo, setShowRegimeInfo] = useState(false);
 
   // Investment horizon notes (in risk section)
   const [horizonNotes, setHorizonNotes] = useState("");
@@ -648,7 +661,7 @@ const CompleteProfile = () => {
       try {
         const p = await getFullProfile();
         if (cancelled) return;
-        const newStatuses: SectionStatus[] = Array(3).fill("not_started");
+        const newStatuses: SectionStatus[] = Array(SECTION_TITLES.length).fill("not_started");
 
         // Load personal info data (no longer a separate section)
         if (p.personal_info) {
@@ -696,6 +709,19 @@ const CompleteProfile = () => {
           if (rp.risk_level != null) newStatuses[2] = "confirmed";
         }
 
+        // Section 3 — tax details
+        if (p.tax_profile) {
+          const tp = p.tax_profile;
+          if (tp.income_tax_rate != null) setIncomeTaxRate(String(tp.income_tax_rate));
+          if (tp.capital_gains_tax_rate != null) setCgtRate(String(tp.capital_gains_tax_rate));
+          if (tp.notes) {
+            const regimeMatch = tp.notes.match(/regime:\s*(old|new)/i);
+            if (regimeMatch) setTaxRegime(regimeMatch[1].toLowerCase() as "old" | "new");
+            else setTaxNotes(tp.notes);
+          }
+          if (tp.income_tax_rate != null) newStatuses[3] = "confirmed";
+        }
+
 
         // Load review preference data
         if (p.review_preference) {
@@ -738,8 +764,8 @@ const CompleteProfile = () => {
   }, []);
 
   const confirmedCount = statuses.filter((s) => s === "confirmed").length;
-  const progressPercent = Math.round((confirmedCount / 3) * 100);
-  const allConfirmed = confirmedCount === 3;
+  const progressPercent = Math.round((confirmedCount / SECTION_TITLES.length) * 100);
+  const allConfirmed = confirmedCount === SECTION_TITLES.length;
 
   const totalMaxAllocation = useMemo(() => {
     return permittedAssets.reduce((sum, a) => sum + (allocations[a]?.max || 0), 0);
@@ -818,6 +844,13 @@ const CompleteProfile = () => {
             comfort_assets: comfortAssets.length ? comfortAssets : null,
           });
           break;
+        case 3:
+          await updateTaxProfile({
+            income_tax_rate: incomeTaxRate ? Number(incomeTaxRate) : null,
+            capital_gains_tax_rate: cgtRate ? Number(cgtRate) : null,
+            notes: taxRegime ? `Regime: ${taxRegime}` : taxNotes || null,
+          });
+          break;
       }
     } catch (err) {
       if (err instanceof BackendOfflineError) return;
@@ -830,7 +863,7 @@ const CompleteProfile = () => {
       next[idx] = "confirmed";
       return next;
     });
-    if (idx < 2) setOpenSection(idx + 1);
+    if (idx < SECTION_TITLES.length - 1) setOpenSection(idx + 1);
     toast.success(`Section ${idx + 1} confirmed ✓`);
   }, [
     occupation, primaryResidence, earningMembers, dependents, values,
@@ -838,7 +871,7 @@ const CompleteProfile = () => {
     selectedObjectives, goalDetails,
     riskLevelIdx, riskCapacity, investmentExperience, investmentHorizon, horizonNotes, behavQ1, behavQ2, behavQ3, maxDrawdown, comfortAssets,
     permittedAssets, allocations, prohibited, leverage, derivatives, diversificationNotes,
-    incomeTaxRate, cgtRate, taxNotes,
+    incomeTaxRate, cgtRate, taxNotes, taxRegime,
     reviewFreq, reviewTriggers, updateProcess,
   ]);
 
@@ -888,7 +921,7 @@ const CompleteProfile = () => {
   };
 
   const handleTillyMode = () => {
-    navigate("/voice-onboarding");
+    navigate("/chat?from=complete-profile");
   };
 
   const renderSection = (idx: number) => {
@@ -927,14 +960,34 @@ const CompleteProfile = () => {
 
             {/* Income & Expenses */}
             <div>
-              <FieldLabel>Annual income range</FieldLabel>
+              <FieldLabel>Annual income</FieldLabel>
               <p className="text-[10px] text-muted-foreground -mt-0.5 mb-1">Includes salary and regular income (e.g. rental income)</p>
-              <IncomeExpenseSlider label="Income" range={incomeRange} onChange={setIncomeRange} />
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">₹</span>
+                <input
+                  type="number"
+                  min={0}
+                  value={annualIncome}
+                  onChange={(e) => setAnnualIncome(e.target.value)}
+                  placeholder="e.g. 5000000"
+                  className="w-full rounded-lg border border-border bg-card pl-7 pr-3 py-2 text-sm text-foreground outline-none focus:border-accent transition-colors placeholder:text-[12px]"
+                />
+              </div>
             </div>
             <div>
-              <FieldLabel>Annual expense range</FieldLabel>
+              <FieldLabel>Annual expense</FieldLabel>
               <p className="text-[10px] text-muted-foreground -mt-0.5 mb-1">Excludes all debt obligations (e.g. loans)</p>
-              <IncomeExpenseSlider label="Expenses" range={expenseRange} onChange={setExpenseRange} />
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">₹</span>
+                <input
+                  type="number"
+                  min={0}
+                  value={annualExpense}
+                  onChange={(e) => setAnnualExpense(e.target.value)}
+                  placeholder="e.g. 3000000"
+                  className="w-full rounded-lg border border-border bg-card pl-7 pr-3 py-2 text-sm text-foreground outline-none focus:border-accent transition-colors placeholder:text-[12px]"
+                />
+              </div>
             </div>
 
             {/* What makes up your primary income? — multi-select */}
@@ -1200,7 +1253,119 @@ const CompleteProfile = () => {
           </div>
         );
 
+      /* ── Section 3: Tax details (India) ── */
+      case 3:
+        return (
+          <div className="space-y-4">
+            {/* Marginal tax rate */}
+            <div>
+              <div className="flex items-center gap-1 mb-1">
+                <label className="block text-[11px] uppercase tracking-wide text-muted-foreground">
+                  What is your marginal tax rate?
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowMarginalInfo((v) => !v)}
+                  className="text-muted-foreground hover:text-foreground"
+                  aria-label="About marginal tax rate"
+                >
+                  <Info className="h-3 w-3" />
+                </button>
+              </div>
+              <p className="text-[10px] text-muted-foreground -mt-0.5 mb-1.5">
+                Your marginal tax rate is the tax rate applied to your highest slab of income. This helps us recommend tax-efficient investments.
+              </p>
+              {showMarginalInfo && (
+                <div className="mb-2 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2">
+                  <p className="text-[11px] text-foreground leading-relaxed">
+                    Example: if your taxable income is ₹13L and falls in the 20% slab, your marginal tax rate is 20% — the rate paid on your last rupee earned. Not the same as your average tax rate.
+                  </p>
+                </div>
+              )}
+              <select
+                value={incomeTaxRate}
+                onChange={(e) => setIncomeTaxRate(e.target.value)}
+                className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-accent transition-colors appearance-none"
+              >
+                <option value="">Select your slab</option>
+                {MARGINAL_TAX_RATE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label} ({o.slab})
+                  </option>
+                ))}
+              </select>
+            </div>
 
+            {/* Tax regime */}
+            <div>
+              <FieldLabel>Which tax regime do you follow?</FieldLabel>
+              <div className="space-y-2">
+                {(
+                  [
+                    {
+                      id: "old" as const,
+                      label: "Old Regime",
+                      helper:
+                        "Allows deductions under 80C, 80D, HRA, LTA, home loan interest, etc.",
+                    },
+                    {
+                      id: "new" as const,
+                      label: "New Regime",
+                      helper:
+                        "Lower tax rates but most deductions and exemptions are not available. Default regime from FY 2023-24.",
+                    },
+                  ]
+                ).map((r) => {
+                  const selected = taxRegime === r.id;
+                  return (
+                    <button
+                      key={r.id}
+                      type="button"
+                      onClick={() => setTaxRegime(r.id)}
+                      className={`w-full text-left rounded-xl border px-3 py-2.5 transition-colors ${
+                        selected
+                          ? "border-accent bg-accent/5"
+                          : "border-border bg-card hover:border-accent/40"
+                      }`}
+                    >
+                      <div className="flex items-start gap-2.5">
+                        <span
+                          className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
+                            selected ? "border-accent" : "border-muted-foreground/40"
+                          }`}
+                        >
+                          {selected && (
+                            <span className="h-2 w-2 rounded-full bg-accent" />
+                          )}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-foreground">{r.label}</p>
+                          <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
+                            {r.helper}
+                          </p>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowRegimeInfo((v) => !v)}
+                className="mt-2 text-[11px] font-medium text-accent hover:underline"
+              >
+                Not sure which regime you're on? Learn more
+              </button>
+              {showRegimeInfo && (
+                <div className="mt-2 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2">
+                  <p className="text-[11px] text-foreground leading-relaxed">
+                    <span className="font-semibold">Old Regime</span> lets you claim deductions (80C investments, HRA, home loan interest, medical insurance) but uses higher tax rates. <span className="font-semibold">New Regime</span> has lower rates and a higher basic exemption (₹3L) but strips out most deductions. Salaried taxpayers can switch between the two each year; business/professional income must stick with their chosen regime for at least five years.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        );
 
       default:
         return null;
@@ -1234,8 +1399,8 @@ const CompleteProfile = () => {
       {/* Progress */}
       <div className="px-5 pt-3 pb-2">
         <div className="flex items-center justify-between mb-1">
-          <span className="text-[11px] text-muted-foreground font-medium">Section {Math.min(openSection + 1, 3)} of 3</span>
-          <span className="text-[11px] text-muted-foreground">{confirmedCount}/3 confirmed</span>
+          <span className="text-[11px] text-muted-foreground font-medium">Section {Math.min(openSection + 1, SECTION_TITLES.length)} of {SECTION_TITLES.length}</span>
+          <span className="text-[11px] text-muted-foreground">{confirmedCount}/{SECTION_TITLES.length} confirmed</span>
         </div>
         <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
           <motion.div className="h-full rounded-full bg-accent" initial={{ width: 0 }} animate={{ width: `${progressPercent}%` }} transition={{ duration: 0.5 }} />
