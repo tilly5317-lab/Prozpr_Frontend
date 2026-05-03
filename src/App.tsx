@@ -20,6 +20,8 @@ import GoalPlanner from "./pages/GoalPlanner";
 import Invest from "./pages/Invest";
 import Execute from "./pages/Execute";
 import Discovery from "./pages/Discovery";
+import MfAllFunds from "./pages/MfAllFunds";
+import MfFundDetail from "./pages/MfFundDetail";
 import OTP from "./pages/OTP";
 import LinkAccounts from "./pages/LinkAccounts";
 import AboutYou from "./pages/AboutYou";
@@ -56,6 +58,8 @@ const App = () => (
             <Route path="/notifications" element={<Notifications />} />
             <Route path="/invest" element={<Invest />} />
             <Route path="/execute" element={<Execute />} />
+            <Route path="/discovery/mf/:fundId" element={<MfFundDetail />} />
+            <Route path="/discovery/mf" element={<MfAllFunds />} />
             <Route path="/discovery" element={<Discovery />} />
             <Route path="/profile/complete" element={<CompleteProfile />} />
             <Route path="/profile/ips" element={<InvestmentPolicyStatement />} />

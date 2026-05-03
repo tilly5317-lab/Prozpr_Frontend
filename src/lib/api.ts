@@ -1112,6 +1112,127 @@ export async function listDiscoveryTrending(): Promise<DiscoveryFund[]> {
   return request<DiscoveryFund[]>("/discovery/trending");
 }
 
+// ── MF Fund Metadata search (Discover) ──────────────────
+export interface MfFundMetadataListItem {
+  id: string;
+  scheme_code: string;
+  isin: string | null;
+  scheme_name: string;
+  amc_name: string;
+  category: string;
+  sub_category: string | null;
+  asset_class: string | null;
+  asset_subgroup: string | null;
+  risk_rating_sebi: string | null;
+  returns_1y_pct: number | null;
+  returns_3y_pct: number | null;
+  returns_5y_pct: number | null;
+}
+
+export interface MfFundMetadataSearchResponse {
+  items: MfFundMetadataListItem[];
+  total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
+}
+
+export interface MfFundMetadataSearchParams {
+  q?: string;
+  category?: string;
+  sub_category?: string;
+  asset_class?: string;
+  amc_name?: string;
+  active_only?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
+export async function searchMfFunds(
+  params: MfFundMetadataSearchParams = {}
+): Promise<MfFundMetadataSearchResponse> {
+  const q = new URLSearchParams();
+  if (params.q && params.q.trim()) q.set("q", params.q.trim());
+  if (params.category) q.set("category", params.category);
+  if (params.sub_category) q.set("sub_category", params.sub_category);
+  if (params.asset_class) q.set("asset_class", params.asset_class);
+  if (params.amc_name) q.set("amc_name", params.amc_name);
+  if (params.active_only != null) q.set("active_only", String(params.active_only));
+  q.set("limit", String(params.limit ?? 20));
+  q.set("offset", String(params.offset ?? 0));
+  const suffix = q.toString() ? `?${q.toString()}` : "";
+  return request<MfFundMetadataSearchResponse>(
+    `/mf/fund-metadata/search${suffix}`,
+    undefined,
+    false,
+  );
+}
+
+/** NAV sample for chart + investor detail (public). */
+export interface MfNavChartPoint {
+  nav_date: string;
+  nav: number;
+}
+
+export interface MfNavDerivedReturns {
+  return_1y_abs_pct: number | null;
+  return_3y_cagr_pct: number | null;
+  return_5y_cagr_pct: number | null;
+  return_10y_cagr_pct: number | null;
+  return_inception_abs_pct: number | null;
+  return_inception_cagr_pct: number | null;
+  first_nav_date: string | null;
+  latest_nav: number | null;
+  latest_nav_date: string | null;
+  nav_row_count: number;
+}
+
+export interface MfMetadataReturnsSnapshot {
+  returns_1y_pct: number | null;
+  returns_3y_pct: number | null;
+  returns_5y_pct: number | null;
+  returns_10y_pct: number | null;
+}
+
+export interface MfFundInvestorDetailResponse {
+  metadata_id: string;
+  scheme_code: string;
+  scheme_name: string;
+  amc_name: string;
+  category: string;
+  sub_category: string | null;
+  isin: string | null;
+  isin_div_reinvest: string | null;
+  plan_type: string;
+  option_type: string;
+  is_active: boolean;
+  risk_rating_sebi: string | null;
+  asset_class: string | null;
+  asset_subgroup: string | null;
+  direct_plan_fees: number | null;
+  regular_plan_fees: number | null;
+  exit_load_percent: number | null;
+  exit_load_months: number | null;
+  large_cap_equity_pct: number | null;
+  mid_cap_equity_pct: number | null;
+  small_cap_equity_pct: number | null;
+  debt_pct: number | null;
+  others_pct: number | null;
+  returns_from_nav: MfNavDerivedReturns;
+  returns_from_metadata: MfMetadataReturnsSnapshot;
+  nav_chart: MfNavChartPoint[];
+  disclaimers: string[];
+}
+
+/** Fund scheme page: facts + NAV-derived returns (Groww-style detail). */
+export async function getMfFundInvestorDetail(fundId: string): Promise<MfFundInvestorDetailResponse> {
+  return request<MfFundInvestorDetailResponse>(
+    `/mf/fund-metadata/${encodeURIComponent(fundId)}/investor-detail`,
+    undefined,
+    false,
+  );
+}
+
 export async function listDiscoveryHouseView(): Promise<DiscoveryFund[]> {
   return request<DiscoveryFund[]>("/discovery/house-view");
 }

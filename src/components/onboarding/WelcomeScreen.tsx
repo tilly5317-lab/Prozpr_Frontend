@@ -1,9 +1,10 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowRight, Shield, TrendingUp, Sparkles, ChevronDown, ArrowLeft, Loader2 } from "lucide-react";
 import AccountDiscoveryModal from "./AccountDiscoveryModal";
 import prozprLogo from "@/assets/prozpr-logo-v2.png";
-import { signup, login } from "@/lib/api";
+import { signup, login, getMe } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import {
   InputOTP,
@@ -30,6 +31,7 @@ const DEFAULT_PASSWORD = "asktilly2026";
 type Step = "phone" | "otp";
 
 const WelcomeScreen = ({ onNext }: WelcomeScreenProps) => {
+  const navigate = useNavigate();
   const { refresh } = useAuth();
   const [step, setStep] = useState<Step>("phone");
   const [phone, setPhone] = useState("");
@@ -76,6 +78,22 @@ const WelcomeScreen = ({ onNext }: WelcomeScreenProps) => {
     }
     await refresh();
     setLoading(false);
+
+    try {
+      const me = await getMe();
+      if (me.is_onboarding_complete) {
+        try {
+          sessionStorage.setItem("onboardingComplete", "true");
+        } catch {
+          /* ignore storage failures */
+        }
+        navigate("/chat");
+        return;
+      }
+    } catch {
+      /* no session or /me failed — continue into discovery modal */
+    }
+
     setShowModal(true);
   };
 
