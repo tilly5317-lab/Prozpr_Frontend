@@ -1,8 +1,12 @@
 import { useState, useEffect, type ReactNode } from "react";
 import { TrendingUp, TrendingDown } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import BottomNav from "@/components/BottomNav";
 import NetWorthSparkline from "./NetWorthSparkline";
 import CurrentAllocationCard from "./CurrentAllocationCard";
+import LiveEventBanner from "./LiveEventBanner";
+import PeerComparisonCard from "./PeerComparisonCard";
+import PortfolioAnalysisModal from "./PortfolioAnalysisModal";
 import DailyInsights from "./DailyInsights";
 import SkillsQuiz from "./SkillsQuiz";
 import ProfileSwitcher from "./ProfileSwitcher";
@@ -26,10 +30,10 @@ import {
 } from "@/lib/portfolioDemoData";
 import { formatInrCompact, formatInrPaisa } from "@/lib/utils";
 
-// Unified card style
-const CARD = "bg-white rounded-[14px] p-[14px]" as const;
-const CARD_BORDER = { border: "1px solid #f0f0f0" } as const;
-const SECTION_LABEL = { fontSize: 10, fontWeight: 500, textTransform: "uppercase" as const, letterSpacing: "1.5px", color: "#b0b0b0" };
+// Unified card style — uses tokens so it flips correctly in dark mode.
+const CARD = "bg-card rounded-[14px] p-[14px]" as const;
+const CARD_BORDER = { border: "1px solid hsl(var(--border))" } as const;
+const SECTION_LABEL = { fontSize: 10, fontWeight: 500, textTransform: "uppercase" as const, letterSpacing: "1.5px", color: "hsl(var(--muted-foreground))" };
 
 function cumulativeToPortfolioDetail(c: CumulativePortfolioResponse): PortfolioDetail {
   return {
@@ -69,44 +73,54 @@ function PortfolioMainPanel({
   horizonLabel: string | null;
   middleSlot?: ReactNode;
 }) {
+  const [analysisOpen, setAnalysisOpen] = useState(false);
+
+  // Headline pill shows the simple total return; TWR / MWR breakdowns live in the Portfolio Analysis modal.
+  const activeGain = portfolio.total_gain_percentage;
+  const stop = (e: React.MouseEvent) => e.stopPropagation();
+
   return (
     <div className="space-y-2">
-      {/* Total Portfolio card */}
+      {/* Total Portfolio card — the headline number is not tappable; use the "Portfolio analysis →" link below. */}
       <div className={CARD} style={CARD_BORDER}>
         <p className="mb-3" style={SECTION_LABEL}>Total Portfolio</p>
 
         <div className="flex items-center gap-2.5">
           <p className="text-2xl font-bold text-foreground tracking-tight">{formatInrPaisa(portfolio.total_value)}</p>
-          {portfolio.total_gain_percentage != null && (
+          {activeGain != null && (
             <span
               className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                portfolio.total_gain_percentage >= 0
+                activeGain >= 0
                   ? "bg-wealth-green/15 text-wealth-green"
                   : "bg-destructive/15 text-destructive"
               }`}
             >
-              {portfolio.total_gain_percentage >= 0 ? (
+              {activeGain >= 0 ? (
                 <TrendingUp className="h-2.5 w-2.5" />
               ) : (
                 <TrendingDown className="h-2.5 w-2.5" />
               )}
-              {portfolio.total_gain_percentage >= 0 ? "+" : ""}
-              {portfolio.total_gain_percentage}%
+              {activeGain >= 0 ? "+" : ""}
+              {activeGain}%
             </span>
           )}
         </div>
+
         <p className="text-[10px] text-muted-foreground/80 mt-1 mb-3">Invested {formatInrPaisa(portfolio.total_invested)}</p>
 
-        <div className="flex gap-1.5 mb-3">
+        <div className="flex gap-1.5 mb-3" onClick={stop}>
           {(["1M", "6M", "1Y", "All"] as const).map((period) => (
             <button
               key={period}
               type="button"
-              onClick={() => setTimePeriod(period)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setTimePeriod(period);
+              }}
               className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition-all ${
                 timePeriod === period
-                  ? "bg-primary/10 text-primary"
-                  : "bg-muted/60 text-muted-foreground/50 hover:text-muted-foreground/70"
+                  ? "bg-accent/15 text-accent"
+                  : "bg-muted/60 text-muted-foreground hover:text-foreground"
               }`}
             >
               {period}
@@ -115,6 +129,16 @@ function PortfolioMainPanel({
         </div>
 
         <NetWorthSparkline values={sparkline} />
+
+        <button
+          type="button"
+          onClick={() => setAnalysisOpen(true)}
+          className="mt-2 pt-2 block w-full cursor-pointer"
+        >
+          <p className="text-[13px] font-medium text-center w-full text-foreground hover:text-accent transition-colors">
+            Portfolio analysis →
+          </p>
+        </button>
       </div>
 
       {/* Current Allocation card (with merged holdings) */}
@@ -127,6 +151,12 @@ function PortfolioMainPanel({
       </div>
 
       {middleSlot}
+
+      <PortfolioAnalysisModal
+        open={analysisOpen}
+        onClose={() => setAnalysisOpen(false)}
+        portfolio={portfolio}
+      />
     </div>
   );
 }
@@ -290,9 +320,14 @@ const PortfolioDashboard = () => {
                 horizonLabel="Combined family"
                 middleSlot={<CumulativeMemberBreakdownCard data={cumulativeData} />}
               />
+              <LiveEventBanner />
               <div className={CARD} style={CARD_BORDER}>
                 <p className="mb-3" style={SECTION_LABEL}>Test your skills in 2 minutes!</p>
                 <SkillsQuiz />
+              </div>
+              <div className={CARD} style={CARD_BORDER}>
+                <p className="mb-3" style={SECTION_LABEL}>Head to head · 1Y</p>
+                <PeerComparisonCard portfolio={cumulativeToPortfolioDetail(cumulativeData)} />
               </div>
               <div className={`${CARD} pb-24`} style={CARD_BORDER}>
                 <DailyInsights />
@@ -325,9 +360,14 @@ const PortfolioDashboard = () => {
                 riskCategory={null}
                 horizonLabel={null}
               />
+              <LiveEventBanner />
               <div className={CARD} style={CARD_BORDER}>
                 <p className="mb-3" style={SECTION_LABEL}>Test your skills in 2 minutes!</p>
                 <SkillsQuiz />
+              </div>
+              <div className={CARD} style={CARD_BORDER}>
+                <p className="mb-3" style={SECTION_LABEL}>Head to head · 1Y</p>
+                <PeerComparisonCard portfolio={memberPortfolio} />
               </div>
               <div className={`${CARD} pb-24`} style={CARD_BORDER}>
                 <DailyInsights />
@@ -370,9 +410,14 @@ const PortfolioDashboard = () => {
                   null
                 }
               />
+              <LiveEventBanner />
               <div className={CARD} style={CARD_BORDER}>
                 <p className="mb-3" style={SECTION_LABEL}>Test your skills in 2 minutes!</p>
                 <SkillsQuiz />
+              </div>
+              <div className={CARD} style={CARD_BORDER}>
+                <p className="mb-3" style={SECTION_LABEL}>Head to head · 1Y</p>
+                <PeerComparisonCard portfolio={selfPortfolio} />
               </div>
               <div className={`${CARD} pb-24`} style={CARD_BORDER}>
                 <DailyInsights />

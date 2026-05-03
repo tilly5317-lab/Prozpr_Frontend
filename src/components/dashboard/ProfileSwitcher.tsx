@@ -1,9 +1,21 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { Users, ChevronDown, Check, Settings, UserPlus, ShieldCheck, ArrowRightLeft } from "lucide-react";
+import {
+  Users,
+  ChevronDown,
+  Check,
+  Settings,
+  UserPlus,
+  ShieldCheck,
+  ArrowRightLeft,
+  Sun,
+  Moon,
+  Monitor,
+} from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useFamily } from "@/context/FamilyContext";
+import { useTheme, type ThemeMode } from "@/context/ThemeContext";
 
 const RELATIONSHIP_COLORS: Record<string, string> = {
   spouse: "bg-pink-500/15 text-pink-600",
@@ -19,8 +31,15 @@ const ProfileSwitcher = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { members, activeView, switchToSelf, switchToMember, switchToCumulative } = useFamily();
+  const { mode: themeMode, setMode: setThemeMode } = useTheme();
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const themeOptions: { id: ThemeMode; label: string; Icon: typeof Sun }[] = [
+    { id: "light", label: "Light", Icon: Sun },
+    { id: "dark", label: "Dark", Icon: Moon },
+    { id: "system", label: "System", Icon: Monitor },
+  ];
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -211,6 +230,36 @@ const ProfileSwitcher = () => {
                 </button>
               </>
             )}
+
+            {/* Appearance — Light / Dark / System */}
+            <div className="h-px bg-border/40" />
+            <div className="px-3 pt-2 pb-1.5">
+              <p className="text-[9px] uppercase tracking-widest text-muted-foreground font-semibold mb-1.5">
+                Appearance
+              </p>
+              <div className="flex gap-1 rounded-lg bg-muted/60 p-0.5">
+                {themeOptions.map(({ id, label, Icon }) => {
+                  const active = themeMode === id;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setThemeMode(id)}
+                      className={`flex-1 flex items-center justify-center gap-1 rounded-md py-1.5 text-[10px] font-medium transition-colors ${
+                        active
+                          ? "bg-card text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                      aria-pressed={active}
+                      aria-label={`Use ${label.toLowerCase()} theme`}
+                    >
+                      <Icon className="h-3 w-3" />
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
             {/* Actions */}
             <div className="h-px bg-border/40" />
