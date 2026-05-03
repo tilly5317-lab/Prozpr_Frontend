@@ -310,6 +310,7 @@ export interface ChatMessageInfo {
   intent: string | null;
   intent_confidence: number | null;
   intent_reasoning: string | null;
+  chart_payloads: unknown[] | null;
   created_at: string;
 }
 

@@ -1,0 +1,159 @@
+import type { SubAssetTreemap as Payload } from "../types";
+import { formatInrCompact } from "@/lib/utils";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+
+// Per-parent palettes — shades of one hue so visually grouped under each parent.
+const PARENT_PALETTES: Record<string, string[]> = {
+  Equity: ["#4F46E5", "#6366F1", "#818CF8", "#A5B4FC", "#C7D2FE"],
+  Debt: ["#B89968", "#D4B896", "#E8D5B7", "#F0E1C9", "#F8EDDA"],
+  Gold: ["#A8861A", "#C9A84C", "#D9C273", "#E5D396", "#F0E1B8"],
+  Hybrid: ["#6B7280", "#94A3B8", "#CBD5E1", "#E2E8F0"],
+  Commodities: ["#B45309", "#D97706", "#F59E0B", "#FBBF24"],
+  Other: ["#94A3B8", "#CBD5E1", "#E2E8F0"],
+};
+
+const PARENT_LABEL_COLORS: Record<string, string> = {
+  Equity: "#4F46E5",
+  Debt: "#B89968",
+  Gold: "#A8861A",
+  Hybrid: "#6B7280",
+  Commodities: "#B45309",
+  Other: "#94A3B8",
+};
+
+// Order parents top-to-bottom consistently.
+const PARENT_ORDER = ["Equity", "Debt", "Gold", "Hybrid", "Commodities", "Other"];
+
+function paletteFor(parent: string): string[] {
+  return PARENT_PALETTES[parent] ?? PARENT_PALETTES.Other;
+}
+
+function parentColor(parent: string): string {
+  return PARENT_LABEL_COLORS[parent] ?? "#94A3B8";
+}
+
+export function SubAssetBreakdown({ payload }: { payload: Payload }) {
+  const total = payload.nodes.reduce((s, n) => s + n.value, 0);
+  if (total <= 0) return null;
+
+  // Group nodes by parent → desc-sorted list.
+  const byParent = new Map<string, { label: string; value: number }[]>();
+  for (const n of payload.nodes) {
+    const list = byParent.get(n.parent) ?? [];
+    list.push({ label: n.label, value: n.value });
+    byParent.set(n.parent, list);
+  }
+  for (const list of byParent.values()) {
+    list.sort((a, b) => b.value - a.value);
+  }
+
+  const parents = Array.from(byParent.keys()).sort((a, b) => {
+    const ai = PARENT_ORDER.indexOf(a);
+    const bi = PARENT_ORDER.indexOf(b);
+    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+  });
+
+  // For the bottom legend: each unique sub-class with its color.
+  const legendItems: { label: string; color: string }[] = [];
+  for (const p of parents) {
+    const pal = paletteFor(p);
+    (byParent.get(p) ?? []).forEach((item, idx) => {
+      legendItems.push({ label: item.label, color: pal[idx % pal.length] });
+    });
+  }
+
+  return (
+    <div className="rounded-lg border border-border/40 bg-card p-3">
+      <p className="text-[10px] uppercase tracking-[1.5px] mb-3 text-muted-foreground font-medium">
+        {payload.title}
+      </p>
+
+      <TooltipProvider delayDuration={100}>
+        <div className="flex flex-col gap-2.5">
+          {parents.map((p) => {
+            const items = byParent.get(p) ?? [];
+            const parentTotal = items.reduce((s, it) => s + it.value, 0);
+            const parentPct = (parentTotal / total) * 100;
+            const pal = paletteFor(p);
+
+            return (
+              <div key={p} className="flex items-center gap-2">
+                <div className="w-14 shrink-0">
+                  <div
+                    className="text-[11px] font-semibold leading-tight"
+                    style={{ color: parentColor(p) }}
+                  >
+                    {p}
+                  </div>
+                  <div className="text-[9px] text-muted-foreground tabular-nums">
+                    {parentPct.toFixed(1)}%
+                  </div>
+                </div>
+
+                <div
+                  className="relative flex h-5 flex-1 overflow-hidden rounded-md"
+                  style={{ backgroundColor: "hsl(var(--muted))" }}
+                >
+                  {items.map((item, idx) => {
+                    const widthPct = (item.value / total) * 100;
+                    const itemPct = (item.value / total) * 100;
+                    return (
+                      <Tooltip key={item.label}>
+                        <TooltipTrigger asChild>
+                          <div
+                            className="h-full cursor-default transition-opacity hover:opacity-80"
+                            style={{
+                              width: `${widthPct}%`,
+                              backgroundColor: pal[idx % pal.length],
+                            }}
+                          />
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="text-[11px] py-1 px-2">
+                          <div className="font-semibold">
+                            {p} · {item.label}
+                          </div>
+                          <div className="text-muted-foreground">
+                            {formatInrCompact(item.value)} ({itemPct.toFixed(1)}%)
+                          </div>
+                        </TooltipContent>
+                      </Tooltip>
+                    );
+                  })}
+                </div>
+
+                <div className="w-12 shrink-0 text-right text-[11px] font-semibold tabular-nums text-foreground">
+                  {formatInrCompact(parentTotal)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </TooltipProvider>
+
+      {/* Legend — unique sub-classes with their color */}
+      <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1">
+        {legendItems.map((item) => (
+          <div key={item.label} className="flex items-center gap-1.5">
+            <span
+              className="h-2.5 w-2.5 rounded-sm shrink-0"
+              style={{ backgroundColor: item.color }}
+            />
+            <span className="text-[10px] text-muted-foreground">{item.label}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-2 text-[10px] text-muted-foreground text-right">
+        Total{" "}
+        <span className="font-semibold text-foreground">
+          {formatInrCompact(total)}
+        </span>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,147 @@
+import { Treemap, ResponsiveContainer, Tooltip } from "recharts";
+import type { SubAssetTreemap as Payload } from "../types";
+import { formatInrCompact, formatInrPaisa } from "@/lib/utils";
+
+const PARENT_COLORS: Record<string, string> = {
+  Equity: "#4F46E5",
+  Debt: "#E8D5B7",
+  Gold: "#C9A84C",
+  Hybrid: "#94a3b8",
+  Commodities: "#d97706",
+  Other: "#cbd5e1",
+};
+
+function colorFor(parent: string): string {
+  return PARENT_COLORS[parent] ?? "#94a3b8";
+}
+
+interface TileProps {
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  payload?: { parent?: string; label?: string; percentage?: number };
+  name?: string;
+}
+
+function Tile(props: TileProps) {
+  const x = props.x ?? 0;
+  const y = props.y ?? 0;
+  const width = props.width ?? 0;
+  const height = props.height ?? 0;
+  const parent = props.payload?.parent ?? "Other";
+  const label = props.payload?.label ?? props.name ?? "";
+  const pct = props.payload?.percentage ?? 0;
+  const fill = colorFor(parent);
+  const showLabel = width > 60 && height > 28;
+  const showPct = width > 80 && height > 40;
+  // Pick text color for contrast against light/dark fills.
+  const textColor = parent === "Debt" || parent === "Other" ? "#1f2937" : "#ffffff";
+
+  return (
+    <g>
+      <rect
+        x={x}
+        y={y}
+        width={width}
+        height={height}
+        style={{ fill, stroke: "#fff", strokeWidth: 2 }}
+      />
+      {showLabel && (
+        <text
+          x={x + 6}
+          y={y + 14}
+          fill={textColor}
+          fontSize={10}
+          fontWeight={600}
+        >
+          {label}
+        </text>
+      )}
+      {showPct && (
+        <text x={x + 6} y={y + 28} fill={textColor} fontSize={10} opacity={0.85}>
+          {pct.toFixed(1)}%
+        </text>
+      )}
+    </g>
+  );
+}
+
+export function SubAssetTreemap({ payload }: { payload: Payload }) {
+  const total = payload.nodes.reduce((s, n) => s + n.value, 0);
+  const data = payload.nodes.map((n) => ({
+    name: n.label,
+    label: n.label,
+    parent: n.parent,
+    size: n.value,
+    value: n.value,
+    percentage: total > 0 ? (n.value / total) * 100 : 0,
+  }));
+
+  // Build a parent → total list for the legend.
+  const parentTotals = new Map<string, number>();
+  for (const n of payload.nodes) {
+    parentTotals.set(n.parent, (parentTotals.get(n.parent) ?? 0) + n.value);
+  }
+  const legend = Array.from(parentTotals.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([parent, value]) => ({
+      parent,
+      pct: total > 0 ? (value / total) * 100 : 0,
+    }));
+
+  return (
+    <div className="rounded-lg border border-border/40 bg-card p-3">
+      <p className="text-[10px] uppercase tracking-[1.5px] mb-3 text-muted-foreground font-medium">
+        {payload.title}
+      </p>
+
+      <div style={{ width: "100%", height: 200 }}>
+        <ResponsiveContainer>
+          <Treemap
+            data={data}
+            dataKey="size"
+            nameKey="label"
+            aspectRatio={1.4}
+            stroke="#fff"
+            content={<Tile />}
+          >
+            <Tooltip
+              formatter={(value: number, _n, item) => {
+                const row = item.payload as (typeof data)[number];
+                return [
+                  `${formatInrPaisa(value)} (${row.percentage.toFixed(1)}%)`,
+                  `${row.parent} · ${row.label}`,
+                ];
+              }}
+              contentStyle={{ fontSize: "11px", borderRadius: "6px" }}
+            />
+          </Treemap>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+        {legend.map((l) => (
+          <div key={l.parent} className="flex items-center gap-1.5">
+            <span
+              className="h-2.5 w-2.5 rounded-sm"
+              style={{ backgroundColor: colorFor(l.parent) }}
+            />
+            <span className="text-[10px] text-muted-foreground">
+              {l.parent}{" "}
+              <span className="text-foreground font-semibold">
+                {l.pct.toFixed(1)}%
+              </span>
+            </span>
+          </div>
+        ))}
+        <div className="ml-auto text-[10px] text-muted-foreground">
+          Total{" "}
+          <span className="font-semibold text-foreground">
+            {formatInrCompact(total)}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}

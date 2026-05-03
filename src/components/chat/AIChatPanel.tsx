@@ -25,6 +25,8 @@ import {
   type LinkAccountInfo,
 } from "@/lib/api";
 import ReactMarkdown from "react-markdown";
+import { ChartRenderer } from "@/components/chat/visualization_tools";
+import type { ChartPayload } from "@/components/chat/visualization_tools";
 import remarkGfm from "remark-gfm";
 
 const PENDING_CHAT_BOOTSTRAP_KEY = "asktilly.pendingChatBootstrap.v1";
@@ -62,6 +64,7 @@ interface Message {
   widgetKind?: "emergency-fund";
   /** Backend saved an ideal rebalancing plan — show CTA to open `/execute`. */
   showViewExecutePlan?: boolean;
+  chartPayloads?: ChartPayload[];
 }
 
 const GOAL_DEMO_CHECKPOINT_LABELS = ["Goals", "Corpus", "Deadline", "Inflation", "Review", "Summary"] as const;
@@ -679,6 +682,9 @@ const AIChatPanel = ({
         session.messages.map((m) => ({
           role: m.role === "assistant" ? ("ai" as const) : ("user" as const),
           content: m.content,
+          ...(m.chart_payloads
+            ? { chartPayloads: m.chart_payloads as ChartPayload[] }
+            : {}),
         })),
       );
       setChatStartTime(
@@ -777,6 +783,9 @@ const AIChatPanel = ({
             session.messages.map((m) => ({
               role: m.role === "assistant" ? ("ai" as const) : ("user" as const),
               content: m.content,
+              ...(m.chart_payloads
+                ? { chartPayloads: m.chart_payloads as ChartPayload[] }
+                : {}),
             })),
           );
         }
@@ -1031,6 +1040,9 @@ const AIChatPanel = ({
           role: "ai",
           content: resp.assistant_message.content,
           ...(hasSavedPlan ? { showViewExecutePlan: true } : {}),
+          ...(resp.assistant_message.chart_payloads
+            ? { chartPayloads: resp.assistant_message.chart_payloads as ChartPayload[] }
+            : {}),
         },
       ]);
     } catch (err: any) {
@@ -1216,6 +1228,13 @@ const AIChatPanel = ({
                   <MarkdownMessage text={msg.content} />
                 </div>
               </div>
+              {msg.chartPayloads && msg.chartPayloads.length > 0 && (
+                <div className="ml-7 flex flex-col gap-2 max-w-[95%]">
+                  {msg.chartPayloads.map((p, idx) => (
+                    <ChartRenderer key={idx} payload={p} />
+                  ))}
+                </div>
+              )}
               {showBackToInvest && i === 0 && msg.role === "ai" && (
                 <button
                   onClick={() => navigate("/execute")}

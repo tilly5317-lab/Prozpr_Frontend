@@ -1,0 +1,95 @@
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Legend,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
+import type { CategoryGapBar as Payload } from "../types";
+import { formatInrCompact } from "@/lib/utils";
+
+const SERIES_COLORS: Record<string, string> = {
+  Current: "#94a3b8",
+  Target: "#C9A84C",
+  Plan: "#4F46E5",
+};
+
+const FALLBACK_PALETTE = ["#4F46E5", "#94a3b8", "#C9A84C", "#E8D5B7"];
+
+function colorFor(name: string, i: number): string {
+  return SERIES_COLORS[name] ?? FALLBACK_PALETTE[i % FALLBACK_PALETTE.length];
+}
+
+export function CategoryGapBar({ payload }: { payload: Payload }) {
+  const { categories, series } = payload.data;
+
+  const data = categories.map((category, idx) => {
+    const row: Record<string, string | number> = { category };
+    for (const s of series) {
+      row[s.name] = s.values[idx] ?? 0;
+    }
+    return row;
+  });
+
+  const chartHeight = Math.max(160, categories.length * 38);
+
+  return (
+    <div className="rounded-lg border border-border/40 bg-card p-3">
+      <p className="text-[10px] uppercase tracking-[1.5px] mb-1 text-muted-foreground font-medium">
+        {payload.title}
+      </p>
+      {payload.caption ? (
+        <p className="text-[10px] text-muted-foreground/80 mb-2">{payload.caption}</p>
+      ) : null}
+
+      <div style={{ width: "100%", height: chartHeight }}>
+        <ResponsiveContainer>
+          <BarChart
+            data={data}
+            layout="vertical"
+            margin={{ top: 4, right: 12, left: 4, bottom: 4 }}
+            barGap={2}
+          >
+            <CartesianGrid horizontal={false} stroke="hsl(var(--border))" strokeOpacity={0.4} />
+            <XAxis
+              type="number"
+              tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }}
+              tickFormatter={(v: number) => formatInrCompact(v)}
+              axisLine={false}
+              tickLine={false}
+            />
+            <YAxis
+              type="category"
+              dataKey="category"
+              width={90}
+              tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+              tickLine={false}
+              axisLine={false}
+            />
+            <Tooltip
+              cursor={{ fill: "rgba(0,0,0,0.04)" }}
+              formatter={(value: number, name) => [formatInrCompact(value), name]}
+              contentStyle={{ fontSize: "11px", borderRadius: "6px" }}
+            />
+            <Legend
+              wrapperStyle={{ fontSize: "10px", paddingTop: "4px" }}
+              iconSize={8}
+            />
+            {series.map((s, i) => (
+              <Bar
+                key={s.name}
+                dataKey={s.name}
+                fill={colorFor(s.name, i)}
+                radius={[0, 3, 3, 0]}
+                barSize={8}
+              />
+            ))}
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
