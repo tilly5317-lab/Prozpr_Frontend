@@ -8,6 +8,11 @@ import { formatInrCompact } from "@/lib/utils";
 // Bucket classification mirrors the Recommended Investment Plan page.
 type HoldingBucket = "equity" | "debt" | "hybrid";
 
+const EQUITY_COLOR = "#3B6FA8";
+const DEBT_COLOR = "#A8872F";
+const GOLD_COLOR = "#E0B84A";
+const CASH_COLOR = "#F1DA9B";
+
 const BUCKET_ORDER: HoldingBucket[] = ["equity", "debt", "hybrid"];
 
 const BUCKET_LABEL: Record<HoldingBucket, string> = {
@@ -113,9 +118,9 @@ const SUB_DESCRIPTIONS: Record<string, string> = {
 
 // Pill colour per bucket — shades of purple for equity, gold for debt, pale gold/beige for hybrid.
 const SUB_TAG_STYLE: Record<HoldingBucket, { bg: string; fg: string; border: string }> = {
-  equity: { bg: "#EFEAFC", fg: "#5A3FB6", border: "#DDD2F5" },
-  debt: { bg: "#FAEFD6", fg: "#8C6B1E", border: "#EFE0B8" },
-  hybrid: { bg: "#F5EFE3", fg: "#8A7140", border: "#E7DDC8" },
+  equity: { bg: "#E8F0FA", fg: EQUITY_COLOR, border: "#C9DBEE" },
+  debt: { bg: "#F3E8CD", fg: DEBT_COLOR, border: "#E5D3AA" },
+  hybrid: { bg: "#FAF2DC", fg: GOLD_COLOR, border: "#EED9A0" },
 };
 
 const UNCAT_STYLE = { bg: "#EFEFEF", fg: "#6b6b6b", border: "#E3E3E3" };
@@ -204,25 +209,36 @@ function pctColor(n: number | null): string {
 }
 
 const DONUT_COLORS: Record<string, string> = {
-  Equity: "#4F46E5",
-  "Fixed Income": "#E8D5B7",
-  Debt: "#E8D5B7",
-  "Inflation-Linked": "#C9A84C",
-  Gold: "#C9A84C",
-  "Cash/Other": "#94a3b8",
+  Equity: EQUITY_COLOR,
+  "India Equity": EQUITY_COLOR,
+  "US Equity": EQUITY_COLOR,
+  "Fixed Income": DEBT_COLOR,
+  Debt: DEBT_COLOR,
+  "Inflation-Linked": GOLD_COLOR,
+  Gold: GOLD_COLOR,
+  Cash: CASH_COLOR,
+  Other: CASH_COLOR,
+  "Cash/Other": CASH_COLOR,
+  "Hybrid & Others": CASH_COLOR,
 };
 
-const FALLBACK_PALETTE = ["#4F46E5", "#E8D5B7", "#C9A84C", "#94a3b8", "#6366f1", "#d97706"];
+const FALLBACK_PALETTE = [EQUITY_COLOR, DEBT_COLOR, GOLD_COLOR, CASH_COLOR, "#7DA2C8", "#BFA769"];
 
 function getColor(name: string, i: number) {
-  return DONUT_COLORS[name] ?? FALLBACK_PALETTE[i % FALLBACK_PALETTE.length];
+  if (DONUT_COLORS[name]) return DONUT_COLORS[name];
+  const normalized = name.trim().toLowerCase();
+  if (normalized.includes("equity")) return EQUITY_COLOR;
+  if (normalized.includes("debt") || normalized.includes("fixed income")) return DEBT_COLOR;
+  if (normalized.includes("gold") || normalized.includes("inflation")) return GOLD_COLOR;
+  if (normalized.includes("cash") || normalized.includes("other") || normalized.includes("hybrid")) return CASH_COLOR;
+  return FALLBACK_PALETTE[i % FALLBACK_PALETTE.length];
 }
 
 // Fund-row left accent matches the donut / legend palette by classified bucket.
 const HOLDINGS_BAR_BY_BUCKET: Record<HoldingBucket, { bg: string; border?: string }> = {
-  equity: { bg: "#4F46E5" },                         // indigo — matches donut "Equity"
-  debt: { bg: "#E8D5B7", border: "#D4B896" },        // tan/cream — matches donut "Debt"
-  hybrid: { bg: "#C9A84C" },                         // warm gold — matches donut "Gold"
+  equity: { bg: EQUITY_COLOR },
+  debt: { bg: DEBT_COLOR, border: "#8E7228" },
+  hybrid: { bg: GOLD_COLOR },
 };
 
 function computeReturn(avgCost: number | null, currentPrice: number | null): number | null {
@@ -256,10 +272,10 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
         color: getColor(a.asset_class, i),
       }))
     : [
-        { name: "Equity", value: 48, color: "#4F46E5" },
-        { name: "Debt", value: 28, color: "#E8D5B7" },
-        { name: "Gold", value: 16, color: "#C9A84C" },
-        { name: "Cash/Other", value: 8, color: "#94a3b8" },
+        { name: "Equity", value: 48, color: EQUITY_COLOR },
+        { name: "Debt", value: 28, color: DEBT_COLOR },
+        { name: "Gold", value: 16, color: GOLD_COLOR },
+        { name: "Cash/Other", value: 8, color: CASH_COLOR },
       ];
 
   const centerLabel =
@@ -357,7 +373,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                   className="h-2.5 w-2.5 rounded-full shrink-0"
                   style={{
                     backgroundColor: item.color,
-                    border: item.color === "#E8D5B7" ? "1px solid #D4B896" : undefined,
+                    border: item.color === CASH_COLOR ? "1px solid #DCCB96" : undefined,
                   }}
                 />
                 <span className="text-[10px] text-muted-foreground leading-tight">{item.name}</span>

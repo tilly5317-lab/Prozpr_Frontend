@@ -19,7 +19,9 @@ import Rebalancing from "./pages/Rebalancing";
 import GoalPlanner from "./pages/GoalPlanner";
 import Invest from "./pages/Invest";
 import Execute from "./pages/Execute";
+import RebalanceExplanation from "./pages/RebalanceExplanation";
 import Discovery from "./pages/Discovery";
+import AdvisorMeetings from "./pages/AdvisorMeetings";
 import OTP from "./pages/OTP";
 import LinkAccounts from "./pages/LinkAccounts";
 import AboutYou from "./pages/AboutYou";
@@ -56,12 +58,15 @@ const App = () => (
             <Route path="/notifications" element={<Notifications />} />
             <Route path="/invest" element={<Invest />} />
             <Route path="/execute" element={<Execute />} />
+            <Route path="/excecute" element={<Execute />} />
+            <Route path="/rebalance-explanation" element={<RebalanceExplanation />} />
             <Route path="/discovery" element={<Discovery />} />
+            <Route path="/advisor-meetings" element={<AdvisorMeetings />} />
             <Route path="/profile/complete" element={<CompleteProfile />} />
             <Route path="/profile/ips" element={<InvestmentPolicyStatement />} />
             <Route path="/meeting-notes" element={<MeetingNotesIndex />} />
             <Route path="/meeting-notes/detail" element={<MeetingNotes />} />
-            <Route path="/rebalancing" element={<Rebalancing />} />
+            <Route path="/rebalancing" element={<Execute />} />
             <Route path="/goal-planner" element={<GoalPlanner />} />
             <Route path="/family" element={<FamilyMembers />} />
             <Route path="*" element={<NotFound />} />

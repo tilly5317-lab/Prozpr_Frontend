@@ -5,6 +5,11 @@ import { useNavigate } from "react-router-dom";
 import BottomNav from "@/components/BottomNav";
 import { listRebalancingRecommendations, type RebalancingRecommendationInfo } from "@/lib/api";
 
+const EQUITY_COLOR = "#3B6FA8";
+const DEBT_COLOR = "#A8872F";
+const GOLD_COLOR = "#E0B84A";
+const CASH_COLOR = "#F1DA9B";
+
 interface ETFOption {
   ticker: string;
   name: string;
@@ -211,7 +216,13 @@ const Rebalancing = () => {
             transition={{ delay: i * 0.08, duration: 0.3 }}
             onClick={() => setSelectedETF(opt)}
             className="w-full text-left wealth-card p-3"
-            style={{ overflow: "visible", position: "relative" as const, ...(opt.recommended ? { border: "2px solid #B8860B", boxShadow: "0 0 16px 4px rgba(184,134,11,0.35)" } : {}) }}
+            style={{
+              overflow: "visible",
+              position: "relative" as const,
+              ...(opt.recommended
+                ? { border: `2px solid ${DEBT_COLOR}`, boxShadow: "0 0 16px 4px rgba(168,135,47,0.35)" }
+                : {}),
+            }}
           >
             {opt.recommended && (
               <span
@@ -221,14 +232,14 @@ const Rebalancing = () => {
                   right: "16px",
                   transform: "translateY(-50%)",
                   zIndex: 50,
-                  background: "#B8860B",
+                  background: DEBT_COLOR,
                   color: "#ffffff",
                   fontSize: "11px",
                   fontWeight: 700,
                   padding: "4px 12px",
                   borderRadius: "99px",
                   whiteSpace: "nowrap",
-                  boxShadow: "0 2px 8px rgba(184,134,11,0.4)",
+                  boxShadow: "0 2px 8px rgba(168,135,47,0.4)",
                 }}
               >
                 ✦ Recommended
@@ -457,7 +468,7 @@ const Rebalancing = () => {
               >
                 <span
                   style={{
-                    background: "rgba(184, 134, 11, 0.70)",
+                    background: "rgba(168, 135, 47, 0.70)",
                     color: "#ffffff",
                     fontSize: "12px",
                     fontWeight: 600,
@@ -475,7 +486,7 @@ const Rebalancing = () => {
                     height: 0,
                     borderLeft: "6px solid transparent",
                     borderRight: "6px solid transparent",
-                    borderTop: "6px solid #B8860B",
+                    borderTop: `6px solid ${DEBT_COLOR}`,
                     marginTop: "-1px",
                   }}
                 />
