@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, Crown, MapPin, Calendar, Clock, X } from "lucide-react";
+import { ArrowRight, Crown, MapPin, Calendar, Clock, X, MessageCircle, Linkedin } from "lucide-react";
 
 const GOLD = "#d4a868";
 const GOLD_SOFT = "rgba(212, 168, 104, 0.55)";
@@ -17,13 +17,34 @@ interface Attendee {
   name: string;
   tagline: string;
   color: string;
+  whatsappUrl?: string;
+  linkedinUrl?: string;
 }
 
 const ATTENDEES: Attendee[] = [
-  { initial: "AM", name: "Aisha Mehta", tagline: "Investor · Mumbai", color: "#7b4f8f" },
-  { initial: "RP", name: "Raj Patel", tagline: "Founder · Bangalore", color: "#3d6b7c" },
+  {
+    initial: "AM",
+    name: "Aisha Mehta",
+    tagline: "Investor · Mumbai",
+    color: "#7b4f8f",
+    whatsappUrl: "https://wa.me/919999999901",
+    linkedinUrl: "https://www.linkedin.com/in/aisha-mehta",
+  },
+  {
+    initial: "RP",
+    name: "Raj Patel",
+    tagline: "Founder · Bangalore",
+    color: "#3d6b7c",
+    linkedinUrl: "https://www.linkedin.com/in/raj-patel",
+  },
   { initial: "PI", name: "Priya Iyer", tagline: "Designer · Delhi", color: "#a6614a" },
-  { initial: "DW", name: "Daniel Wong", tagline: "VC · Singapore", color: "#5c7c3d" },
+  {
+    initial: "DW",
+    name: "Daniel Wong",
+    tagline: "VC · Singapore",
+    color: "#5c7c3d",
+    whatsappUrl: "https://wa.me/6599999999",
+  },
   { initial: "SK", name: "Sara Khan", tagline: "Architect · Mumbai", color: "#8c6a2b" },
   { initial: "TP", name: "Tom Patel", tagline: "Friend · Mumbai", color: "#7e5a40" },
 ];
@@ -266,6 +287,36 @@ const ReserveSheet = ({ onClose }: { onClose: () => void }) => {
                       {a.tagline}
                     </p>
                   </div>
+                  {(a.whatsappUrl || a.linkedinUrl) && (
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {a.whatsappUrl && (
+                        <a
+                          href={a.whatsappUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="h-7 w-7 rounded-full inline-flex items-center justify-center"
+                          style={{ backgroundColor: "rgba(34,197,94,0.16)", color: "#16a34a" }}
+                          aria-label={`WhatsApp ${a.name}`}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <MessageCircle className="h-3.5 w-3.5" />
+                        </a>
+                      )}
+                      {a.linkedinUrl && (
+                        <a
+                          href={a.linkedinUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="h-7 w-7 rounded-full inline-flex items-center justify-center"
+                          style={{ backgroundColor: "rgba(59,130,246,0.16)", color: "#2563eb" }}
+                          aria-label={`Connect with ${a.name} on LinkedIn`}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Linkedin className="h-3.5 w-3.5" />
+                        </a>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

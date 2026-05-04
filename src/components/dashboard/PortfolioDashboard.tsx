@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import BottomNav from "@/components/BottomNav";
 import NetWorthSparkline from "./NetWorthSparkline";
 import CurrentAllocationCard from "./CurrentAllocationCard";
+import AdvisorMeetingsSlot from "./AdvisorMeetingsSlot";
 import LiveEventBanner from "./LiveEventBanner";
 import PeerComparisonCard from "./PeerComparisonCard";
 import PortfolioAnalysisModal from "./PortfolioAnalysisModal";
@@ -204,6 +205,7 @@ function CumulativeMemberBreakdownCard({ data }: { data: CumulativePortfolioResp
 const PortfolioDashboard = () => {
   const { activeView } = useFamily();
   const [timePeriod, setTimePeriod] = useState<"1M" | "6M" | "1Y" | "All">("All");
+  const [hasShownInitialLoad, setHasShownInitialLoad] = useState(false);
 
   const [cumulativeData, setCumulativeData] = useState<CumulativePortfolioResponse | null>(null);
   const [memberPortfolio, setMemberPortfolio] = useState<PortfolioDetail | null>(null);
@@ -217,30 +219,40 @@ const PortfolioDashboard = () => {
   useEffect(() => {
     let cancelled = false;
     if (activeView.type === "cumulative") {
-      setFamilyLoading(true);
+      setFamilyLoading(!hasShownInitialLoad && !cumulativeData);
       getCumulativePortfolio()
         .then((d) => { if (!cancelled) setCumulativeData(d); })
         .catch(() => {
           if (!cancelled) setCumulativeData(cloneDemoCumulativePortfolio());
         })
-        .finally(() => { if (!cancelled) setFamilyLoading(false); });
+        .finally(() => {
+          if (!cancelled) {
+            setFamilyLoading(false);
+            setHasShownInitialLoad(true);
+          }
+        });
     } else if (activeView.type === "member") {
-      setFamilyLoading(true);
+      setFamilyLoading(!hasShownInitialLoad && !memberPortfolio);
       const nick = activeView.member.nickname;
       getFamilyMemberPortfolio(activeView.member.id)
         .then((d) => { if (!cancelled) setMemberPortfolio(d); })
         .catch(() => {
           if (!cancelled) setMemberPortfolio(cloneDemoMemberPortfolio(nick));
         })
-        .finally(() => { if (!cancelled) setFamilyLoading(false); });
+        .finally(() => {
+          if (!cancelled) {
+            setFamilyLoading(false);
+            setHasShownInitialLoad(true);
+          }
+        });
     }
     return () => { cancelled = true; };
-  }, [activeView]);
+  }, [activeView, hasShownInitialLoad]);
 
   useEffect(() => {
     if (activeView.type !== "self") return;
     let cancelled = false;
-    setSelfLoading(true);
+    setSelfLoading(!hasShownInitialLoad && !selfPortfolio);
     Promise.all([
       getMyPortfolio().catch(() => null),
       getFullProfile().catch(() => null),
@@ -271,12 +283,15 @@ const PortfolioDashboard = () => {
         }
       })
       .finally(() => {
-        if (!cancelled) setSelfLoading(false);
+        if (!cancelled) {
+          setSelfLoading(false);
+          setHasShownInitialLoad(true);
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [activeView.type]);
+  }, [activeView.type, hasShownInitialLoad]);
 
   const viewLabel =
     activeView.type === "self"
@@ -300,7 +315,7 @@ const PortfolioDashboard = () => {
         <ProfileSwitcher />
       </div>
 
-      {familyLoading && activeView.type !== "self" && (
+      {familyLoading && activeView.type !== "self" && !hasShownInitialLoad && (
         <div className="px-[14px] py-8 flex justify-center">
           <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted border-t-foreground" />
         </div>
@@ -309,7 +324,7 @@ const PortfolioDashboard = () => {
       {/* Cumulative family view */}
       {activeView.type === "cumulative" && (
         <>
-          {!familyLoading && cumulativeData && cumulativeData.total_value > 0 && (
+          {cumulativeData && cumulativeData.total_value > 0 && (
             <div className="px-[14px] space-y-2">
               <PortfolioMainPanel
                 portfolio={cumulativeToPortfolioDetail(cumulativeData)}
@@ -320,6 +335,7 @@ const PortfolioDashboard = () => {
                 horizonLabel="Combined family"
                 middleSlot={<CumulativeMemberBreakdownCard data={cumulativeData} />}
               />
+              <AdvisorMeetingsSlot />
               <LiveEventBanner />
               <div className={CARD} style={CARD_BORDER}>
                 <p className="mb-3" style={SECTION_LABEL}>Test your skills in 2 minutes!</p>
@@ -334,12 +350,12 @@ const PortfolioDashboard = () => {
               </div>
             </div>
           )}
-          {!familyLoading && cumulativeData && cumulativeData.total_value === 0 && (
+          {cumulativeData && cumulativeData.total_value === 0 && (
             <div className="px-[14px] py-8 text-center">
               <p className="text-xs text-muted-foreground">No combined portfolio data yet.</p>
             </div>
           )}
-          {!familyLoading && !cumulativeData && (
+          {!familyLoading && !cumulativeData && hasShownInitialLoad && (
             <div className="px-[14px] py-6 text-center text-xs text-muted-foreground">
               Could not load family portfolio. Check your connection and try again.
             </div>
@@ -350,7 +366,7 @@ const PortfolioDashboard = () => {
       {/* Member view */}
       {activeView.type === "member" && (
         <>
-          {!familyLoading && memberPortfolio && memberPortfolio.total_value > 0 && (
+          {memberPortfolio && memberPortfolio.total_value > 0 && (
             <div className="px-[14px] space-y-2">
               <PortfolioMainPanel
                 portfolio={memberPortfolio}
@@ -360,6 +376,7 @@ const PortfolioDashboard = () => {
                 riskCategory={null}
                 horizonLabel={null}
               />
+              <AdvisorMeetingsSlot />
               <LiveEventBanner />
               <div className={CARD} style={CARD_BORDER}>
                 <p className="mb-3" style={SECTION_LABEL}>Test your skills in 2 minutes!</p>
@@ -374,12 +391,12 @@ const PortfolioDashboard = () => {
               </div>
             </div>
           )}
-          {!familyLoading && memberPortfolio && memberPortfolio.total_value === 0 && (
+          {memberPortfolio && memberPortfolio.total_value === 0 && (
             <div className="px-[14px] py-8 text-center">
               <p className="text-xs text-muted-foreground">No portfolio data available for this member yet.</p>
             </div>
           )}
-          {!familyLoading && !memberPortfolio && (
+          {!familyLoading && !memberPortfolio && hasShownInitialLoad && (
             <div className="px-[14px] py-6 text-center text-xs text-muted-foreground">
               Could not load this member&apos;s portfolio. Check your connection and try again.
             </div>
@@ -390,13 +407,13 @@ const PortfolioDashboard = () => {
       {/* Self view */}
       {activeView.type === "self" && (
         <>
-          {selfLoading && (
+          {selfLoading && !hasShownInitialLoad && (
             <div className="px-[14px] py-8 flex justify-center">
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted border-t-foreground" />
             </div>
           )}
 
-          {!selfLoading && selfPortfolio && (
+          {selfPortfolio && (
             <div className="px-[14px] space-y-2">
               <PortfolioMainPanel
                 portfolio={selfPortfolio}
@@ -410,6 +427,7 @@ const PortfolioDashboard = () => {
                   null
                 }
               />
+              <AdvisorMeetingsSlot />
               <LiveEventBanner />
               <div className={CARD} style={CARD_BORDER}>
                 <p className="mb-3" style={SECTION_LABEL}>Test your skills in 2 minutes!</p>
@@ -425,7 +443,7 @@ const PortfolioDashboard = () => {
             </div>
           )}
 
-          {!selfLoading && !selfPortfolio && (
+          {!selfLoading && !selfPortfolio && hasShownInitialLoad && (
             <div className="px-[14px] py-6 text-center text-xs text-muted-foreground">
               Could not load your portfolio from the server. Check your connection and try again.
             </div>
