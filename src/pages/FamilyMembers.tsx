@@ -280,7 +280,7 @@ const FamilyMembers = () => {
           <ArrowLeft className="h-4 w-4 text-foreground" />
         </button>
         <div className="flex-1">
-          <h1 className="text-base font-semibold text-foreground">Family Members</h1>
+          <h1 className="text-lg font-semibold text-foreground">Family Members</h1>
           <p className="text-[10px] text-muted-foreground">
             {members.length === 0 ? "Add family to manage their accounts" : `${activeCount} verified${pendingCount > 0 ? ` · ${pendingCount} pending` : ""}`}
           </p>

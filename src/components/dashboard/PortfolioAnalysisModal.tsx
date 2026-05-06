@@ -19,14 +19,18 @@ import { Download, Info, X } from "lucide-react";
 import type { PortfolioDetail } from "@/lib/api";
 import { formatInrCompact, formatInrPaisa } from "@/lib/utils";
 
-type AnalysisTab = "returns" | "nav" | "waterfall";
+type AnalysisTab = "returns" | "nav" | "waterfall" | "benchmark";
 type AnalysisRange = "1M" | "3M" | "YTD" | "1Y" | "3Y" | "All";
 
 const TABS: { id: AnalysisTab; label: string }[] = [
   { id: "returns", label: "Returns" },
   { id: "nav", label: "NAV Changes" },
   { id: "waterfall", label: "Value Build-Up" },
+  { id: "benchmark", label: "Benchmark" },
 ];
+
+const BENCHMARK_NAME = "Nifty 50";
+const BENCHMARK_LINE = "hsl(var(--muted-foreground))";
 
 const RANGES: AnalysisRange[] = ["1M", "3M", "YTD", "1Y", "3Y", "All"];
 
@@ -112,7 +116,7 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
   const [tab, setTab] = useState<AnalysisTab>(() => {
     if (typeof window === "undefined") return "returns";
     const stored = window.sessionStorage.getItem(STORAGE_KEY) as AnalysisTab | null;
-    return stored === "returns" || stored === "nav" || stored === "waterfall" ? stored : "returns";
+    return stored === "returns" || stored === "nav" || stored === "waterfall" || stored === "benchmark" ? stored : "returns";
   });
   const [range, setRange] = useState<AnalysisRange>("1M");
   const [infoOpen, setInfoOpen] = useState(false);
@@ -146,6 +150,15 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
     const mwr = synthCurve(0, scaledMwr, n, 11);
     return twr.map((t, i) => ({ i, twr: t, mwr: mwr[i] }));
   }, [range, scaledTwr, scaledMwr]);
+
+  const benchmarkSeries = useMemo(() => {
+    const n = pointsForRange(range);
+    const portfolioCurve = synthCurve(0, scaledTwr, n, 3);
+    const benchCurve = synthCurve(0, bench, n, 17);
+    return portfolioCurve.map((p, i) => ({ i, portfolio: p, benchmark: benchCurve[i] }));
+  }, [range, scaledTwr, bench]);
+
+  const alpha = Math.round((scaledTwr - bench) * 100) / 100;
 
   // NAV Changes data
   const currentNav = portfolio.total_value;
@@ -241,6 +254,16 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
         ["Change (%)", Number(navPctChange.toFixed(2))],
       ];
       downloadFile(`portfolio-nav-${ts}.csv`, "text/csv", toCsv(rows));
+      return;
+    }
+    if (tab === "benchmark") {
+      const rows: (string | number)[][] = [
+        ["Metric", `${range}`],
+        ["Portfolio TWR %", scaledTwr],
+        [`${BENCHMARK_NAME} %`, bench],
+        ["Alpha %", alpha],
+      ];
+      downloadFile(`portfolio-benchmark-${ts}.csv`, "text/csv", toCsv(rows));
       return;
     }
     const rows: (string | number)[][] = [["Line item", "Value (₹)"]];
@@ -779,6 +802,142 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                               </div>
                             );
                           })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* — Benchmark tab — */}
+                    {tab === "benchmark" && (
+                      <div>
+                        <div className="grid grid-cols-3 gap-2">
+                          <div
+                            className="rounded-xl p-2.5"
+                            style={{ border: `1px solid ${HAIRLINE}` }}
+                          >
+                            <p className="text-[9px] uppercase tracking-wide text-muted-foreground mb-0.5">
+                              Portfolio
+                            </p>
+                            <p
+                              className="text-base font-semibold leading-tight"
+                              style={{
+                                color: scaledTwr >= 0 ? POSITIVE : NEGATIVE,
+                                fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                              }}
+                            >
+                              {fmtPct(scaledTwr)}
+                            </p>
+                            <p className="text-[9px] text-muted-foreground mt-0.5">{range}</p>
+                          </div>
+                          <div
+                            className="rounded-xl p-2.5"
+                            style={{ border: `1px solid ${HAIRLINE}` }}
+                          >
+                            <p className="text-[9px] uppercase tracking-wide text-muted-foreground mb-0.5">
+                              {BENCHMARK_NAME}
+                            </p>
+                            <p
+                              className="text-base font-semibold leading-tight"
+                              style={{
+                                color: bench >= 0 ? POSITIVE : NEGATIVE,
+                                fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                              }}
+                            >
+                              {fmtPct(bench)}
+                            </p>
+                            <p className="text-[9px] text-muted-foreground mt-0.5">{range}</p>
+                          </div>
+                          <div
+                            className="rounded-xl p-2.5"
+                            style={{ border: `1px solid ${HAIRLINE}` }}
+                          >
+                            <p className="text-[9px] uppercase tracking-wide text-muted-foreground mb-0.5">
+                              Alpha
+                            </p>
+                            <p
+                              className="text-base font-semibold leading-tight"
+                              style={{
+                                color: alpha >= 0 ? POSITIVE : NEGATIVE,
+                                fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                              }}
+                            >
+                              {fmtPct(alpha)}
+                            </p>
+                            <p className="text-[9px] text-muted-foreground mt-0.5">vs {BENCHMARK_NAME}</p>
+                          </div>
+                        </div>
+
+                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground mt-4 mb-1.5">
+                          Portfolio vs {BENCHMARK_NAME} over {range}
+                        </p>
+                        <div className="h-[180px] w-full">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <LineChart
+                              data={benchmarkSeries}
+                              margin={{ top: 8, right: 36, left: 0, bottom: 4 }}
+                            >
+                              <CartesianGrid stroke={HAIRLINE} vertical={false} />
+                              <XAxis dataKey="i" hide />
+                              <YAxis
+                                orientation="right"
+                                width={36}
+                                tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                                tickFormatter={(v) => `${v}%`}
+                                axisLine={false}
+                                tickLine={false}
+                              />
+                              <ReferenceLine y={0} stroke={HAIRLINE} strokeDasharray="3 3" />
+                              <Tooltip
+                                contentStyle={{
+                                  fontSize: 11,
+                                  borderRadius: 8,
+                                  border: `1px solid ${HAIRLINE}`,
+                                  backgroundColor: "hsl(var(--card))",
+                                  color: "hsl(var(--foreground))",
+                                }}
+                                formatter={(v: number, name: string) => [`${v}%`, name]}
+                              />
+                              <Line
+                                type="monotone"
+                                dataKey="portfolio"
+                                name="Portfolio"
+                                stroke={USER_LINE}
+                                strokeWidth={2}
+                                dot={false}
+                                isAnimationActive={false}
+                              />
+                              <Line
+                                type="monotone"
+                                dataKey="benchmark"
+                                name={BENCHMARK_NAME}
+                                stroke={BENCHMARK_LINE}
+                                strokeWidth={1.75}
+                                strokeDasharray="4 3"
+                                dot={false}
+                                isAnimationActive={false}
+                              />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+
+                        <div className="flex items-center gap-4 mt-2 text-[11px]">
+                          <span className="inline-flex items-center gap-1.5">
+                            <span
+                              className="inline-block h-0.5 w-4"
+                              style={{ backgroundColor: USER_LINE }}
+                            />
+                            Portfolio
+                          </span>
+                          <span className="inline-flex items-center gap-1.5">
+                            <span
+                              className="inline-block h-0.5 w-4"
+                              style={{
+                                backgroundColor: BENCHMARK_LINE,
+                                backgroundImage:
+                                  "repeating-linear-gradient(90deg, currentColor 0 3px, transparent 3px 6px)",
+                              }}
+                            />
+                            {BENCHMARK_NAME}
+                          </span>
                         </div>
                       </div>
                     )}

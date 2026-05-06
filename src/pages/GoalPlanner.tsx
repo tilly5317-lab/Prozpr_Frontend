@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Copy, Plus, Check, Target, Clock, Flag, Pencil, Loader2, MessageCircle, Sparkles, Home, GraduationCap, Plane, BriefcaseBusiness, Heart, Car, Landmark, Trophy } from "lucide-react";
+import { Copy, Plus, Check, Target, Clock, Flag, Pencil, Loader2, MessageCircle, Sparkles, Home, GraduationCap, Plane, BriefcaseBusiness, Heart, Car, Landmark, Trophy } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
 import BottomNav from "@/components/BottomNav";
@@ -554,16 +554,8 @@ const GoalPlanner = () => {
       {/* Sticky header */}
       <header className="sticky top-0 z-40 border-b border-border bg-background">
         <div className="flex items-center gap-3 px-4 pt-[max(2.25rem,env(safe-area-inset-top))] pb-3">
-          <button
-            type="button"
-            onClick={() => navigate(-1)}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border/80 bg-card text-foreground transition-colors hover:bg-muted"
-            aria-label="Go back"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </button>
           <div className="min-w-0 flex-1">
-            <h1 className="font-display text-2xl tracking-tight text-foreground">Goals</h1>
+            <h1 className="text-lg font-semibold text-foreground">Goals</h1>
             <p className="text-xs text-muted-foreground">Track targets and corpus in one place</p>
           </div>
           <button
@@ -596,10 +588,10 @@ const GoalPlanner = () => {
             <div className="flex items-start justify-between gap-2">
               <div>
                 <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Portfolio vs active target</p>
-                <p className="mt-1 font-display text-3xl tabular-nums tracking-tight text-foreground">
+                <p className="mt-1 text-2xl font-bold tabular-nums tracking-tight text-foreground">
                   {formatINR(gamification.displayCurrent)}
-                  <span className="text-lg font-sans font-medium text-muted-foreground"> / </span>
-                  <span className="text-xl font-sans font-semibold text-muted-foreground">
+                  <span className="text-base font-medium text-muted-foreground"> / </span>
+                  <span className="text-lg font-semibold text-muted-foreground">
                     {gamification.totalTargetActive > 0
                       ? formatINR(gamification.totalTargetActive)
                       : goals.length === 0
@@ -657,7 +649,7 @@ const GoalPlanner = () => {
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted">
                 <Target className="h-7 w-7 text-muted-foreground" strokeWidth={1.5} />
               </div>
-              <p className="mt-4 font-display text-xl text-foreground">Start with one goal</p>
+              <p className="mt-4 text-lg font-semibold text-foreground">Start with one goal</p>
               <p className="mt-1 max-w-xs text-sm text-muted-foreground">
                 Name it, set a target corpus, and optionally add what you already save each month.
               </p>
@@ -797,7 +789,7 @@ const GoalPlanner = () => {
                 <div className="h-1 w-10 rounded-full bg-muted-foreground/25" />
               </div>
               <div className="px-5 pt-2 pb-[calc(7rem+env(safe-area-inset-bottom,0px))]">
-                <h3 className="font-display text-xl text-foreground">Edit goal</h3>
+                <h3 className="text-lg font-semibold text-foreground">Edit goal</h3>
                 <p className="mt-1 text-xs text-muted-foreground">Changes apply immediately to your overview.</p>
 
                 <label className="mt-6 block text-xs font-medium text-muted-foreground">Name</label>
@@ -933,7 +925,7 @@ const GoalPlanner = () => {
                 <div className="h-1 w-10 rounded-full bg-muted-foreground/25" />
               </div>
               <div className="px-5 pt-2 pb-[calc(7rem+env(safe-area-inset-bottom,0px))]">
-                <h3 className="font-display text-xl text-foreground">New goal</h3>
+                <h3 className="text-lg font-semibold text-foreground">New goal</h3>
                 <p className="mt-1 text-xs text-muted-foreground">Set a target corpus and timeline. You can refine later.</p>
 
                 <label className="mt-6 block text-xs font-medium text-muted-foreground">Goal name</label>
@@ -1066,7 +1058,7 @@ const GoalPlanner = () => {
                 <div className="h-1 w-10 rounded-full bg-muted-foreground/25" />
               </div>
               <div className="px-5 pt-4 pb-[calc(7rem+env(safe-area-inset-bottom,0px))]">
-                <h3 className="font-display text-xl text-foreground">{holdingsGoal.label}</h3>
+                <h3 className="text-lg font-semibold text-foreground">{holdingsGoal.label}</h3>
                 <p className="mt-1 text-xs text-muted-foreground">Holdings mapped to this goal</p>
                 <ul className="mt-5 space-y-3">
                   {holdingsGoal.holdings.map((h, i) => (
@@ -1130,7 +1122,7 @@ const GoalPlanner = () => {
                 <div className="h-1 w-10 rounded-full bg-muted-foreground/25" />
               </div>
               <div className="px-5 pt-4 pb-[calc(7rem+env(safe-area-inset-bottom,0px))]">
-                <h3 className="font-display text-xl text-foreground">Contribute</h3>
+                <h3 className="text-lg font-semibold text-foreground">Contribute</h3>
                 <p className="mt-1 text-sm text-muted-foreground">{contributeGoal.label}</p>
 
                 <label className="mt-6 block text-xs font-medium text-muted-foreground">Amount (₹)</label>

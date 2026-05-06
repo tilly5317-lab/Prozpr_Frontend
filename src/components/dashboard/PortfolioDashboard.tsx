@@ -1,15 +1,12 @@
 import { useState, useEffect, type ReactNode } from "react";
-import { TrendingUp, TrendingDown } from "lucide-react";
+import { TrendingUp, TrendingDown, MessageCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import BottomNav from "@/components/BottomNav";
 import NetWorthSparkline from "./NetWorthSparkline";
 import CurrentAllocationCard from "./CurrentAllocationCard";
 import AdvisorMeetingsSlot from "./AdvisorMeetingsSlot";
 import LiveEventBanner from "./LiveEventBanner";
-import PeerComparisonCard from "./PeerComparisonCard";
 import PortfolioAnalysisModal from "./PortfolioAnalysisModal";
-import DailyInsights from "./DailyInsights";
-import SkillsQuiz from "./SkillsQuiz";
 import ProfileSwitcher from "./ProfileSwitcher";
 import { useFamily } from "@/context/FamilyContext";
 import {
@@ -312,7 +309,19 @@ const PortfolioDashboard = () => {
             </p>
           )}
         </div>
-        <ProfileSwitcher />
+        <div className="flex items-center gap-2">
+          <a
+            href="https://wa.me/"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Chat on WhatsApp"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-muted/60 hover:bg-muted transition-colors"
+            style={{ color: "#25D366" }}
+          >
+            <MessageCircle className="h-4 w-4" strokeWidth={2.2} />
+          </a>
+          <ProfileSwitcher />
+        </div>
       </div>
 
       {familyLoading && activeView.type !== "self" && !hasShownInitialLoad && (
@@ -325,7 +334,7 @@ const PortfolioDashboard = () => {
       {activeView.type === "cumulative" && (
         <>
           {cumulativeData && cumulativeData.total_value > 0 && (
-            <div className="px-[14px] space-y-2">
+            <div className="px-[14px] space-y-2 pb-24">
               <PortfolioMainPanel
                 portfolio={cumulativeToPortfolioDetail(cumulativeData)}
                 timePeriod={timePeriod}
@@ -337,17 +346,6 @@ const PortfolioDashboard = () => {
               />
               <AdvisorMeetingsSlot />
               <LiveEventBanner />
-              <div className={CARD} style={CARD_BORDER}>
-                <p className="mb-3" style={SECTION_LABEL}>Test your skills in 2 minutes!</p>
-                <SkillsQuiz />
-              </div>
-              <div className={CARD} style={CARD_BORDER}>
-                <p className="mb-3" style={SECTION_LABEL}>Head to head · 1Y</p>
-                <PeerComparisonCard portfolio={cumulativeToPortfolioDetail(cumulativeData)} />
-              </div>
-              <div className={`${CARD} pb-24`} style={CARD_BORDER}>
-                <DailyInsights />
-              </div>
             </div>
           )}
           {cumulativeData && cumulativeData.total_value === 0 && (
@@ -367,7 +365,7 @@ const PortfolioDashboard = () => {
       {activeView.type === "member" && (
         <>
           {memberPortfolio && memberPortfolio.total_value > 0 && (
-            <div className="px-[14px] space-y-2">
+            <div className="px-[14px] space-y-2 pb-24">
               <PortfolioMainPanel
                 portfolio={memberPortfolio}
                 timePeriod={timePeriod}
@@ -378,17 +376,6 @@ const PortfolioDashboard = () => {
               />
               <AdvisorMeetingsSlot />
               <LiveEventBanner />
-              <div className={CARD} style={CARD_BORDER}>
-                <p className="mb-3" style={SECTION_LABEL}>Test your skills in 2 minutes!</p>
-                <SkillsQuiz />
-              </div>
-              <div className={CARD} style={CARD_BORDER}>
-                <p className="mb-3" style={SECTION_LABEL}>Head to head · 1Y</p>
-                <PeerComparisonCard portfolio={memberPortfolio} />
-              </div>
-              <div className={`${CARD} pb-24`} style={CARD_BORDER}>
-                <DailyInsights />
-              </div>
             </div>
           )}
           {memberPortfolio && memberPortfolio.total_value === 0 && (
@@ -414,7 +401,7 @@ const PortfolioDashboard = () => {
           )}
 
           {selfPortfolio && (
-            <div className="px-[14px] space-y-2">
+            <div className="px-[14px] space-y-2 pb-24">
               <PortfolioMainPanel
                 portfolio={selfPortfolio}
                 timePeriod={timePeriod}
@@ -429,17 +416,6 @@ const PortfolioDashboard = () => {
               />
               <AdvisorMeetingsSlot />
               <LiveEventBanner />
-              <div className={CARD} style={CARD_BORDER}>
-                <p className="mb-3" style={SECTION_LABEL}>Test your skills in 2 minutes!</p>
-                <SkillsQuiz />
-              </div>
-              <div className={CARD} style={CARD_BORDER}>
-                <p className="mb-3" style={SECTION_LABEL}>Head to head · 1Y</p>
-                <PeerComparisonCard portfolio={selfPortfolio} />
-              </div>
-              <div className={`${CARD} pb-24`} style={CARD_BORDER}>
-                <DailyInsights />
-              </div>
             </div>
           )}
 

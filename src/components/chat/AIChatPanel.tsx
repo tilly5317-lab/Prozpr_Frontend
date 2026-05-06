@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Send, Mic, MicOff, AlertCircle, Loader2, Sparkles, Check, Square, ChevronDown, ChevronUp, Pencil, ArrowRight, Plus, Clock, Trash2, MessageSquare } from "lucide-react";
+import { X, Send, Mic, MicOff, AlertCircle, Loader2, Sparkles, Check, Square, ChevronDown, ChevronUp, Pencil, ArrowRight, Plus, Clock, Trash2, MessageSquare, MessageCircle } from "lucide-react";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -1341,13 +1341,25 @@ const AIChatPanel = ({
               New Chat
             </button>
             <p className="text-xs font-semibold text-foreground">Tilly</p>
-            <button
-              onClick={() => setHistoryOpen(true)}
-              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted/60"
-            >
-              <Clock className="h-3.5 w-3.5" />
-              History
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setHistoryOpen(true)}
+                className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted/60"
+              >
+                <Clock className="h-3.5 w-3.5" />
+                History
+              </button>
+              <a
+                href="https://wa.me/"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Chat on WhatsApp"
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-muted/60 hover:bg-muted transition-colors"
+                style={{ color: "#25D366" }}
+              >
+                <MessageCircle className="h-3.5 w-3.5" strokeWidth={2.2} />
+              </a>
+            </div>
           </div>
         )}
 

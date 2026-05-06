@@ -1,7 +1,7 @@
 import { type CSSProperties, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowDownLeft, ArrowUpRight, Star, X } from "lucide-react";
+import { ArrowDownLeft, ArrowRight, ArrowUpRight, Star, X } from "lucide-react";
 import {
   CartesianGrid,
   Legend,
@@ -160,7 +160,7 @@ const trades: Trade[] = [
 ];
 
 const cardStyle: CSSProperties = {
-  background: "linear-gradient(180deg, #131722 0%, #11151F 100%)",
+  background: "linear-gradient(180deg, #1c1c1b 0%, #161615 100%)",
   border: "1px solid rgba(255,255,255,0.08)",
   borderRadius: 16,
 };
@@ -177,8 +177,13 @@ const RebalanceExplanation = () => {
   }, [selectedTrade]);
 
   return (
-    <div className="mobile-container min-h-screen pb-24 text-white" style={{ background: "#090B11" }}>
-      <div className="px-4 pt-8 pb-2 space-y-3">
+    <div className="mobile-container bg-background min-h-screen pb-24">
+      {/* Header */}
+      <div className="px-5 pt-10 pb-3">
+        <h1 className="text-lg font-semibold text-foreground">Rebalance</h1>
+      </div>
+
+      <div className="px-4 pb-2 space-y-3">
         <section style={cardStyle} className="px-4 py-4">
           <h1 className="text-[22px] leading-tight font-semibold tracking-tight text-[#E8EDF9]">Your mix has drifted.</h1>
           <p className="mt-3 text-[12px] leading-5 text-[#A6B0C6]">
@@ -202,7 +207,7 @@ const RebalanceExplanation = () => {
                     </div>
                     <span className="font-medium text-[#D2D9E8]">{row.current}% → {row.target}%</span>
                   </div>
-                  <div className="mt-2 h-2 w-full rounded-full bg-[#1A2233]">
+                  <div className="mt-2 h-2 w-full rounded-full bg-[#252523]">
                     <div
                       className="h-2 rounded-full"
                       style={{
@@ -265,22 +270,14 @@ const RebalanceExplanation = () => {
           </p>
         </section>
 
-        <div className="flex items-center justify-center gap-2 pb-20">
-          <button
-            type="button"
-            onClick={() => navigate("/discovery")}
-            className="rounded-full border border-white/20 px-5 py-2 text-[12px] text-[#E6ECFA] bg-[#0E1320]"
-          >
-            ← Back
-          </button>
-          <button
-            type="button"
-            onClick={() => navigate("/execute")}
-            className="rounded-full border border-white/20 px-5 py-2 text-[12px] text-[#E6ECFA] bg-[#0E1320]"
-          >
-            Proceed →
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => navigate("/execute")}
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground py-3.5 text-[15px] font-semibold tracking-wide text-background transition-all active:scale-[0.98]"
+        >
+          Proceed
+          <ArrowRight className="h-4 w-4" />
+        </button>
       </div>
 
       <AnimatePresence>
@@ -293,27 +290,33 @@ const RebalanceExplanation = () => {
               className="fixed inset-0 z-50 bg-black/60 backdrop-blur-[2px]"
               onClick={() => setSelectedTrade(null)}
             />
-            <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 30, stiffness: 320 }}
-              drag="y"
-              dragConstraints={{ top: 0, bottom: 0 }}
-              dragElastic={{ top: 0, bottom: 0.35 }}
-              onDragEnd={(_, info) => {
-                if (info.offset.y > 100 || info.velocity.y > 550) setSelectedTrade(null);
-              }}
-              className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-md rounded-t-2xl text-white"
-              style={{ background: "#121723", maxHeight: "86dvh", display: "flex", flexDirection: "column" }}
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 pointer-events-none"
+              role="dialog"
+              aria-modal="true"
             >
-              <div className="px-4 pt-3 pb-2 flex items-center justify-between">
-                <button onClick={() => setSelectedTrade(null)} className="h-1.5 w-12 rounded-full bg-white/20 mx-auto" />
-                <button onClick={() => setSelectedTrade(null)} className="text-[#9CA6BF] -ml-3">
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-              <div className="overflow-y-auto px-5 pb-5">
+              <motion.div
+                initial={{ opacity: 0, y: 12, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 8, scale: 0.97 }}
+                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                className="relative w-full max-w-md rounded-2xl text-white overflow-hidden pointer-events-auto"
+                style={{ background: "#1c1c1b", maxHeight: "min(86dvh, 720px)", display: "flex", flexDirection: "column" }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="shrink-0 flex items-center justify-end px-4 pt-3 pb-2">
+                  <button
+                    onClick={() => setSelectedTrade(null)}
+                    className="h-7 w-7 rounded-full flex items-center justify-center text-[#9CA6BF] hover:text-white hover:bg-white/10 transition-colors"
+                    aria-label="Close"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <div
+                  className="flex-1 min-h-0 overflow-y-auto px-5"
+                  style={{ paddingBottom: "1.5rem" }}
+                >
                 <div className="flex items-center gap-2">
                   {selectedTrade.type === "BUY" ? (
                     <ArrowDownLeft className="h-4 w-4 text-[#3FD998]" />
@@ -339,11 +342,11 @@ const RebalanceExplanation = () => {
                 <div className="mt-2" style={{ height: 150 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={selectedTrade.fund.series} margin={{ top: 4, right: 8, left: -12, bottom: 4 }}>
-                      <CartesianGrid stroke="#2A3348" vertical={false} />
+                      <CartesianGrid stroke="#2a2a28" vertical={false} />
                       <XAxis dataKey="label" tick={{ fill: "#8A94AC", fontSize: 10 }} axisLine={false} tickLine={false} />
                       <YAxis tick={{ fill: "#8A94AC", fontSize: 10 }} axisLine={false} tickLine={false} width={32} />
                       <RTooltip
-                        contentStyle={{ background: "#0D121D", border: "1px solid #2F3A52", borderRadius: 8, fontSize: 11 }}
+                        contentStyle={{ background: "#1c1c1b", border: "1px solid #2a2a28", borderRadius: 8, fontSize: 11 }}
                       />
                       <Legend wrapperStyle={{ fontSize: 10, color: "#A3ADC4" }} />
                       <Line type="monotone" dataKey="fund" name="Fund" stroke="#3FD998" strokeWidth={2} dot={{ r: 2.5 }} />
@@ -369,12 +372,13 @@ const RebalanceExplanation = () => {
                   ))}
                 </div>
 
-                <div className="mt-4 rounded-xl border border-[#2A3247] bg-[#121B2D] px-3 py-3">
+                <div className="mt-4 rounded-xl border border-[#2a2a28] bg-[#252523] px-3 py-3">
                   <p className="text-[10px] uppercase tracking-[0.14em] text-[#8E98B0]">Why this trade</p>
                   <p className="mt-1 text-[12px] leading-5 text-[#D0D8EC]">{selectedTrade.fund.rationale}</p>
                 </div>
               </div>
-            </motion.div>
+              </motion.div>
+            </div>
           </>
         )}
       </AnimatePresence>

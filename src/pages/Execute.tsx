@@ -1049,7 +1049,7 @@ const Execute = () => {
     <div className="mobile-container bg-background min-h-screen pb-20">
       {/* Header */}
       <div className="px-5 pt-12 pb-1">
-        <h1 className="text-xl font-bold text-foreground">Recommended investment plan</h1>
+        <h1 className="text-lg font-semibold text-foreground">Recommended investment plan</h1>
         {planLoading ? (
           <p className="text-xs text-muted-foreground mt-1">Loading your saved plan…</p>
         ) : null}
