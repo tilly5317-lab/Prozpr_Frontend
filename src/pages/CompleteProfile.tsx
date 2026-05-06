@@ -1391,7 +1391,7 @@ const CompleteProfile = () => {
           <ArrowLeft className="h-4 w-4 text-foreground" />
         </button>
         <div>
-          <h1 className="text-base font-semibold text-foreground">Complete Your Investment Profile</h1>
+          <h1 className="text-lg font-semibold text-foreground">Complete Your Investment Profile</h1>
           <p className="text-[11px] text-muted-foreground">Takes 10–15 minutes · We've pre-filled what we already know</p>
         </div>
       </div>

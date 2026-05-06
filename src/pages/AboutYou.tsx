@@ -275,7 +275,7 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
       {/* Content */}
       <div className="flex-1 flex flex-col px-6 pb-24 overflow-y-auto">
         <div className="mt-4 mb-1">
-          <h2 className="text-xl font-semibold text-foreground">Tell us about you</h2>
+          <h2 className="text-lg font-semibold text-foreground">Tell us about you</h2>
           <p className="text-xs text-muted-foreground mt-1">Personalise your financial journey</p>
         </div>
 

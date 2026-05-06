@@ -63,12 +63,7 @@ const AdvisorMeetings = () => {
           <button type="button" onClick={() => navigate("/portfolio")} className="text-foreground">
             <ArrowLeft className="h-4.5 w-4.5" />
           </button>
-          <p
-            className="text-[11px] uppercase text-muted-foreground"
-            style={{ fontWeight: 500, letterSpacing: "2px" }}
-          >
-            Advisor Meetings
-          </p>
+          <h1 className="text-lg font-semibold text-foreground">Advisor Meetings</h1>
         </div>
       </div>
 
