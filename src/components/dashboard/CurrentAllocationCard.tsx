@@ -198,6 +198,25 @@ function deriveMultiYearReturns(oneYear: number | null, seed: string): {
   };
 }
 
+// Default benchmark — Nifty 50. When the API returns real benchmark fields per holding,
+// swap these constants for per-row data.
+const BENCHMARK = {
+  name: "Nifty 50",
+  oneYear: 6.5,
+  threeYear: 9.0,
+  fiveYear: 11.5,
+};
+
+function delta(value: number | null, baseline: number): number | null {
+  if (value === null) return null;
+  return Math.round((value - baseline) * 10) / 10;
+}
+
+function formatDelta(d: number | null): string {
+  if (d === null) return "—";
+  return `${d >= 0 ? "+" : ""}${d.toFixed(1)}`;
+}
+
 function formatPct(n: number | null): string {
   if (n === null) return "—";
   return `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
@@ -670,30 +689,48 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                             className="ml-3 pt-2 pb-2.5 pr-1"
                             style={{ borderTop: `1px solid ${HAIRLINE}` }}
                           >
-                            {/* Group 1 — Returns (3-col) */}
-                            <div
-                              className="grid grid-cols-3"
-                              style={{ columnGap: 10, rowGap: 2 }}
-                            >
-                              <div>
-                                <p className={LABEL_CLASS}>1Y return</p>
-                                <p className={VALUE_CLASS} style={{ color: pctColor(oneYear) }}>
-                                  {formatPct(oneYear)}
-                                </p>
-                              </div>
-                              <div>
-                                <p className={LABEL_CLASS}>3Y return</p>
-                                <p className={VALUE_CLASS} style={{ color: pctColor(threeYear) }}>
-                                  {formatPct(threeYear)}
-                                </p>
-                              </div>
-                              <div>
-                                <p className={LABEL_CLASS}>5Y return</p>
-                                <p className={VALUE_CLASS} style={{ color: pctColor(fiveYear) }}>
-                                  {formatPct(fiveYear)}
-                                </p>
-                              </div>
-                            </div>
+                            {/* Group 1 — Returns vs Nifty 50 (3-col) */}
+                            {(() => {
+                              const d1 = delta(oneYear, BENCHMARK.oneYear);
+                              const d3 = delta(threeYear, BENCHMARK.threeYear);
+                              const d5 = delta(fiveYear, BENCHMARK.fiveYear);
+                              return (
+                                <>
+                                  <div
+                                    className="grid grid-cols-3"
+                                    style={{ columnGap: 10, rowGap: 2 }}
+                                  >
+                                    <div>
+                                      <p className={LABEL_CLASS}>1Y return</p>
+                                      <p className={VALUE_CLASS} style={{ color: pctColor(oneYear) }}>
+                                        {formatPct(oneYear)}
+                                      </p>
+                                      <p className="text-[10px] mt-0.5" style={{ color: pctColor(d1) }}>
+                                        {formatDelta(d1)} vs {BENCHMARK.name}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <p className={LABEL_CLASS}>3Y return</p>
+                                      <p className={VALUE_CLASS} style={{ color: pctColor(threeYear) }}>
+                                        {formatPct(threeYear)}
+                                      </p>
+                                      <p className="text-[10px] mt-0.5" style={{ color: pctColor(d3) }}>
+                                        {formatDelta(d3)} vs {BENCHMARK.name}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <p className={LABEL_CLASS}>5Y return</p>
+                                      <p className={VALUE_CLASS} style={{ color: pctColor(fiveYear) }}>
+                                        {formatPct(fiveYear)}
+                                      </p>
+                                      <p className="text-[10px] mt-0.5" style={{ color: pctColor(d5) }}>
+                                        {formatDelta(d5)} vs {BENCHMARK.name}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </>
+                              );
+                            })()}
 
                             {/* Hairline divider */}
                             <div style={{ height: 1, background: HAIRLINE, margin: "8px 0" }} />
