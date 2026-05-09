@@ -1,7 +1,7 @@
 import { type CSSProperties, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowDownLeft, ArrowRight, ArrowUpRight, Star, X } from "lucide-react";
+import { ArrowDownLeft, ArrowRight, ArrowUpRight, Sparkles, Star, X } from "lucide-react";
 import {
   CartesianGrid,
   Legend,
@@ -178,18 +178,75 @@ const RebalanceExplanation = () => {
 
   return (
     <div className="mobile-container bg-background min-h-screen pb-24">
-      {/* Header */}
-      <div className="px-5 pt-10 pb-3">
-        <h1 className="text-lg font-semibold text-foreground">Rebalance</h1>
-      </div>
-
-      <div className="px-4 pb-2 space-y-3">
-        <section style={cardStyle} className="px-4 py-4">
-          <h1 className="text-[22px] leading-tight font-semibold tracking-tight text-[#E8EDF9]">Your mix has drifted.</h1>
-          <p className="mt-3 text-[12px] leading-5 text-[#A6B0C6]">
+      <div className="px-4 pt-10 pb-2 space-y-3">
+        <motion.section
+          className="relative px-4 py-5 overflow-hidden"
+          style={{
+            background:
+              "linear-gradient(135deg, rgba(212,168,104,0.16) 0%, rgba(28,28,27,1) 60%, rgba(28,28,27,1) 100%)",
+            border: "1px solid rgba(212,168,104,0.40)",
+            borderRadius: 16,
+          }}
+          initial={{
+            boxShadow:
+              "0 0 0 1px rgba(212,168,104,0.08), 0 12px 32px -14px rgba(212,168,104,0.35)",
+          }}
+          animate={{
+            boxShadow: [
+              "0 0 0 1px rgba(212,168,104,0.08), 0 12px 32px -14px rgba(212,168,104,0.35)",
+              "0 0 0 2px rgba(229,192,121,0.55), 0 0 40px 6px rgba(212,168,104,0.55)",
+              "0 0 0 1px rgba(212,168,104,0.08), 0 12px 32px -14px rgba(212,168,104,0.35)",
+              "0 0 0 2px rgba(229,192,121,0.55), 0 0 40px 6px rgba(212,168,104,0.55)",
+              "0 0 0 1px rgba(212,168,104,0.08), 0 12px 32px -14px rgba(212,168,104,0.35)",
+            ],
+          }}
+          transition={{
+            duration: 3.2,
+            ease: "easeInOut",
+            times: [0, 0.2, 0.5, 0.75, 1],
+          }}
+        >
+          <span
+            aria-hidden="true"
+            className="absolute left-0 top-0 bottom-0 w-1"
+            style={{ background: "linear-gradient(180deg, #E5C079 0%, #D4A868 100%)" }}
+          />
+          <div className="flex items-center gap-2">
+            <span
+              className="inline-flex h-7 w-7 items-center justify-center rounded-full"
+              style={{ backgroundColor: "rgba(212,168,104,0.18)", color: "#E5C079" }}
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+            </span>
+            <span
+              className="text-[10px] uppercase font-semibold"
+              style={{ letterSpacing: "1.6px", color: "#E5C079" }}
+            >
+              Tilly insight
+            </span>
+          </div>
+          <h1 className="mt-3 text-[21px] leading-tight font-semibold tracking-tight text-[#F5EEDC]">
+            Your mix has drifted.
+          </h1>
+          <p className="mt-2.5 text-[12.5px] leading-5 text-[#C9CFDF]">
             Equities rallied 9% this quarter. Here's how to glide back to your target without selling more than you need to.
           </p>
-        </section>
+
+          <div
+            className="mt-3.5 pt-3"
+            style={{ borderTop: "1px solid rgba(212,168,104,0.18)" }}
+          >
+            <p
+              className="text-[10px] uppercase font-semibold"
+              style={{ letterSpacing: "1.6px", color: "#E5C079" }}
+            >
+              Why now
+            </p>
+            <p className="mt-1.5 text-[12px] leading-5 text-[#C9CFDF]">
+              I've picked units with lowest capital gains to maximize tax exemption. Rebalance now before earnings season shifts weights further.
+            </p>
+          </div>
+        </motion.section>
 
         <section style={cardStyle} className="px-4 py-4">
           <p className="text-[11px] tracking-[0.16em] uppercase text-[#7E879C]">Current vs target</p>
@@ -261,13 +318,6 @@ const RebalanceExplanation = () => {
               </button>
             ))}
           </div>
-        </section>
-
-        <section className="rounded-[16px] px-4 py-4" style={{ background: "#EEE8D8" }}>
-          <p className="text-[10px] tracking-[0.16em] uppercase text-[#6B644F]">Why now</p>
-          <p className="mt-2 text-[12px] leading-5 text-[#6D654F]">
-            I've picked units with lowest capital gains to maximize tax exemption. Rebalance now before earnings season shifts weights further.
-          </p>
         </section>
 
         <button

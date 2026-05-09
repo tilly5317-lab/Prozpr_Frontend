@@ -1,6 +1,9 @@
-import { ArrowLeft, Check, Circle } from "lucide-react";
+import { useState } from "react";
+import { AnimatePresence } from "framer-motion";
+import { ArrowLeft, Check, Circle, Video } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import BottomNav from "@/components/BottomNav";
+import RescheduleModal from "@/components/dashboard/RescheduleModal";
 
 type ActionItem = {
   text: string;
@@ -55,6 +58,7 @@ const meetings: Meeting[] = [
 
 const AdvisorMeetings = () => {
   const navigate = useNavigate();
+  const [rescheduleOpen, setRescheduleOpen] = useState(false);
 
   return (
     <div className="mobile-container bg-background min-h-screen pb-20">
@@ -79,9 +83,24 @@ const AdvisorMeetings = () => {
             <div className="flex-1">
               <p className="text-sm text-foreground/80">Mon 14 Oct · 4:00 PM · Jaipur slot</p>
             </div>
-            <button className="rounded-xl px-3 py-1.5 text-xs font-semibold bg-foreground text-background">
-              Reschedule
-            </button>
+            <div className="flex items-center gap-1.5">
+              <a
+                href="https://zoom.us/j/000000"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 rounded-xl px-3 py-1.5 text-xs font-semibold bg-foreground text-background"
+              >
+                <Video className="h-3 w-3" />
+                Join Zoom
+              </a>
+              <button
+                type="button"
+                onClick={() => setRescheduleOpen(true)}
+                className="rounded-xl px-3 py-1.5 text-xs font-semibold bg-muted text-foreground"
+              >
+                Reschedule
+              </button>
+            </div>
           </div>
         </div>
 
@@ -140,6 +159,12 @@ const AdvisorMeetings = () => {
       </div>
 
       <BottomNav />
+
+      <AnimatePresence>
+        {rescheduleOpen && (
+          <RescheduleModal onClose={() => setRescheduleOpen(false)} />
+        )}
+      </AnimatePresence>
     </div>
   );
 };
