@@ -226,26 +226,11 @@ const RebalanceExplanation = () => {
             </span>
           </div>
           <h1 className="mt-3 text-[21px] leading-tight font-semibold tracking-tight text-[#F5EEDC]">
-            Your mix has drifted.
+            Time to fine-tune your mix.
           </h1>
           <p className="mt-2.5 text-[12.5px] leading-5 text-[#C9CFDF]">
-            Equities rallied 9% this quarter. Here's how to glide back to your target without selling more than you need to.
+            Equities rallied 9% this quarter, so here's how to glide back to your target without selling more than you need to. Tilly picked units with the lowest capital gains to maximize tax exemption, and rebalancing now also gets ahead of earnings season shifting weights further.
           </p>
-
-          <div
-            className="mt-3.5 pt-3"
-            style={{ borderTop: "1px solid rgba(212,168,104,0.18)" }}
-          >
-            <p
-              className="text-[10px] uppercase font-semibold"
-              style={{ letterSpacing: "1.6px", color: "#E5C079" }}
-            >
-              Why now
-            </p>
-            <p className="mt-1.5 text-[12px] leading-5 text-[#C9CFDF]">
-              I've picked units with lowest capital gains to maximize tax exemption. Rebalance now before earnings season shifts weights further.
-            </p>
-          </div>
         </motion.section>
 
         <section style={cardStyle} className="px-4 py-4">

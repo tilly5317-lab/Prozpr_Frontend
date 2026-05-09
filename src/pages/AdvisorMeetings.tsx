@@ -77,11 +77,12 @@ const AdvisorMeetings = () => {
           style={{ border: "1px solid hsl(var(--border))" }}
         >
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-[#D8B44D] flex items-center justify-center text-white font-semibold text-lg">
+            <div className="h-10 w-10 rounded-full bg-[#D8B44D] flex items-center justify-center text-white font-semibold text-lg shrink-0">
               S
             </div>
-            <div className="flex-1">
-              <p className="text-sm text-foreground/80">Mon 14 Oct · 4:00 PM · Jaipur slot</p>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-foreground leading-tight">Sanjay R · Sr. Advisor</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">Mon 14 Oct · 4:00 PM · Jaipur slot</p>
             </div>
             <div className="flex items-center gap-1.5">
               <a

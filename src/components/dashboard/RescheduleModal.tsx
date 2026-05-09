@@ -34,17 +34,17 @@ const RescheduleModal = ({ onClose }: RescheduleModalProps) => {
         aria-hidden="true"
       />
       <motion.div
-        initial={{ opacity: 0, y: 24, scale: 0.98 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 16, scale: 0.98 }}
+        initial={{ opacity: 0, scale: 0.96, y: 12 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96, y: 12 }}
         transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
         role="dialog"
         aria-modal="true"
         aria-label="Reschedule advisor meeting"
-        className="fixed inset-x-0 bottom-0 sm:inset-0 sm:flex sm:items-center sm:justify-center z-[60] px-0 sm:px-4"
+        className="fixed inset-0 flex items-center justify-center z-[60] px-4"
       >
         <div
-          className="mx-auto w-full max-w-md rounded-t-2xl sm:rounded-2xl bg-card shadow-2xl flex flex-col overflow-hidden"
+          className="w-full max-w-md rounded-2xl bg-card shadow-2xl flex flex-col overflow-hidden"
           style={{ maxHeight: "min(92dvh, 720px)" }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -66,13 +66,14 @@ const RescheduleModal = ({ onClose }: RescheduleModalProps) => {
           </div>
 
           <div className="flex-1 overflow-y-auto px-2 pt-2 pb-3">
-            <Calendar
-              mode="single"
-              selected={selectedDate}
-              onSelect={setSelectedDate}
-              disabled={(d) => d < new Date(new Date().setHours(0, 0, 0, 0))}
-              className="mx-auto"
-            />
+            <div className="flex justify-center">
+              <Calendar
+                mode="single"
+                selected={selectedDate}
+                onSelect={setSelectedDate}
+                disabled={(d) => d < new Date(new Date().setHours(0, 0, 0, 0))}
+              />
+            </div>
 
             <div className="px-3 pt-2">
               <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5">
