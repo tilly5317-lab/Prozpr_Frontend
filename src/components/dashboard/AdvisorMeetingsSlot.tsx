@@ -21,6 +21,9 @@ const AdvisorMeetingsSlot = () => {
         <p className="mt-1 text-sm font-semibold text-foreground">
           Mon 14 Oct · 4:00 PM
         </p>
+        <p className="mt-0.5 text-[11px] text-muted-foreground">
+          with Sanjay R · Sr. Advisor
+        </p>
         <div className="mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground">
           <span className="inline-flex items-center gap-1">
             <CalendarDays className="h-3 w-3" />

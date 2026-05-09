@@ -389,7 +389,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
             transition={{ duration: 0.25, ease: "easeInOut" }}
             className="overflow-hidden"
           >
-            <div className="pt-3 space-y-2" style={{ borderTop: "1px solid hsl(var(--hairline))" }}>
+            <div className="pt-3 space-y-2">
               {subFilter && (
                 <div className="mb-1 flex items-center gap-2 rounded-lg bg-muted/60 px-2.5 py-1.5">
                   <span className="text-[10px] text-muted-foreground">Filtering by</span>
