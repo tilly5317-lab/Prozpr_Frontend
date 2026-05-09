@@ -10,7 +10,6 @@ import {
   createGoal,
   updateGoal,
   removeGoal,
-  addGoalContribution,
   getMyPortfolio,
   type GoalResponse,
   BackendOfflineError,
@@ -252,6 +251,28 @@ export function computeGoalGamification(
   };
 }
 
+/** Suggest an inflation rate based on the goal name. Returns null if no specific match. */
+function suggestInflationForGoal(name: string): { rate: number; reason: string } | null {
+  const s = name.toLowerCase();
+  if (/educat|school|college|tuition|degree|university/.test(s))
+    return { rate: 10, reason: "Education costs typically inflate ~10%/yr in India." };
+  if (/health|medical|hospital/.test(s))
+    return { rate: 12, reason: "Healthcare costs typically inflate ~12%/yr." };
+  if (/wedding|marriage/.test(s))
+    return { rate: 7, reason: "Wedding costs typically inflate ~7%/yr." };
+  if (/home|house|property|apartment|flat/.test(s))
+    return { rate: 6, reason: "Property prices have averaged ~6%/yr." };
+  if (/retire/.test(s))
+    return { rate: 6, reason: "Use ~6% to model long-horizon retirement corpus." };
+  if (/travel|trip|vacation|holiday/.test(s))
+    return { rate: 7, reason: "Travel costs typically inflate ~7%/yr." };
+  if (/car|vehicle|bike/.test(s))
+    return { rate: 5, reason: "Vehicle prices typically inflate ~5%/yr." };
+  if (/emergency/.test(s))
+    return { rate: 6, reason: "Use general CPI ~6%/yr." };
+  return null;
+}
+
 function parseMoneyInput(raw: string): { ok: true; value: number } | { ok: false; message: string } {
   const t = raw.trim();
   if (t === "") return { ok: false, message: "Amount is required." };
@@ -289,8 +310,10 @@ const GoalPlanner = () => {
   const [addMonth, setAddMonth] = useState("Dec");
   const [addYear, setAddYear] = useState(String(new Date().getFullYear() + 5));
   const [addMonthly, setAddMonthly] = useState("");
-  const [addCurrent, setAddCurrent] = useState("");
   const [addPriority, setAddPriority] = useState<"Low" | "Medium" | "High">("Medium");
+  const [addAmountKind, setAddAmountKind] = useState<"present" | "future">("future");
+  const [addInflation, setAddInflation] = useState("");
+  const inflationSuggestion = useMemo(() => suggestInflationForGoal(addName), [addName]);
 
   const [editGoal, setEditGoal] = useState<Goal | null>(null);
   const [editName, setEditName] = useState("");
@@ -452,8 +475,9 @@ const GoalPlanner = () => {
     setAddMonth("Dec");
     setAddYear(String(new Date().getFullYear() + 5));
     setAddMonthly("");
-    setAddCurrent("");
     setAddPriority("Medium");
+    setAddAmountKind("future");
+    setAddInflation("");
   }, []);
 
   const submitAddGoal = useCallback(async () => {
@@ -481,33 +505,28 @@ const GoalPlanner = () => {
       toast({ title: "Monthly contribution", description: monthlyParsed.message, variant: "destructive" });
       return;
     }
-    const currentRaw = addCurrent.trim() === "" ? "0" : addCurrent;
-    const currentParsed = parseMoneyInput(currentRaw);
-    if (currentParsed.ok === false) {
-      toast({ title: "Current saved", description: currentParsed.message, variant: "destructive" });
-      return;
-    }
-    if (currentParsed.value > targetParsed.value) {
-      toast({
-        title: "Amounts don't match",
-        description: "Current saved cannot exceed the target.",
-        variant: "destructive",
-      });
-      return;
+
+    let finalTarget = targetParsed.value;
+    if (addAmountKind === "present") {
+      const inflationRaw = addInflation.trim() === "" ? "0" : addInflation;
+      const inflationNum = Number(inflationRaw);
+      if (!Number.isFinite(inflationNum) || inflationNum < 0 || inflationNum > 50) {
+        toast({ title: "Inflation rate", description: "Enter an inflation rate between 0 and 50%.", variant: "destructive" });
+        return;
+      }
+      const yearsToTarget = Math.max(0, Number(addYear) - new Date().getFullYear());
+      finalTarget = targetParsed.value * Math.pow(1 + inflationNum / 100, yearsToTarget);
     }
 
     setAddGoalSaving(true);
     try {
-      const created = await createGoal({
+      await createGoal({
         name,
-        target_amount: targetParsed.value,
+        target_amount: Math.round(finalTarget),
         target_date: buildIsoTargetDate(addMonth, addYear),
         priority: addPriority,
         goal_type: "OTHER",
       });
-      if (currentParsed.value > 0) {
-        await addGoalContribution(created.id, { amount: currentParsed.value });
-      }
       await refreshGoals();
       resetAddGoalForm();
       setAddGoalOpen(false);
@@ -523,7 +542,7 @@ const GoalPlanner = () => {
     } finally {
       setAddGoalSaving(false);
     }
-  }, [addName, addTarget, addMonth, addYear, addMonthly, addCurrent, addPriority, resetAddGoalForm, refreshGoals]);
+  }, [addName, addTarget, addMonth, addYear, addMonthly, addPriority, addAmountKind, addInflation, resetAddGoalForm, refreshGoals]);
 
   const openContribute = useCallback((goal: Goal) => {
     setContributeGoal(goal);
@@ -602,21 +621,7 @@ const GoalPlanner = () => {
               </div>
             </div>
           </div>
-          <div className="grid grid-cols-4 gap-px bg-border">
-            <div className="bg-card/90 px-3 py-2.5">
-              <p className="text-[10px] text-muted-foreground">Progress</p>
-              <p className="mt-0.5 text-lg font-semibold tabular-nums text-foreground">
-                {gamification.totalTargetActive > 0
-                  ? `${gamification.progressPctOverall.toFixed(1)}%`
-                  : gamification.activeCount === 0 && goals.length > 0
-                    ? "100%"
-                    : "—"}
-              </p>
-            </div>
-            <div className="bg-card/90 px-3 py-2.5">
-              <p className="text-[10px] text-muted-foreground">Status</p>
-              <p className="mt-0.5 text-sm font-semibold leading-snug text-foreground">Active</p>
-            </div>
+          <div className="grid grid-cols-2 gap-px bg-border">
             <div className="bg-card/90 px-3 py-2.5">
               <p className="text-[10px] text-muted-foreground">Open</p>
               <p className="mt-0.5 text-lg font-semibold tabular-nums text-foreground">{gamification.activeCount}</p>
@@ -900,31 +905,28 @@ const GoalPlanner = () => {
         )}
       </AnimatePresence>
 
-      {/* Add goal sheet */}
+      {/* Add goal modal — centered */}
       <AnimatePresence>
         {addGoalOpen && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 backdrop-blur-[2px]"
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/45 backdrop-blur-[2px] px-4"
             onClick={() => {
               setAddGoalOpen(false);
               resetAddGoalForm();
             }}
           >
             <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 32, stiffness: 320 }}
+              initial={{ opacity: 0, scale: 0.96, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 12 }}
+              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
               onClick={(e) => e.stopPropagation()}
-              className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-3xl border border-border/80 bg-card shadow-2xl"
+              className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-border/80 bg-card shadow-2xl"
             >
-              <div className="sticky top-0 z-10 flex justify-center border-b border-border/60 bg-card py-3">
-                <div className="h-1 w-10 rounded-full bg-muted-foreground/25" />
-              </div>
-              <div className="px-5 pt-2 pb-[calc(7rem+env(safe-area-inset-bottom,0px))]">
+              <div className="px-5 pt-5 pb-6">
                 <h3 className="text-lg font-semibold text-foreground">New goal</h3>
                 <p className="mt-1 text-xs text-muted-foreground">Set a target corpus and timeline. You can refine later.</p>
 
@@ -945,6 +947,58 @@ const GoalPlanner = () => {
                   placeholder="500000"
                   className={`${sheetInputClass} mt-1.5`}
                 />
+
+                <p className="mt-3 text-[11px] font-medium text-muted-foreground">Is this in today's money or at the target date?</p>
+                <div className="mt-1.5 grid grid-cols-2 gap-2">
+                  {([
+                    { id: "present", label: "Today's value", hint: "Will inflate to target date" },
+                    { id: "future", label: "Future value", hint: "Already inflation-adjusted" },
+                  ] as const).map((opt) => {
+                    const active = addAmountKind === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setAddAmountKind(opt.id)}
+                        className={`min-h-[56px] rounded-xl border px-3 py-2 text-left transition-colors ${
+                          active
+                            ? "border-primary bg-primary/[0.06] text-foreground"
+                            : "border-input bg-background text-muted-foreground hover:bg-muted"
+                        }`}
+                      >
+                        <p className="text-xs font-semibold">{opt.label}</p>
+                        <p className="mt-0.5 text-[10px] leading-tight">{opt.hint}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {addAmountKind === "present" && (
+                  <>
+                    <label className="mt-4 block text-xs font-medium text-muted-foreground">
+                      Expected inflation (%/yr)
+                    </label>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      step="0.5"
+                      value={addInflation}
+                      onChange={(e) => setAddInflation(e.target.value)}
+                      placeholder={inflationSuggestion ? String(inflationSuggestion.rate) : "6"}
+                      className={`${sheetInputClass} mt-1.5`}
+                    />
+                    {inflationSuggestion && (
+                      <button
+                        type="button"
+                        onClick={() => setAddInflation(String(inflationSuggestion.rate))}
+                        className="mt-1.5 inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/[0.06] px-2.5 py-1 text-[10.5px] font-medium text-primary transition-colors hover:bg-primary/10"
+                      >
+                        <Sparkles className="h-3 w-3" />
+                        Suggest {inflationSuggestion.rate}% — {inflationSuggestion.reason}
+                      </button>
+                    )}
+                  </>
+                )}
 
                 <label className="mt-4 block text-xs font-medium text-muted-foreground">Target date</label>
                 <div className="mt-1.5 flex gap-2">
@@ -971,16 +1025,6 @@ const GoalPlanner = () => {
                     ))}
                   </select>
                 </div>
-
-                <label className="mt-4 block text-xs font-medium text-muted-foreground">Already saved (₹)</label>
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  value={addCurrent}
-                  onChange={(e) => setAddCurrent(e.target.value)}
-                  placeholder="0"
-                  className={`${sheetInputClass} mt-1.5`}
-                />
 
                 <label className="mt-4 block text-xs font-medium text-muted-foreground">Monthly contribution (₹)</label>
                 <p className="mt-1 text-[11px] text-muted-foreground">Used to estimate how long it will take to fund remaining gaps.</p>

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronDown, Pencil, X } from "lucide-react";
+import { ChevronDown, X } from "lucide-react";
 import type { PortfolioDetail } from "@/lib/api";
 import { formatInrCompact } from "@/lib/utils";
 
@@ -30,52 +30,6 @@ function classifyHoldingBucket(name: string, instrumentType: string): HoldingBuc
   if (/nifty|sensex|cap|flexi|equity|s&p|nasdaq|growth|value|dividend/.test(n)) return "equity";
   return "hybrid";
 }
-
-// SEBI-aligned mutual fund sub-categories, per bucket.
-const SUB_CATEGORIES: Record<HoldingBucket, string[]> = {
-  equity: [
-    "Large Cap",
-    "Mid Cap",
-    "Small Cap",
-    "Large & Mid Cap",
-    "Multi Cap",
-    "Flexi Cap",
-    "ELSS (Tax Saver)",
-    "Sectoral / Thematic",
-    "Index Fund / ETF",
-    "Dividend Yield",
-    "Value / Contra",
-    "Focused",
-    "International Equity",
-  ],
-  debt: [
-    "Liquid",
-    "Overnight",
-    "Ultra Short Duration",
-    "Low Duration",
-    "Money Market",
-    "Short Duration",
-    "Medium Duration",
-    "Medium to Long Duration",
-    "Long Duration",
-    "Corporate Bond",
-    "Credit Risk",
-    "Banking & PSU",
-    "Gilt",
-    "Gilt with 10Y Constant Duration",
-    "Dynamic Bond",
-    "Floater",
-  ],
-  hybrid: [
-    "Conservative Hybrid",
-    "Balanced Hybrid",
-    "Aggressive Hybrid",
-    "Dynamic Asset Allocation / BAF",
-    "Multi Asset Allocation",
-    "Arbitrage",
-    "Equity Savings",
-  ],
-};
 
 const SUB_DESCRIPTIONS: Record<string, string> = {
   "Large Cap": "Invests in top 100 companies by market cap as per SEBI.",
@@ -280,8 +234,6 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
     hybrid: false,
   });
   const [subFilter, setSubFilter] = useState<string | null>(null);
-  const [subOverrides, setSubOverrides] = useState<Record<string, string>>({});
-  const [editingSubId, setEditingSubId] = useState<string | null>(null);
   const hasAllocations = portfolio && portfolio.allocations.length > 0;
 
   const allocations = hasAllocations
@@ -311,7 +263,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
         const bucket = classifyHoldingBucket(h.instrument_name, h.instrument_type);
         const colors = HOLDINGS_BAR_BY_BUCKET[bucket];
         const returnPct = computeReturn(h.average_cost, h.current_value);
-        const subCategory = subOverrides[h.id] ?? classifySubCategory(h.instrument_name, bucket);
+        const subCategory = classifySubCategory(h.instrument_name, bucket);
         return {
           id: h.id,
           name: h.instrument_name,
@@ -462,8 +414,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                 return (
                   <div
                     key={group.bucket}
-                    className="rounded-[14px] overflow-hidden"
-                    style={{ border: `1px solid ${HAIRLINE}` }}
+                    className="overflow-hidden"
                   >
                     <button
                       type="button"
@@ -587,14 +538,8 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                               {row.subCategory}
                             </button>
                           ) : (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setEditingSubId((prev) => (prev === row.id ? null : row.id));
-                              }}
-                              title="Assign a sub-category"
-                              className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 hover:opacity-80 transition-opacity"
+                            <span
+                              className="inline-flex items-center rounded-full px-1.5 py-0.5"
                               style={{
                                 fontSize: "10px",
                                 fontWeight: 500,
@@ -604,8 +549,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                               }}
                             >
                               Uncategorized
-                              <Pencil className="h-2.5 w-2.5" />
-                            </button>
+                            </span>
                           )}
                         </div>
                       </div>
@@ -627,54 +571,6 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                         </motion.span>
                       </div>
                     </div>
-
-                    <AnimatePresence initial={false}>
-                      {editingSubId === row.id && (
-                        <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: "auto", opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          transition={{ duration: 0.2, ease: "easeOut" }}
-                          className="overflow-hidden"
-                        >
-                          <div className="ml-3 mb-2 p-2 rounded-lg bg-muted/50">
-                            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">
-                              Assign sub-category
-                            </p>
-                            <div className="flex flex-wrap gap-1">
-                              {SUB_CATEGORIES[row.bucket].map((opt) => (
-                                <button
-                                  key={opt}
-                                  type="button"
-                                  onClick={() => {
-                                    setSubOverrides((prev) => ({ ...prev, [row.id]: opt }));
-                                    setEditingSubId(null);
-                                  }}
-                                  title={SUB_DESCRIPTIONS[opt] ?? opt}
-                                  className="rounded-full px-2 py-0.5 hover:opacity-80 transition-opacity"
-                                  style={{
-                                    fontSize: "10px",
-                                    fontWeight: 500,
-                                    backgroundColor: SUB_TAG_STYLE[row.bucket].bg,
-                                    color: SUB_TAG_STYLE[row.bucket].fg,
-                                    border: `1px solid ${SUB_TAG_STYLE[row.bucket].border}`,
-                                  }}
-                                >
-                                  {opt}
-                                </button>
-                              ))}
-                              <button
-                                type="button"
-                                onClick={() => setEditingSubId(null)}
-                                className="rounded-full px-2 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
 
                     <AnimatePresence initial={false}>
                       {isExpanded && (

@@ -105,7 +105,7 @@ const LiveEventBanner = () => {
           </p>
 
           <div className="mt-2.5 flex items-center justify-between gap-2">
-            <span className="text-[10px] text-white/45">{TOTAL_ATTENDING} members joining</span>
+            <span className="text-[10px] text-white/45">{TOTAL_ATTENDING} members interested</span>
             <span
               className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold"
               style={{
@@ -114,7 +114,7 @@ const LiveEventBanner = () => {
                 border: `1px solid ${GOLD_SOFT}`,
               }}
             >
-              Reserve seat
+              Indicate interest
               <ArrowRight className="h-3 w-3" />
             </span>
           </div>
@@ -145,7 +145,7 @@ const ReserveSheet = ({ onClose }: { onClose: () => void }) => {
         className="fixed inset-x-0 bottom-0 sm:inset-0 sm:flex sm:items-center sm:justify-center z-[60] px-0 sm:px-4"
         role="dialog"
         aria-modal="true"
-        aria-label="Reserve a seat for Beyoncé · Live in Mumbai"
+        aria-label="Indicate interest in Beyoncé · Live in Mumbai"
       >
         <div
           className="mx-auto w-full max-w-md rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col"
@@ -221,13 +221,13 @@ const ReserveSheet = ({ onClose }: { onClose: () => void }) => {
                 className="text-[10px] uppercase font-semibold"
                 style={{ letterSpacing: "1.6px", color: "#5c5247" }}
               >
-                Members attending
+                Members interested
               </p>
               <p
                 className="text-[11px] font-semibold"
                 style={{ color: "#27241f", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
               >
-                {TOTAL_ATTENDING}+ joining
+                {TOTAL_ATTENDING}+ interested
               </p>
             </div>
 
@@ -348,7 +348,7 @@ const ReserveSheet = ({ onClose }: { onClose: () => void }) => {
                 color: "#f5efe3",
               }}
             >
-              Reserve seat
+              Indicate interest
               <ArrowRight className="h-3.5 w-3.5" />
             </button>
           </div>

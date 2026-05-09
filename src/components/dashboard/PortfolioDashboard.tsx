@@ -302,7 +302,9 @@ const PortfolioDashboard = () => {
       {/* Top bar */}
       <div className="flex items-center justify-between px-[14px] pt-12 pb-2">
         <div>
-          <p style={SECTION_LABEL}>{viewLabel}</p>
+          {activeView.type !== "self" && (
+            <p style={SECTION_LABEL}>{viewLabel}</p>
+          )}
           {activeView.type === "cumulative" && cumulativeData && (
             <p className="text-[9px] text-muted-foreground/60">
               {cumulativeData.member_count} members combined
