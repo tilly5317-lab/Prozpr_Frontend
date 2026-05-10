@@ -132,6 +132,7 @@ function PortfolioMainPanel({
           type="button"
           onClick={() => setAnalysisOpen(true)}
           className="mt-2 pt-2 block w-full cursor-pointer"
+          style={{ borderTop: "1px solid hsl(var(--hairline))" }}
         >
           <p className="text-[13px] font-medium text-center w-full text-foreground hover:text-accent transition-colors">
             Portfolio analysis →
