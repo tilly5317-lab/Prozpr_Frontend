@@ -1,4 +1,23 @@
-const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").trim().replace(/\/$/, "");
+/**
+ * Single backend origin for all API modules (auth, portfolio, goals, chat, …).
+ * - Empty base → same-origin `/api/v1` (Vite dev proxy or nginx on production).
+ * - If `.env` mistakenly includes `/api` or `/api/v1`, strip it so we do not double-prefix.
+ * - If the page is HTTPS but `VITE_API_BASE_URL` is `http://…`, the browser blocks mixed
+ *   content — fall back to same-origin so nginx can proxy to the app server (fixes Goal
+ *   Planner showing "Backend unreachable" while cached portfolio calls appear fine).
+ */
+function resolveApiBaseUrl(): string {
+  let base = (import.meta.env.VITE_API_BASE_URL ?? "").trim().replace(/\/+$/, "");
+  base = base.replace(/\/api\/v1\/?$/i, "").replace(/\/api\/?$/i, "").replace(/\/+$/, "");
+  if (typeof window !== "undefined" && import.meta.env.PROD) {
+    if (window.location.protocol === "https:" && base.startsWith("http:")) {
+      return "";
+    }
+  }
+  return base;
+}
+
+const API_BASE = resolveApiBaseUrl();
 const API = `${API_BASE}/api/v1`;
 const TOKEN_KEY = "asktilly_token";
 const FAMILY_MEMBER_KEY = "asktilly_family_member_id";
