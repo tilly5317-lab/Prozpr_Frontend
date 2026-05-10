@@ -178,7 +178,7 @@ const RebalanceExplanation = () => {
 
   return (
     <div className="mobile-container bg-background min-h-screen pb-24">
-      <div className="px-4 pt-10 pb-2 space-y-3">
+      <div className="px-5 pt-10 pb-2 space-y-3">
         <motion.section
           className="relative px-4 py-5 overflow-hidden"
           style={{

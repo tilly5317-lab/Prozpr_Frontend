@@ -300,7 +300,7 @@ const PortfolioDashboard = () => {
   return (
     <div className="mobile-container bg-background flex flex-col min-h-screen">
       {/* Top bar */}
-      <div className="flex items-center justify-between px-[14px] pt-12 pb-2">
+      <div className="flex items-center justify-between px-5 pt-10 pb-2">
         <div>
           {activeView.type !== "self" && (
             <p style={SECTION_LABEL}>{viewLabel}</p>
@@ -327,7 +327,7 @@ const PortfolioDashboard = () => {
       </div>
 
       {familyLoading && activeView.type !== "self" && !hasShownInitialLoad && (
-        <div className="px-[14px] py-8 flex justify-center">
+        <div className="px-5 py-8 flex justify-center">
           <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted border-t-foreground" />
         </div>
       )}
@@ -336,7 +336,7 @@ const PortfolioDashboard = () => {
       {activeView.type === "cumulative" && (
         <>
           {cumulativeData && cumulativeData.total_value > 0 && (
-            <div className="px-[14px] space-y-2 pb-24">
+            <div className="px-5 space-y-2 pb-24">
               <PortfolioMainPanel
                 portfolio={cumulativeToPortfolioDetail(cumulativeData)}
                 timePeriod={timePeriod}
@@ -351,12 +351,12 @@ const PortfolioDashboard = () => {
             </div>
           )}
           {cumulativeData && cumulativeData.total_value === 0 && (
-            <div className="px-[14px] py-8 text-center">
+            <div className="px-5 py-8 text-center">
               <p className="text-xs text-muted-foreground">No combined portfolio data yet.</p>
             </div>
           )}
           {!familyLoading && !cumulativeData && hasShownInitialLoad && (
-            <div className="px-[14px] py-6 text-center text-xs text-muted-foreground">
+            <div className="px-5 py-6 text-center text-xs text-muted-foreground">
               Could not load family portfolio. Check your connection and try again.
             </div>
           )}
@@ -367,7 +367,7 @@ const PortfolioDashboard = () => {
       {activeView.type === "member" && (
         <>
           {memberPortfolio && memberPortfolio.total_value > 0 && (
-            <div className="px-[14px] space-y-2 pb-24">
+            <div className="px-5 space-y-2 pb-24">
               <PortfolioMainPanel
                 portfolio={memberPortfolio}
                 timePeriod={timePeriod}
@@ -381,12 +381,12 @@ const PortfolioDashboard = () => {
             </div>
           )}
           {memberPortfolio && memberPortfolio.total_value === 0 && (
-            <div className="px-[14px] py-8 text-center">
+            <div className="px-5 py-8 text-center">
               <p className="text-xs text-muted-foreground">No portfolio data available for this member yet.</p>
             </div>
           )}
           {!familyLoading && !memberPortfolio && hasShownInitialLoad && (
-            <div className="px-[14px] py-6 text-center text-xs text-muted-foreground">
+            <div className="px-5 py-6 text-center text-xs text-muted-foreground">
               Could not load this member&apos;s portfolio. Check your connection and try again.
             </div>
           )}
@@ -397,13 +397,13 @@ const PortfolioDashboard = () => {
       {activeView.type === "self" && (
         <>
           {selfLoading && !hasShownInitialLoad && (
-            <div className="px-[14px] py-8 flex justify-center">
+            <div className="px-5 py-8 flex justify-center">
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted border-t-foreground" />
             </div>
           )}
 
           {selfPortfolio && (
-            <div className="px-[14px] space-y-2 pb-24">
+            <div className="px-5 space-y-2 pb-24">
               <PortfolioMainPanel
                 portfolio={selfPortfolio}
                 timePeriod={timePeriod}
@@ -422,7 +422,7 @@ const PortfolioDashboard = () => {
           )}
 
           {!selfLoading && !selfPortfolio && hasShownInitialLoad && (
-            <div className="px-[14px] py-6 text-center text-xs text-muted-foreground">
+            <div className="px-5 py-6 text-center text-xs text-muted-foreground">
               Could not load your portfolio from the server. Check your connection and try again.
             </div>
           )}

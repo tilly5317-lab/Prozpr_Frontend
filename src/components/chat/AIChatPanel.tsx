@@ -478,6 +478,28 @@ const GOAL_DEMO_INTRO = `Hi — I'm **Tilly**. I'll help you shape a clear, inve
 Let's start with outcomes: what financial goals are you planning for (for example: retirement, home, education, travel, business)? You can share one or multiple goals.`;
 
 /* ── Session history sidebar ── */
+const DUMMY_SESSIONS: ChatSessionInfo[] = (() => {
+  const now = Date.now();
+  const yesterday = new Date(now - 24 * 3600 * 1000).toISOString();
+  const twoDays = new Date(now - 2 * 24 * 3600 * 1000).toISOString();
+  return [
+    {
+      id: "demo-rebalance",
+      title: "Q3 rebalance plan",
+      status: "active",
+      created_at: twoDays,
+      updated_at: yesterday,
+    },
+    {
+      id: "demo-elss",
+      title: "ELSS picks & 80C strategy",
+      status: "active",
+      created_at: twoDays,
+      updated_at: twoDays,
+    },
+  ];
+})();
+
 function formatSessionDate(iso: string): string {
   const d = new Date(iso);
   const now = new Date();
@@ -548,11 +570,8 @@ const SessionHistoryPanel = ({
             transition={{ type: "spring", damping: 28, stiffness: 320 }}
             className="absolute left-0 top-0 bottom-0 z-40 w-[280px] max-w-[80%] flex flex-col bg-background border-r border-border/40 shadow-xl"
           >
-            <div className="flex items-center justify-between px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 border-b border-border/30">
+            <div className="px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 border-b border-border/30">
               <h3 className="text-sm font-semibold text-foreground">Chats</h3>
-              <button onClick={onClose} className="p-1 rounded-md hover:bg-muted/60 transition-colors">
-                <X className="h-4 w-4 text-muted-foreground" />
-              </button>
             </div>
 
             <div className="px-3 pt-3 pb-2 border-b border-border/30">
@@ -570,14 +589,9 @@ const SessionHistoryPanel = ({
                 <div className="flex items-center justify-center py-12">
                   <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                 </div>
-              ) : sessions.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-                  <MessageSquare className="h-8 w-8 text-muted-foreground/30 mb-2" />
-                  <p className="text-xs text-muted-foreground">No conversations yet</p>
-                </div>
               ) : (
                 <div className="py-1">
-                  {sessions.map((s) => (
+                  {(sessions.length > 0 ? sessions : DUMMY_SESSIONS).map((s) => (
                     <button
                       key={s.id}
                       onClick={() => { onSelectSession(s.id); onClose(); }}

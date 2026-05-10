@@ -1,19 +1,12 @@
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { Fragment, useState, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Copy, Plus, Check, Target, Clock, Flag, Pencil, Loader2, MessageCircle, Sparkles, Home, GraduationCap, Plane, BriefcaseBusiness, Heart, Car, Landmark, Trophy } from "lucide-react";
+import { Plus, Target, Pencil, Loader2, MessageCircle, Sparkles, Home, GraduationCap, Plane, BriefcaseBusiness, Heart, Car, Landmark, Trophy, Info, ChevronDown } from "lucide-react";
+import { Slider } from "@/components/ui/slider";
 import { useNavigate } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
 import BottomNav from "@/components/BottomNav";
 import { queueChatBootstrapMessage } from "@/components/chat/AIChatPanel";
-import {
-  listGoals,
-  createGoal,
-  updateGoal,
-  removeGoal,
-  getMyPortfolio,
-  type GoalResponse,
-  BackendOfflineError,
-} from "@/lib/api";
+// Local-only Goals page — no backend calls. Edit, add, delete operate on in-memory state.
 
 /* ── Types ── */
 interface Holding {
@@ -110,79 +103,91 @@ function priorityBadgeClass(p: Goal["priority"]): string {
   return "border border-border bg-muted text-muted-foreground";
 }
 
-/** API: PRIMARY → High, MEDIUM → Medium, SECONDARY → Low. */
-function apiPriorityToUi(p: string): Goal["priority"] {
-  const u = (p || "").toUpperCase();
-  if (u === "SECONDARY") return "Low";
-  if (u === "MEDIUM") return "Medium";
-  return "High";
-}
-
-function formatApiTargetDate(raw: string | null | undefined): string {
-  if (raw == null || raw === "") return "";
-  const s = String(raw).trim();
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
-    const d = new Date(s);
-    if (!Number.isNaN(d.getTime())) {
-      return `${months[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
-    }
-  }
-  return s;
-}
-
 function parseTargetDateParts(targetDate: string): { month: string; year: string } {
   const s = targetDate.trim();
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
-    const d = new Date(s);
-    if (!Number.isNaN(d.getTime())) {
-      return { month: months[d.getUTCMonth()], year: String(d.getUTCFullYear()) };
-    }
-  }
   const parts = s.split(/\s+/).filter(Boolean);
   if (parts.length >= 2) return { month: parts[0], year: parts[parts.length - 1] };
   return { month: "Dec", year: String(new Date().getFullYear() + 5) };
 }
 
-function buildIsoTargetDate(monthLabel: string, yearStr: string): string {
-  const mi = months.indexOf(monthLabel);
-  const m = mi >= 0 ? mi + 1 : 1;
-  const y = Number(yearStr) || new Date().getFullYear();
-  return `${y}-${String(m).padStart(2, "0")}-01`;
-}
-
-function goalFromApi(r: GoalResponse): Goal {
-  const targetAmount = Number(r.target_amount ?? 0);
-  const currentValue = Number(r.current_value ?? 0);
-  const investedAmount = Number(r.invested_amount ?? 0);
-  const progressPct = targetAmount > 0 ? Math.min(100, Math.round((currentValue / targetAmount) * 100)) : 0;
-  const moFromApi = Number(r.monthly_contribution);
-  const mo = Number.isFinite(moFromApi) && moFromApi > 0 ? moFromApi : Math.max(1000, Math.round(targetAmount / 120));
-  const sug = Number(r.suggested_contribution);
-  const suggestedContribution = Number.isFinite(sug) && sug > 0 ? sug : mo;
+function buildLocalGoal(input: {
+  id?: string;
+  name: string;
+  targetAmount: number;
+  targetDate: string;
+  priority: "Low" | "Medium" | "High";
+  investedAmount?: number;
+  currentValue?: number;
+  monthlyContribution?: number;
+}): Goal {
+  const investedAmount = input.investedAmount ?? 0;
+  const currentValue = input.currentValue ?? 0;
+  const targetAmount = input.targetAmount;
+  const progressPct =
+    targetAmount > 0 ? Math.min(100, Math.round((currentValue / targetAmount) * 100)) : 0;
+  const monthly =
+    input.monthlyContribution != null && input.monthlyContribution > 0
+      ? input.monthlyContribution
+      : Math.max(1000, Math.round(targetAmount / 120));
   const slug =
-    r.name
+    input.name
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, "") || "goal";
   return {
-    id: String(r.id),
-    icon: goalIconFromName(r.name),
-    label: r.name,
+    id: input.id ?? `local-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    icon: goalIconFromName(input.name),
+    label: input.name,
     slug,
     targetAmount,
-    targetDate: formatApiTargetDate(r.target_date as unknown as string),
+    targetDate: input.targetDate,
     investedAmount,
     currentValue,
     progressPct,
     status: progressPct >= 50 ? "on-track" : "behind",
     contributions: [],
     holdings: [],
-    suggestedContribution,
-    suggestedLabel: `${formatINR(suggestedContribution)}/mo`,
-    monthlyContribution: Number.isFinite(moFromApi) ? moFromApi : 0,
-    priority: apiPriorityToUi(r.priority),
+    suggestedContribution: monthly,
+    suggestedLabel: `${formatINR(monthly)}/mo`,
+    monthlyContribution: input.monthlyContribution ?? 0,
+    priority: input.priority,
   };
 }
+
+const DEMO_GOALS: Goal[] = [
+  buildLocalGoal({
+    id: "demo-home",
+    name: "Home down payment",
+    targetAmount: 1_50_00_000,
+    targetDate: "Dec 2030",
+    priority: "High",
+    currentValue: 42_00_000,
+    investedAmount: 38_50_000,
+    monthlyContribution: 75_000,
+  }),
+  buildLocalGoal({
+    id: "demo-education",
+    name: "Aarav's education fund",
+    targetAmount: 90_00_000,
+    targetDate: "Jun 2034",
+    priority: "Medium",
+    currentValue: 12_00_000,
+    investedAmount: 11_50_000,
+    monthlyContribution: 35_000,
+  }),
+  buildLocalGoal({
+    id: "demo-retirement",
+    name: "Early retirement",
+    targetAmount: 8_00_00_000,
+    targetDate: "Mar 2045",
+    priority: "Medium",
+    currentValue: 1_20_00_000,
+    investedAmount: 1_05_00_000,
+    monthlyContribution: 1_25_000,
+  }),
+];
+
+const DEMO_PORTFOLIO_TOTAL = 2_85_50_000;
 
 export interface GoalGamificationMetrics {
   displayCurrent: number;
@@ -292,17 +297,100 @@ function etaLabel(g: GoalGamificationMetrics): string {
   return `≈ ${g.estimatedYearsAll.toFixed(1)} years`;
 }
 
+type TrackStatus = "on-track" | "behind" | "no-pace";
+
+/**
+ * Project whether the goal will hit its target at the current contribution rate.
+ * "on-track" — projected corpus >= target by deadline.
+ * "behind"   — projected corpus < target by deadline.
+ * "no-pace"  — no monthly contribution set, can't project.
+ */
+function goalTrackStatus(g: Goal): TrackStatus {
+  if (g.targetAmount <= 0) return "no-pace";
+  if (g.currentValue >= g.targetAmount) return "on-track";
+  const ty = parseTargetYear(g.targetDate);
+  if (ty == null) return "no-pace";
+  const yearsLeft = Math.max(0, ty - new Date().getFullYear());
+  if (g.monthlyContribution <= 0) {
+    // Without contributions, on-track only if already at target.
+    return "no-pace";
+  }
+  const projected = g.currentValue + g.monthlyContribution * 12 * yearsLeft;
+  return projected >= g.targetAmount ? "on-track" : "behind";
+}
+
+const TRACK_BADGE: Record<TrackStatus, { label: string; cls: string; dot: string }> = {
+  "on-track": {
+    label: "On track",
+    cls: "border border-amber-500/30 bg-amber-100/70 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
+    dot: "#D4A868",
+  },
+  behind: {
+    label: "Behind",
+    cls: "border border-rose-500/30 bg-rose-100/70 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300",
+    dot: "#E04E5C",
+  },
+  "no-pace": {
+    label: "Set monthly",
+    cls: "border border-border bg-muted text-muted-foreground",
+    dot: "hsl(var(--muted-foreground))",
+  },
+};
+
+/** Big donut showing % of target funded — gold arc on muted track. */
+const ContributionDonut = ({ pct }: { pct: number }) => {
+  const safe = Math.max(0, Math.min(100, pct));
+  const SIZE = 144;
+  const STROKE = 11;
+  const radius = SIZE / 2 - STROKE / 2 - 1;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference * (1 - safe / 100);
+  return (
+    <div className="relative flex shrink-0 items-center justify-center" style={{ width: SIZE, height: SIZE }}>
+      <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} className="-rotate-90">
+        <circle
+          cx={SIZE / 2}
+          cy={SIZE / 2}
+          r={radius}
+          fill="none"
+          stroke="hsl(var(--muted))"
+          strokeWidth={STROKE}
+        />
+        <motion.circle
+          cx={SIZE / 2}
+          cy={SIZE / 2}
+          r={radius}
+          fill="none"
+          stroke="#D4A868"
+          strokeWidth={STROKE}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          initial={{ strokeDashoffset: circumference }}
+          animate={{ strokeDashoffset: offset }}
+          transition={{ duration: 0.7, ease: "easeOut" }}
+        />
+      </svg>
+      <div className="absolute flex flex-col items-center leading-none">
+        <span className="text-[28px] font-bold tabular-nums tracking-tight text-foreground">
+          {Math.round(safe)}%
+        </span>
+        <span className="mt-1 text-[11px] text-muted-foreground">complete</span>
+      </div>
+    </div>
+  );
+};
+
 /* ── Main ── */
 const GoalPlanner = () => {
   const navigate = useNavigate();
-  const [goals, setGoals] = useState<Goal[]>([]);
-  const [goalsLoading, setGoalsLoading] = useState(true);
+  const [goals, setGoals] = useState<Goal[]>(DEMO_GOALS);
   const [addGoalSaving, setAddGoalSaving] = useState(false);
-  const [userPortfolioTotal, setUserPortfolioTotal] = useState(0);
+  const [fundFlowInfoOpen, setFundFlowInfoOpen] = useState(false);
+  const [investmentsExpanded, setInvestmentsExpanded] = useState(false);
+  const [investMultiplier, setInvestMultiplier] = useState(1.0); // 0.5x – 2.0x
+  const [returnRate, setReturnRate] = useState(9.0); // 5% – 12%
+  const userPortfolioTotal = DEMO_PORTFOLIO_TOTAL;
   const [holdingsGoal, setHoldingsGoal] = useState<Goal | null>(null);
-  const [contributeGoal, setContributeGoal] = useState<Goal | null>(null);
-  const [contributeAmount, setContributeAmount] = useState("");
-  const [copied, setCopied] = useState(false);
 
   const [addGoalOpen, setAddGoalOpen] = useState(false);
   const [addName, setAddName] = useState("");
@@ -324,36 +412,6 @@ const GoalPlanner = () => {
   const [editCurrent, setEditCurrent] = useState("");
   const [editMonthly, setEditMonthly] = useState("");
   const [editPriority, setEditPriority] = useState<"Low" | "Medium" | "High">("Medium");
-
-  const refreshGoals = useCallback(async () => {
-    try {
-      const list = await listGoals();
-      setGoals(list.map(goalFromApi));
-    } catch (e) {
-      const msg =
-        e instanceof BackendOfflineError
-          ? e.message
-          : e instanceof Error
-            ? e.message
-            : "Could not load goals.";
-      toast({ title: "Goals", description: msg, variant: "destructive" });
-      setGoals([]);
-    } finally {
-      setGoalsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void refreshGoals();
-  }, [refreshGoals]);
-
-  useEffect(() => {
-    getMyPortfolio()
-      .then((p) => {
-        if (p.total_value > 0) setUserPortfolioTotal(Math.round(p.total_value));
-      })
-      .catch(() => {});
-  }, []);
 
   const sortedGoals = useMemo(
     () => [...goals].sort((a, b) => priorityRank[a.priority] - priorityRank[b.priority]),
@@ -390,7 +448,7 @@ const GoalPlanner = () => {
     [navigate],
   );
 
-  const saveEdit = useCallback(async () => {
+  const saveEdit = useCallback(() => {
     if (!editGoal) return;
     const name = editName.trim();
     if (!name) {
@@ -430,44 +488,28 @@ const GoalPlanner = () => {
       return;
     }
 
-    try {
-      await updateGoal(editGoal.id, {
-        name,
-        target_amount: targetParsed.value,
-        target_date: buildIsoTargetDate(editMonth, editYear),
-        priority: editPriority,
-      });
-      await refreshGoals();
-      setEditGoal(null);
-      toast({ title: "Goal updated", description: `${name} has been saved.` });
-    } catch (e) {
-      const msg =
-        e instanceof BackendOfflineError
-          ? e.message
-          : e instanceof Error
-            ? e.message
-            : "Could not save changes.";
-      toast({ title: "Update failed", description: msg, variant: "destructive" });
-    }
-  }, [editGoal, editName, editTarget, editMonth, editYear, editSavings, editCurrent, editMonthly, editPriority, refreshGoals]);
+    const updated = buildLocalGoal({
+      id: editGoal.id,
+      name,
+      targetAmount: targetParsed.value,
+      targetDate: `${editMonth} ${editYear}`,
+      priority: editPriority,
+      investedAmount: savingsParsed.value,
+      currentValue: currentParsed.value,
+      monthlyContribution: monthlyParsed.value,
+    });
+    setGoals((prev) => prev.map((g) => (g.id === editGoal.id ? updated : g)));
+    setEditGoal(null);
+    toast({ title: "Goal updated", description: `${name} has been saved.` });
+  }, [editGoal, editName, editTarget, editMonth, editYear, editSavings, editCurrent, editMonthly, editPriority]);
 
-  const deleteGoal = useCallback(async () => {
+  const deleteGoal = useCallback(() => {
     if (!editGoal) return;
-    try {
-      await removeGoal(editGoal.id);
-      await refreshGoals();
-      setEditGoal(null);
-      toast({ title: "Goal removed", description: "Your overview has been updated." });
-    } catch (e) {
-      const msg =
-        e instanceof BackendOfflineError
-          ? e.message
-          : e instanceof Error
-            ? e.message
-            : "Could not delete goal.";
-      toast({ title: "Delete failed", description: msg, variant: "destructive" });
-    }
-  }, [editGoal, refreshGoals]);
+    const id = editGoal.id;
+    setGoals((prev) => prev.filter((g) => g.id !== id));
+    setEditGoal(null);
+    toast({ title: "Goal removed", description: "Your overview has been updated." });
+  }, [editGoal]);
 
   const resetAddGoalForm = useCallback(() => {
     setAddName("");
@@ -519,51 +561,19 @@ const GoalPlanner = () => {
     }
 
     setAddGoalSaving(true);
-    try {
-      await createGoal({
-        name,
-        target_amount: Math.round(finalTarget),
-        target_date: buildIsoTargetDate(addMonth, addYear),
-        priority: addPriority,
-        goal_type: "OTHER",
-      });
-      await refreshGoals();
-      resetAddGoalForm();
-      setAddGoalOpen(false);
-      toast({ title: "Goal added", description: `${name} is now in your plan.` });
-    } catch (e) {
-      const msg =
-        e instanceof BackendOfflineError
-          ? e.message
-          : e instanceof Error
-            ? e.message
-            : "Could not create goal.";
-      toast({ title: "Could not save goal", description: msg, variant: "destructive" });
-    } finally {
-      setAddGoalSaving(false);
-    }
-  }, [addName, addTarget, addMonth, addYear, addMonthly, addPriority, addAmountKind, addInflation, resetAddGoalForm, refreshGoals]);
-
-  const openContribute = useCallback((goal: Goal) => {
-    setContributeGoal(goal);
-    setContributeAmount(String(goal.suggestedContribution));
-    setCopied(false);
-  }, []);
-
-  const shareLink = contributeGoal
-    ? `tilly.in/contribute/${contributeGoal.slug}?amt=${contributeAmount || contributeGoal.suggestedContribution}`
-    : "";
-
-  const handleCopy = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(shareLink);
-      setCopied(true);
-      toast({ title: "Copied", description: "Link copied to clipboard." });
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      toast({ title: "Could not copy", description: "Try selecting the link manually.", variant: "destructive" });
-    }
-  }, [shareLink]);
+    const created = buildLocalGoal({
+      name,
+      targetAmount: Math.round(finalTarget),
+      targetDate: `${addMonth} ${addYear}`,
+      priority: addPriority,
+      monthlyContribution: monthlyParsed.value,
+    });
+    setGoals((prev) => [...prev, created]);
+    resetAddGoalForm();
+    setAddGoalOpen(false);
+    setAddGoalSaving(false);
+    toast({ title: "Goal added", description: `${name} is now in your plan.` });
+  }, [addName, addTarget, addMonth, addYear, addMonthly, addPriority, addAmountKind, addInflation, resetAddGoalForm]);
 
   const sheetInputClass =
     "w-full min-h-[48px] rounded-xl border border-input bg-background px-4 py-2.5 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -572,7 +582,7 @@ const GoalPlanner = () => {
     <div className="mobile-container min-h-screen bg-background pb-28">
       {/* Sticky header */}
       <header className="sticky top-0 z-40 border-b border-border bg-background">
-        <div className="flex items-center gap-3 px-4 pt-[max(2.25rem,env(safe-area-inset-top))] pb-3">
+        <div className="flex items-center gap-3 px-5 pt-10 pb-3">
           <div className="min-w-0 flex-1">
             <h1 className="text-lg font-semibold text-foreground">Goals</h1>
             <p className="text-xs text-muted-foreground">Track targets and corpus in one place</p>
@@ -589,7 +599,7 @@ const GoalPlanner = () => {
       </header>
 
       <motion.main
-        className="px-4 pt-4 space-y-5"
+        className="px-5 pt-4 space-y-5"
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35, ease: "easeOut" }}
@@ -633,6 +643,210 @@ const GoalPlanner = () => {
           </div>
         </motion.section>
 
+        {/* Fund flow projection */}
+        <motion.section
+          className="overflow-hidden rounded-2xl border border-border bg-card"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.32, delay: 0.08, ease: "easeOut" }}
+        >
+          <div className="border-b border-border px-4 py-3">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+              Goals projection
+            </p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              Through Mar 2051 · {formatINR(2_27_500)}/mo · 9% post-tax assumption
+            </p>
+          </div>
+
+          {(() => {
+            const BEGIN = 1_50_00_000;
+            const BASE_INVESTMENTS = 10_74_74_878;
+            const BASE_ROI = 24_44_98_818;
+            const BASE_RATE = 9;
+            const ONE_OFF_IN = 1_20_00_000;
+            const ONE_OFF_OUT = -1_00_00_000;
+            const GOALS_OUT = -57_78_00_000;
+            const projInvestments = Math.round(BASE_INVESTMENTS * investMultiplier);
+            const projROI = Math.round(BASE_ROI * (returnRate / BASE_RATE) * investMultiplier);
+            const projClosing = BEGIN + projInvestments + projROI + ONE_OFF_IN + ONE_OFF_OUT + GOALS_OUT;
+            const investmentsBoosted = investMultiplier !== 1.0 || returnRate !== BASE_RATE;
+            const rows = [
+              { label: "Beginning financial assets", value: BEGIN, kind: "neutral" as const, oneOff: false, expandable: false },
+              { label: "+ Investments", value: projInvestments, kind: "positive" as const, oneOff: false, expandable: true },
+              { label: "+ Return on investments", value: projROI, kind: "positive" as const, oneOff: false, expandable: false },
+              { label: "+ One-off income", value: ONE_OFF_IN, kind: "positive" as const, oneOff: true, expandable: false },
+              { label: "− One-off expense", value: ONE_OFF_OUT, kind: "negative" as const, oneOff: true, expandable: false },
+              { label: "− Goals", value: GOALS_OUT, kind: "negative" as const, oneOff: false, expandable: false },
+            ];
+            return (
+              <ul className="divide-y divide-border/60">
+                {rows.map((row, idx, arr) => {
+                  const nextIsOneOff = arr[idx + 1]?.oneOff === true;
+                  return (
+                    <Fragment key={row.label}>
+                      <li
+                        className={`flex items-center justify-between px-4 py-2 ${
+                          row.expandable ? "cursor-pointer hover:bg-muted/30 transition-colors" : ""
+                        }`}
+                        onClick={row.expandable ? () => setInvestmentsExpanded((o) => !o) : undefined}
+                      >
+                        <span className="inline-flex items-center gap-1 text-xs text-foreground/85">
+                          {row.label}
+                          {row.oneOff && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setFundFlowInfoOpen((o) => !o);
+                              }}
+                              aria-label="About one-off income and expense"
+                              className="text-muted-foreground hover:text-foreground"
+                            >
+                              <Info className="h-3 w-3" />
+                            </button>
+                          )}
+                          {row.expandable && (
+                            <motion.span
+                              animate={{ rotate: investmentsExpanded ? 180 : 0 }}
+                              transition={{ duration: 0.2, ease: "easeOut" }}
+                              className="inline-flex text-muted-foreground"
+                            >
+                              <ChevronDown className="h-3 w-3" />
+                            </motion.span>
+                          )}
+                        </span>
+                        <span className="inline-flex items-center gap-1.5">
+                          {row.expandable && investmentsBoosted && (
+                            <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">
+                              Sim
+                            </span>
+                          )}
+                          <span
+                            className={`text-xs font-semibold tabular-nums ${
+                              row.kind === "positive"
+                                ? "text-emerald-700 dark:text-emerald-400"
+                                : row.kind === "negative"
+                                  ? "text-destructive"
+                                  : "text-foreground"
+                            }`}
+                          >
+                            {row.value < 0 ? "−" : ""}
+                            {formatINR(Math.abs(row.value))}
+                          </span>
+                        </span>
+                      </li>
+                      {/* Investments slider panel */}
+                      {row.expandable && investmentsExpanded && (
+                        <li className="bg-muted/30 px-4 py-3 space-y-3">
+                          <div>
+                            <div className="mb-1.5 flex items-center justify-between">
+                              <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                                Investment level
+                              </span>
+                              <span className="text-[11px] font-semibold tabular-nums text-foreground">
+                                {investMultiplier.toFixed(1)}x
+                              </span>
+                            </div>
+                            <Slider
+                              value={[investMultiplier]}
+                              onValueChange={(v) => setInvestMultiplier(v[0])}
+                              min={0.5}
+                              max={2}
+                              step={0.1}
+                            />
+                          </div>
+                          <div>
+                            <div className="mb-1.5 flex items-center justify-between">
+                              <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                                Return rate (post-tax)
+                              </span>
+                              <span className="text-[11px] font-semibold tabular-nums text-foreground">
+                                {returnRate.toFixed(1)}%
+                              </span>
+                            </div>
+                            <Slider
+                              value={[returnRate]}
+                              onValueChange={(v) => setReturnRate(v[0])}
+                              min={5}
+                              max={12}
+                              step={0.5}
+                            />
+                          </div>
+                          {investmentsBoosted && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setInvestMultiplier(1.0);
+                                setReturnRate(BASE_RATE);
+                              }}
+                              className="text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                            >
+                              Reset to baseline
+                            </button>
+                          )}
+                        </li>
+                      )}
+                      {/* One-off definition */}
+                      {row.oneOff && !nextIsOneOff && fundFlowInfoOpen && (
+                        <li className="bg-muted/40 px-4 py-2.5">
+                          <p className="text-[11px] leading-relaxed text-foreground">
+                            <strong>One-off income</strong> and <strong>one-off expense</strong> are amounts
+                            expected within the next year — bonuses, inheritance, a major purchase or trip —
+                            not part of your regular monthly cash flow.
+                          </p>
+                        </li>
+                      )}
+                    </Fragment>
+                  );
+                })}
+                <li
+                  className="flex items-center justify-between px-4 py-2.5"
+                  style={{
+                    backgroundColor: investmentsBoosted
+                      ? "hsl(var(--muted) / 0.4)"
+                      : "hsl(var(--muted) / 0.4)",
+                  }}
+                >
+                  <span className="text-xs font-semibold text-foreground">Closing NFA · Mar 2051</span>
+                  <span
+                    className={`text-sm font-bold tabular-nums ${
+                      projClosing >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-destructive"
+                    }`}
+                  >
+                    {projClosing < 0 ? "−" : ""}
+                    {formatINR(Math.abs(projClosing))}
+                  </span>
+                </li>
+              </ul>
+            );
+          })()}
+
+          <div className="border-t border-border px-4 py-3">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+              Goal funding status
+            </p>
+            <div className="mt-2 grid grid-cols-[1fr_auto] gap-y-1.5 text-xs">
+              <span className="text-muted-foreground">Net financial assets</span>
+              <span className="text-right font-semibold tabular-nums text-foreground">
+                {formatINR(1_50_00_000)}
+              </span>
+              <span className="text-muted-foreground">Goals today (PV)</span>
+              <span className="text-right font-semibold tabular-nums text-foreground">
+                {formatINR(3_30_67_257)}
+              </span>
+              <span className="text-muted-foreground">Present gap</span>
+              <span className="text-right font-semibold tabular-nums text-destructive">
+                −{formatINR(1_80_67_257)}
+              </span>
+              <span className="text-muted-foreground">Future gap</span>
+              <span className="text-right font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
+                {formatINR(0)}
+              </span>
+            </div>
+          </div>
+        </motion.section>
+
         {/* Goal list */}
         <motion.section
           initial={{ opacity: 0, y: 8 }}
@@ -644,12 +858,7 @@ const GoalPlanner = () => {
             <span className="rounded-full border border-border/60 bg-card/80 px-2.5 py-0.5 text-[11px] text-muted-foreground">{sortedGoals.length} total</span>
           </div>
 
-          {goalsLoading ? (
-            <div className="flex flex-col items-center justify-center rounded-2xl border border-border bg-card py-16">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" aria-hidden />
-              <p className="mt-3 text-sm text-muted-foreground">Loading your goals…</p>
-            </div>
-          ) : sortedGoals.length === 0 ? (
+          {sortedGoals.length === 0 ? (
             <div className="flex flex-col items-center rounded-2xl border border-dashed border-border bg-card px-6 py-14 text-center">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted">
                 <Target className="h-7 w-7 text-muted-foreground" strokeWidth={1.5} />
@@ -681,7 +890,7 @@ const GoalPlanner = () => {
                         : "border-border"
                     }`}
                   >
-                    <div className="relative p-4 pb-3.5">
+                    <div className="relative p-4 pb-4">
                       <button
                         type="button"
                         onClick={() => openEdit(goal)}
@@ -690,62 +899,85 @@ const GoalPlanner = () => {
                       >
                         <Pencil className="h-3.5 w-3.5" strokeWidth={2} />
                       </button>
-                      <div className="pr-11">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="grid h-7 w-7 place-items-center rounded-lg border border-border/60 bg-muted/40 text-muted-foreground">
-                            {goal.icon}
-                          </span>
-                          <h3 className="font-semibold leading-snug tracking-tight text-foreground">{goal.label}</h3>
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${priorityBadgeClass(goal.priority)}`}
-                          >
-                            {goal.priority}
-                          </span>
-                          {achieved ? (
-                            <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-800 dark:text-emerald-400">
-                              Funded
-                            </span>
-                          ) : null}
-                        </div>
-                        <p className="mt-1.5 text-sm tabular-nums leading-snug text-muted-foreground">
-                          Target {formatCompact(goal.targetAmount)}
-                          {goal.targetDate ? (
-                            <>
-                              {" "}
-                              · <span className="text-foreground/80">{goal.targetDate}</span>
-                            </>
-                          ) : null}
-                        </p>
-                        <div className="mt-2.5 flex items-center justify-between gap-2">
-                          <div className="min-w-0 flex-1 rounded-lg border border-border bg-muted/20 px-2 py-1.5">
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-[10px] font-medium text-muted-foreground">Contribution progress</span>
-                              <span className="text-[10px] font-semibold tabular-nums text-foreground">
-                                {goal.targetAmount > 0 ? Math.round((Math.max(0, goal.investedAmount) / goal.targetAmount) * 100) : 0}%
-                              </span>
-                            </div>
-                            <div className="mt-1 h-1.5 rounded-full bg-muted">
-                              <motion.div
-                                className="h-full rounded-full"
-                                style={{ backgroundColor: "hsl(220, 52%, 28%)" }}
-                                initial={{ width: 0 }}
-                                animate={{
-                                  width: `${goal.targetAmount > 0 ? Math.min(100, Math.max(0, (goal.investedAmount / goal.targetAmount) * 100)) : 0}%`,
-                                }}
-                                transition={{ duration: 0.45, ease: "easeOut" }}
-                              />
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => openContribute(goal)}
-                            className="inline-flex min-h-[36px] items-center justify-center rounded-full border border-border bg-muted px-3.5 text-[11px] font-semibold text-foreground transition-colors hover:bg-muted/80"
-                            aria-label={`Contribute to goal: ${goal.label}`}
-                          >
-                            Contribute to this goal
-                          </button>
+
+                      {/* Header: icon + name + target line */}
+                      <div className="flex items-start gap-3 pr-11">
+                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-border/60 bg-muted/40 text-muted-foreground">
+                          {goal.icon}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <h3 className="text-[15px] font-semibold leading-tight tracking-tight text-foreground">
+                            {goal.label}
+                          </h3>
+                          <p className="mt-1 text-xs text-muted-foreground tabular-nums">
+                            {formatCompact(goal.targetAmount)}
+                            {goal.targetDate ? <> by <span className="text-foreground/80">{goal.targetDate}</span></> : null}
+                          </p>
                         </div>
                       </div>
+
+                      {/* Status pills */}
+                      <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                        {achieved ? (
+                          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-800 dark:text-emerald-400">
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                            Funded
+                          </span>
+                        ) : (() => {
+                          const status = goalTrackStatus(goal);
+                          const cfg = TRACK_BADGE[status];
+                          return (
+                            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${cfg.cls}`}>
+                              <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: cfg.dot }} />
+                              {cfg.label}
+                            </span>
+                          );
+                        })()}
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${priorityBadgeClass(goal.priority)}`}
+                        >
+                          {goal.priority}
+                        </span>
+                      </div>
+
+                      {/* Donut */}
+                      <div className="mt-4 flex justify-center">
+                        <ContributionDonut
+                          pct={
+                            goal.targetAmount > 0
+                              ? Math.min(100, Math.max(0, (goal.investedAmount / goal.targetAmount) * 100))
+                              : 0
+                          }
+                        />
+                      </div>
+
+                      {/* Current / Target split */}
+                      <div className="mt-4 flex items-center justify-center gap-6">
+                        <div className="text-center">
+                          <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                            Current
+                          </p>
+                          <p
+                            className="mt-1 text-base font-bold text-foreground tabular-nums"
+                            style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
+                          >
+                            {formatCompact(goal.currentValue)}
+                          </p>
+                        </div>
+                        <span className="h-8 w-px bg-border/70" aria-hidden />
+                        <div className="text-center">
+                          <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                            Target
+                          </p>
+                          <p
+                            className="mt-1 text-base font-bold text-foreground tabular-nums"
+                            style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
+                          >
+                            {formatCompact(goal.targetAmount)}
+                          </p>
+                        </div>
+                      </div>
+
                       {showAchieve && !achieved && (
                         <div className="mt-3.5 rounded-2xl border border-border/60 bg-muted/35 px-3 py-3">
                           <p className="text-[11px] leading-relaxed text-muted-foreground">
@@ -1138,72 +1370,6 @@ const GoalPlanner = () => {
                     </motion.li>
                   ))}
                 </ul>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Contribute sheet */}
-      <AnimatePresence>
-        {contributeGoal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 backdrop-blur-[2px]"
-            onClick={() => setContributeGoal(null)}
-          >
-            <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 32, stiffness: 320 }}
-              onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-md rounded-t-3xl border border-border/80 bg-card shadow-2xl"
-            >
-              <div className="flex justify-center border-b border-border/60 py-3">
-                <div className="h-1 w-10 rounded-full bg-muted-foreground/25" />
-              </div>
-              <div className="px-5 pt-4 pb-[calc(7rem+env(safe-area-inset-bottom,0px))]">
-                <h3 className="text-lg font-semibold text-foreground">Contribute</h3>
-                <p className="mt-1 text-sm text-muted-foreground">{contributeGoal.label}</p>
-
-                <label className="mt-6 block text-xs font-medium text-muted-foreground">Amount (₹)</label>
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  value={contributeAmount}
-                  onChange={(e) => setContributeAmount(e.target.value)}
-                  className={`${sheetInputClass} mt-1.5`}
-                />
-
-                <label className="mt-6 block text-xs font-medium text-muted-foreground">Share link</label>
-                <div className="mt-1.5 flex gap-2">
-                  <div className="flex min-h-[48px] flex-1 items-center rounded-xl border border-input bg-muted/40 px-3 text-xs text-muted-foreground">
-                    <span className="truncate">{shareLink}</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleCopy}
-                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-input bg-background shadow-sm transition-colors hover:bg-muted"
-                    aria-label="Copy link"
-                  >
-                    {copied ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
-                  </button>
-                </div>
-                <p className="mt-2 text-[11px] text-muted-foreground">Anyone with the link can contribute toward this goal.</p>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    toast({ title: "Contribution queued", description: `₹${contributeAmount || contributeGoal.suggestedContribution} toward ${contributeGoal.label}.` });
-                    setContributeGoal(null);
-                  }}
-                  className="mt-8 w-full min-h-[52px] rounded-xl bg-primary text-sm font-semibold text-primary-foreground shadow-sm transition-opacity hover:opacity-90"
-                >
-                  Confirm amount
-                </button>
               </div>
             </motion.div>
           </motion.div>

@@ -18,7 +18,7 @@ const Portfolio = () => {
   const handleTakeALook = () => {
     localStorage.setItem(STORAGE_KEY, "true");
     setShowPopup(false);
-    navigate("/execute");
+    navigate("/rebalance-explanation");
   };
 
   return (
