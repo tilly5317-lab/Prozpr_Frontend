@@ -28,8 +28,26 @@ const TABS: { id: AnalysisTab; label: string }[] = [
   { id: "waterfall", label: "Value Build-Up" },
 ];
 
-const BENCHMARK_NAME = "Benchmark: Nifty 50";
-const BENCHMARK_LINE = "hsl(var(--muted-foreground))";
+// Catalog of benchmarks the user can layer onto the Returns chart.
+// `multiplier` is applied to the portfolio TWR to synthesize a plausible benchmark return.
+type BenchmarkOption = {
+  id: string;
+  shortName: string;
+  fullName: string;
+  multiplier: number;
+  seed: number;
+  color: string;
+  dash: string;
+};
+
+const BENCHMARKS: BenchmarkOption[] = [
+  { id: "nifty50", shortName: "Nifty 50", fullName: "Benchmark: Nifty 50", multiplier: 0.85, seed: 17, color: "hsl(var(--muted-foreground))", dash: "2 3" },
+  { id: "niftynext50", shortName: "Nifty Next 50", fullName: "Benchmark: Nifty Next 50", multiplier: 0.92, seed: 23, color: "#D4A868", dash: "4 3" },
+  { id: "midcap150", shortName: "Nifty Midcap 150", fullName: "Benchmark: Nifty Midcap 150", multiplier: 1.05, seed: 29, color: "#3B6FA8", dash: "5 3" },
+  { id: "sensex", shortName: "BSE Sensex", fullName: "Benchmark: BSE Sensex", multiplier: 0.83, seed: 31, color: "#7B4F8F", dash: "6 2" },
+  { id: "crisil-bond", shortName: "Crisil Composite Bond", fullName: "Benchmark: Crisil Composite Bond", multiplier: 0.55, seed: 37, color: "#5C7C3D", dash: "3 2" },
+  { id: "gold-spot", shortName: "Domestic Gold", fullName: "Benchmark: Domestic Gold", multiplier: 0.7, seed: 41, color: "#E0B84A", dash: "1 3" },
+];
 
 const RANGES: AnalysisRange[] = ["1M", "3M", "YTD", "1Y", "3Y", "All"];
 
@@ -184,6 +202,8 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
     return stored === "returns" || stored === "nav" || stored === "waterfall" ? stored : "returns";
   });
   const [range, setRange] = useState<AnalysisRange>("1M");
+  const [selectedBenchmarkIds, setSelectedBenchmarkIds] = useState<string[]>(["nifty50"]);
+  const [benchmarkPickerOpen, setBenchmarkPickerOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState<"twr" | "mwr" | null>(null);
 
   useEffect(() => {
@@ -207,7 +227,18 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
   const fullMwr = Math.round(simpleGain * 0.94 * 100) / 100;
   const scaledTwr = Math.round(fullTwr * rangeScaleFactor(range) * 100) / 100;
   const scaledMwr = Math.round(fullMwr * rangeScaleFactor(range) * 100) / 100;
-  const bench = Math.round(scaledTwr * 0.85 * 100) / 100;
+
+  // Benchmarks the user has chosen to overlay (always at least one).
+  const activeBenchmarks = BENCHMARKS.filter((b) => selectedBenchmarkIds.includes(b.id));
+  const primaryBenchmark = activeBenchmarks[0] ?? BENCHMARKS[0];
+  const benchPctById = (() => {
+    const out: Record<string, number> = {};
+    for (const b of BENCHMARKS) {
+      out[b.id] = Math.round(scaledTwr * b.multiplier * 100) / 100;
+    }
+    return out;
+  })();
+  const primaryBench = benchPctById[primaryBenchmark.id];
 
   const today = useMemo(() => new Date(), []);
   const seriesPoints = pointsForRange(range);
@@ -219,9 +250,19 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
     const n = pointsForRange(range);
     const twr = synthCurve(0, scaledTwr, n, 3);
     const mwr = synthCurve(0, scaledMwr, n, 11);
-    const benchCurve = synthCurve(0, bench, n, 17);
-    return twr.map((t, i) => ({ i, twr: t, mwr: mwr[i], benchmark: benchCurve[i] }));
-  }, [range, scaledTwr, scaledMwr, bench]);
+    const benchCurves: Record<string, number[]> = {};
+    for (const b of activeBenchmarks) {
+      const target = Math.round(scaledTwr * b.multiplier * 100) / 100;
+      benchCurves[b.id] = synthCurve(0, target, n, b.seed);
+    }
+    return twr.map((t, i) => {
+      const point: Record<string, number> = { i, twr: t, mwr: mwr[i] };
+      for (const b of activeBenchmarks) {
+        point[`bench_${b.id}`] = benchCurves[b.id][i];
+      }
+      return point;
+    });
+  }, [range, scaledTwr, scaledMwr, activeBenchmarks]);
 
 
   // NAV Changes data
@@ -304,7 +345,7 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
         ["Metric", `${range}`, "Full period"],
         ["TWR %", scaledTwr, fullTwr],
         ["MWR %", scaledMwr, fullMwr],
-        [`${BENCHMARK_NAME} %`, bench, ""],
+        ...activeBenchmarks.map((b) => [`${b.fullName} %`, benchPctById[b.id], ""]),
       ];
       downloadFile(`portfolio-returns-${ts}.csv`, "text/csv", toCsv(rows));
       return;
@@ -506,16 +547,16 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                             style={{ border: `1px solid ${HAIRLINE}` }}
                           >
                             <p className="text-[9px] uppercase tracking-wide text-muted-foreground mb-0.5 leading-tight">
-                              {BENCHMARK_NAME}
+                              {primaryBenchmark.fullName}
                             </p>
                             <p
                               className="text-base font-semibold leading-tight"
                               style={{
-                                color: bench >= 0 ? POSITIVE : NEGATIVE,
+                                color: primaryBench >= 0 ? POSITIVE : NEGATIVE,
                                 fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
                               }}
                             >
-                              {fmtPct(bench)}
+                              {fmtPct(primaryBench)}
                             </p>
                             <p className="text-[9px] text-muted-foreground mt-0.5">{range}</p>
                           </div>
@@ -543,7 +584,7 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                         )}
 
                         <p className="text-[10px] uppercase tracking-wide text-muted-foreground mt-4 mb-1.5">
-                          Portfolio vs {BENCHMARK_NAME} over {range}
+                          Portfolio vs benchmarks over {range}
                         </p>
                         <div className="h-[180px] w-full">
                           <ResponsiveContainer width="100%" height="100%">
@@ -607,21 +648,24 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                                 dot={false}
                                 isAnimationActive={false}
                               />
-                              <Line
-                                type="monotone"
-                                dataKey="benchmark"
-                                name={BENCHMARK_NAME}
-                                stroke={BENCHMARK_LINE}
-                                strokeWidth={1.75}
-                                strokeDasharray="2 3"
-                                dot={false}
-                                isAnimationActive={false}
-                              />
+                              {activeBenchmarks.map((b) => (
+                                <Line
+                                  key={b.id}
+                                  type="monotone"
+                                  dataKey={`bench_${b.id}`}
+                                  name={b.shortName}
+                                  stroke={b.color}
+                                  strokeWidth={1.75}
+                                  strokeDasharray={b.dash}
+                                  dot={false}
+                                  isAnimationActive={false}
+                                />
+                              ))}
                             </LineChart>
                           </ResponsiveContainer>
                         </div>
 
-                        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 mt-2 text-[11px]">
+                        <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 mt-2 text-[11px]">
                           <span className="inline-flex items-center gap-1.5">
                             <span
                               className="inline-block h-0.5 w-4"
@@ -640,17 +684,76 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                             />
                             MWR
                           </span>
-                          <span className="inline-flex items-center gap-1.5">
-                            <span
-                              className="inline-block h-0.5 w-4"
-                              style={{
-                                backgroundColor: BENCHMARK_LINE,
-                                backgroundImage:
-                                  "repeating-linear-gradient(90deg, currentColor 0 2px, transparent 2px 5px)",
-                              }}
-                            />
-                            {BENCHMARK_NAME}
-                          </span>
+                          {activeBenchmarks.map((b) => (
+                            <span key={b.id} className="inline-flex items-center gap-1.5">
+                              <span
+                                className="inline-block h-0.5 w-4"
+                                style={{ backgroundColor: b.color }}
+                              />
+                              {b.shortName}
+                            </span>
+                          ))}
+                        </div>
+
+                        {/* Add / manage benchmarks */}
+                        <div className="mt-3">
+                          <button
+                            type="button"
+                            onClick={() => setBenchmarkPickerOpen((o) => !o)}
+                            className="inline-flex items-center gap-1 rounded-full bg-muted/70 px-2.5 py-1 text-[10.5px] font-semibold text-muted-foreground hover:text-foreground transition-colors"
+                          >
+                            <span>{benchmarkPickerOpen ? "Hide benchmarks" : "+ Add benchmark"}</span>
+                            <span className="text-[9px] text-muted-foreground/70">
+                              {activeBenchmarks.length} selected
+                            </span>
+                          </button>
+                          {benchmarkPickerOpen && (
+                            <div
+                              className="mt-2 rounded-xl px-2.5 py-2"
+                              style={{ border: `1px solid ${HAIRLINE}`, backgroundColor: "hsl(var(--muted) / 0.4)" }}
+                            >
+                              <div className="flex flex-wrap gap-1.5">
+                                {BENCHMARKS.map((b) => {
+                                  const active = selectedBenchmarkIds.includes(b.id);
+                                  const isLastSelected = active && selectedBenchmarkIds.length === 1;
+                                  return (
+                                    <button
+                                      key={b.id}
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedBenchmarkIds((prev) => {
+                                          if (prev.includes(b.id)) {
+                                            // Don't allow removing the last one.
+                                            return prev.length > 1 ? prev.filter((x) => x !== b.id) : prev;
+                                          }
+                                          return [...prev, b.id];
+                                        });
+                                      }}
+                                      disabled={isLastSelected}
+                                      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10.5px] font-semibold transition-colors ${
+                                        active
+                                          ? "bg-foreground text-background"
+                                          : "bg-card text-muted-foreground hover:text-foreground"
+                                      } ${isLastSelected ? "cursor-not-allowed opacity-70" : ""}`}
+                                      style={{
+                                        border: active ? "none" : `1px solid ${HAIRLINE}`,
+                                      }}
+                                      title={isLastSelected ? "Keep at least one benchmark" : b.fullName}
+                                    >
+                                      <span
+                                        className="h-1.5 w-1.5 rounded-full"
+                                        style={{ backgroundColor: b.color }}
+                                      />
+                                      {b.shortName}
+                                      <span className="ml-1 text-[9.5px] font-normal opacity-75 tabular-nums">
+                                        {fmtPct(benchPctById[b.id])}
+                                      </span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}

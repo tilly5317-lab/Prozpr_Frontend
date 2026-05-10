@@ -7,7 +7,7 @@ const Invest = () => {
 
   return (
     <div className="mobile-container bg-background min-h-screen pb-20">
-      <div className="px-5 pt-12 pb-1">
+      <div className="px-5 pt-10 pb-3">
         <h1 className="text-lg font-semibold text-foreground">Invest</h1>
       </div>
 
