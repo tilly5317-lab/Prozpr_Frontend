@@ -1,7 +1,8 @@
-import { Fragment, useState, useCallback, useMemo } from "react";
+import { Fragment, useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, Target, Pencil, Loader2, MessageCircle, Sparkles, Home, GraduationCap, Plane, BriefcaseBusiness, Heart, Car, Landmark, Trophy, Info, ChevronDown } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
+import confetti from "canvas-confetti";
 import { useNavigate } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
 import BottomNav from "@/components/BottomNav";
@@ -377,6 +378,318 @@ const ContributionDonut = ({ pct }: { pct: number }) => {
         <span className="mt-1 text-[11px] text-muted-foreground">complete</span>
       </div>
     </div>
+  );
+};
+
+const MILESTONES = [25, 50, 75, 100] as const;
+const GOLD = "#D4A868";
+
+/** 4-stop milestone track under the donut (25 / 50 / 75 / 100). */
+const MilestoneTrack = ({ pct }: { pct: number }) => {
+  const safe = Math.max(0, Math.min(100, pct));
+  return (
+    <div className="relative w-full max-w-[220px] px-1">
+      {/* Track behind dots */}
+      <div className="absolute left-2 right-2 top-[5px] h-0.5 rounded-full bg-muted" />
+      <motion.div
+        className="absolute left-2 top-[5px] h-0.5 rounded-full"
+        style={{ backgroundColor: GOLD }}
+        initial={{ width: 0 }}
+        animate={{ width: `calc((100% - 1rem) * ${safe / 100})` }}
+        transition={{ duration: 0.5, ease: "easeOut" }}
+      />
+      {/* Dots + labels */}
+      <div className="grid grid-cols-4">
+        {MILESTONES.map((m) => {
+          const reached = safe >= m;
+          return (
+            <div key={m} className="flex flex-col items-center">
+              <motion.span
+                className="relative z-10 h-3 w-3 rounded-full border-2"
+                style={{
+                  backgroundColor: reached ? GOLD : "hsl(var(--card))",
+                  borderColor: reached ? GOLD : "hsl(var(--muted-foreground) / 0.4)",
+                }}
+                animate={
+                  reached
+                    ? { scale: [1, 1.25, 1] }
+                    : { scale: 1 }
+                }
+                transition={{ duration: 0.4, ease: "easeOut" }}
+              />
+              <span
+                className={`mt-1.5 text-[9px] font-medium tabular-nums ${
+                  reached ? "text-foreground" : "text-muted-foreground/60"
+                }`}
+              >
+                {m}%
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+interface GoalCardProps {
+  goal: Goal;
+  onEdit: () => void;
+  onAchieve: () => void;
+  achieved: boolean;
+  showAchieve: boolean;
+}
+
+const GoalCard = ({ goal, onEdit, onAchieve, achieved, showAchieve }: GoalCardProps) => {
+  const [whatIfOpen, setWhatIfOpen] = useState(false);
+  const [scenarioMonthly, setScenarioMonthly] = useState(
+    goal.monthlyContribution > 0 ? goal.monthlyContribution : 25_000,
+  );
+
+  const yearsLeft = useMemo(() => {
+    const ty = parseTargetYear(goal.targetDate);
+    if (ty == null) return 0;
+    return Math.max(0, ty - new Date().getFullYear());
+  }, [goal.targetDate]);
+
+  const baselinePct =
+    goal.targetAmount > 0
+      ? Math.min(100, Math.max(0, (goal.currentValue / goal.targetAmount) * 100))
+      : 0;
+
+  const projectedAmount = whatIfOpen
+    ? goal.currentValue + scenarioMonthly * 12 * yearsLeft
+    : goal.currentValue;
+
+  const displayedPct =
+    whatIfOpen && goal.targetAmount > 0
+      ? Math.min(100, Math.max(0, (projectedAmount / goal.targetAmount) * 100))
+      : baselinePct;
+
+  // Milestone crossing → small confetti pop.
+  const prevPctRef = useRef(displayedPct);
+  useEffect(() => {
+    const prev = prevPctRef.current;
+    const curr = displayedPct;
+    if (curr > prev) {
+      for (const m of MILESTONES) {
+        if (prev < m && curr >= m) {
+          confetti({
+            particleCount: m === 100 ? 60 : 28,
+            spread: m === 100 ? 80 : 50,
+            startVelocity: 24,
+            scalar: 0.7,
+            origin: { y: 0.55 },
+            colors: ["#D4A868", "#E5C079", "#F5EEDC", "#FFFFFF"],
+          });
+          break;
+        }
+      }
+    }
+    prevPctRef.current = curr;
+  }, [displayedPct]);
+
+  const projectedShortBy =
+    goal.targetAmount > 0 && projectedAmount < goal.targetAmount
+      ? goal.targetAmount - projectedAmount
+      : 0;
+
+  return (
+    <li
+      className={`overflow-hidden rounded-2xl border bg-card transition-colors ${
+        achieved ? "border-emerald-500/30" : "border-border"
+      }`}
+    >
+      <div className="relative p-4 pb-4">
+        <button
+          type="button"
+          onClick={onEdit}
+          className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
+          aria-label={`Edit ${goal.label}`}
+        >
+          <Pencil className="h-3.5 w-3.5" strokeWidth={2} />
+        </button>
+
+        {/* Header: icon + name + target line */}
+        <div className="flex items-start gap-3 pr-11">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-border/60 bg-muted/40 text-muted-foreground">
+            {goal.icon}
+          </span>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-[15px] font-semibold leading-tight tracking-tight text-foreground">
+              {goal.label}
+            </h3>
+            <p className="mt-1 text-xs text-muted-foreground tabular-nums">
+              {formatCompact(goal.targetAmount)}
+              {goal.targetDate ? (
+                <>
+                  {" "}
+                  by <span className="text-foreground/80">{goal.targetDate}</span>
+                </>
+              ) : null}
+            </p>
+          </div>
+        </div>
+
+        {/* Status pills */}
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          {achieved ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-800 dark:text-emerald-400">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              Funded
+            </span>
+          ) : (() => {
+            const status = goalTrackStatus(goal);
+            const cfg = TRACK_BADGE[status];
+            return (
+              <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${cfg.cls}`}>
+                <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: cfg.dot }} />
+                {cfg.label}
+              </span>
+            );
+          })()}
+          <span
+            className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${priorityBadgeClass(goal.priority)}`}
+          >
+            {goal.priority}
+          </span>
+          {whatIfOpen && (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-100/70 px-2.5 py-1 text-[11px] font-semibold text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
+              <Sparkles className="h-3 w-3" />
+              What if
+            </span>
+          )}
+        </div>
+
+        {/* Donut — tap to open What-if */}
+        <button
+          type="button"
+          onClick={() => setWhatIfOpen((o) => !o)}
+          className="mt-4 flex w-full justify-center rounded-2xl py-1 transition-colors hover:bg-muted/30"
+          aria-label={`Open what-if scenario for ${goal.label}`}
+          aria-expanded={whatIfOpen}
+        >
+          <ContributionDonut pct={displayedPct} />
+        </button>
+
+        {/* Milestone track */}
+        <div className="mt-2 flex justify-center">
+          <MilestoneTrack pct={displayedPct} />
+        </div>
+
+        {/* Current / Target split */}
+        <div className="mt-4 flex items-center justify-center gap-6">
+          <div className="text-center">
+            <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+              {whatIfOpen ? "Projected" : "Current"}
+            </p>
+            <p
+              className="mt-1 text-base font-bold text-foreground tabular-nums"
+              style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
+            >
+              {formatCompact(whatIfOpen ? projectedAmount : goal.currentValue)}
+            </p>
+          </div>
+          <span className="h-8 w-px bg-border/70" aria-hidden />
+          <div className="text-center">
+            <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+              Target
+            </p>
+            <p
+              className="mt-1 text-base font-bold text-foreground tabular-nums"
+              style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
+            >
+              {formatCompact(goal.targetAmount)}
+            </p>
+          </div>
+        </div>
+
+        {/* What-if slider panel */}
+        <AnimatePresence initial={false}>
+          {whatIfOpen && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.22, ease: "easeOut" }}
+              className="overflow-hidden"
+            >
+              <div className="mt-4 rounded-xl border border-border/60 bg-muted/25 p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                    Monthly SIP
+                  </span>
+                  <span
+                    className="text-xs font-semibold tabular-nums text-foreground"
+                    style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
+                  >
+                    {formatCompact(scenarioMonthly)}/mo
+                  </span>
+                </div>
+                <Slider
+                  value={[scenarioMonthly]}
+                  onValueChange={(v) => setScenarioMonthly(v[0])}
+                  min={0}
+                  max={300_000}
+                  step={1_000}
+                  className="mt-2.5"
+                />
+                <div className="mt-3 flex items-start justify-between gap-2">
+                  <p className="text-[11px] leading-snug text-muted-foreground">
+                    {projectedShortBy > 0 ? (
+                      <>
+                        Short by{" "}
+                        <span className="font-semibold text-destructive">
+                          {formatCompact(projectedShortBy)}
+                        </span>{" "}
+                        at deadline
+                      </>
+                    ) : (
+                      <>
+                        <span className="font-semibold text-emerald-700 dark:text-emerald-400">
+                          Hits target
+                        </span>{" "}
+                        — surplus {formatCompact(projectedAmount - goal.targetAmount)}
+                      </>
+                    )}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setScenarioMonthly(
+                        goal.monthlyContribution > 0 ? goal.monthlyContribution : 25_000,
+                      );
+                      setWhatIfOpen(false);
+                    }}
+                    className="text-[10.5px] font-medium text-muted-foreground hover:text-foreground"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {showAchieve && !achieved && (
+          <div className="mt-3.5 rounded-2xl border border-border/60 bg-muted/35 px-3 py-3">
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              <span className="font-medium text-foreground/90">Goal deadline is this month.</span>{" "}
+              Open chat with Tilly to plan your withdrawal and close the goal.
+            </p>
+            <button
+              type="button"
+              onClick={onAchieve}
+              className="mt-2.5 inline-flex min-h-[40px] items-center justify-center gap-2 rounded-full border border-primary/35 bg-background px-4 text-xs font-semibold text-primary shadow-sm transition-colors hover:border-primary/50 hover:bg-primary/[0.06] active:scale-[0.99]"
+              aria-label={`Plan withdrawal with Tilly to complete goal: ${goal.label}`}
+            >
+              <MessageCircle className="h-3.5 w-3.5 shrink-0 opacity-90" aria-hidden />
+              Plan withdrawal with Tilly
+            </button>
+          </div>
+        )}
+      </div>
+    </li>
   );
 };
 
@@ -808,7 +1121,7 @@ const GoalPlanner = () => {
                       : "hsl(var(--muted) / 0.4)",
                   }}
                 >
-                  <span className="text-xs font-semibold text-foreground">Closing NFA · Mar 2051</span>
+                  <span className="text-xs font-semibold text-foreground">Closing financial assets · Mar 2051</span>
                   <span
                     className={`text-sm font-bold tabular-nums ${
                       projClosing >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-destructive"
@@ -877,128 +1190,16 @@ const GoalPlanner = () => {
             </div>
           ) : (
             <ul className="space-y-3">
-              {sortedGoals.map((goal) => {
-                const achieved = isGoalAchieved(goal);
-                const showAchieve = isGoalDeadlineInCurrentMonth(goal);
-
-                return (
-                  <li
-                    key={goal.id}
-                    className={`overflow-hidden rounded-2xl border bg-card transition-colors ${
-                      achieved
-                        ? "border-emerald-500/30"
-                        : "border-border"
-                    }`}
-                  >
-                    <div className="relative p-4 pb-4">
-                      <button
-                        type="button"
-                        onClick={() => openEdit(goal)}
-                        className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
-                        aria-label={`Edit ${goal.label}`}
-                      >
-                        <Pencil className="h-3.5 w-3.5" strokeWidth={2} />
-                      </button>
-
-                      {/* Header: icon + name + target line */}
-                      <div className="flex items-start gap-3 pr-11">
-                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-border/60 bg-muted/40 text-muted-foreground">
-                          {goal.icon}
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <h3 className="text-[15px] font-semibold leading-tight tracking-tight text-foreground">
-                            {goal.label}
-                          </h3>
-                          <p className="mt-1 text-xs text-muted-foreground tabular-nums">
-                            {formatCompact(goal.targetAmount)}
-                            {goal.targetDate ? <> by <span className="text-foreground/80">{goal.targetDate}</span></> : null}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Status pills */}
-                      <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                        {achieved ? (
-                          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-800 dark:text-emerald-400">
-                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                            Funded
-                          </span>
-                        ) : (() => {
-                          const status = goalTrackStatus(goal);
-                          const cfg = TRACK_BADGE[status];
-                          return (
-                            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${cfg.cls}`}>
-                              <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: cfg.dot }} />
-                              {cfg.label}
-                            </span>
-                          );
-                        })()}
-                        <span
-                          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${priorityBadgeClass(goal.priority)}`}
-                        >
-                          {goal.priority}
-                        </span>
-                      </div>
-
-                      {/* Donut */}
-                      <div className="mt-4 flex justify-center">
-                        <ContributionDonut
-                          pct={
-                            goal.targetAmount > 0
-                              ? Math.min(100, Math.max(0, (goal.investedAmount / goal.targetAmount) * 100))
-                              : 0
-                          }
-                        />
-                      </div>
-
-                      {/* Current / Target split */}
-                      <div className="mt-4 flex items-center justify-center gap-6">
-                        <div className="text-center">
-                          <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-                            Current
-                          </p>
-                          <p
-                            className="mt-1 text-base font-bold text-foreground tabular-nums"
-                            style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
-                          >
-                            {formatCompact(goal.currentValue)}
-                          </p>
-                        </div>
-                        <span className="h-8 w-px bg-border/70" aria-hidden />
-                        <div className="text-center">
-                          <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-                            Target
-                          </p>
-                          <p
-                            className="mt-1 text-base font-bold text-foreground tabular-nums"
-                            style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
-                          >
-                            {formatCompact(goal.targetAmount)}
-                          </p>
-                        </div>
-                      </div>
-
-                      {showAchieve && !achieved && (
-                        <div className="mt-3.5 rounded-2xl border border-border/60 bg-muted/35 px-3 py-3">
-                          <p className="text-[11px] leading-relaxed text-muted-foreground">
-                            <span className="font-medium text-foreground/90">Goal deadline is this month.</span>{" "}
-                            Open chat with Tilly to plan your withdrawal and close the goal.
-                          </p>
-                          <button
-                            type="button"
-                            onClick={() => openAchieveGoalInChat(goal)}
-                            className="mt-2.5 inline-flex min-h-[40px] items-center justify-center gap-2 rounded-full border border-primary/35 bg-background px-4 text-xs font-semibold text-primary shadow-sm transition-colors hover:border-primary/50 hover:bg-primary/[0.06] active:scale-[0.99]"
-                            aria-label={`Plan withdrawal with Tilly to complete goal: ${goal.label}`}
-                          >
-                            <MessageCircle className="h-3.5 w-3.5 shrink-0 opacity-90" aria-hidden />
-                            Plan withdrawal with Tilly
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </li>
-                );
-              })}
+              {sortedGoals.map((goal) => (
+                <GoalCard
+                  key={goal.id}
+                  goal={goal}
+                  achieved={isGoalAchieved(goal)}
+                  showAchieve={isGoalDeadlineInCurrentMonth(goal)}
+                  onEdit={() => openEdit(goal)}
+                  onAchieve={() => openAchieveGoalInChat(goal)}
+                />
+              ))}
             </ul>
           )}
         </motion.section>
