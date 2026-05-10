@@ -382,55 +382,6 @@ const ContributionDonut = ({ pct }: { pct: number }) => {
 };
 
 const MILESTONES = [25, 50, 75, 100] as const;
-const GOLD = "#D4A868";
-
-/** 4-stop milestone track under the donut (25 / 50 / 75 / 100). */
-const MilestoneTrack = ({ pct }: { pct: number }) => {
-  const safe = Math.max(0, Math.min(100, pct));
-  return (
-    <div className="relative w-full max-w-[220px] px-1">
-      {/* Track behind dots */}
-      <div className="absolute left-2 right-2 top-[5px] h-0.5 rounded-full bg-muted" />
-      <motion.div
-        className="absolute left-2 top-[5px] h-0.5 rounded-full"
-        style={{ backgroundColor: GOLD }}
-        initial={{ width: 0 }}
-        animate={{ width: `calc((100% - 1rem) * ${safe / 100})` }}
-        transition={{ duration: 0.5, ease: "easeOut" }}
-      />
-      {/* Dots + labels */}
-      <div className="grid grid-cols-4">
-        {MILESTONES.map((m) => {
-          const reached = safe >= m;
-          return (
-            <div key={m} className="flex flex-col items-center">
-              <motion.span
-                className="relative z-10 h-3 w-3 rounded-full border-2"
-                style={{
-                  backgroundColor: reached ? GOLD : "hsl(var(--card))",
-                  borderColor: reached ? GOLD : "hsl(var(--muted-foreground) / 0.4)",
-                }}
-                animate={
-                  reached
-                    ? { scale: [1, 1.25, 1] }
-                    : { scale: 1 }
-                }
-                transition={{ duration: 0.4, ease: "easeOut" }}
-              />
-              <span
-                className={`mt-1.5 text-[9px] font-medium tabular-nums ${
-                  reached ? "text-foreground" : "text-muted-foreground/60"
-                }`}
-              >
-                {m}%
-              </span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-};
 
 interface GoalCardProps {
   goal: Goal;
@@ -571,11 +522,6 @@ const GoalCard = ({ goal, onEdit, onAchieve, achieved, showAchieve }: GoalCardPr
         >
           <ContributionDonut pct={displayedPct} />
         </button>
-
-        {/* Milestone track */}
-        <div className="mt-2 flex justify-center">
-          <MilestoneTrack pct={displayedPct} />
-        </div>
 
         {/* Current / Target split */}
         <div className="mt-4 flex items-center justify-center gap-6">
@@ -1049,9 +995,20 @@ const GoalPlanner = () => {
                           </span>
                         </span>
                       </li>
-                      {/* Investments slider panel */}
+                      {/* Investments slider panel — soft amber to signal sandbox/simulation */}
                       {row.expandable && investmentsExpanded && (
-                        <li className="bg-muted/30 px-4 py-3 space-y-3">
+                        <li
+                          className="space-y-3 px-4 py-3"
+                          style={{
+                            backgroundColor: "rgba(212,168,104,0.10)",
+                            borderTop: "1px solid rgba(212,168,104,0.25)",
+                            borderBottom: "1px solid rgba(212,168,104,0.25)",
+                          }}
+                        >
+                          <p className="flex items-center gap-1.5 text-[9.5px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300">
+                            <Sparkles className="h-3 w-3" style={{ color: "#D4A868" }} />
+                            Sandbox · adjust to simulate
+                          </p>
                           <div>
                             <div className="mb-1.5 flex items-center justify-between">
                               <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
@@ -1093,7 +1050,7 @@ const GoalPlanner = () => {
                                 setInvestMultiplier(1.0);
                                 setReturnRate(BASE_RATE);
                               }}
-                              className="text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                              className="text-[11px] font-medium text-amber-700 hover:text-amber-800 dark:text-amber-300 dark:hover:text-amber-200"
                             >
                               Reset to baseline
                             </button>

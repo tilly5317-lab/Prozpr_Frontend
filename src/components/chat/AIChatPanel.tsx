@@ -500,6 +500,37 @@ const DUMMY_SESSIONS: ChatSessionInfo[] = (() => {
   ];
 })();
 
+const DUMMY_SESSION_MESSAGES: Record<string, Message[]> = {
+  "demo-rebalance": [
+    { role: "user", content: "Equities are running hot — should I rebalance now or wait?" },
+    {
+      role: "ai",
+      content:
+        "Your equity allocation has drifted from **48% → 57%** this quarter. Rebalancing now keeps you on plan and avoids selling more than necessary later.\n\nA tax-aware tilt: trim **₹75k** from the Nifty 50 ETF (least short-term gain) and route it into the **Corporate Bond fund** + **SGB Series X**.",
+    },
+    { role: "user", content: "Any tax impact?" },
+    {
+      role: "ai",
+      content:
+        "I picked units with the lowest capital gains, so the realized LTCG comes to **~₹38k** — well within your ₹1L exemption for the year. Net tax impact: **₹0**.",
+    },
+  ],
+  "demo-elss": [
+    { role: "user", content: "I still have ₹40k of 80C left — best ELSS pick right now?" },
+    {
+      role: "ai",
+      content:
+        "For a 3-year lock-in with strong long-term track record, two solid choices:\n\n- **Parag Parikh Tax Saver** — flexi-cap style, lower drawdowns\n- **Quant ELSS Tax Saver** — momentum-tilted, higher beta\n\nGiven your risk profile (Moderate), I'd lean Parag Parikh.",
+    },
+    { role: "user", content: "SIP or lump sum?" },
+    {
+      role: "ai",
+      content:
+        "Since 80C resets every year and the lock-in is per investment, a **monthly SIP of ₹3,500** spreads the entry risk and locks in ₹42k by Mar — just over your remaining 80C headroom.",
+    },
+  ],
+};
+
 function formatSessionDate(iso: string): string {
   const d = new Date(iso);
   const now = new Date();
@@ -711,6 +742,22 @@ const AIChatPanel = ({
   }, []);
 
   const handleSelectSession = useCallback(async (sessionId: string) => {
+    // Dummy historical chat — short-circuit, no backend call.
+    const dummyMessages = DUMMY_SESSION_MESSAGES[sessionId];
+    if (dummyMessages) {
+      const dummy = DUMMY_SESSIONS.find((s) => s.id === sessionId);
+      sessionIdRef.current = sessionId;
+      setMessages(dummyMessages.map((m) => ({ ...m })));
+      setChatStartTime(
+        new Date(dummy?.created_at ?? Date.now()).toLocaleString("en-IN", {
+          day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true,
+        }),
+      );
+      setShowFirstUseHint(false);
+      setOnboardingActive(false);
+      setCompletedSections([]);
+      return;
+    }
     try {
       const session = await getChatSession(sessionId);
       sessionIdRef.current = session.id;
