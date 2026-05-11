@@ -225,9 +225,75 @@ const HOLDINGS_BAR_BY_BUCKET: Record<HoldingBucket, { bg: string; border?: strin
   hybrid: { bg: "#C9A84C" },                         // warm gold — matches donut "Gold"
 };
 
-function computeReturn(avgCost: number | null, currentPrice: number | null): number | null {
-  if (!avgCost || avgCost <= 0 || currentPrice == null) return null;
-  return ((currentPrice - avgCost) / avgCost) * 100;
+/**
+ * Total amount invested (cost basis) for a holding.
+ * When `quantity` is set, `average_cost` is treated as per-unit (CAMS / demat); otherwise as total invested (demo / manual rows).
+ */
+function costBasis(
+  quantity: number | null | undefined,
+  averageCost: number | null | undefined,
+): number | null {
+  if (averageCost == null || averageCost <= 0) return null;
+  if (quantity != null && quantity > 0) return quantity * averageCost;
+  // No units on file — treat `average_cost` as aggregate invested (legacy / manual rows).
+  if (quantity == null || quantity === undefined) return averageCost;
+  return null;
+}
+
+/** Gain % vs cost basis (not NAV delta vs total value). */
+function holdingGainPercent(
+  quantity: number | null | undefined,
+  averageCost: number | null | undefined,
+  currentValue: number,
+): number | null {
+  const basis = costBasis(quantity, averageCost);
+  if (basis == null || basis <= 0) return null;
+  return ((currentValue - basis) / basis) * 100;
+}
+
+/** When the API has allocation roll-ups (e.g. CAMS) but no `portfolio_holdings` rows yet, synthesize one line per bucket so totals match `total_value` and we never mix real totals with placeholder demo funds. */
+function allocationBucketToClassifiedRow(
+  a: PortfolioDetail["allocations"][number],
+  subOverrides: Record<string, string>
+): {
+  id: string;
+  name: string;
+  sub: string;
+  value: string;
+  pct: string | null;
+  allocationPct: number;
+  returnPct: number | null;
+  avgCost: number | null;
+  /** Total invested (₹); same as cost basis for display and gain. */
+  investedTotal: number | null;
+  currentValue: number;
+  barBg: string;
+  barBorder?: string;
+  bucket: HoldingBucket;
+  subCategory: string | null;
+} {
+  const id = `alloc-${a.id}`;
+  const bucket = classifyHoldingBucket(a.asset_class, "portfolio allocation");
+  const colors = HOLDINGS_BAR_BY_BUCKET[bucket];
+  const perf = a.performance_percentage;
+  const returnPct = perf != null && Number.isFinite(perf) ? perf : null;
+  const subCategory = subOverrides[id] ?? classifySubCategory(a.asset_class, bucket);
+  return {
+    id,
+    name: `${a.asset_class} (aggregated)`,
+    sub: "Roll-up from linked data · scheme detail may appear when holdings sync",
+    value: formatInrCompact(a.amount),
+    pct: `${Math.round(a.allocation_percentage * 10) / 10}%`,
+    allocationPct: a.allocation_percentage,
+    returnPct,
+    avgCost: null,
+    investedTotal: null,
+    currentValue: a.amount,
+    barBg: colors.bg,
+    barBorder: colors.border,
+    bucket,
+    subCategory,
+  };
 }
 
 interface CurrentAllocationCardProps {
@@ -248,6 +314,12 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
   const [subOverrides, setSubOverrides] = useState<Record<string, string>>({});
   const [editingSubId, setEditingSubId] = useState<string | null>(null);
   const hasAllocations = portfolio && portfolio.allocations.length > 0;
+  /** Placeholder funds only when there is no real allocation or holding data. */
+  const showSampleHoldingsBanner =
+    portfolio &&
+    portfolio.holdings.length === 0 &&
+    portfolio.allocations.length === 0 &&
+    portfolio.total_value <= 0;
 
   const allocations = hasAllocations
     ? portfolio!.allocations.map((a, i) => ({
@@ -265,39 +337,101 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
   const centerLabel =
     portfolio && portfolio.total_value > 0 ? formatInrCompact(portfolio.total_value) : "₹—";
 
+  const holdingsRows = !portfolio
+    ? []
+    : portfolio.holdings.length > 0
+      ? portfolio.holdings.map((h) => {
+          const bucket = classifyHoldingBucket(h.instrument_name, h.instrument_type);
+          const colors = HOLDINGS_BAR_BY_BUCKET[bucket];
+          const investedTotal = costBasis(h.quantity, h.average_cost);
+          const returnPct = holdingGainPercent(h.quantity, h.average_cost, h.current_value);
+          const subCategory = subOverrides[h.id] ?? classifySubCategory(h.instrument_name, bucket);
+          return {
+            id: h.id,
+            name: h.instrument_name,
+            sub: h.instrument_type + (h.ticker_symbol ? ` · ${h.ticker_symbol}` : ""),
+            value: formatInrCompact(h.current_value),
+            pct: h.allocation_percentage != null ? `${h.allocation_percentage}%` : (null as string | null),
+            allocationPct: h.allocation_percentage ?? 0,
+            returnPct,
+            avgCost: h.average_cost,
+            investedTotal,
+            currentValue: h.current_value,
+            barBg: colors.bg,
+            barBorder: colors.border,
+            bucket,
+            subCategory,
+          };
+        })
+      : portfolio.allocations.length > 0
+        ? portfolio.allocations.map((a) => allocationBucketToClassifiedRow(a, subOverrides))
+        : portfolio.total_value <= 0
+          ? [
+              {
+                id: "d1",
+                name: "ICICI Prudential Nifty 50 ETF",
+                sub: "ETF · NIFTYBEES",
+                value: "₹4.8L",
+                pct: "48%",
+                allocationPct: 48,
+                returnPct: 18.2,
+                avgCost: 406000,
+                investedTotal: 406000,
+                currentValue: 480000,
+                barBg: HOLDINGS_BAR_BY_BUCKET.equity.bg,
+                barBorder: HOLDINGS_BAR_BY_BUCKET.equity.border,
+                bucket: "equity" as HoldingBucket,
+                subCategory: "Index Fund / ETF" as string | null,
+              },
+              {
+                id: "d2",
+                name: "HDFC Corporate Bond Fund",
+                sub: "Mutual Fund",
+                value: "₹2.8L",
+                pct: "28%",
+                allocationPct: 28,
+                returnPct: 7.1,
+                avgCost: 261000,
+                investedTotal: 261000,
+                currentValue: 280000,
+                barBg: HOLDINGS_BAR_BY_BUCKET.debt.bg,
+                barBorder: HOLDINGS_BAR_BY_BUCKET.debt.border,
+                bucket: "debt" as HoldingBucket,
+                subCategory: "Corporate Bond" as string | null,
+              },
+              {
+                id: "d3",
+                name: "SBI Gold ETF",
+                sub: "ETF · GOLDBEES",
+                value: "₹1.6L",
+                pct: "16%",
+                allocationPct: 16,
+                returnPct: 12.4,
+                avgCost: 142000,
+                investedTotal: 142000,
+                currentValue: 160000,
+                barBg: HOLDINGS_BAR_BY_BUCKET.hybrid.bg,
+                barBorder: HOLDINGS_BAR_BY_BUCKET.hybrid.border,
+                bucket: "hybrid" as HoldingBucket,
+                subCategory: null as string | null,
+              },
+            ]
+          : [];
+
+  const holdingsCountLabel =
+    portfolio == null
+      ? "—"
+      : portfolio.holdings.length > 0
+        ? String(portfolio.holdings.length)
+        : portfolio.allocations.length > 0
+          ? String(portfolio.allocations.length)
+          : String(holdingsRows.length);
+
   const stats = [
-    { label: "Holdings", value: portfolio ? String(portfolio.holdings.length) : "—" },
+    { label: "Holdings", value: holdingsCountLabel },
     { label: "Risk Profile", value: riskCategory ?? "—" },
     { label: "Horizon", value: horizonLabel ?? "—" },
   ];
-
-  const holdingsRows = portfolio && portfolio.holdings.length > 0
-    ? portfolio.holdings.map((h) => {
-        const bucket = classifyHoldingBucket(h.instrument_name, h.instrument_type);
-        const colors = HOLDINGS_BAR_BY_BUCKET[bucket];
-        const returnPct = computeReturn(h.average_cost, h.current_value);
-        const subCategory = subOverrides[h.id] ?? classifySubCategory(h.instrument_name, bucket);
-        return {
-          id: h.id,
-          name: h.instrument_name,
-          sub: h.instrument_type + (h.ticker_symbol ? ` · ${h.ticker_symbol}` : ""),
-          value: formatInrCompact(h.current_value),
-          pct: h.allocation_percentage ? `${h.allocation_percentage}%` : null as string | null,
-          allocationPct: h.allocation_percentage ?? 0,
-          returnPct,
-          avgCost: h.average_cost,
-          currentValue: h.current_value,
-          barBg: colors.bg,
-          barBorder: colors.border,
-          bucket,
-          subCategory,
-        };
-      })
-    : [
-        { id: "d1", name: "ICICI Prudential Nifty 50 ETF", sub: "ETF · NIFTYBEES", value: "₹4.8L", pct: "48%", allocationPct: 48, returnPct: 18.2, avgCost: 406000, currentValue: 480000, barBg: HOLDINGS_BAR_BY_BUCKET.equity.bg, barBorder: HOLDINGS_BAR_BY_BUCKET.equity.border, bucket: "equity" as HoldingBucket, subCategory: "Index Fund / ETF" },
-        { id: "d2", name: "HDFC Corporate Bond Fund", sub: "Mutual Fund", value: "₹2.8L", pct: "28%", allocationPct: 28, returnPct: 7.1, avgCost: 261000, currentValue: 280000, barBg: HOLDINGS_BAR_BY_BUCKET.debt.bg, barBorder: HOLDINGS_BAR_BY_BUCKET.debt.border, bucket: "debt" as HoldingBucket, subCategory: "Corporate Bond" },
-        { id: "d3", name: "SBI Gold ETF", sub: "ETF · GOLDBEES", value: "₹1.6L", pct: "16%", allocationPct: 16, returnPct: 12.4, avgCost: 142000, currentValue: 160000, barBg: HOLDINGS_BAR_BY_BUCKET.hybrid.bg, barBorder: HOLDINGS_BAR_BY_BUCKET.hybrid.border, bucket: "hybrid" as HoldingBucket, subCategory: null as string | null },
-      ];
 
   const filteredRows = subFilter
     ? holdingsRows.filter((r) => r.subCategory === subFilter)
@@ -317,9 +451,9 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
         style={{ fontWeight: 500 }}
       >
         Current Allocation
-        {!hasAllocations && (
+        {showSampleHoldingsBanner && (
           <span className="ml-2 font-normal normal-case text-[10px] text-muted-foreground">
-            (sample — add allocations in Portfolio)
+            (sample — add holdings or import a statement)
           </span>
         )}
       </p>
@@ -497,9 +631,10 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                   ? `${oneYear >= 0 ? "+" : ""}${oneYear.toFixed(1)}%`
                   : null;
 
-                const gainAmount = row.avgCost !== null && row.avgCost !== undefined
-                  ? row.currentValue - row.avgCost
-                  : null;
+                const gainAmount =
+                  row.investedTotal != null && row.investedTotal > 0
+                    ? row.currentValue - row.investedTotal
+                    : null;
                 const gainColor = gainAmount === null
                   ? "#1a1a1a"
                   : gainAmount >= 0 ? POSITIVE : NEGATIVE;
@@ -690,7 +825,9 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                               <div>
                                 <p className={LABEL_CLASS}>Invested</p>
                                 <p className={VALUE_CLASS}>
-                                  {row.avgCost ? formatInrCompact(row.avgCost) : "—"}
+                                  {row.investedTotal != null && row.investedTotal > 0
+                                    ? formatInrCompact(row.investedTotal)
+                                    : "—"}
                                 </p>
                               </div>
                               <div>

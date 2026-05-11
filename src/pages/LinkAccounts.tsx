@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, ChevronRight, ChevronDown, Shield, ArrowLeft, ArrowRight, X, Search, Plus, Landmark, Loader2 } from "lucide-react";
+import { Check, ChevronRight, ChevronDown, Shield, ArrowLeft, ArrowRight, X, Search, Plus, Landmark, Loader2, FileUp } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { BarChart3, TrendingUp, Package } from "lucide-react";
 import AccountDiscoveryModal from "@/components/onboarding/AccountDiscoveryModal";
+import CamsUploadModal from "@/components/onboarding/CamsUploadModal";
 import {
   listLinkedAccounts,
   getMyPortfolio,
@@ -53,6 +54,7 @@ const BROKERS = [
 const LinkAccounts = () => {
   const navigate = useNavigate();
   const [showDiscovery, setShowDiscovery] = useState(false);
+  const [showCamsUpload, setShowCamsUpload] = useState(false);
   const [linkedAccounts, setLinkedAccounts] = useState<LinkAccountInfo[]>([]);
   const [portfolio, setPortfolio] = useState<PortfolioDetail | null>(null);
   const [linkedLoading, setLinkedLoading] = useState(true);
@@ -173,12 +175,31 @@ const LinkAccounts = () => {
         <p className="w-full max-w-[340px] text-[11px] text-amber-700 dark:text-amber-400 mb-2">{linkedError}</p>
       )}
 
-      {/* Account aggregator — SimBanks discover/sync */}
+      {/* Mutual funds — upload a CAMS / KFintech statement PDF (primary flow) */}
+      <div className="w-full max-w-[340px] mb-2">
+        <button
+          type="button"
+          onClick={() => setShowCamsUpload(true)}
+          className="flex w-full items-start gap-3 rounded-xl border border-primary/30 bg-primary/5 px-4 py-3 text-left transition-colors hover:bg-primary/10"
+        >
+          <FileUp className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+          <span>
+            <span className="block text-[13px] font-medium text-foreground">
+              Upload your mutual fund statement (PDF)
+            </span>
+            <span className="mt-0.5 block text-[11px] font-normal text-muted-foreground">
+              CAMS / KFintech Consolidated Account Statement — folios, holdings & transactions
+            </span>
+          </span>
+        </button>
+      </div>
+
+      {/* Account aggregator — SimBanks discover/sync (simulator; still available) */}
       <div className="w-full max-w-[340px] mb-3">
         <button
           type="button"
           onClick={() => setShowDiscovery(true)}
-          className="w-full rounded-xl border border-primary/30 bg-primary/5 px-4 py-3 text-left text-[13px] font-medium text-foreground hover:bg-primary/10 transition-colors"
+          className="w-full rounded-xl border border-border bg-card px-4 py-3 text-left text-[13px] font-medium text-foreground hover:bg-accent/30 transition-colors"
         >
           {linkedLoading ? (
             <span className="flex items-center gap-2">
@@ -187,9 +208,9 @@ const LinkAccounts = () => {
             </span>
           ) : (
             <>
-              Connect via SimBanks / account aggregator
+              Or connect via SimBanks / account aggregator
               <span className="block text-[11px] font-normal text-muted-foreground mt-0.5">
-                Discovers accounts for your mobile and syncs portfolio to the backend
+                Simulator — discovers accounts for your mobile and syncs to the backend
               </span>
             </>
           )}
@@ -487,6 +508,12 @@ const LinkAccounts = () => {
         onClose={() => setShowDiscovery(false)}
         onSynced={() => void refreshLinked()}
         afterSyncNavigate={null}
+      />
+
+      <CamsUploadModal
+        open={showCamsUpload}
+        onClose={() => setShowCamsUpload(false)}
+        onUploaded={() => void refreshLinked()}
       />
     </div>
   );
