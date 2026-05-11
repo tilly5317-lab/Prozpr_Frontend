@@ -358,7 +358,88 @@ export async function listLinkedAccounts(): Promise<{ accounts: LinkAccountInfo[
   return res;
 }
 
-// ── Finvu / AA bucket snapshot (post-consent totals from Finvu analytics API) ──
+// ── CAMS / KFintech Consolidated Account Statement (CAS) PDF upload ──
+// Replaces the Finvu account-aggregator "fetch by linked mobile" flow (paused for licensing).
+export interface CamsPdfImportResponse {
+  import_id: string;
+  status: string; // "NORMALIZED" | "FAILED" | "RECEIVED"
+  cas_file_type: string | null;
+  cas_type: string | null;
+  statement_period_from: string | null;
+  statement_period_to: string | null;
+  folios: number;
+  schemes: number;
+  aa_transactions_parsed: number;
+  mf_transactions_inserted: number;
+  mf_transactions_skipped_duplicate: number;
+  portfolio_allocation_rows: number;
+  total_value_inr: number;
+  normalize_error: string | null;
+  message: string;
+}
+
+/**
+ * Upload a CAMS / KFintech Consolidated Account Statement PDF (password set when the
+ * statement was generated — usually the investor's PAN in capitals). The backend parses
+ * it, stores the holdings/transactions, and refreshes the primary portfolio.
+ */
+export async function uploadCamsStatement(file: File, password: string): Promise<CamsPdfImportResponse> {
+  if (Date.now() < backendOfflineUntil) {
+    throw new BackendOfflineError();
+  }
+  const form = new FormData();
+  form.append("file", file);
+  form.append("password", password);
+
+  // NB: do not set Content-Type — the browser must add the multipart boundary itself.
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const familyMemberId = getActiveFamilyMemberId();
+  if (familyMemberId) headers["X-Family-Member-Id"] = familyMemberId;
+
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 90_000);
+  let res: Response;
+  try {
+    res = await fetch(`${API}/mf-ingest/cams-pdf`, {
+      method: "POST",
+      headers,
+      body: form,
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error("Upload timed out. Please try again.");
+    }
+    backendOfflineUntil = Date.now() + OFFLINE_RETRY_MS;
+    throw new BackendOfflineError("Backend is unreachable");
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+
+  const text = await res.text();
+  if (!res.ok) {
+    let msg: string;
+    try {
+      const body = JSON.parse(text) as { detail?: unknown };
+      msg = typeof body?.detail === "string" ? body.detail : JSON.stringify(body);
+    } catch {
+      msg = text.trim() || `Upload failed (${res.status})`;
+    }
+    if ([502, 503, 504].includes(res.status)) {
+      backendOfflineUntil = Date.now() + OFFLINE_RETRY_MS;
+      throw new BackendOfflineError(msg || "Backend unavailable");
+    }
+    throw new Error(msg || `Upload failed (${res.status})`);
+  }
+  // A successful ingest changes portfolio + linked accounts — drop the cached user context.
+  invalidateUserContextCache();
+  return JSON.parse(text) as CamsPdfImportResponse;
+}
+
+// ── Finvu / AA bucket snapshot — DEPRECATED (account-aggregator flow paused for licensing).
+// Use uploadCamsStatement() instead. Kept only for backwards compatibility.
 export type FinvuBucketName = "Cash" | "Debt" | "Equity" | "Other";
 
 export interface FinvuBucketInput {
@@ -380,6 +461,7 @@ export interface FinvuPortfolioSyncResponse {
   message: string;
 }
 
+/** @deprecated Finvu account-aggregator integration is paused. Use {@link uploadCamsStatement}. */
 export async function syncFinvuPortfolio(payload: FinvuPortfolioSyncRequest): Promise<FinvuPortfolioSyncResponse> {
   return request<FinvuPortfolioSyncResponse>("/portfolio/finvu/sync", {
     method: "POST",
