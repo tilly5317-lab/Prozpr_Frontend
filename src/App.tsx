@@ -24,6 +24,7 @@ import OTP from "./pages/OTP";
 import LinkAccounts from "./pages/LinkAccounts";
 import AboutYou from "./pages/AboutYou";
 import Portfolio from "./pages/Portfolio";
+import PortfolioFundDetail from "./pages/PortfolioFundDetail";
 import PortfolioPopup from "./pages/PortfolioPopup";
 import PortfolioPerformance from "./pages/PortfolioPerformance";
 import VoiceOnboarding from "./pages/VoiceOnboarding";
@@ -44,6 +45,7 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/portfolio" element={<Portfolio />} />
+            <Route path="/portfolio/fund/:schemeCode" element={<PortfolioFundDetail />} />
             <Route path="/portfolio/performance" element={<PortfolioPerformance />} />
             <Route path="/portfolio-popup" element={<PortfolioPopup />} />
             <Route path="/voice-onboarding" element={<VoiceOnboarding />} />

@@ -1,7 +1,8 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronDown, Pencil, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Pencil, X } from "lucide-react";
 import type { PortfolioDetail } from "@/lib/api";
 import { formatInrCompact } from "@/lib/utils";
 
@@ -271,6 +272,8 @@ function allocationBucketToClassifiedRow(
   barBorder?: string;
   bucket: HoldingBucket;
   subCategory: string | null;
+  /** AMFI scheme code or ISIN — opens fund detail when set. */
+  schemeCode: string | null;
 } {
   const id = `alloc-${a.id}`;
   const bucket = classifyHoldingBucket(a.asset_class, "portfolio allocation");
@@ -293,6 +296,7 @@ function allocationBucketToClassifiedRow(
     barBorder: colors.border,
     bucket,
     subCategory,
+    schemeCode: null,
   };
 }
 
@@ -361,6 +365,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
             barBorder: colors.border,
             bucket,
             subCategory,
+            schemeCode: h.ticker_symbol ?? null,
           };
         })
       : portfolio.allocations.length > 0
@@ -382,6 +387,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                 barBorder: HOLDINGS_BAR_BY_BUCKET.equity.border,
                 bucket: "equity" as HoldingBucket,
                 subCategory: "Index Fund / ETF" as string | null,
+                schemeCode: null,
               },
               {
                 id: "d2",
@@ -398,6 +404,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                 barBorder: HOLDINGS_BAR_BY_BUCKET.debt.border,
                 bucket: "debt" as HoldingBucket,
                 subCategory: "Corporate Bond" as string | null,
+                schemeCode: null,
               },
               {
                 id: "d3",
@@ -414,6 +421,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                 barBorder: HOLDINGS_BAR_BY_BUCKET.hybrid.border,
                 bucket: "hybrid" as HoldingBucket,
                 subCategory: null as string | null,
+                schemeCode: null,
               },
             ]
           : [];
@@ -708,6 +716,16 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                             </button>
                           )}
                         </div>
+                        {row.schemeCode ? (
+                          <Link
+                            to={`/portfolio/fund/${encodeURIComponent(row.schemeCode)}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="mt-1.5 inline-flex items-center gap-0.5 text-[11px] font-semibold text-primary hover:underline"
+                          >
+                            Fund details
+                            <ChevronRight className="h-3 w-3" aria-hidden />
+                          </Link>
+                        ) : null}
                       </div>
                       <div className="text-right shrink-0 flex items-center gap-2">
                         <div>
@@ -789,6 +807,16 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                             className="ml-3 pt-2 pb-2.5 pr-1"
                             style={{ borderTop: `1px solid ${HAIRLINE}` }}
                           >
+                            {row.schemeCode ? (
+                              <Link
+                                to={`/portfolio/fund/${encodeURIComponent(row.schemeCode)}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="mb-3 flex w-full items-center justify-center gap-2 rounded-xl bg-foreground px-3 py-2.5 text-[13px] font-semibold text-background shadow-sm transition-opacity hover:opacity-90 active:scale-[0.99]"
+                              >
+                                View fund · NAV and transactions
+                                <ChevronRight className="h-4 w-4 shrink-0" aria-hidden />
+                              </Link>
+                            ) : null}
                             {/* Group 1 — Returns (3-col) */}
                             <div
                               className="grid grid-cols-3"

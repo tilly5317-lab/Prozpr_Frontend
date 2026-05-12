@@ -843,6 +843,78 @@ export async function getMyPortfolio(): Promise<PortfolioDetail> {
   return portfolio;
 }
 
+/** NAV point for MF holding-detail chart (`mf_nav_history`). */
+export interface MfHoldingNavPoint {
+  nav_date: string;
+  nav: number;
+}
+
+/** User ledger row for one scheme (from `mf_transactions`; CAMS ingest feeds here). */
+export interface MfHoldingTransactionItem {
+  id: string;
+  transaction_date: string;
+  transaction_type: string;
+  folio_number: string;
+  units: number;
+  nav: number;
+  amount: number;
+  stamp_duty: number | null;
+  source_system: string;
+  is_inflow: boolean;
+  signed_amount: number;
+}
+
+/** Aggregated position from `portfolio_holdings` for this scheme. */
+export interface MfHoldingPosition {
+  units: number | null;
+  average_cost: number | null;
+  current_price: number | null;
+  current_value: number | null;
+  allocation_percentage: number | null;
+  invested_amount: number | null;
+  unrealised_gain: number | null;
+  unrealised_gain_pct: number | null;
+  folios: number;
+}
+
+/** Fund facts + NAV series + position + CAMS-backed transactions — see backend `MfHoldingDetailResponse`. */
+export interface MfHoldingDetailResponse {
+  scheme_code: string;
+  scheme_name: string | null;
+  amc_name: string | null;
+  category: string | null;
+  sub_category: string | null;
+  isin: string | null;
+  plan_type: string | null;
+  option_type: string | null;
+  metadata_id: string | null;
+  latest_nav: number | null;
+  latest_nav_date: string | null;
+  nav_history: MfHoldingNavPoint[];
+  nav_history_from: string | null;
+  nav_history_to: string | null;
+  nav_history_truncated: boolean;
+  /** Latest NAV date used as end point for return metrics (from `mf_nav_history`). */
+  nav_returns_as_of: string | null;
+  nav_return_ytd_pct: number | null;
+  nav_return_6m_pct: number | null;
+  nav_return_1y_pct: number | null;
+  nav_return_3y_pct: number | null;
+  nav_return_5y_pct: number | null;
+  position: MfHoldingPosition | null;
+  transactions: MfHoldingTransactionItem[];
+  notes: string[];
+}
+
+/**
+ * Fund detail screen payload: scheme profile, NAV history for charting, your units/value,
+ * and transaction ledger (includes rows imported from CAMS CAS PDF).
+ */
+export async function getMfHoldingDetail(schemeCode: string): Promise<MfHoldingDetailResponse> {
+  const encoded = encodeURIComponent(schemeCode.trim());
+  return request<MfHoldingDetailResponse>(`/mf/funds/${encoded}/holding-detail`);
+}
+
 /**
  * Heuristic: profile rows in DB look filled even if `is_onboarding_complete` was never flipped.
  * Used to skip redundant onboarding / account-link nudges in the chat shell.
