@@ -73,7 +73,7 @@ function PortfolioMainPanel({
 }) {
   const [analysisOpen, setAnalysisOpen] = useState(false);
 
-  // Headline pill shows the simple total return; TWR / MWR breakdowns live in the Portfolio Analysis modal.
+  // Headline pill shows the simple total return; MWR breakdown lives in the Portfolio Analysis modal.
   const activeGain = portfolio.total_gain_percentage;
   const stop = (e: React.MouseEvent) => e.stopPropagation();
 

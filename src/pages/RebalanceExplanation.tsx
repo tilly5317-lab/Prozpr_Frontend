@@ -1,5 +1,4 @@
 import { type CSSProperties, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowDownLeft, ArrowRight, ArrowUpRight, Sparkles, Star, X } from "lucide-react";
 import {
@@ -166,7 +165,6 @@ const cardStyle: CSSProperties = {
 };
 
 const RebalanceExplanation = () => {
-  const navigate = useNavigate();
   const [selectedTrade, setSelectedTrade] = useState<Trade | null>(null);
 
   const riskBadge = useMemo(() => {
@@ -307,7 +305,6 @@ const RebalanceExplanation = () => {
 
         <button
           type="button"
-          onClick={() => navigate("/execute")}
           className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground py-3.5 text-[15px] font-semibold tracking-wide text-background transition-all active:scale-[0.98]"
         >
           Proceed

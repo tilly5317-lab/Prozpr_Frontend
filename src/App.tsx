@@ -17,6 +17,7 @@ import MeetingNotes from "./pages/MeetingNotes";
 import MeetingNotesIndex from "./pages/MeetingNotesIndex";
 import Rebalancing from "./pages/Rebalancing";
 import GoalPlanner from "./pages/GoalPlanner";
+import GoalsTimeline from "./pages/GoalsTimeline";
 import Invest from "./pages/Invest";
 import Execute from "./pages/Execute";
 import RebalanceExplanation from "./pages/RebalanceExplanation";
@@ -68,6 +69,7 @@ const App = () => (
             <Route path="/meeting-notes/detail" element={<MeetingNotes />} />
             <Route path="/rebalancing" element={<Execute />} />
             <Route path="/goal-planner" element={<GoalPlanner />} />
+            <Route path="/goal-planner/timeline" element={<GoalsTimeline />} />
             <Route path="/family" element={<FamilyMembers />} />
             <Route path="*" element={<NotFound />} />
           </Routes>

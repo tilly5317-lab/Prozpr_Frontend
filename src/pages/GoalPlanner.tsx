@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Target, Pencil, Loader2, MessageCircle, Sparkles, Home, GraduationCap, Plane, BriefcaseBusiness, Heart, Car, Landmark, Trophy, Info, ChevronDown } from "lucide-react";
+import { Plus, Target, Pencil, Loader2, MessageCircle, Sparkles, Home, GraduationCap, Plane, BriefcaseBusiness, Heart, Car, Landmark, Trophy, Info, ChevronDown, CalendarClock } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import confetti from "canvas-confetti";
 import { useNavigate } from "react-router-dom";
@@ -53,6 +53,18 @@ const formatCompact = (v: number): string => {
   if (v >= 10000000) return `₹${(v / 10000000).toFixed(1)}Cr`;
   if (v >= 100000) return `₹${(v / 100000).toFixed(0)}L`;
   return `₹${v.toLocaleString("en-IN")}`;
+};
+
+const formatMonthOffset = (months: number): string => {
+  if (months === 0) return "0 mo";
+  if (months % 12 === 0) {
+    const yrs = months / 12;
+    return `${yrs} yr${yrs === 1 ? "" : "s"}`;
+  }
+  if (months < 12) return `${months} mo`;
+  const yrs = Math.floor(months / 12);
+  const rem = months % 12;
+  return `${yrs}y ${rem}m`;
 };
 
 function goalIconFromName(name: string): React.ReactNode {
@@ -393,15 +405,32 @@ interface GoalCardProps {
 
 const GoalCard = ({ goal, onEdit, onAchieve, achieved, showAchieve }: GoalCardProps) => {
   const [whatIfOpen, setWhatIfOpen] = useState(false);
-  const [scenarioMonthly, setScenarioMonthly] = useState(
-    goal.monthlyContribution > 0 ? goal.monthlyContribution : 25_000,
-  );
+  const [monthOffset, setMonthOffset] = useState(0); // negative = pull forward, positive = push back
 
-  const yearsLeft = useMemo(() => {
-    const ty = parseTargetYear(goal.targetDate);
-    if (ty == null) return 0;
-    return Math.max(0, ty - new Date().getFullYear());
+  const baseMonthsLeft = useMemo(() => {
+    const { month, year } = parseTargetDateParts(goal.targetDate);
+    const monthIndex = months.indexOf(month);
+    const yearNum = Number(year);
+    if (monthIndex < 0 || !Number.isFinite(yearNum)) return 0;
+    const now = new Date();
+    const diff = (yearNum - now.getFullYear()) * 12 + (monthIndex - now.getMonth());
+    return Math.max(0, diff);
   }, [goal.targetDate]);
+
+  const minOffset = Math.max(-baseMonthsLeft, -60);
+  const maxOffset = 120;
+
+  const adjustedMonthsLeft = Math.max(0, baseMonthsLeft + monthOffset);
+
+  const adjustedTargetLabel = useMemo(() => {
+    const { month, year } = parseTargetDateParts(goal.targetDate);
+    const monthIndex = months.indexOf(month);
+    const yearNum = Number(year);
+    if (monthIndex < 0 || !Number.isFinite(yearNum)) return goal.targetDate;
+    const d = new Date(yearNum, monthIndex, 1);
+    d.setMonth(d.getMonth() + monthOffset);
+    return `${months[d.getMonth()]} ${d.getFullYear()}`;
+  }, [goal.targetDate, monthOffset]);
 
   const baselinePct =
     goal.targetAmount > 0
@@ -409,7 +438,7 @@ const GoalCard = ({ goal, onEdit, onAchieve, achieved, showAchieve }: GoalCardPr
       : 0;
 
   const projectedAmount = whatIfOpen
-    ? goal.currentValue + scenarioMonthly * 12 * yearsLeft
+    ? goal.currentValue + goal.monthlyContribution * adjustedMonthsLeft
     : goal.currentValue;
 
   const displayedPct =
@@ -507,17 +536,17 @@ const GoalCard = ({ goal, onEdit, onAchieve, achieved, showAchieve }: GoalCardPr
           {whatIfOpen && (
             <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-100/70 px-2.5 py-1 text-[11px] font-semibold text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
               <Sparkles className="h-3 w-3" />
-              What if
+              Timeline shift
             </span>
           )}
         </div>
 
-        {/* Donut — tap to open What-if */}
+        {/* Donut — tap to open timeline adjustment */}
         <button
           type="button"
           onClick={() => setWhatIfOpen((o) => !o)}
           className="mt-4 flex w-full justify-center rounded-2xl py-1 transition-colors hover:bg-muted/30"
-          aria-label={`Open what-if scenario for ${goal.label}`}
+          aria-label={`Adjust timeline for ${goal.label}`}
           aria-expanded={whatIfOpen}
         >
           <ContributionDonut pct={displayedPct} />
@@ -563,48 +592,62 @@ const GoalCard = ({ goal, onEdit, onAchieve, achieved, showAchieve }: GoalCardPr
               <div className="mt-4 rounded-xl border border-border/60 bg-muted/25 p-3">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                    Monthly SIP
+                    Goal date
                   </span>
                   <span
                     className="text-xs font-semibold tabular-nums text-foreground"
                     style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
                   >
-                    {formatCompact(scenarioMonthly)}/mo
+                    {adjustedTargetLabel}
+                    {monthOffset !== 0 && (
+                      <span className="ml-1 text-[10.5px] font-medium text-muted-foreground">
+                        ({monthOffset > 0 ? "+" : "−"}
+                        {formatMonthOffset(Math.abs(monthOffset))})
+                      </span>
+                    )}
                   </span>
                 </div>
                 <Slider
-                  value={[scenarioMonthly]}
-                  onValueChange={(v) => setScenarioMonthly(v[0])}
-                  min={0}
-                  max={300_000}
-                  step={1_000}
+                  value={[monthOffset]}
+                  onValueChange={(v) => setMonthOffset(v[0])}
+                  min={minOffset}
+                  max={maxOffset}
+                  step={1}
                   className="mt-2.5"
                 />
+                <div className="mt-1.5 flex justify-between text-[10px] text-muted-foreground/70">
+                  <span>Pull up</span>
+                  <span>On schedule</span>
+                  <span>Push back</span>
+                </div>
                 <div className="mt-3 flex items-start justify-between gap-2">
                   <p className="text-[11px] leading-snug text-muted-foreground">
-                    {projectedShortBy > 0 ? (
+                    {goal.monthlyContribution <= 0 ? (
+                      <>
+                        Add a monthly contribution to project this goal&apos;s timeline.
+                      </>
+                    ) : projectedShortBy > 0 ? (
                       <>
                         Short by{" "}
                         <span className="font-semibold text-destructive">
                           {formatCompact(projectedShortBy)}
                         </span>{" "}
-                        at deadline
+                        by {adjustedTargetLabel}
                       </>
                     ) : (
                       <>
                         <span className="font-semibold text-emerald-700 dark:text-emerald-400">
-                          Hits target
+                          On target
                         </span>{" "}
-                        — surplus {formatCompact(projectedAmount - goal.targetAmount)}
+                        — surplus {formatCompact(projectedAmount - goal.targetAmount)} by{" "}
+                        {adjustedTargetLabel}
                       </>
                     )}
                   </p>
                   <button
                     type="button"
                     onClick={() => {
-                      setScenarioMonthly(
-                        goal.monthlyContribution > 0 ? goal.monthlyContribution : 25_000,
-                      );
+                      setMonthOffset(0);
                       setWhatIfOpen(false);
                     }}
                     className="text-[10.5px] font-medium text-muted-foreground hover:text-foreground"
@@ -647,7 +690,6 @@ const GoalPlanner = () => {
   const [fundFlowInfoOpen, setFundFlowInfoOpen] = useState(false);
   const [investmentsExpanded, setInvestmentsExpanded] = useState(false);
   const [investMultiplier, setInvestMultiplier] = useState(1.0); // 0.5x – 2.0x
-  const [returnRate, setReturnRate] = useState(9.0); // 5% – 12%
   const userPortfolioTotal = DEMO_PORTFOLIO_TOTAL;
   const [holdingsGoal, setHoldingsGoal] = useState<Goal | null>(null);
 
@@ -671,6 +713,12 @@ const GoalPlanner = () => {
   const [editCurrent, setEditCurrent] = useState("");
   const [editMonthly, setEditMonthly] = useState("");
   const [editPriority, setEditPriority] = useState<"Low" | "Medium" | "High">("Medium");
+  const [editAmountKind, setEditAmountKind] = useState<"present" | "future">("future");
+  const [editInflation, setEditInflation] = useState("");
+  const editInflationSuggestion = useMemo(
+    () => suggestInflationForGoal(editName),
+    [editName],
+  );
 
   const sortedGoals = useMemo(
     () => [...goals].sort((a, b) => priorityRank[a.priority] - priorityRank[b.priority]),
@@ -696,6 +744,8 @@ const GoalPlanner = () => {
     setEditCurrent(String(goal.currentValue));
     setEditMonthly(String(goal.monthlyContribution));
     setEditPriority(goal.priority);
+    setEditAmountKind("future");
+    setEditInflation("");
   }, []);
 
   const openAchieveGoalInChat = useCallback(
@@ -738,7 +788,27 @@ const GoalPlanner = () => {
       toast({ title: "Monthly contribution", description: monthlyParsed.message, variant: "destructive" });
       return;
     }
-    if (currentParsed.value > targetParsed.value) {
+
+    let finalTarget = targetParsed.value;
+    if (editAmountKind === "present") {
+      const inflationRaw = editInflation.trim() === "" ? "0" : editInflation;
+      const inflationNum = Number(inflationRaw);
+      if (!Number.isFinite(inflationNum) || inflationNum < 0 || inflationNum > 50) {
+        toast({
+          title: "Inflation rate",
+          description: "Enter an inflation rate between 0 and 50%.",
+          variant: "destructive",
+        });
+        return;
+      }
+      const yearsToTarget = Math.max(
+        0,
+        Number(editYear) - new Date().getFullYear(),
+      );
+      finalTarget = targetParsed.value * Math.pow(1 + inflationNum / 100, yearsToTarget);
+    }
+
+    if (currentParsed.value > finalTarget) {
       toast({
         title: "Amounts don't match",
         description: "Current corpus cannot exceed the target amount.",
@@ -750,7 +820,7 @@ const GoalPlanner = () => {
     const updated = buildLocalGoal({
       id: editGoal.id,
       name,
-      targetAmount: targetParsed.value,
+      targetAmount: Math.round(finalTarget),
       targetDate: `${editMonth} ${editYear}`,
       priority: editPriority,
       investedAmount: savingsParsed.value,
@@ -760,7 +830,7 @@ const GoalPlanner = () => {
     setGoals((prev) => prev.map((g) => (g.id === editGoal.id ? updated : g)));
     setEditGoal(null);
     toast({ title: "Goal updated", description: `${name} has been saved.` });
-  }, [editGoal, editName, editTarget, editMonth, editYear, editSavings, editCurrent, editMonthly, editPriority]);
+  }, [editGoal, editName, editTarget, editMonth, editYear, editSavings, editCurrent, editMonthly, editPriority, editAmountKind, editInflation]);
 
   const deleteGoal = useCallback(() => {
     if (!editGoal) return;
@@ -848,6 +918,15 @@ const GoalPlanner = () => {
           </div>
           <button
             type="button"
+            onClick={() => navigate("/goal-planner/timeline")}
+            className="inline-flex h-9 items-center gap-1.5 rounded-full border border-border bg-card px-3 text-[11.5px] font-semibold text-foreground shadow-sm transition-colors hover:bg-muted/60"
+            aria-label="Open goals timeline"
+          >
+            <CalendarClock className="h-3.5 w-3.5" strokeWidth={2} />
+            Timeline
+          </button>
+          <button
+            type="button"
             onClick={() => setAddGoalOpen(true)}
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm transition-opacity hover:opacity-90"
             aria-label="Add goal"
@@ -922,14 +1001,13 @@ const GoalPlanner = () => {
             const BEGIN = 1_50_00_000;
             const BASE_INVESTMENTS = 10_74_74_878;
             const BASE_ROI = 24_44_98_818;
-            const BASE_RATE = 9;
             const ONE_OFF_IN = 1_20_00_000;
             const ONE_OFF_OUT = -1_00_00_000;
             const GOALS_OUT = -57_78_00_000;
             const projInvestments = Math.round(BASE_INVESTMENTS * investMultiplier);
-            const projROI = Math.round(BASE_ROI * (returnRate / BASE_RATE) * investMultiplier);
+            const projROI = Math.round(BASE_ROI * investMultiplier);
             const projClosing = BEGIN + projInvestments + projROI + ONE_OFF_IN + ONE_OFF_OUT + GOALS_OUT;
-            const investmentsBoosted = investMultiplier !== 1.0 || returnRate !== BASE_RATE;
+            const investmentsBoosted = investMultiplier !== 1.0;
             const rows = [
               { label: "Beginning financial assets", value: BEGIN, kind: "neutral" as const, oneOff: false, expandable: false },
               { label: "+ Investments", value: projInvestments, kind: "positive" as const, oneOff: false, expandable: true },
@@ -1026,30 +1104,10 @@ const GoalPlanner = () => {
                               step={0.1}
                             />
                           </div>
-                          <div>
-                            <div className="mb-1.5 flex items-center justify-between">
-                              <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                                Return rate (post-tax)
-                              </span>
-                              <span className="text-[11px] font-semibold tabular-nums text-foreground">
-                                {returnRate.toFixed(1)}%
-                              </span>
-                            </div>
-                            <Slider
-                              value={[returnRate]}
-                              onValueChange={(v) => setReturnRate(v[0])}
-                              min={5}
-                              max={12}
-                              step={0.5}
-                            />
-                          </div>
                           {investmentsBoosted && (
                             <button
                               type="button"
-                              onClick={() => {
-                                setInvestMultiplier(1.0);
-                                setReturnRate(BASE_RATE);
-                              }}
+                              onClick={() => setInvestMultiplier(1.0)}
                               className="text-[11px] font-medium text-amber-700 hover:text-amber-800 dark:text-amber-300 dark:hover:text-amber-200"
                             >
                               Reset to baseline
@@ -1162,28 +1220,25 @@ const GoalPlanner = () => {
         </motion.section>
       </motion.main>
 
-      {/* Edit sheet */}
+      {/* Edit modal — centered */}
       <AnimatePresence>
         {editGoal && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 backdrop-blur-[2px]"
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/45 backdrop-blur-[2px] px-4"
             onClick={() => setEditGoal(null)}
           >
             <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 32, stiffness: 320 }}
+              initial={{ opacity: 0, scale: 0.96, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 12 }}
+              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
               onClick={(e) => e.stopPropagation()}
-              className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-3xl border border-border/80 bg-card shadow-2xl"
+              className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-border/80 bg-card shadow-2xl"
             >
-              <div className="sticky top-0 z-10 flex justify-center border-b border-border/60 bg-card py-3">
-                <div className="h-1 w-10 rounded-full bg-muted-foreground/25" />
-              </div>
-              <div className="px-5 pt-2 pb-[calc(7rem+env(safe-area-inset-bottom,0px))]">
+              <div className="px-5 pt-5 pb-6">
                 <h3 className="text-lg font-semibold text-foreground">Edit goal</h3>
                 <p className="mt-1 text-xs text-muted-foreground">Changes apply immediately to your overview.</p>
 
@@ -1198,6 +1253,70 @@ const GoalPlanner = () => {
                   onChange={(e) => setEditTarget(e.target.value)}
                   className={`${sheetInputClass} mt-1.5`}
                 />
+
+                <p className="mt-3 text-[11px] font-medium text-muted-foreground">
+                  Is this in today&apos;s money or at the target date?
+                </p>
+                <div className="mt-1.5 grid grid-cols-2 gap-2">
+                  {([
+                    { id: "present", label: "Today's value", hint: "Will inflate to target date" },
+                    { id: "future", label: "Future value", hint: "Already inflation-adjusted" },
+                  ] as const).map((opt) => {
+                    const active = editAmountKind === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setEditAmountKind(opt.id)}
+                        className={`min-h-[56px] rounded-xl border px-3 py-2 text-left transition-colors ${
+                          active
+                            ? "border-primary bg-primary/[0.06] text-foreground"
+                            : "border-input bg-background text-muted-foreground hover:bg-muted"
+                        }`}
+                      >
+                        <p className="text-xs font-semibold">{opt.label}</p>
+                        <p className="mt-0.5 text-[10px] leading-tight">{opt.hint}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {editAmountKind === "present" && (
+                  <>
+                    <label className="mt-4 block text-xs font-medium text-muted-foreground">
+                      Expected inflation (%/yr)
+                    </label>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      step="0.5"
+                      value={editInflation}
+                      onChange={(e) => setEditInflation(e.target.value)}
+                      placeholder={
+                        editInflationSuggestion
+                          ? String(editInflationSuggestion.rate)
+                          : "6"
+                      }
+                      className={`${sheetInputClass} mt-1.5`}
+                    />
+                    {editInflationSuggestion && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setEditInflation(String(editInflationSuggestion.rate))
+                        }
+                        className="mt-1.5 inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/[0.06] px-2.5 py-1 text-[10.5px] font-medium text-primary transition-colors hover:bg-primary/10"
+                      >
+                        <Sparkles className="h-3 w-3" />
+                        Tilly suggests {editInflationSuggestion.rate}% — {editInflationSuggestion.reason}
+                      </button>
+                    )}
+                    <p className="mt-1.5 text-[10.5px] leading-snug text-muted-foreground/80">
+                      You can override this assumption — it&apos;s based on Tilly&apos;s
+                      research for this goal category.
+                    </p>
+                  </>
+                )}
 
                 <label className="mt-4 block text-xs font-medium text-muted-foreground">Target date</label>
                 <div className="mt-1.5 flex gap-2">
@@ -1384,9 +1503,13 @@ const GoalPlanner = () => {
                         className="mt-1.5 inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/[0.06] px-2.5 py-1 text-[10.5px] font-medium text-primary transition-colors hover:bg-primary/10"
                       >
                         <Sparkles className="h-3 w-3" />
-                        Suggest {inflationSuggestion.rate}% — {inflationSuggestion.reason}
+                        Tilly suggests {inflationSuggestion.rate}% — {inflationSuggestion.reason}
                       </button>
                     )}
+                    <p className="mt-1.5 text-[10.5px] leading-snug text-muted-foreground/80">
+                      You can override this assumption — it&apos;s based on Tilly&apos;s
+                      research for this goal category.
+                    </p>
                   </>
                 )}
 
