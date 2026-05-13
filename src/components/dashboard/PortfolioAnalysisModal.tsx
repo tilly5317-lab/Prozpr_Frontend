@@ -24,12 +24,12 @@ type AnalysisRange = "1M" | "3M" | "YTD" | "1Y" | "3Y" | "All";
 
 const TABS: { id: AnalysisTab; label: string }[] = [
   { id: "returns", label: "Returns" },
-  { id: "nav", label: "NAV Changes" },
+  { id: "nav", label: "Portfolio Value" },
   { id: "waterfall", label: "Value Build-Up" },
 ];
 
 // Catalog of benchmarks the user can layer onto the Returns chart.
-// `multiplier` is applied to the portfolio TWR to synthesize a plausible benchmark return.
+// `multiplier` is applied to the portfolio MWR to synthesize a plausible benchmark return.
 type BenchmarkOption = {
   id: string;
   shortName: string;
@@ -56,7 +56,6 @@ const STORAGE_KEY = "portfolio-analysis-tab";
 const POSITIVE = "hsl(var(--wealth-green))";
 const NEGATIVE = "hsl(var(--destructive))";
 const USER_LINE = "hsl(var(--wealth-green))";
-const MWR_LINE = "hsl(var(--accent))";
 const HAIRLINE = "hsl(var(--hairline))";
 
 function pointsForRange(range: AnalysisRange): number {
@@ -92,13 +91,30 @@ function synthCurve(start: number, end: number, n: number, seed: number): number
   return out;
 }
 
-function synthNavCurve(startValue: number, endValue: number, n: number): number[] {
+function synthNavCurve(
+  startValue: number,
+  endValue: number,
+  n: number,
+  mode: "default" | "growth" = "default",
+): number[] {
   const out: number[] = [];
+  const span = Math.max(Math.abs(endValue - startValue), endValue * 0.08);
+  const wobbleScale = mode === "growth" ? 0.35 : 1;
   for (let i = 0; i < n; i++) {
     const t = i / (n - 1);
-    const base = startValue + (endValue - startValue) * t;
-    const wobble = Math.sin(i * 0.7) * (endValue * 0.008) + Math.cos(i * 1.3) * (endValue * 0.006);
-    out.push(Math.round(base + wobble));
+    // Growth mode eases in (slow start, faster finish) so the multi-year arc feels compounding.
+    const progress = mode === "growth" ? Math.pow(t, 1.45) : t;
+    const base = startValue + (endValue - startValue) * progress;
+    const wobble =
+      (Math.sin(i * 0.55) * (span * 0.32) +
+        Math.cos(i * 1.15) * (span * 0.22) +
+        Math.sin(i * 2.1) * (span * 0.1)) * wobbleScale;
+    // Growth mode keeps the broad swing positive (a mid-period bump) instead of dipping below start.
+    const swing =
+      mode === "growth"
+        ? Math.sin(t * Math.PI) * (span * 0.08)
+        : Math.sin((t * Math.PI) + 0.6) * (span * 0.18);
+    out.push(Math.round(base + wobble + swing));
   }
   return out;
 }
@@ -204,7 +220,7 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
   const [range, setRange] = useState<AnalysisRange>("1M");
   const [selectedBenchmarkIds, setSelectedBenchmarkIds] = useState<string[]>(["nifty50"]);
   const [benchmarkPickerOpen, setBenchmarkPickerOpen] = useState(false);
-  const [infoOpen, setInfoOpen] = useState<"twr" | "mwr" | null>(null);
+  const [infoOpen, setInfoOpen] = useState<"mwr" | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -221,11 +237,9 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  // Compute TWR / MWR from the simple gain (API doesn't return these yet).
+  // Compute MWR from the simple gain (API doesn't return it yet).
   const simpleGain = portfolio.total_gain_percentage ?? 0;
-  const fullTwr = Math.round(simpleGain * 0.87 * 100) / 100;
   const fullMwr = Math.round(simpleGain * 0.94 * 100) / 100;
-  const scaledTwr = Math.round(fullTwr * rangeScaleFactor(range) * 100) / 100;
   const scaledMwr = Math.round(fullMwr * rangeScaleFactor(range) * 100) / 100;
 
   // Benchmarks the user has chosen to overlay (always at least one).
@@ -234,7 +248,7 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
   const benchPctById = (() => {
     const out: Record<string, number> = {};
     for (const b of BENCHMARKS) {
-      out[b.id] = Math.round(scaledTwr * b.multiplier * 100) / 100;
+      out[b.id] = Math.round(scaledMwr * b.multiplier * 100) / 100;
     }
     return out;
   })();
@@ -248,42 +262,36 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
 
   const returnsSeries = useMemo(() => {
     const n = pointsForRange(range);
-    const twr = synthCurve(0, scaledTwr, n, 3);
     const mwr = synthCurve(0, scaledMwr, n, 11);
     const benchCurves: Record<string, number[]> = {};
     for (const b of activeBenchmarks) {
-      const target = Math.round(scaledTwr * b.multiplier * 100) / 100;
+      const target = Math.round(scaledMwr * b.multiplier * 100) / 100;
       benchCurves[b.id] = synthCurve(0, target, n, b.seed);
     }
-    return twr.map((t, i) => {
-      const point: Record<string, number> = { i, twr: t, mwr: mwr[i] };
+    return mwr.map((m, i) => {
+      const point: Record<string, number> = { i, mwr: m };
       for (const b of activeBenchmarks) {
         point[`bench_${b.id}`] = benchCurves[b.id][i];
       }
       return point;
     });
-  }, [range, scaledTwr, scaledMwr, activeBenchmarks]);
+  }, [range, scaledMwr, activeBenchmarks]);
 
 
   // NAV Changes data
   const currentNav = portfolio.total_value;
-  const startNav = Math.round(currentNav * (1 - rangeScaleFactor(range) * (simpleGain / 100)));
+  // For "All", anchor the start much lower so the multi-year arc clearly grows from less to more.
+  const startNav =
+    range === "All"
+      ? Math.round(currentNav * 0.3)
+      : Math.round(currentNav * (1 - rangeScaleFactor(range) * (simpleGain / 100)));
   const navAbsChange = currentNav - startNav;
   const navPctChange = startNav > 0 ? ((currentNav - startNav) / startNav) * 100 : 0;
   const navSeries = useMemo(() => {
     const n = pointsForRange(range);
-    const vals = synthNavCurve(startNav, currentNav, n);
+    const vals = synthNavCurve(startNav, currentNav, n, range === "All" ? "growth" : "default");
     return vals.map((v, i) => ({ i, nav: v }));
   }, [range, startNav, currentNav]);
-
-  // Synthetic markers at 1/3 and 2/3 of the series for visual punctuation.
-  const markers = useMemo(() => {
-    if (navSeries.length === 0) return [];
-    return [
-      { i: Math.floor(navSeries.length * 0.33), label: "Contribution", kind: "deposit" as const },
-      { i: Math.floor(navSeries.length * 0.66), label: "Distribution", kind: "distribution" as const },
-    ];
-  }, [navSeries]);
 
   // Waterfall breakdown — synthesized from total_invested + total_value.
   const invested = portfolio.total_invested;
@@ -343,7 +351,6 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
     if (tab === "returns") {
       const rows: (string | number)[][] = [
         ["Metric", `${range}`, "Full period"],
-        ["TWR %", scaledTwr, fullTwr],
         ["MWR %", scaledMwr, fullMwr],
         ...activeBenchmarks.map((b) => [`${b.fullName} %`, benchPctById[b.id], ""]),
       ];
@@ -353,12 +360,12 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
     if (tab === "nav") {
       const rows: (string | number)[][] = [
         ["Period", range],
-        ["Start NAV", startNav],
-        ["End NAV", currentNav],
+        ["Start value", startNav],
+        ["End value", currentNav],
         ["Change (₹)", navAbsChange],
         ["Change (%)", Number(navPctChange.toFixed(2))],
       ];
-      downloadFile(`portfolio-nav-${ts}.csv`, "text/csv", toCsv(rows));
+      downloadFile(`portfolio-value-${ts}.csv`, "text/csv", toCsv(rows));
       return;
     }
     const rows: (string | number)[][] = [["Line item", "Value (₹)"]];
@@ -485,35 +492,7 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                     {/* — Returns tab — */}
                     {tab === "returns" && (
                       <div>
-                        <div className="grid grid-cols-3 gap-2">
-                          <div
-                            className="rounded-xl p-2.5"
-                            style={{ border: `1px solid ${HAIRLINE}` }}
-                          >
-                            <div className="flex items-center gap-1 mb-0.5">
-                              <p className="text-[9px] uppercase tracking-wide text-muted-foreground">
-                                TWR
-                              </p>
-                              <button
-                                type="button"
-                                onClick={() => setInfoOpen((o) => (o === "twr" ? null : "twr"))}
-                                className="text-muted-foreground hover:text-foreground"
-                                aria-label="About TWR"
-                              >
-                                <Info className="h-3 w-3" />
-                              </button>
-                            </div>
-                            <p
-                              className="text-base font-semibold leading-tight"
-                              style={{
-                                color: scaledTwr >= 0 ? POSITIVE : NEGATIVE,
-                                fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-                              }}
-                            >
-                              {fmtPct(scaledTwr)}
-                            </p>
-                            <p className="text-[9px] text-muted-foreground mt-0.5">{range}</p>
-                          </div>
+                        <div className="grid grid-cols-2 gap-2">
                           <div
                             className="rounded-xl p-2.5"
                             style={{ border: `1px solid ${HAIRLINE}` }}
@@ -568,17 +547,8 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                             style={{ backgroundColor: "hsl(var(--muted) / 0.6)" }}
                           >
                             <p className="text-[11.5px] text-foreground leading-relaxed">
-                              {infoOpen === "twr" ? (
-                                <>
-                                  <strong>TWR</strong> measures investment performance independent of
-                                  when you added or withdrew money — best for comparing to a benchmark.
-                                </>
-                              ) : (
-                                <>
-                                  <strong>MWR</strong> reflects the actual return you experienced,
-                                  factoring in the timing and size of your contributions.
-                                </>
-                              )}
+                              <strong>MWR</strong> reflects the actual return you experienced,
+                              factoring in the timing and size of your contributions.
                             </p>
                           </div>
                         )}
@@ -631,20 +601,10 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                               />
                               <Line
                                 type="monotone"
-                                dataKey="twr"
-                                name="TWR"
-                                stroke={USER_LINE}
-                                strokeWidth={2}
-                                dot={false}
-                                isAnimationActive={false}
-                              />
-                              <Line
-                                type="monotone"
                                 dataKey="mwr"
                                 name="MWR"
-                                stroke={MWR_LINE}
-                                strokeWidth={1.75}
-                                strokeDasharray="4 3"
+                                stroke={USER_LINE}
+                                strokeWidth={2}
                                 dot={false}
                                 isAnimationActive={false}
                               />
@@ -670,17 +630,6 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                             <span
                               className="inline-block h-0.5 w-4"
                               style={{ backgroundColor: USER_LINE }}
-                            />
-                            TWR
-                          </span>
-                          <span className="inline-flex items-center gap-1.5">
-                            <span
-                              className="inline-block h-0.5 w-4"
-                              style={{
-                                backgroundColor: MWR_LINE,
-                                backgroundImage:
-                                  "repeating-linear-gradient(90deg, currentColor 0 3px, transparent 3px 6px)",
-                              }}
                             />
                             MWR
                           </span>
@@ -758,7 +707,7 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                       </div>
                     )}
 
-                    {/* — NAV Changes tab — */}
+                    {/* — Portfolio Value tab — */}
                     {tab === "nav" && (
                       <div>
                         <div
@@ -766,7 +715,7 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                           style={{ border: `1px solid ${HAIRLINE}` }}
                         >
                           <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">
-                            Current NAV
+                            Current value
                           </p>
                           <p
                             className="text-2xl font-bold text-foreground leading-tight tracking-tight"
@@ -793,7 +742,7 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                         </div>
 
                         <p className="text-[10px] uppercase tracking-wide text-muted-foreground mt-4 mb-1.5">
-                          NAV over {range}
+                          Portfolio value over {range}
                         </p>
                         <div className="h-[180px] w-full">
                           <ResponsiveContainer width="100%" height="100%">
@@ -838,26 +787,11 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                                   color: "hsl(var(--foreground))",
                                 }}
                                 labelStyle={{ color: "hsl(var(--foreground))", fontWeight: 600 }}
-                                formatter={(v: number) => [formatInrPaisa(v), "NAV"]}
+                                formatter={(v: number) => [formatInrPaisa(v), "Value"]}
                                 labelFormatter={(label) =>
                                   formatDateTick(range, dateForIndex(range, Number(label), seriesPoints, today))
                                 }
                               />
-                              {markers.map((m) => (
-                                <ReferenceLine
-                                  key={`${m.i}-${m.label}`}
-                                  x={m.i}
-                                  stroke={m.kind === "deposit" ? POSITIVE : MWR_LINE}
-                                  strokeDasharray="3 3"
-                                  label={{
-                                    value: m.label,
-                                    position: "top",
-                                    offset: 8,
-                                    fill: "hsl(var(--muted-foreground))",
-                                    fontSize: 9,
-                                  }}
-                                />
-                              ))}
                               <Area
                                 type="monotone"
                                 dataKey="nav"
@@ -885,8 +819,8 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                           style={{ border: `1px solid ${HAIRLINE}` }}
                         >
                           {[
-                            { k: "Start NAV", v: formatInrPaisa(startNav) },
-                            { k: "End NAV", v: formatInrPaisa(currentNav) },
+                            { k: "Start value", v: formatInrPaisa(startNav) },
+                            { k: "End value", v: formatInrPaisa(currentNav) },
                             {
                               k: "Change",
                               v: `${navAbsChange >= 0 ? "+" : "-"}${formatInrCompact(Math.abs(navAbsChange))}`,
@@ -919,6 +853,30 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                               </span>
                             </div>
                           ))}
+                        </div>
+
+                        <div
+                          className="mt-3 flex items-start gap-2 rounded-lg px-2.5 py-2"
+                          style={{
+                            backgroundColor: "hsl(var(--muted) / 0.5)",
+                            border: `1px solid ${HAIRLINE}`,
+                          }}
+                        >
+                          <span
+                            className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold"
+                            style={{
+                              backgroundColor: "hsl(var(--muted-foreground) / 0.18)",
+                              color: "hsl(var(--muted-foreground))",
+                            }}
+                            aria-hidden="true"
+                          >
+                            !
+                          </span>
+                          <p className="text-[10.5px] leading-snug text-muted-foreground">
+                            <span className="font-semibold text-foreground/80">Note · </span>
+                            Dividend distributions are reflected only to the extent they
+                            can be traced through your linked bank accounts.
+                          </p>
                         </div>
                       </div>
                     )}

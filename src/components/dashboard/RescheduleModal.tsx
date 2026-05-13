@@ -9,9 +9,12 @@ interface RescheduleModalProps {
   onClose: () => void;
 }
 
+const AGENDA_MAX = 400;
+
 const RescheduleModal = ({ onClose }: RescheduleModalProps) => {
   const [selectedDate, setSelectedDate] = useState<Date | undefined>();
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
+  const [agenda, setAgenda] = useState("");
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -98,6 +101,35 @@ const RescheduleModal = ({ onClose }: RescheduleModalProps) => {
                   );
                 })}
               </div>
+            </div>
+
+            <div className="px-3 pt-4">
+              <div className="flex items-center justify-between mb-1.5">
+                <label
+                  htmlFor="reschedule-agenda"
+                  className="text-[10px] uppercase tracking-wide text-muted-foreground"
+                >
+                  What to discuss
+                  <span className="ml-1 normal-case tracking-normal text-muted-foreground/70">
+                    (optional)
+                  </span>
+                </label>
+                <span className="text-[10px] text-muted-foreground/70 tabular-nums">
+                  {agenda.length}/{AGENDA_MAX}
+                </span>
+              </div>
+              <textarea
+                id="reschedule-agenda"
+                value={agenda}
+                onChange={(e) => setAgenda(e.target.value.slice(0, AGENDA_MAX))}
+                rows={3}
+                placeholder="e.g. Review SIP increase, talk through tax-loss harvesting, questions on rebalance plan…"
+                className="w-full resize-none rounded-lg bg-muted/50 px-3 py-2 text-[12px] text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-foreground/30"
+                style={{ border: "1px solid hsl(var(--border))" }}
+              />
+              <p className="mt-1 text-[10.5px] text-muted-foreground/70">
+                Your advisor will see this before the call.
+              </p>
             </div>
           </div>
 
