@@ -8,16 +8,17 @@ import { useAuth } from "@/context/AuthContext";
 type Screen = "onboarding" | "dashboard";
 
 const Index = () => {
-  const { authenticated, loading } = useAuth();
+  const { authenticated, loading, user } = useAuth();
   const [screen, setScreen] = useState<Screen>("onboarding");
 
   useEffect(() => {
     if (loading) return;
-    const hasCompletedOnboarding = sessionStorage.getItem("onboardingComplete") === "true";
-    if (authenticated && hasCompletedOnboarding) {
+    const sessionDone = sessionStorage.getItem("onboardingComplete") === "true";
+    const backendDone = user?.is_onboarding_complete === true;
+    if (authenticated && (sessionDone || backendDone)) {
       setScreen("dashboard");
     }
-  }, [authenticated, loading]);
+  }, [authenticated, loading, user?.is_onboarding_complete]);
 
   const handleOnboardingComplete = () => {
     sessionStorage.setItem("onboardingComplete", "true");

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   TrendingUp,
@@ -8,8 +9,12 @@ import {
   ArrowRight,
   ArrowLeft,
   X,
+  Loader2,
+  Sparkles,
 } from "lucide-react";
 import BottomNav from "@/components/BottomNav";
+import { MfFundList } from "@/components/discover/MfFundList";
+import { useMfFundsPaged } from "@/hooks/use-mf-funds-paged";
 import {
   listDiscoveryFunds,
   listDiscoveryHouseView,
@@ -17,6 +22,7 @@ import {
   listDiscoveryTrending,
   type DiscoveryFund,
   type DiscoverySector,
+  type MfFundMetadataListItem,
 } from "@/lib/api";
 
 const PLAN_READY_POPUP_SESSION_KEY = "tilly_discover_plan_ready_popup";
@@ -304,6 +310,39 @@ export function DiscoverScreen({
   >({});
   const sectorFetchStarted = useRef<Set<string>>(new Set());
 
+  /* ── Search + Explore-all (mf_fund_metadata) ── */
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const navigate = useNavigate();
+
+  // 250ms debounce — fast enough to feel live, slow enough to skip
+  // intermediate keystrokes when typing quickly.
+  useEffect(() => {
+    const handle = window.setTimeout(() => setDebouncedQuery(searchInput.trim()), 250);
+    return () => window.clearTimeout(handle);
+  }, [searchInput]);
+
+  const searchFeed = useMfFundsPaged(null);
+
+  // Drive the search feed off the debounced query; reset clears any in-flight
+  // page so a slower previous response can't override the latest.
+  useEffect(() => {
+    if (debouncedQuery.length === 0) {
+      searchFeed.reset(null);
+      return;
+    }
+    searchFeed.reset({ q: debouncedQuery });
+    // searchFeed.reset is stable, but listing it would cause the effect to
+    // re-fire on every render — paramsRef inside the hook is a ref.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedQuery]);
+
+  const showSearchResults = debouncedQuery.length > 0;
+
+  const handleSelectMfFund = (fund: MfFundMetadataListItem) => {
+    navigate(`/discovery/mf/${fund.id}`);
+  };
+
   useEffect(() => {
     listDiscoveryTrending()
       .then((funds) => {
@@ -393,11 +432,52 @@ export function DiscoverScreen({
         <div className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2.5">
           <Search className="h-4 w-4 text-muted-foreground/50" />
           <input
-            placeholder="Search funds, stocks, ETFs..."
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Search funds by name, AMC, or scheme code…"
             className="flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/40"
           />
+          {searchFeed.loading && showSearchResults && (
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground/60" />
+          )}
+          {searchInput && (
+            <button
+              type="button"
+              onClick={() => setSearchInput("")}
+              className="rounded-full p-1 text-muted-foreground/50 hover:text-foreground"
+              aria-label="Clear search"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
       </div>
+
+      {showSearchResults && (
+        <div className="mb-5 px-5">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              Search results
+            </p>
+            <p className="text-[10px] text-muted-foreground/70">
+              {searchFeed.loading && searchFeed.items.length === 0
+                ? "Searching…"
+                : `${searchFeed.total} match${searchFeed.total === 1 ? "" : "es"}`}
+            </p>
+          </div>
+          <MfFundList
+            items={searchFeed.items}
+            loading={searchFeed.loading}
+            loadingMore={searchFeed.loadingMore}
+            error={searchFeed.error}
+            hasMore={searchFeed.hasMore}
+            total={searchFeed.total}
+            emptyText={`No funds match “${debouncedQuery}”.`}
+            onLoadMore={searchFeed.loadMore}
+            onSelect={handleSelectMfFund}
+          />
+        </div>
+      )}
 
       <div className="pb-24">
         {showRecommendedPlanCard && (
@@ -517,6 +597,30 @@ export function DiscoverScreen({
               </motion.button>
             ))}
           </div>
+
+          <button
+            type="button"
+            onClick={() => navigate("/discovery/mf")}
+            className="mt-3 flex w-full items-center justify-between rounded-xl border border-dashed border-border/70 bg-card px-4 py-3 text-left transition-colors hover:bg-secondary/40"
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-secondary text-muted-foreground">
+                <Sparkles className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <p className="text-xs font-semibold text-foreground">View all funds</p>
+                  <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                    Beta
+                  </span>
+                </div>
+                <p className="mt-0.5 text-[10px] text-muted-foreground">
+                  Full MF universe with search — opens dedicated page
+                </p>
+              </div>
+            </div>
+            <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+          </button>
         </div>
 
         <div className="mb-5 px-5">
