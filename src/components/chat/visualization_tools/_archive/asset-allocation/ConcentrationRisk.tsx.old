@@ -1,0 +1,148 @@
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Cell,
+  ResponsiveContainer,
+  Tooltip,
+} from "recharts";
+import type { ConcentrationRisk as Payload } from "../types";
+import { formatInrCompact } from "@/lib/utils";
+
+const SEVERITY_STYLES: Record<
+  Payload["severity"],
+  { label: string; pillBg: string; pillText: string; barColor: string }
+> = {
+  ok: {
+    label: "Diversified",
+    pillBg: "rgba(34, 197, 94, 0.12)",
+    pillText: "hsl(142, 71%, 30%)",
+    barColor: "#4F46E5",
+  },
+  watch: {
+    label: "Watch",
+    pillBg: "rgba(234, 179, 8, 0.14)",
+    pillText: "hsl(35, 80%, 38%)",
+    barColor: "#C9A84C",
+  },
+  act: {
+    label: "Concentrated",
+    pillBg: "rgba(239, 68, 68, 0.12)",
+    pillText: "hsl(0, 72%, 45%)",
+    barColor: "#EF4444",
+  },
+};
+
+const REST_COLOR = "#94a3b8";
+
+function shortName(name: string): string {
+  // Strip generic plan suffixes for tighter axis labels.
+  return name
+    .replace(/\s*-\s*Direct Plan\s+Growth\s*$/i, "")
+    .replace(/\s*-\s*Direct\s+Growth\s*$/i, "")
+    .replace(/\s+Fund$/i, "");
+}
+
+export function ConcentrationRisk({ payload }: { payload: Payload }) {
+  const sev = SEVERITY_STYLES[payload.severity];
+
+  const data = [
+    ...payload.top_holdings.map((h) => ({
+      name: shortName(h.label),
+      fullName: h.label,
+      value: h.value,
+      percentage: h.percentage,
+      isRest: false,
+    })),
+    ...(payload.rest_count > 0
+      ? [
+          {
+            name: `Rest (${payload.rest_count} fund${payload.rest_count !== 1 ? "s" : ""})`,
+            fullName: `${payload.rest_count} other holding${payload.rest_count !== 1 ? "s" : ""}`,
+            value: 0, // unknown breakdown; show only %
+            percentage: payload.rest_percentage,
+            isRest: true,
+          },
+        ]
+      : []),
+  ];
+
+  const chartHeight = Math.max(120, data.length * 28);
+
+  return (
+    <div className="rounded-lg border border-border/40 bg-card p-3">
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <p className="text-[10px] uppercase tracking-[1.5px] text-muted-foreground font-medium">
+          {payload.title}
+        </p>
+        <span
+          className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
+          style={{ backgroundColor: sev.pillBg, color: sev.pillText }}
+        >
+          {sev.label}
+        </span>
+      </div>
+
+      <p className="text-[12px] font-semibold text-foreground mb-2">
+        {payload.headline}
+      </p>
+
+      <div style={{ width: "100%", height: chartHeight }}>
+        <ResponsiveContainer>
+          <BarChart
+            data={data}
+            layout="vertical"
+            margin={{ top: 4, right: 32, left: 4, bottom: 4 }}
+          >
+            <XAxis type="number" hide domain={[0, 100]} />
+            <YAxis
+              type="category"
+              dataKey="name"
+              width={120}
+              tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+              tickLine={false}
+              axisLine={false}
+            />
+            <Tooltip
+              cursor={{ fill: "rgba(0,0,0,0.04)" }}
+              formatter={(value: number, _n, item) => {
+                const row = item.payload as (typeof data)[number];
+                if (row.isRest) {
+                  return [`${row.percentage.toFixed(1)}%`, row.fullName];
+                }
+                return [
+                  `${formatInrCompact(row.value)} (${row.percentage.toFixed(1)}%)`,
+                  row.fullName,
+                ];
+              }}
+              contentStyle={{ fontSize: "11px", borderRadius: "6px" }}
+            />
+            <Bar dataKey="percentage" radius={[0, 4, 4, 0]} barSize={16}>
+              {data.map((entry, i) => (
+                <Cell
+                  key={i}
+                  fill={entry.isRest ? REST_COLOR : sev.barColor}
+                />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
+        <span>0%</span>
+        <span>
+          Total:{" "}
+          <span className="font-semibold text-foreground">
+            {formatInrCompact(
+              payload.top_holdings.reduce((s, h) => s + h.value, 0)
+            )}
+            {payload.rest_count > 0 ? " (top " + payload.top_n + ")" : ""}
+          </span>
+        </span>
+        <span>100%</span>
+      </div>
+    </div>
+  );
+}
