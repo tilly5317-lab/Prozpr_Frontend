@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { format, parseISO, subYears } from "date-fns";
 import {
@@ -50,14 +50,14 @@ function labelTxn(type: string): string {
   return TXN_LABEL[type] ?? type.replace(/_/g, " ");
 }
 
-function sourceLabel(src: string): string {
-  const u = src.toUpperCase();
-  if (u === "AA") return "CAS / statement";
-  if (u === "SIMBANKS") return "Bank feed";
-  if (u === "MANUAL") return "Manual";
-  if (u === "BACKFILL") return "Backfill";
-  return src;
-}
+// function sourceLabel(src: string): string {
+//   const u = src.toUpperCase();
+//   if (u === "AA") return "CAS / statement";
+//   if (u === "SIMBANKS") return "Bank feed";
+//   if (u === "MANUAL") return "Manual";
+//   if (u === "BACKFILL") return "Backfill";
+//   return src;
+// }
 
 function parseNavDate(d: string): Date {
   try {
@@ -153,6 +153,20 @@ export default function PortfolioFundDetail() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Entering this route with a non-zero window scroll (e.g. from a long /portfolio page)
+  // leaves the viewport past the NAV card; reset scroll so the chart is the first thing seen.
+  useLayoutEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, [schemeCode]);
+
+  useLayoutEffect(() => {
+    if (loading) return;
+    const id = window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [loading, schemeCode]);
 
   const chartSeries = useMemo(() => {
     if (!data?.nav_history?.length) return [];
@@ -498,26 +512,31 @@ export default function PortfolioFundDetail() {
                   </p>
                 ) : (
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[520px] text-left text-[12px]">
+                    <table className="w-full min-w-[560px] text-left text-[12px]">
                       <thead>
                         <tr className="border-b border-border/60 bg-muted/30 text-[10px] uppercase tracking-wide text-muted-foreground">
                           <th className="px-3 py-2 font-medium">Date</th>
                           <th className="px-3 py-2 font-medium">Type</th>
-                          <th className="px-3 py-2 font-medium">Folio</th>
                           <th className="px-3 py-2 text-right font-medium">Units</th>
+                          <th className="px-3 py-2 text-right font-medium">Cum. Units</th>
                           <th className="px-3 py-2 text-right font-medium">NAV</th>
                           <th className="px-3 py-2 text-right font-medium">Amount</th>
-                          <th className="hidden px-3 py-2 font-medium sm:table-cell">Source</th>
+                          <th className="px-3 py-2 text-right font-medium">Stamp Duty</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {[...data.transactions]
-                          .sort(
+                        {(() => {
+                          const sorted = [...data.transactions].sort(
                             (a, b) =>
-                              parseNavDate(b.transaction_date).getTime() -
-                              parseNavDate(a.transaction_date).getTime(),
-                          )
-                          .map((tx) => (
+                              parseNavDate(a.transaction_date).getTime() -
+                              parseNavDate(b.transaction_date).getTime(),
+                          );
+                          let cumUnits = 0;
+                          const withCum = sorted.map((tx) => {
+                            cumUnits += tx.units;
+                            return { ...tx, cumUnits };
+                          });
+                          return withCum.reverse().map((tx) => (
                             <tr
                               key={tx.id}
                               className="border-b border-border/40 last:border-0 hover:bg-muted/20"
@@ -528,11 +547,11 @@ export default function PortfolioFundDetail() {
                               <td className="px-3 py-2.5">
                                 <span className="font-medium text-foreground">{labelTxn(tx.transaction_type)}</span>
                               </td>
-                              <td className="max-w-[100px] truncate px-3 py-2.5 font-mono text-[11px] text-muted-foreground">
-                                {tx.folio_number || "—"}
-                              </td>
                               <td className="px-3 py-2.5 text-right tabular-nums">
                                 {tx.units.toLocaleString("en-IN", { maximumFractionDigits: 4 })}
+                              </td>
+                              <td className="px-3 py-2.5 text-right tabular-nums font-medium text-foreground/80">
+                                {tx.cumUnits.toLocaleString("en-IN", { maximumFractionDigits: 3 })}
                               </td>
                               <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">
                                 {formatInrPaisa(tx.nav)}
@@ -546,11 +565,21 @@ export default function PortfolioFundDetail() {
                                 {tx.signed_amount >= 0 ? "+" : "−"}
                                 {formatInrCompact(Math.abs(tx.signed_amount))}
                               </td>
-                              <td className="hidden px-3 py-2.5 text-muted-foreground sm:table-cell">
-                                {sourceLabel(tx.source_system)}
+                              <td
+                                className={cn(
+                                  "px-3 py-2.5 text-right tabular-nums",
+                                  tx.stamp_duty != null && tx.stamp_duty > 0
+                                    ? "font-medium text-red-700 dark:text-red-400"
+                                    : "text-muted-foreground",
+                                )}
+                              >
+                                {tx.stamp_duty != null && tx.stamp_duty > 0
+                                  ? `−${formatInrPaisa(tx.stamp_duty)}`
+                                  : "—"}
                               </td>
                             </tr>
-                          ))}
+                          ));
+                        })()}
                       </tbody>
                     </table>
                   </div>
