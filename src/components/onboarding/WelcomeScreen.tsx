@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { ArrowRight, Shield, TrendingUp, Sparkles, ChevronDown, ArrowLeft, Loader2, FileText, UploadCloud } from "lucide-react";
 import CamsStatementPasswordModal from "./CamsStatementPasswordModal";
 import prozprLogo from "@/assets/prozpr-logo-v2.png";
-import { signup, login } from "@/lib/api";
+import { signup, login, getMe } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import {
   InputOTP,
@@ -31,7 +31,11 @@ const MAX_PDF_BYTES = 20 * 1024 * 1024;
 
 type Step = "phone" | "otp" | "cams";
 
+<<<<<<< HEAD
 const WelcomeScreen = ({ onNext: _onNext }: WelcomeScreenProps) => {
+=======
+const WelcomeScreen = ({ onNext }: WelcomeScreenProps) => {
+>>>>>>> fecc46607558f30ff989d45ea6b3ce6b29029554
   const navigate = useNavigate();
   const { refresh } = useAuth();
   const [step, setStep] = useState<Step>("phone");
@@ -83,7 +87,27 @@ const WelcomeScreen = ({ onNext: _onNext }: WelcomeScreenProps) => {
     }
     await refresh();
     setLoading(false);
+<<<<<<< HEAD
     setStep("cams");
+=======
+
+    try {
+      const me = await getMe();
+      if (me.is_onboarding_complete) {
+        try {
+          sessionStorage.setItem("onboardingComplete", "true");
+        } catch {
+          /* ignore storage failures */
+        }
+        navigate("/chat");
+        return;
+      }
+    } catch {
+      /* no session or /me failed — continue into discovery modal */
+    }
+
+    setShowModal(true);
+>>>>>>> fecc46607558f30ff989d45ea6b3ce6b29029554
   };
 
   const handleResend = () => {
