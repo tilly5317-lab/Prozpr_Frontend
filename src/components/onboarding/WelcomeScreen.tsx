@@ -17,13 +17,21 @@ interface WelcomeScreenProps {
   onExistingUserLogin?: () => void;
 }
 
+/** Regional-indicator flags from ISO 3166-1 alpha-2 (avoids emoji encoding issues in source files). */
+const flagEmoji = (iso2: string) =>
+  iso2
+    .toUpperCase()
+    .split("")
+    .map((c) => String.fromCodePoint(0x1f1e6 - 65 + c.charCodeAt(0)))
+    .join("");
+
 const countryCodes = [
-  { code: "+44", label: "UK", flag: "ðŸ‡¬ðŸ‡§" },
-  { code: "+1", label: "US", flag: "ðŸ‡ºðŸ‡¸" },
-  { code: "+91", label: "IN", flag: "ðŸ‡®ðŸ‡³" },
-  { code: "+61", label: "AU", flag: "ðŸ‡¦ðŸ‡º" },
-  { code: "+971", label: "AE", flag: "ðŸ‡¦ðŸ‡ª" },
-  { code: "+65", label: "SG", flag: "ðŸ‡¸ðŸ‡¬" },
+  { code: "+44", label: "UK", flag: flagEmoji("GB") },
+  { code: "+1", label: "US", flag: flagEmoji("US") },
+  { code: "+91", label: "IN", flag: flagEmoji("IN") },
+  { code: "+61", label: "AU", flag: flagEmoji("AU") },
+  { code: "+971", label: "AE", flag: flagEmoji("AE") },
+  { code: "+65", label: "SG", flag: flagEmoji("SG") },
 ];
 
 const MAX_PDF_BYTES = 20 * 1024 * 1024;
@@ -234,7 +242,7 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
           </div>
 
           <p className="text-[11px] text-muted-foreground leading-relaxed mb-auto">
-            ðŸ”’ The password is only used to open the PDF on our servers and is not stored.
+            The password is only used to open the PDF on our servers and is not stored.
           </p>
         </motion.div>
 
@@ -352,7 +360,7 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
         className="flex-1 flex flex-col"
       >
         <div className="flex flex-col items-center text-center mb-4 mt-12">
-          <img src={prozprLogo} alt="Prozpr â€” Wealth, Unified." className="w-[345px] h-auto" />
+          <img src={prozprLogo} alt="Prozpr - Wealth, Unified." className="w-[345px] h-auto" />
         </div>
 
         <div className="mt-0 space-y-2.5 mb-auto">
