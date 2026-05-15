@@ -1,37 +1,36 @@
-import { useState, useRef } from "react";
+﻿import { useState, useRef } from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight, Shield, TrendingUp, Sparkles, ChevronDown, ArrowLeft, Loader2, FileText, UploadCloud } from "lucide-react";
 import CamsStatementPasswordModal from "./CamsStatementPasswordModal";
 import prozprLogo from "@/assets/prozpr-logo-v2.png";
-import { signup, login, getMe } from "@/lib/api";
+import { signup, login, getMe, checkMobileStatus } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import {
   InputOTP,
   InputOTPGroup,
   InputOTPSlot,
-  InputOTPSeparator,
 } from "@/components/ui/input-otp";
 
 interface WelcomeScreenProps {
   onNext: () => void;
+  onExistingUserLogin?: () => void;
 }
 
 const countryCodes = [
-  { code: "+44", label: "UK", flag: "🇬🇧" },
-  { code: "+1", label: "US", flag: "🇺🇸" },
-  { code: "+91", label: "IN", flag: "🇮🇳" },
-  { code: "+61", label: "AU", flag: "🇦🇺" },
-  { code: "+971", label: "AE", flag: "🇦🇪" },
-  { code: "+65", label: "SG", flag: "🇸🇬" },
+  { code: "+44", label: "UK", flag: "ðŸ‡¬ðŸ‡§" },
+  { code: "+1", label: "US", flag: "ðŸ‡ºðŸ‡¸" },
+  { code: "+91", label: "IN", flag: "ðŸ‡®ðŸ‡³" },
+  { code: "+61", label: "AU", flag: "ðŸ‡¦ðŸ‡º" },
+  { code: "+971", label: "AE", flag: "ðŸ‡¦ðŸ‡ª" },
+  { code: "+65", label: "SG", flag: "ðŸ‡¸ðŸ‡¬" },
 ];
 
-const DEFAULT_PASSWORD = "asktilly2026";
 const MAX_PDF_BYTES = 20 * 1024 * 1024;
 
-type Step = "phone" | "otp" | "pin" | "cams";
+type Step = "phone" | "pin" | "cams";
 
-const WelcomeScreen = ({ onNext: _onNext }: WelcomeScreenProps) => {
+const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
   const navigate = useNavigate();
   const { refresh } = useAuth();
   const [step, setStep] = useState<Step>("phone");
@@ -40,8 +39,7 @@ const WelcomeScreen = ({ onNext: _onNext }: WelcomeScreenProps) => {
   const [showCodes, setShowCodes] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const [otp, setOtp] = useState("");
-  const [otpError, setOtpError] = useState("");
+  const [isReturningUser, setIsReturningUser] = useState(false);
 
   const [pin, setPin] = useState("");
   const [pinError, setPinError] = useState("");
@@ -58,23 +56,31 @@ const WelcomeScreen = ({ onNext: _onNext }: WelcomeScreenProps) => {
     setLoading(true);
     const digits = phone.replace(/\s/g, "");
 
-    // Try login to check if user already exists
     try {
-      await login({
+      const status = await checkMobileStatus({
         country_code: countryCode.code,
         mobile: digits,
-        password: DEFAULT_PASSWORD,
       });
-      // User exists — ask for PIN and skip onboarding
-      setLoading(false);
-      setStep("pin");
-      return;
+      setIsReturningUser(status.exists);
     } catch {
-      // User doesn't exist — proceed with OTP signup flow
+      setIsReturningUser(false);
     }
 
     setLoading(false);
-    setStep("otp");
+    setStep("pin");
+  };
+
+  const finishReturningUserSession = () => {
+    try {
+      sessionStorage.setItem("onboardingComplete", "true");
+    } catch {
+      /* ignore */
+    }
+    if (onExistingUserLogin) {
+      onExistingUserLogin();
+    } else {
+      navigate("/");
+    }
   };
 
   const handlePinSubmit = async () => {
@@ -84,41 +90,43 @@ const WelcomeScreen = ({ onNext: _onNext }: WelcomeScreenProps) => {
     }
     setPinError("");
     setLoading(true);
+    const digits = phone.replace(/\s/g, "");
+    const creds = {
+      country_code: countryCode.code,
+      mobile: digits,
+      password: pin,
+    };
 
-    // PIN can be anything for now — user is already logged in from handlePhoneSubmit
-    await refresh();
-    setLoading(false);
-
-    try {
-      sessionStorage.setItem("onboardingComplete", "true");
-    } catch { /* ignore */ }
-    navigate("/chat");
-  };
-
-  const handleVerifyOtp = async () => {
-    if (otp.length < 6) {
-      setOtpError("Enter the full 6-digit code");
+    if (isReturningUser) {
+      try {
+        await login(creds);
+      } catch {
+        try {
+          await login({ country_code: creds.country_code, mobile: creds.mobile });
+        } catch {
+          setPinError("Could not sign in. Check your PIN and try again.");
+          setLoading(false);
+          return;
+        }
+      }
+      await refresh();
+      setLoading(false);
+      finishReturningUserSession();
       return;
     }
-    setOtpError("");
-    setLoading(true);
-    const digits = phone.replace(/\s/g, "");
+
     try {
       await signup({
-        country_code: countryCode.code,
-        mobile: digits,
-        password: DEFAULT_PASSWORD,
+        ...creds,
         first_name: "User",
       });
     } catch {
       try {
-        await login({
-          country_code: countryCode.code,
-          mobile: digits,
-          password: DEFAULT_PASSWORD,
-        });
+        await login(creds);
       } catch {
-        /* continue even if backend is down */
+        setPinError("Could not create your account. Try again.");
+        setLoading(false);
+        return;
       }
     }
     await refresh();
@@ -127,24 +135,14 @@ const WelcomeScreen = ({ onNext: _onNext }: WelcomeScreenProps) => {
     try {
       const me = await getMe();
       if (me.is_onboarding_complete) {
-        try {
-          sessionStorage.setItem("onboardingComplete", "true");
-        } catch {
-          /* ignore storage failures */
-        }
-        navigate("/chat");
+        finishReturningUserSession();
         return;
       }
     } catch {
-      /* no session or /me failed — continue to CAMS import */
+      /* continue to CAMS for new users */
     }
 
     setStep("cams");
-  };
-
-  const handleResend = () => {
-    setOtp("");
-    setOtpError("");
   };
 
   const pickCamsFile = (f: File | null) => {
@@ -168,7 +166,7 @@ const WelcomeScreen = ({ onNext: _onNext }: WelcomeScreenProps) => {
     setShowCamsPasswordModal(true);
   };
 
-  /* ─── CAMS upload (after OTP verification) ─── */
+  /* â”€â”€â”€ CAMS upload (new users only) â”€â”€â”€ */
   if (step === "cams") {
     return (
       <div className="mobile-container flex flex-col bg-background px-6 pb-6 pt-12">
@@ -181,7 +179,7 @@ const WelcomeScreen = ({ onNext: _onNext }: WelcomeScreenProps) => {
           <button
             type="button"
             onClick={() => {
-              setStep("otp");
+              setStep("pin");
               setCamsFile(null);
               setCamsPickError("");
               setShowCamsPasswordModal(false);
@@ -218,8 +216,8 @@ const WelcomeScreen = ({ onNext: _onNext }: WelcomeScreenProps) => {
                 </p>
                 <p className="text-[11px] text-muted-foreground mt-0.5">
                   {camsFile
-                    ? `${(camsFile.size / 1024).toFixed(0)} KB · tap to change file`
-                    : "PDF only · up to 20 MB"}
+                    ? `${(camsFile.size / 1024).toFixed(0)} KB Â· tap to change file`
+                    : "PDF only Â· up to 20 MB"}
                 </p>
               </div>
             </button>
@@ -236,7 +234,7 @@ const WelcomeScreen = ({ onNext: _onNext }: WelcomeScreenProps) => {
           </div>
 
           <p className="text-[11px] text-muted-foreground leading-relaxed mb-auto">
-            🔒 The password is only used to open the PDF on our servers and is not stored.
+            ðŸ”’ The password is only used to open the PDF on our servers and is not stored.
           </p>
         </motion.div>
 
@@ -265,7 +263,7 @@ const WelcomeScreen = ({ onNext: _onNext }: WelcomeScreenProps) => {
     );
   }
 
-  /* ─── PIN Screen (existing user) ─── */
+  /* â”€â”€â”€ PIN Screen (existing user) â”€â”€â”€ */
   if (step === "pin") {
     return (
       <div className="mobile-container flex flex-col bg-background px-6 pb-6 pt-12">
@@ -288,10 +286,12 @@ const WelcomeScreen = ({ onNext: _onNext }: WelcomeScreenProps) => {
           </button>
 
           <h1 className="text-xl font-semibold text-foreground mb-2">
-            Welcome back
+            {isReturningUser ? "Welcome back" : "Set your PIN"}
           </h1>
           <p className="text-xs text-muted-foreground mb-1">
-            Enter your 4-digit PIN to continue
+            {isReturningUser
+              ? "Enter your 4-digit PIN to continue"
+              : "Choose a 4-digit PIN to secure your account"}
           </p>
           <p className="text-xs font-semibold text-foreground mb-8">
             {countryCode.code} {phone}
@@ -312,9 +312,11 @@ const WelcomeScreen = ({ onNext: _onNext }: WelcomeScreenProps) => {
             <p className="text-xs text-destructive text-center mb-4">{pinError}</p>
           )}
 
-          <p className="text-[11px] text-muted-foreground text-center mb-auto">
-            Enter any 4-digit PIN to proceed
-          </p>
+          {isReturningUser && (
+            <p className="text-[11px] text-muted-foreground text-center mb-auto">
+              Seeded test accounts may use any 4-digit PIN, or the PIN set at signup.
+            </p>
+          )}
         </motion.div>
 
         <motion.button
@@ -339,88 +341,6 @@ const WelcomeScreen = ({ onNext: _onNext }: WelcomeScreenProps) => {
     );
   }
 
-  /* ─── OTP Screen ─── */
-  if (step === "otp") {
-    return (
-      <div className="mobile-container flex flex-col bg-background px-6 pb-6 pt-12">
-        <motion.div
-          initial={{ opacity: 0, x: 40 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.35 }}
-          className="flex-1 flex flex-col"
-        >
-          <button
-            type="button"
-            onClick={() => {
-              setStep("phone");
-              setOtp("");
-              setOtpError("");
-            }}
-            className="flex items-center gap-1 text-sm text-muted-foreground mb-6 hover:text-foreground transition-colors"
-          >
-            <ArrowLeft className="h-4 w-4" /> Back
-          </button>
-
-          <h1 className="text-xl font-semibold text-foreground mb-2">
-            Verify your number
-          </h1>
-          <p className="text-xs text-muted-foreground mb-1">
-            We sent a 6-digit code to
-          </p>
-          <p className="text-xs font-semibold text-foreground mb-8">
-            {countryCode.code} {phone}
-          </p>
-
-          <div className="flex justify-center mb-6">
-            <InputOTP maxLength={6} value={otp} onChange={setOtp}>
-              <InputOTPGroup>
-                <InputOTPSlot index={0} />
-                <InputOTPSlot index={1} />
-                <InputOTPSlot index={2} />
-              </InputOTPGroup>
-              <InputOTPSeparator />
-              <InputOTPGroup>
-                <InputOTPSlot index={3} />
-                <InputOTPSlot index={4} />
-                <InputOTPSlot index={5} />
-              </InputOTPGroup>
-            </InputOTP>
-          </div>
-
-          {otpError && (
-            <p className="text-xs text-destructive text-center mb-4">{otpError}</p>
-          )}
-
-          <button
-            type="button"
-            onClick={handleResend}
-            className="text-[11px] text-muted-foreground hover:text-foreground transition-colors text-center mb-auto"
-          >
-            Didn&apos;t receive it? <span className="font-semibold underline">Resend code</span>
-          </button>
-        </motion.div>
-
-        <motion.button
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2, duration: 0.4 }}
-          type="button"
-          onClick={() => void handleVerifyOtp()}
-          disabled={otp.length < 6 || loading}
-          className="flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold text-primary-foreground tracking-wide transition-all active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none"
-        >
-          {loading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <>
-              Verify & Continue
-              <ArrowRight className="h-4 w-4" />
-            </>
-          )}
-        </motion.button>
-      </div>
-    );
-  }
 
   /* ─── Phone Screen ─── */
   return (
@@ -432,7 +352,7 @@ const WelcomeScreen = ({ onNext: _onNext }: WelcomeScreenProps) => {
         className="flex-1 flex flex-col"
       >
         <div className="flex flex-col items-center text-center mb-4 mt-12">
-          <img src={prozprLogo} alt="Prozpr — Wealth, Unified." className="w-[345px] h-auto" />
+          <img src={prozprLogo} alt="Prozpr â€” Wealth, Unified." className="w-[345px] h-auto" />
         </div>
 
         <div className="mt-0 space-y-2.5 mb-auto">
@@ -515,10 +435,10 @@ const WelcomeScreen = ({ onNext: _onNext }: WelcomeScreenProps) => {
         className="text-center mb-3"
       >
         <p className="text-xs text-muted-foreground leading-relaxed">
-          We&apos;ll find accounts linked to this number
+          Existing users sign in with a 4-digit PIN and go straight to the app.
         </p>
         <p className="text-xs text-muted-foreground leading-relaxed">
-          🔒 After verifying, you can import holdings from your CAMS CAS PDF
+          New users set a PIN, then can import holdings from a CAMS CAS PDF.
         </p>
       </motion.div>
 
