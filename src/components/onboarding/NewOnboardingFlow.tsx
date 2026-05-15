@@ -282,7 +282,7 @@ const NewOnboardingFlow = ({ onComplete }: NewOnboardingFlowProps) => {
   /* ─── SCREEN 0: Welcome ─── */
   if (step === -1) {
     return (
-      <WelcomeScreen onNext={() => setStep(0)} />
+      <WelcomeScreen onNext={() => setStep(0)} onExistingUserLogin={onComplete} />
     );
   }
 
