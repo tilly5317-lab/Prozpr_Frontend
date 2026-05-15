@@ -1,348 +1,591 @@
-import { useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Info, TrendingUp } from "lucide-react";
-import BottomNav from "@/components/BottomNav";
+import { format, parseISO, subMonths, subYears } from "date-fns";
 import {
-  getMfFundInvestorDetail,
-  type MfFundInvestorDetailResponse,
-  type MfNavChartPoint,
+  ArrowLeft,
+  Building2,
+  Landmark,
+  LineChart as LineChartIcon,
+  ListOrdered,
+  PieChart,
+  TrendingUp,
+  Wallet,
+} from "lucide-react";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+
+import BottomNav from "@/components/BottomNav";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  getMfHoldingDetail,
+  type MfHoldingDetailResponse,
+  type MfHoldingNavPoint,
 } from "@/lib/api";
+import { cn, formatInrCompact, formatInrPaisa } from "@/lib/utils";
 
-function fmtPct(n: number | null | undefined, digits = 1): string {
-  if (n == null || Number.isNaN(n)) return "—";
-  return `${n >= 0 ? "+" : ""}${n.toFixed(digits)}%`;
+type NavRange = "1M" | "6M" | "1Y" | "3Y" | "5Y" | "All";
+
+const NAV_RANGES: NavRange[] = ["1M", "6M", "1Y", "3Y", "5Y", "All"];
+
+const GREEN = "hsl(160 50% 38%)";
+const RED = "hsl(0 65% 50%)";
+const HAIRLINE = "hsl(var(--hairline))";
+
+const TXN_LABEL: Record<string, string> = {
+  BUY: "Purchase",
+  SELL: "Redemption",
+  SWITCH_IN: "Switch in",
+  SWITCH_OUT: "Switch out",
+  DIVIDEND_REINVEST: "Dividend reinvest",
+};
+
+function labelTxn(type: string): string {
+  return TXN_LABEL[type] ?? type.replace(/_/g, " ");
 }
 
-function fmtNav(n: number | null | undefined): string {
-  if (n == null || Number.isNaN(n)) return "—";
-  return `₹ ${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
-}
-
-function fmtAlloc(n: number | null | undefined): string {
-  if (n == null || Number.isNaN(n)) return "—";
-  return `${n.toFixed(1)}%`;
-}
-
-function fmtDate(iso: string | null | undefined): string {
-  if (!iso) return "—";
+function parseNavDate(d: string): Date {
   try {
-    const d = new Date(iso);
-    return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+    return parseISO(d);
   } catch {
-    return iso;
+    return new Date(d);
   }
 }
 
-/** Return figures only — compact, no background tint on cards. */
-function returnColorClass(raw: number | null | undefined): string {
-  if (raw == null || Number.isNaN(raw)) return "text-foreground";
-  if (raw >= 0) return "text-[hsl(var(--wealth-green))]";
-  return "text-destructive";
+function filterNavSeries(points: MfHoldingNavPoint[], range: NavRange): MfHoldingNavPoint[] {
+  if (points.length === 0) return [];
+  if (range === "All") return points;
+  const last = parseNavDate(points[points.length - 1].nav_date);
+  let cutoff: Date;
+  if (range === "1M") cutoff = subMonths(last, 1);
+  else if (range === "6M") cutoff = subMonths(last, 6);
+  else cutoff = subYears(last, range === "1Y" ? 1 : range === "3Y" ? 3 : 5);
+  return points.filter((p) => parseNavDate(p.nav_date) >= cutoff);
 }
 
-function NavLineChart({ points }: { points: MfNavChartPoint[] }) {
-  const uid = useId().replace(/:/g, "");
-  if (points.length < 2) {
-    return (
-      <div className="flex h-28 items-center justify-center rounded-xl border border-dashed border-border px-3 text-center">
-        <p className="text-xs text-muted-foreground">
-          Not enough NAV history to draw performance. Run NAV sync for this scheme.
-        </p>
-      </div>
-    );
-  }
-  const vals = points.map((p) => p.nav);
-  const min = Math.min(...vals);
-  const max = Math.max(...vals);
-  const span = max === min ? 1 : max - min;
-  const up = vals[vals.length - 1] >= vals[0];
-  const stroke = up ? "hsl(var(--wealth-green))" : "hsl(var(--destructive))";
-  const fillStop = up ? "hsl(var(--wealth-green))" : "hsl(var(--destructive))";
-  const w = 320;
-  const h = 112;
-  const pad = 8;
-  const innerW = w - pad * 2;
-  const innerH = h - pad * 2;
-  const coords = points.map((p, i) => {
-    const x = pad + (i / (points.length - 1)) * innerW;
-    const y = pad + innerH - ((p.nav - min) / span) * innerH;
-    return `${x},${y}`;
-  });
-  const fillId = `navFill-${uid}`;
-  return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="h-28 w-full" preserveAspectRatio="none" aria-hidden>
-      <defs>
-        <linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={fillStop} stopOpacity="0.35" />
-          <stop offset="100%" stopColor={fillStop} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <polyline
-        fill="none"
-        stroke={stroke}
-        strokeWidth="2.5"
-        strokeLinejoin="round"
-        strokeLinecap="round"
-        points={coords.join(" ")}
-      />
-      <polyline
-        fill={`url(#${fillId})`}
-        stroke="none"
-        points={`${pad},${h - pad} ${coords.join(" ")} ${w - pad},${h - pad}`}
-      />
-    </svg>
-  );
+function downsampleChart(points: { nav_date: string; nav: number }[], maxPts = 380): typeof points {
+  if (points.length <= maxPts) return points;
+  const step = Math.ceil(points.length / maxPts);
+  const out: typeof points = [];
+  for (let i = 0; i < points.length; i += step) out.push(points[i]!);
+  const last = points[points.length - 1]!;
+  if (out[out.length - 1]?.nav_date !== last.nav_date) out.push(last);
+  return out;
 }
 
-function MetricCard({
+function MetricTile({
   label,
-  raw,
+  value,
   sub,
 }: {
   label: string;
-  raw: number | null | undefined;
-  sub?: string;
+  value: string;
+  sub?: string | null;
 }) {
-  const display = fmtPct(raw);
-  const tone = returnColorClass(raw);
   return (
-    <div className="rounded-xl border border-border bg-card p-3.5">
-      <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
-      <p className={`mt-1.5 text-lg font-semibold tabular-nums tracking-tight ${tone}`}>{display}</p>
-      {sub && <p className="mt-0.5 text-[10px] text-muted-foreground">{sub}</p>}
+    <div className="rounded-xl border border-border/60 bg-muted/25 px-3 py-2.5">
+      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="mt-1 text-sm font-semibold tabular-nums text-foreground">{value}</p>
+      {sub ? <p className="mt-0.5 text-[10px] text-muted-foreground">{sub}</p> : null}
     </div>
   );
 }
 
-const MfFundDetail = () => {
-  const { fundId } = useParams<{ fundId: string }>();
-  const navigate = useNavigate();
-  const [data, setData] = useState<MfFundInvestorDetailResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+function NavReturnTile({ label, pct }: { label: string; pct: number | null | undefined }) {
+  const missing = pct == null || Number.isNaN(pct);
+  const formatted = missing ? "—" : `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
+  const color = missing
+    ? "text-muted-foreground"
+    : pct! >= 0
+      ? "text-emerald-700 dark:text-emerald-400"
+      : "text-red-700 dark:text-red-400";
+  return (
+    <div className="rounded-xl border border-border/60 bg-muted/20 px-2.5 py-2.5 text-center">
+      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className={cn("mt-1 text-[15px] font-semibold tabular-nums leading-tight", color)}>{formatted}</p>
+    </div>
+  );
+}
 
-  useEffect(() => {
-    if (!fundId) {
-      setError("Missing fund id");
+export default function MfFundDetail() {
+  const { schemeCode: schemeCodeParam } = useParams<{ schemeCode: string }>();
+  const navigate = useNavigate();
+  const schemeCode = schemeCodeParam ? decodeURIComponent(schemeCodeParam) : "";
+
+  const [range, setRange] = useState<NavRange>("3Y");
+  const [data, setData] = useState<MfHoldingDetailResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!schemeCode.trim()) {
+      setError("Missing fund identifier.");
       setLoading(false);
       return;
     }
-    let cancelled = false;
     setLoading(true);
     setError(null);
-    getMfFundInvestorDetail(fundId)
-      .then((res) => {
-        if (!cancelled) setData(res);
-      })
-      .catch((e: unknown) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : "Could not load fund");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [fundId]);
+    try {
+      const res = await getMfHoldingDetail(schemeCode);
+      setData(res);
+    } catch (e) {
+      setData(null);
+      setError(e instanceof Error ? e.message : "Could not load fund details.");
+    } finally {
+      setLoading(false);
+    }
+  }, [schemeCode]);
 
-  const nav = data?.returns_from_nav;
-  const metaR = data?.returns_from_metadata;
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  useLayoutEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, [schemeCode]);
+
+  useLayoutEffect(() => {
+    if (loading) return;
+    const id = window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [loading, schemeCode]);
+
+  const chartSeries = useMemo(() => {
+    if (!data?.nav_history?.length) return [];
+    const sliced = filterNavSeries(data.nav_history, range);
+    const sampled = downsampleChart(sliced);
+    return sampled.map((p) => ({
+      t: p.nav_date,
+      nav: p.nav,
+      label: format(parseNavDate(p.nav_date), "MMM yyyy"),
+    }));
+  }, [data?.nav_history, range]);
+
+  const chartColor = useMemo(() => {
+    if (chartSeries.length < 2) return GREEN;
+    return chartSeries[chartSeries.length - 1].nav >= chartSeries[0].nav ? GREEN : RED;
+  }, [chartSeries]);
+
+  const latestNavLabel =
+    data?.latest_nav != null && data.latest_nav_date
+      ? `${formatInrPaisa(data.latest_nav)} · ${format(parseNavDate(data.latest_nav_date), "dd MMM yyyy")}`
+      : null;
+
+  const subtitleParts = [data?.category, data?.plan_type, data?.option_type].filter(Boolean);
+
+  const hasPosition = data?.position != null;
+  const hasTransactions = (data?.transactions?.length ?? 0) > 0;
 
   return (
-    <div className="mobile-container min-h-screen bg-background pb-[calc(3.5rem+env(safe-area-inset-bottom,8px)+12px)]">
-      <div className="flex items-center gap-3 px-5 pb-3 pt-12">
-        <button
-          type="button"
-          onClick={() => navigate(-1)}
-          className="rounded-full bg-secondary p-1.5 transition-colors hover:bg-muted"
-          aria-label="Back"
-        >
-          <ArrowLeft className="h-4 w-4 text-foreground" />
-        </button>
-        <div className="min-w-0 flex-1">
-          <h1 className="line-clamp-2 text-lg font-bold leading-snug text-foreground">
-            {data?.scheme_name ?? "Fund details"}
-          </h1>
-          {data && (
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">
-              {data.amc_name} · {data.sub_category ?? data.category}
+    <div className="mobile-container flex min-h-screen flex-col bg-background">
+      <header className="sticky top-0 z-10 border-b border-border/40 bg-background/95 px-[14px] pb-3 pt-12 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        <div className="flex items-start gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="mt-0.5 h-9 w-9 shrink-0"
+            onClick={() => navigate(-1)}
+            aria-label="Back"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-semibold uppercase tracking-[1.4px] text-muted-foreground">
+              Mutual fund
             </p>
-          )}
+            <h1 className="text-[17px] font-semibold leading-snug text-foreground">
+              {loading ? "Loading…" : data?.scheme_name ?? schemeCode}
+            </h1>
+            {(data?.amc_name || subtitleParts.length > 0) && (
+              <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
+                {[data?.amc_name, subtitleParts.join(" · ")].filter(Boolean).join(" · ")}
+              </p>
+            )}
+          </div>
         </div>
-      </div>
+      </header>
 
-      <div className="space-y-5 px-5 pb-8">
+      <main className="flex-1 space-y-3 px-[14px] pb-28 pt-4">
         {loading && (
-          <div className="flex justify-center py-16">
-            <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground" />
+          <div className="space-y-3 animate-pulse">
+            <div className="h-[240px] rounded-xl bg-muted" />
+            <div className="h-24 rounded-xl bg-muted" />
+            <div className="h-28 rounded-xl bg-muted" />
           </div>
         )}
 
-        {error && !loading && (
-          <div className="rounded-xl border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">{error}</div>
+        {!loading && error && (
+          <Card className="border-destructive/30 bg-destructive/5">
+            <CardContent className="p-4">
+              <p className="text-sm text-foreground">{error}</p>
+              <Button variant="secondary" size="sm" className="mt-3" type="button" onClick={() => void load()}>
+                Try again
+              </Button>
+            </CardContent>
+          </Card>
         )}
 
         {!loading && data && (
           <>
-            <div className="flex flex-wrap gap-2">
-              {data.risk_rating_sebi && (
-                <span className="rounded-full border border-border px-2.5 py-1 text-[10px] font-medium text-muted-foreground">
-                  {data.risk_rating_sebi}
-                </span>
-              )}
-              <span className="rounded-full border border-border px-2.5 py-1 text-[10px] font-medium text-foreground">
-                {data.plan_type} · {data.option_type}
-              </span>
-              {data.isin && (
-                <span className="rounded-full border border-border px-2.5 py-1 text-[10px] text-muted-foreground">
-                  <span className="text-muted-foreground/80">ISIN</span>{" "}
-                  <span className="font-mono text-foreground/90">{data.isin}</span>
-                </span>
-              )}
-            </div>
-
-            <div className="overflow-hidden rounded-2xl border border-border bg-card">
-              <div className="flex items-center gap-3 border-b border-border px-4 py-3">
-                <TrendingUp className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={2} />
+            {/* NAV chart */}
+            <Card className="overflow-hidden border-border/60 shadow-sm">
+              <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 border-b border-border/40 bg-muted/20 p-4 pb-3">
                 <div>
-                  <p className="text-xs font-semibold text-foreground">NAV trend</p>
-                  <p className="text-[10px] text-muted-foreground">Based on stored daily NAV (approx. last 2 years)</p>
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <LineChartIcon className="h-4 w-4 shrink-0" />
+                    <CardTitle className="text-sm font-semibold text-foreground">NAV / unit</CardTitle>
+                  </div>
+                  <CardDescription className="mt-1 text-[11px] leading-relaxed">
+                    Daily values from <span className="font-medium text-foreground/90">mf_nav_history</span>
+                    {data.scheme_code ? ` · scheme ${data.scheme_code}` : ""}
+                  </CardDescription>
+                  {latestNavLabel ? (
+                    <p className="mt-1.5 text-[11px] text-muted-foreground">{latestNavLabel}</p>
+                  ) : null}
                 </div>
-              </div>
-              <div className="px-2 pt-2">
-                <NavLineChart points={data.nav_chart} />
-              </div>
-              <div className="flex items-center justify-between px-4 pb-3 pt-1">
-                <span className="text-[10px] text-muted-foreground">
-                  {nav?.nav_row_count?.toLocaleString("en-IN") ?? 0} NAV rows
-                </span>
-                <span className="text-[10px] text-muted-foreground">
-                  As of {fmtDate(nav?.latest_nav_date ?? undefined)}
-                </span>
-              </div>
-            </div>
-
-            <div>
-              <h2 className="mb-2 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                Returns from NAV
-              </h2>
-              <p className="mb-3 text-[11px] leading-relaxed text-muted-foreground">
-                Rolling windows from your latest published NAV. Multi-year figures use CAGR where noted; 1Y is absolute
-                point-to-point.
-              </p>
-              <div className="grid grid-cols-2 gap-2.5">
-                <MetricCard label="1Y" raw={nav?.return_1y_abs_pct} sub="Absolute" />
-                <MetricCard label="3Y CAGR" raw={nav?.return_3y_cagr_pct} />
-                <MetricCard label="5Y CAGR" raw={nav?.return_5y_cagr_pct} />
-                <MetricCard label="10Y CAGR" raw={nav?.return_10y_cagr_pct} />
-                <MetricCard label="Since inception" raw={nav?.return_inception_cagr_pct} sub="CAGR" />
-                <MetricCard label="Inception (total)" raw={nav?.return_inception_abs_pct} sub="Point-to-point" />
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-border bg-card p-4">
-              <div className="mb-2 flex items-center gap-2">
-                <Info className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={2} />
-                <p className="text-xs font-semibold text-foreground">Catalog returns (reference)</p>
-              </div>
-              <p className="mb-3 text-[11px] leading-relaxed text-muted-foreground">
-                Headline numbers from the fund master table — useful when NAV history is still backfilling.
-              </p>
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                <CatalogRet label="1Y" raw={metaR?.returns_1y_pct} />
-                <CatalogRet label="3Y" raw={metaR?.returns_3y_pct} />
-                <CatalogRet label="5Y" raw={metaR?.returns_5y_pct} />
-                <CatalogRet label="10Y" raw={metaR?.returns_10y_pct} />
-              </div>
-            </div>
-
-            <div>
-              <h2 className="mb-2 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                Fund snapshot
-              </h2>
-              <div className="space-y-2 rounded-xl border border-border bg-card p-4 text-sm">
-                <Row label="Latest NAV" value={fmtNav(nav?.latest_nav ?? undefined)} />
-                <Row label="Scheme code" value={data.scheme_code} />
-                <Row label="First NAV in DB" value={fmtDate(nav?.first_nav_date ?? undefined)} />
-                <Row
-                  label="Expense (direct / regular)"
-                  value={
-                    data.direct_plan_fees != null || data.regular_plan_fees != null
-                      ? `${data.direct_plan_fees != null ? `${data.direct_plan_fees}%` : "—"} / ${
-                          data.regular_plan_fees != null ? `${data.regular_plan_fees}%` : "—"
-                        }`
-                      : "—"
-                  }
-                />
-                <Row
-                  label="Exit load"
-                  value={
-                    data.exit_load_percent != null
-                      ? `${data.exit_load_percent}%${data.exit_load_months != null ? ` · ${data.exit_load_months} mo` : ""}`
-                      : "—"
-                  }
-                />
-                <Row
-                  label="Equity mix (L/M/S)"
-                  value={
-                    [data.large_cap_equity_pct, data.mid_cap_equity_pct, data.small_cap_equity_pct].some((x) => x != null)
-                      ? `${fmtAlloc(data.large_cap_equity_pct)} / ${fmtAlloc(data.mid_cap_equity_pct)} / ${fmtAlloc(
-                          data.small_cap_equity_pct,
-                        )}`
-                      : "—"
-                  }
-                />
-                <Row
-                  label="Debt / Others"
-                  value={
-                    data.debt_pct != null || data.others_pct != null
-                      ? `${fmtAlloc(data.debt_pct)} / ${fmtAlloc(data.others_pct)}`
-                      : "—"
-                  }
-                />
-              </div>
-            </div>
-
-            {data.disclaimers.length > 0 && (
-              <div className="rounded-xl border border-border bg-card p-3 text-[11px] leading-relaxed text-muted-foreground">
-                <p className="mb-1 font-medium text-foreground">Notes</p>
-                <ul className="list-inside list-disc space-y-1">
-                  {data.disclaimers.map((d) => (
-                    <li key={d}>{d}</li>
+                <div className="flex flex-wrap gap-1">
+                  {NAV_RANGES.map((r) => (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => setRange(r)}
+                      className={cn(
+                        "rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors",
+                        range === r
+                          ? "bg-foreground text-background"
+                          : "bg-muted/80 text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      {r}
+                    </button>
                   ))}
-                </ul>
+                </div>
+              </CardHeader>
+              <CardContent className="p-4 pt-5">
+                {chartSeries.length === 0 ? (
+                  <p className="py-8 text-center text-[13px] text-muted-foreground">
+                    No NAV rows in <span className="font-mono text-xs">mf_nav_history</span> for this scheme yet.
+                    Run NAV sync on the server to populate the chart.
+                  </p>
+                ) : (
+                  <>
+                    <div className="h-[220px] w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={chartSeries} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                          <defs>
+                            <linearGradient id="navFillDiscover" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor={chartColor} stopOpacity={0.35} />
+                              <stop offset="100%" stopColor={chartColor} stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke={HAIRLINE} vertical={false} />
+                          <XAxis
+                            dataKey="label"
+                            tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                            tickLine={false}
+                            axisLine={{ stroke: HAIRLINE }}
+                            interval="preserveStartEnd"
+                            minTickGap={28}
+                          />
+                          <YAxis
+                            domain={["auto", "auto"]}
+                            tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                            tickLine={false}
+                            axisLine={false}
+                            width={44}
+                            tickFormatter={(v) => Number(v).toFixed(2)}
+                          />
+                          <Tooltip
+                            contentStyle={{
+                              borderRadius: 10,
+                              border: "1px solid hsl(var(--border))",
+                              fontSize: 12,
+                            }}
+                            formatter={(value: number) => [formatInrPaisa(value), "NAV"]}
+                            labelFormatter={(_, payload) =>
+                              payload?.[0]?.payload?.t
+                                ? format(parseNavDate(String(payload[0].payload.t)), "dd MMM yyyy")
+                                : ""
+                            }
+                          />
+                          <Area
+                            type="monotone"
+                            dataKey="nav"
+                            stroke={chartColor}
+                            strokeWidth={2}
+                            fill="url(#navFillDiscover)"
+                            dot={false}
+                            activeDot={{ r: 4, strokeWidth: 0, fill: chartColor }}
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                    {data.nav_history_truncated ? (
+                      <p className="mt-2 text-[10px] text-muted-foreground">
+                        Series capped for API payload; extend range via query params if needed.
+                      </p>
+                    ) : null}
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Trailing NAV returns */}
+            <Card className="overflow-hidden border-border/60 shadow-sm">
+              <CardHeader className="space-y-1 border-b border-border/40 bg-muted/20 p-4 pb-3">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <TrendingUp className="h-4 w-4 shrink-0" />
+                  <CardTitle className="text-sm font-semibold text-foreground">Trailing NAV returns</CardTitle>
+                </div>
+                <CardDescription className="text-[11px] leading-relaxed">
+                  Total return vs historical NAV in <span className="font-medium">mf_nav_history</span>
+                  {data.nav_returns_as_of
+                    ? ` · end ${format(parseNavDate(data.nav_returns_as_of), "dd MMM yyyy")}`
+                    : ""}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-4">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+                  <NavReturnTile label="YTD" pct={data.nav_return_ytd_pct} />
+                  <NavReturnTile label="6M" pct={data.nav_return_6m_pct} />
+                  <NavReturnTile label="1Y" pct={data.nav_return_1y_pct} />
+                  <NavReturnTile label="3Y" pct={data.nav_return_3y_pct} />
+                  <NavReturnTile label="5Y" pct={data.nav_return_5y_pct} />
+                </div>
+                <p className="mt-3 text-[10px] leading-snug text-muted-foreground">
+                  YTD uses the first NAV on or after 1 Jan; other horizons compare to the latest NAV on or before the
+                  rolling date. Insufficient history shows as —.
+                </p>
+              </CardContent>
+            </Card>
+
+            {data.notes.length > 0 && (
+              <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2.5 text-[12px] text-amber-950 dark:text-amber-100">
+                {data.notes.map((n, i) => (
+                  <p key={`${i}-${n.slice(0, 24)}`}>{n}</p>
+                ))}
               </div>
             )}
 
-            <p className="text-[10px] leading-relaxed text-muted-foreground/80">
-              Past performance does not guarantee future results. NAV-based returns depend on data coverage and may differ
-              from AMC-published factsheets.
+            {/* Fund profile */}
+            <Card className="overflow-hidden border-border/60 shadow-sm">
+              <CardHeader className="space-y-1 border-b border-border/40 bg-muted/20 p-4 pb-3">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Landmark className="h-4 w-4 shrink-0" />
+                  <CardTitle className="text-sm font-semibold text-foreground">Fund profile</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3 p-4">
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="flex gap-2 rounded-lg bg-muted/30 px-2.5 py-2">
+                    <PieChart className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <div className="min-w-0">
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">ISIN</p>
+                      <p className="truncate font-mono text-[12px] font-medium">{data.isin ?? "—"}</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 rounded-lg bg-muted/30 px-2.5 py-2">
+                    <Building2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <div className="min-w-0">
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Scheme code</p>
+                      <p className="truncate font-mono text-[12px] font-medium">{data.scheme_code}</p>
+                    </div>
+                  </div>
+                </div>
+                {data.sub_category ? (
+                  <p className="text-[12px] leading-relaxed text-muted-foreground">
+                    <span className="font-medium text-foreground">{data.category ?? "Category"}</span>
+                    {" · "}
+                    {data.sub_category}
+                  </p>
+                ) : null}
+              </CardContent>
+            </Card>
+
+            {/* Your holding — only if user has a position */}
+            {hasPosition && (
+              <Card className="overflow-hidden border-border/60 shadow-sm">
+                <CardHeader className="space-y-1 border-b border-border/40 bg-muted/20 p-4 pb-3">
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Wallet className="h-4 w-4 shrink-0" />
+                    <CardTitle className="text-sm font-semibold text-foreground">Your holding</CardTitle>
+                  </div>
+                  <p className="text-[11px] font-normal text-muted-foreground">
+                    Aggregated across folios in your primary portfolio (CAMS-linked positions).
+                  </p>
+                </CardHeader>
+                <CardContent className="p-4">
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    <MetricTile
+                      label="Current value"
+                      value={
+                        data.position!.current_value != null
+                          ? formatInrPaisa(data.position!.current_value)
+                          : "—"
+                      }
+                    />
+                    <MetricTile
+                      label="Invested"
+                      value={
+                        data.position!.invested_amount != null
+                          ? formatInrPaisa(data.position!.invested_amount)
+                          : "—"
+                      }
+                    />
+                    <MetricTile
+                      label="Unrealised gain"
+                      value={
+                        data.position!.unrealised_gain != null
+                          ? `${data.position!.unrealised_gain >= 0 ? "+" : "−"}${formatInrCompact(Math.abs(data.position!.unrealised_gain))}`
+                          : "—"
+                      }
+                      sub={
+                        data.position!.unrealised_gain_pct != null
+                          ? `${data.position!.unrealised_gain_pct >= 0 ? "+" : ""}${data.position!.unrealised_gain_pct.toFixed(2)}%`
+                          : null
+                      }
+                    />
+                    <MetricTile
+                      label="Units"
+                      value={
+                        data.position!.units != null ? data.position!.units.toLocaleString("en-IN") : "—"
+                      }
+                    />
+                    <MetricTile
+                      label="Avg cost / unit"
+                      value={
+                        data.position!.average_cost != null ? formatInrPaisa(data.position!.average_cost) : "—"
+                      }
+                    />
+                    <MetricTile
+                      label="Latest NAV"
+                      value={
+                        data.position!.current_price != null ? formatInrPaisa(data.position!.current_price) : "—"
+                      }
+                      sub={latestNavLabel ? `Quote: ${latestNavLabel}` : null}
+                    />
+                    <MetricTile
+                      label="Folios"
+                      value={String(data.position!.folios ?? 0)}
+                      sub={
+                        data.position!.allocation_percentage != null
+                          ? `${data.position!.allocation_percentage.toFixed(1)}% of portfolio`
+                          : null
+                      }
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Transactions — only if user has transactions */}
+            {hasTransactions && (
+              <Card className="overflow-hidden border-border/60 shadow-sm">
+                <CardHeader className="space-y-1 border-b border-border/40 bg-muted/20 p-4 pb-3">
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <ListOrdered className="h-4 w-4 shrink-0" />
+                    <CardTitle className="text-sm font-semibold text-foreground">Transactions</CardTitle>
+                  </div>
+                  <p className="text-[11px] font-normal text-muted-foreground">
+                    Ledger rows stored from your CAS imports and normalisation pipeline.
+                  </p>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[560px] text-left text-[12px]">
+                      <thead>
+                        <tr className="border-b border-border/60 bg-muted/30 text-[10px] uppercase tracking-wide text-muted-foreground">
+                          <th className="px-3 py-2 font-medium">Date</th>
+                          <th className="px-3 py-2 font-medium">Type</th>
+                          <th className="px-3 py-2 text-right font-medium">Units</th>
+                          <th className="px-3 py-2 text-right font-medium">Cum. Units</th>
+                          <th className="px-3 py-2 text-right font-medium">NAV</th>
+                          <th className="px-3 py-2 text-right font-medium">Amount</th>
+                          <th className="px-3 py-2 text-right font-medium">Stamp Duty</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(() => {
+                          const sorted = [...data.transactions].sort(
+                            (a, b) =>
+                              parseNavDate(a.transaction_date).getTime() -
+                              parseNavDate(b.transaction_date).getTime(),
+                          );
+                          let cumUnits = 0;
+                          const withCum = sorted.map((tx) => {
+                            cumUnits += tx.units;
+                            return { ...tx, cumUnits };
+                          });
+                          return withCum.reverse().map((tx) => (
+                            <tr
+                              key={tx.id}
+                              className="border-b border-border/40 last:border-0 hover:bg-muted/20"
+                            >
+                              <td className="whitespace-nowrap px-3 py-2.5 tabular-nums text-foreground">
+                                {format(parseNavDate(tx.transaction_date), "dd MMM yyyy")}
+                              </td>
+                              <td className="px-3 py-2.5">
+                                <span className="font-medium text-foreground">{labelTxn(tx.transaction_type)}</span>
+                              </td>
+                              <td className="px-3 py-2.5 text-right tabular-nums">
+                                {tx.units.toLocaleString("en-IN", { maximumFractionDigits: 4 })}
+                              </td>
+                              <td className="px-3 py-2.5 text-right tabular-nums font-medium text-foreground/80">
+                                {tx.cumUnits.toLocaleString("en-IN", { maximumFractionDigits: 3 })}
+                              </td>
+                              <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">
+                                {formatInrPaisa(tx.nav)}
+                              </td>
+                              <td
+                                className={cn(
+                                  "px-3 py-2.5 text-right font-semibold tabular-nums",
+                                  tx.is_inflow ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400",
+                                )}
+                              >
+                                {tx.signed_amount >= 0 ? "+" : "−"}
+                                {formatInrCompact(Math.abs(tx.signed_amount))}
+                              </td>
+                              <td
+                                className={cn(
+                                  "px-3 py-2.5 text-right tabular-nums",
+                                  tx.stamp_duty != null && tx.stamp_duty > 0
+                                    ? "font-medium text-red-700 dark:text-red-400"
+                                    : "text-muted-foreground",
+                                )}
+                              >
+                                {tx.stamp_duty != null && tx.stamp_duty > 0
+                                  ? `−${formatInrPaisa(tx.stamp_duty)}`
+                                  : "—"}
+                              </td>
+                            </tr>
+                          ));
+                        })()}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            <p className="pb-2 text-center text-[10px] text-muted-foreground">
+              NAV chart and trailing returns use <span className="font-mono">mf_nav_history</span>.
+              {(hasPosition || hasTransactions) && " Holdings and transactions reflect CAS ingest and normalisation."}
             </p>
           </>
         )}
-      </div>
+      </main>
 
       <BottomNav />
     </div>
   );
-};
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-start justify-between gap-3 border-b border-border/50 py-2 last:border-0">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="max-w-[60%] text-right font-medium text-foreground">{value}</span>
-    </div>
-  );
 }
-
-function CatalogRet({ label, raw }: { label: string; raw: number | null | undefined }) {
-  return (
-    <div>
-      <p className="text-[10px] text-muted-foreground">{label}</p>
-      <p className={`mt-0.5 font-semibold tabular-nums tracking-tight ${returnColorClass(raw)}`}>{fmtPct(raw)}</p>
-    </div>
-  );
-}
-
-export default MfFundDetail;

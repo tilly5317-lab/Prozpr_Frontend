@@ -8,7 +8,7 @@ import type { MfFundMetadataListItem } from "@/lib/api";
 
 /**
  * Full-screen MF universe browser (replaces the old “Explore all” bottom sheet).
- * Selecting a row opens `/discovery/mf/:fundId` with NAV-based detail.
+ * Selecting a row opens `/discovery/mf/:schemeCode` with NAV-based detail.
  */
 const MfAllFunds = () => {
   const navigate = useNavigate();
@@ -31,7 +31,7 @@ const MfAllFunds = () => {
   }, [debouncedQuery]);
 
   const onSelect = (fund: MfFundMetadataListItem) => {
-    navigate(`/discovery/mf/${fund.id}`);
+    navigate(`/discovery/mf/${fund.scheme_code}`);
   };
 
   return (
