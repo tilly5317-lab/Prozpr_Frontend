@@ -340,7 +340,7 @@ export function DiscoverScreen({
   const showSearchResults = debouncedQuery.length > 0;
 
   const handleSelectMfFund = (fund: MfFundMetadataListItem) => {
-    navigate(`/discovery/mf/${fund.id}`);
+    navigate(`/discovery/mf/${fund.scheme_code}`);
   };
 
   useEffect(() => {

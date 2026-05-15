@@ -60,7 +60,7 @@ const App = () => (
             <Route path="/notifications" element={<Notifications />} />
             <Route path="/invest" element={<Invest />} />
             <Route path="/execute" element={<Execute />} />
-            <Route path="/discovery/mf/:fundId" element={<MfFundDetail />} />
+            <Route path="/discovery/mf/:schemeCode" element={<MfFundDetail />} />
             <Route path="/discovery/mf" element={<MfAllFunds />} />
             <Route path="/discovery" element={<Discovery />} />
             <Route path="/profile/complete" element={<CompleteProfile />} />

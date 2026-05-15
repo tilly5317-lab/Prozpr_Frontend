@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { format, parseISO, subYears } from "date-fns";
+import { format, parseISO, subMonths, subYears } from "date-fns";
 import {
   ArrowLeft,
   Building2,
@@ -31,11 +31,12 @@ import {
 } from "@/lib/api";
 import { cn, formatInrCompact, formatInrPaisa } from "@/lib/utils";
 
-type NavRange = "1Y" | "3Y" | "5Y" | "All";
+type NavRange = "1M" | "6M" | "1Y" | "3Y" | "5Y" | "All";
 
-const NAV_RANGES: NavRange[] = ["1Y", "3Y", "5Y", "All"];
+const NAV_RANGES: NavRange[] = ["1M", "6M", "1Y", "3Y", "5Y", "All"];
 
 const GREEN = "hsl(160 50% 38%)";
+const RED = "hsl(0 65% 50%)";
 const HAIRLINE = "hsl(var(--hairline))";
 
 const TXN_LABEL: Record<string, string> = {
@@ -71,8 +72,10 @@ function filterNavSeries(points: MfHoldingNavPoint[], range: NavRange): MfHoldin
   if (points.length === 0) return [];
   if (range === "All") return points;
   const last = parseNavDate(points[points.length - 1].nav_date);
-  const years = range === "1Y" ? 1 : range === "3Y" ? 3 : 5;
-  const cutoff = subYears(last, years);
+  let cutoff: Date;
+  if (range === "1M") cutoff = subMonths(last, 1);
+  else if (range === "6M") cutoff = subMonths(last, 6);
+  else cutoff = subYears(last, range === "1Y" ? 1 : range === "3Y" ? 3 : 5);
   return points.filter((p) => parseNavDate(p.nav_date) >= cutoff);
 }
 
@@ -178,6 +181,11 @@ export default function PortfolioFundDetail() {
       label: format(parseNavDate(p.nav_date), "MMM yyyy"),
     }));
   }, [data?.nav_history, range]);
+
+  const chartColor = useMemo(() => {
+    if (chartSeries.length < 2) return GREEN;
+    return chartSeries[chartSeries.length - 1].nav >= chartSeries[0].nav ? GREEN : RED;
+  }, [chartSeries]);
 
   const latestNavLabel =
     data?.latest_nav != null && data.latest_nav_date
@@ -286,8 +294,8 @@ export default function PortfolioFundDetail() {
                         <AreaChart data={chartSeries} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
                           <defs>
                             <linearGradient id="navFillFund" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor={GREEN} stopOpacity={0.35} />
-                              <stop offset="100%" stopColor={GREEN} stopOpacity={0} />
+                              <stop offset="0%" stopColor={chartColor} stopOpacity={0.35} />
+                              <stop offset="100%" stopColor={chartColor} stopOpacity={0} />
                             </linearGradient>
                           </defs>
                           <CartesianGrid strokeDasharray="3 3" stroke={HAIRLINE} vertical={false} />
@@ -323,11 +331,11 @@ export default function PortfolioFundDetail() {
                           <Area
                             type="monotone"
                             dataKey="nav"
-                            stroke={GREEN}
+                            stroke={chartColor}
                             strokeWidth={2}
                             fill="url(#navFillFund)"
                             dot={false}
-                            activeDot={{ r: 4, strokeWidth: 0, fill: GREEN }}
+                            activeDot={{ r: 4, strokeWidth: 0, fill: chartColor }}
                           />
                         </AreaChart>
                       </ResponsiveContainer>
