@@ -29,13 +29,9 @@ const countryCodes = [
 const DEFAULT_PASSWORD = "asktilly2026";
 const MAX_PDF_BYTES = 20 * 1024 * 1024;
 
-type Step = "phone" | "otp" | "cams";
+type Step = "phone" | "otp" | "pin" | "cams";
 
-<<<<<<< HEAD
 const WelcomeScreen = ({ onNext: _onNext }: WelcomeScreenProps) => {
-=======
-const WelcomeScreen = ({ onNext }: WelcomeScreenProps) => {
->>>>>>> fecc46607558f30ff989d45ea6b3ce6b29029554
   const navigate = useNavigate();
   const { refresh } = useAuth();
   const [step, setStep] = useState<Step>("phone");
@@ -47,6 +43,9 @@ const WelcomeScreen = ({ onNext }: WelcomeScreenProps) => {
   const [otp, setOtp] = useState("");
   const [otpError, setOtpError] = useState("");
 
+  const [pin, setPin] = useState("");
+  const [pinError, setPinError] = useState("");
+
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [camsFile, setCamsFile] = useState<File | null>(null);
   const [camsPickError, setCamsPickError] = useState("");
@@ -54,9 +53,46 @@ const WelcomeScreen = ({ onNext }: WelcomeScreenProps) => {
 
   const isValid = phone.replace(/\s/g, "").length >= 7;
 
-  const handlePhoneSubmit = () => {
+  const handlePhoneSubmit = async () => {
     if (!isValid || loading) return;
+    setLoading(true);
+    const digits = phone.replace(/\s/g, "");
+
+    // Try login to check if user already exists
+    try {
+      await login({
+        country_code: countryCode.code,
+        mobile: digits,
+        password: DEFAULT_PASSWORD,
+      });
+      // User exists — ask for PIN and skip onboarding
+      setLoading(false);
+      setStep("pin");
+      return;
+    } catch {
+      // User doesn't exist — proceed with OTP signup flow
+    }
+
+    setLoading(false);
     setStep("otp");
+  };
+
+  const handlePinSubmit = async () => {
+    if (pin.length < 4) {
+      setPinError("Enter your 4-digit PIN");
+      return;
+    }
+    setPinError("");
+    setLoading(true);
+
+    // PIN can be anything for now — user is already logged in from handlePhoneSubmit
+    await refresh();
+    setLoading(false);
+
+    try {
+      sessionStorage.setItem("onboardingComplete", "true");
+    } catch { /* ignore */ }
+    navigate("/chat");
   };
 
   const handleVerifyOtp = async () => {
@@ -87,9 +123,6 @@ const WelcomeScreen = ({ onNext }: WelcomeScreenProps) => {
     }
     await refresh();
     setLoading(false);
-<<<<<<< HEAD
-    setStep("cams");
-=======
 
     try {
       const me = await getMe();
@@ -103,11 +136,10 @@ const WelcomeScreen = ({ onNext }: WelcomeScreenProps) => {
         return;
       }
     } catch {
-      /* no session or /me failed — continue into discovery modal */
+      /* no session or /me failed — continue to CAMS import */
     }
 
-    setShowModal(true);
->>>>>>> fecc46607558f30ff989d45ea6b3ce6b29029554
+    setStep("cams");
   };
 
   const handleResend = () => {
@@ -229,6 +261,80 @@ const WelcomeScreen = ({ onNext }: WelcomeScreenProps) => {
           }}
           onImportedContinue={() => navigate("/link-accounts")}
         />
+      </div>
+    );
+  }
+
+  /* ─── PIN Screen (existing user) ─── */
+  if (step === "pin") {
+    return (
+      <div className="mobile-container flex flex-col bg-background px-6 pb-6 pt-12">
+        <motion.div
+          initial={{ opacity: 0, x: 40 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.35 }}
+          className="flex-1 flex flex-col"
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setStep("phone");
+              setPin("");
+              setPinError("");
+            }}
+            className="flex items-center gap-1 text-sm text-muted-foreground mb-6 hover:text-foreground transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4" /> Back
+          </button>
+
+          <h1 className="text-xl font-semibold text-foreground mb-2">
+            Welcome back
+          </h1>
+          <p className="text-xs text-muted-foreground mb-1">
+            Enter your 4-digit PIN to continue
+          </p>
+          <p className="text-xs font-semibold text-foreground mb-8">
+            {countryCode.code} {phone}
+          </p>
+
+          <div className="flex justify-center mb-6">
+            <InputOTP maxLength={4} value={pin} onChange={setPin}>
+              <InputOTPGroup>
+                <InputOTPSlot index={0} />
+                <InputOTPSlot index={1} />
+                <InputOTPSlot index={2} />
+                <InputOTPSlot index={3} />
+              </InputOTPGroup>
+            </InputOTP>
+          </div>
+
+          {pinError && (
+            <p className="text-xs text-destructive text-center mb-4">{pinError}</p>
+          )}
+
+          <p className="text-[11px] text-muted-foreground text-center mb-auto">
+            Enter any 4-digit PIN to proceed
+          </p>
+        </motion.div>
+
+        <motion.button
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2, duration: 0.4 }}
+          type="button"
+          onClick={() => void handlePinSubmit()}
+          disabled={pin.length < 4 || loading}
+          className="flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold text-primary-foreground tracking-wide transition-all active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none"
+        >
+          {loading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <>
+              Continue
+              <ArrowRight className="h-4 w-4" />
+            </>
+          )}
+        </motion.button>
       </div>
     );
   }
@@ -421,12 +527,18 @@ const WelcomeScreen = ({ onNext }: WelcomeScreenProps) => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.9, duration: 0.5 }}
         type="button"
-        onClick={handlePhoneSubmit}
+        onClick={() => void handlePhoneSubmit()}
         disabled={!isValid || loading}
         className="flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold text-primary-foreground tracking-wide transition-all active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none"
       >
-        Get Started
-        <ArrowRight className="h-4 w-4" />
+        {loading ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <>
+            Get Started
+            <ArrowRight className="h-4 w-4" />
+          </>
+        )}
       </motion.button>
     </div>
   );
