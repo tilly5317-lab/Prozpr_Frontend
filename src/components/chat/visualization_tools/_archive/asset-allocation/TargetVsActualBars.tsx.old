@@ -1,0 +1,99 @@
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Legend,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
+import type { TargetVsActualBars as Payload } from "../types";
+
+const TARGET_COLOR = "#94a3b8"; // muted slate — the reference
+const ACTUAL_COLOR = "#4F46E5"; // brand indigo — the live value
+
+function driftColor(drift: number): string {
+  const mag = Math.abs(drift);
+  if (mag < 3) return "hsl(142, 71%, 35%)"; // green — close to target
+  if (mag < 7) return "hsl(35, 80%, 38%)"; // amber — drifting
+  return "hsl(0, 72%, 45%)"; // red — far off
+}
+
+function formatDrift(drift: number): string {
+  const sign = drift > 0 ? "+" : drift < 0 ? "" : "";
+  return `${sign}${drift.toFixed(1)}%`;
+}
+
+export function TargetVsActualBars({ payload }: { payload: Payload }) {
+  const data = payload.bars.map((b) => ({
+    asset_class: b.asset_class,
+    Target: b.target_pct,
+    Actual: b.actual_pct,
+    drift: b.drift_pct,
+  }));
+
+  const chartHeight = Math.max(140, data.length * 44);
+
+  return (
+    <div className="rounded-lg border border-border/40 bg-card p-3">
+      <p className="text-[10px] uppercase tracking-[1.5px] mb-3 text-muted-foreground font-medium">
+        {payload.title}
+      </p>
+
+      <div style={{ width: "100%", height: chartHeight }}>
+        <ResponsiveContainer>
+          <BarChart
+            data={data}
+            layout="vertical"
+            margin={{ top: 4, right: 56, left: 4, bottom: 4 }}
+            barGap={2}
+          >
+            <CartesianGrid horizontal={false} stroke="hsl(var(--border))" strokeOpacity={0.4} />
+            <XAxis
+              type="number"
+              domain={[0, 100]}
+              tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }}
+              tickFormatter={(v) => `${v}%`}
+              axisLine={false}
+              tickLine={false}
+            />
+            <YAxis
+              type="category"
+              dataKey="asset_class"
+              width={70}
+              tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+              tickLine={false}
+              axisLine={false}
+            />
+            <Tooltip
+              cursor={{ fill: "rgba(0,0,0,0.04)" }}
+              formatter={(value: number, name) => [`${value.toFixed(1)}%`, name]}
+              contentStyle={{ fontSize: "11px", borderRadius: "6px" }}
+            />
+            <Legend
+              wrapperStyle={{ fontSize: "10px", paddingTop: "4px" }}
+              iconSize={8}
+            />
+            <Bar dataKey="Target" fill={TARGET_COLOR} radius={[0, 3, 3, 0]} barSize={10} />
+            <Bar dataKey="Actual" fill={ACTUAL_COLOR} radius={[0, 3, 3, 0]} barSize={10} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="mt-2 grid grid-cols-1 gap-1">
+        {payload.bars.map((b) => (
+          <div
+            key={b.asset_class}
+            className="flex items-center justify-between text-[10px]"
+          >
+            <span className="text-muted-foreground">{b.asset_class}</span>
+            <span className="tabular-nums font-medium" style={{ color: driftColor(b.drift_pct) }}>
+              {formatDrift(b.drift_pct)} drift
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

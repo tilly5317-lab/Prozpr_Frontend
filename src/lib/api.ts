@@ -358,7 +358,88 @@ export async function listLinkedAccounts(): Promise<{ accounts: LinkAccountInfo[
   return res;
 }
 
-// ── Finvu / AA bucket snapshot (post-consent totals from Finvu analytics API) ──
+// ── CAMS / KFintech Consolidated Account Statement (CAS) PDF upload ──
+// Replaces the Finvu account-aggregator "fetch by linked mobile" flow (paused for licensing).
+export interface CamsPdfImportResponse {
+  import_id: string;
+  status: string; // "NORMALIZED" | "FAILED" | "RECEIVED"
+  cas_file_type: string | null;
+  cas_type: string | null;
+  statement_period_from: string | null;
+  statement_period_to: string | null;
+  folios: number;
+  schemes: number;
+  aa_transactions_parsed: number;
+  mf_transactions_inserted: number;
+  mf_transactions_skipped_duplicate: number;
+  portfolio_allocation_rows: number;
+  total_value_inr: number;
+  normalize_error: string | null;
+  message: string;
+}
+
+/**
+ * Upload a CAMS / KFintech Consolidated Account Statement PDF (password set when the
+ * statement was generated — usually the investor's PAN in capitals). The backend parses
+ * it, stores the holdings/transactions, and refreshes the primary portfolio.
+ */
+export async function uploadCamsStatement(file: File, password: string): Promise<CamsPdfImportResponse> {
+  if (Date.now() < backendOfflineUntil) {
+    throw new BackendOfflineError();
+  }
+  const form = new FormData();
+  form.append("file", file);
+  form.append("password", password);
+
+  // NB: do not set Content-Type — the browser must add the multipart boundary itself.
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const familyMemberId = getActiveFamilyMemberId();
+  if (familyMemberId) headers["X-Family-Member-Id"] = familyMemberId;
+
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 90_000);
+  let res: Response;
+  try {
+    res = await fetch(`${API}/mf-ingest/cams-pdf`, {
+      method: "POST",
+      headers,
+      body: form,
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error("Upload timed out. Please try again.");
+    }
+    backendOfflineUntil = Date.now() + OFFLINE_RETRY_MS;
+    throw new BackendOfflineError("Backend is unreachable");
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+
+  const text = await res.text();
+  if (!res.ok) {
+    let msg: string;
+    try {
+      const body = JSON.parse(text) as { detail?: unknown };
+      msg = typeof body?.detail === "string" ? body.detail : JSON.stringify(body);
+    } catch {
+      msg = text.trim() || `Upload failed (${res.status})`;
+    }
+    if ([502, 503, 504].includes(res.status)) {
+      backendOfflineUntil = Date.now() + OFFLINE_RETRY_MS;
+      throw new BackendOfflineError(msg || "Backend unavailable");
+    }
+    throw new Error(msg || `Upload failed (${res.status})`);
+  }
+  // A successful ingest changes portfolio + linked accounts — drop the cached user context.
+  invalidateUserContextCache();
+  return JSON.parse(text) as CamsPdfImportResponse;
+}
+
+// ── Finvu / AA bucket snapshot — DEPRECATED (account-aggregator flow paused for licensing).
+// Use uploadCamsStatement() instead. Kept only for backwards compatibility.
 export type FinvuBucketName = "Cash" | "Debt" | "Equity" | "Other";
 
 export interface FinvuBucketInput {
@@ -380,6 +461,7 @@ export interface FinvuPortfolioSyncResponse {
   message: string;
 }
 
+/** @deprecated Finvu account-aggregator integration is paused. Use {@link uploadCamsStatement}. */
 export async function syncFinvuPortfolio(payload: FinvuPortfolioSyncRequest): Promise<FinvuPortfolioSyncResponse> {
   return request<FinvuPortfolioSyncResponse>("/portfolio/finvu/sync", {
     method: "POST",
@@ -408,6 +490,7 @@ export interface ChatMessageInfo {
   intent: string | null;
   intent_confidence: number | null;
   intent_reasoning: string | null;
+  chart_payloads: unknown[] | null;
   created_at: string;
 }
 
@@ -759,6 +842,78 @@ export async function getMyPortfolio(): Promise<PortfolioDetail> {
   const portfolio = await request<PortfolioDetail>("/portfolio/");
   setCachedUserContextValue("portfolio", portfolio);
   return portfolio;
+}
+
+/** NAV point for MF holding-detail chart (`mf_nav_history`). */
+export interface MfHoldingNavPoint {
+  nav_date: string;
+  nav: number;
+}
+
+/** User ledger row for one scheme (from `mf_transactions`; CAMS ingest feeds here). */
+export interface MfHoldingTransactionItem {
+  id: string;
+  transaction_date: string;
+  transaction_type: string;
+  folio_number: string;
+  units: number;
+  nav: number;
+  amount: number;
+  stamp_duty: number | null;
+  source_system: string;
+  is_inflow: boolean;
+  signed_amount: number;
+}
+
+/** Aggregated position from `portfolio_holdings` for this scheme. */
+export interface MfHoldingPosition {
+  units: number | null;
+  average_cost: number | null;
+  current_price: number | null;
+  current_value: number | null;
+  allocation_percentage: number | null;
+  invested_amount: number | null;
+  unrealised_gain: number | null;
+  unrealised_gain_pct: number | null;
+  folios: number;
+}
+
+/** Fund facts + NAV series + position + CAMS-backed transactions — see backend `MfHoldingDetailResponse`. */
+export interface MfHoldingDetailResponse {
+  scheme_code: string;
+  scheme_name: string | null;
+  amc_name: string | null;
+  category: string | null;
+  sub_category: string | null;
+  isin: string | null;
+  plan_type: string | null;
+  option_type: string | null;
+  metadata_id: string | null;
+  latest_nav: number | null;
+  latest_nav_date: string | null;
+  nav_history: MfHoldingNavPoint[];
+  nav_history_from: string | null;
+  nav_history_to: string | null;
+  nav_history_truncated: boolean;
+  /** Latest NAV date used as end point for return metrics (from `mf_nav_history`). */
+  nav_returns_as_of: string | null;
+  nav_return_ytd_pct: number | null;
+  nav_return_6m_pct: number | null;
+  nav_return_1y_pct: number | null;
+  nav_return_3y_pct: number | null;
+  nav_return_5y_pct: number | null;
+  position: MfHoldingPosition | null;
+  transactions: MfHoldingTransactionItem[];
+  notes: string[];
+}
+
+/**
+ * Fund detail screen payload: scheme profile, NAV history for charting, your units/value,
+ * and transaction ledger (includes rows imported from CAMS CAS PDF).
+ */
+export async function getMfHoldingDetail(schemeCode: string): Promise<MfHoldingDetailResponse> {
+  const encoded = encodeURIComponent(schemeCode.trim());
+  return request<MfHoldingDetailResponse>(`/mf/funds/${encoded}/holding-detail`);
 }
 
 /**
@@ -1129,6 +1284,127 @@ export async function listDiscoveryFunds(params?: {
 
 export async function listDiscoveryTrending(): Promise<DiscoveryFund[]> {
   return request<DiscoveryFund[]>("/discovery/trending");
+}
+
+// ── MF Fund Metadata search (Discover) ──────────────────
+export interface MfFundMetadataListItem {
+  id: string;
+  scheme_code: string;
+  isin: string | null;
+  scheme_name: string;
+  amc_name: string;
+  category: string;
+  sub_category: string | null;
+  asset_class: string | null;
+  asset_subgroup: string | null;
+  risk_rating_sebi: string | null;
+  returns_1y_pct: number | null;
+  returns_3y_pct: number | null;
+  returns_5y_pct: number | null;
+}
+
+export interface MfFundMetadataSearchResponse {
+  items: MfFundMetadataListItem[];
+  total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
+}
+
+export interface MfFundMetadataSearchParams {
+  q?: string;
+  category?: string;
+  sub_category?: string;
+  asset_class?: string;
+  amc_name?: string;
+  active_only?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
+export async function searchMfFunds(
+  params: MfFundMetadataSearchParams = {}
+): Promise<MfFundMetadataSearchResponse> {
+  const q = new URLSearchParams();
+  if (params.q && params.q.trim()) q.set("q", params.q.trim());
+  if (params.category) q.set("category", params.category);
+  if (params.sub_category) q.set("sub_category", params.sub_category);
+  if (params.asset_class) q.set("asset_class", params.asset_class);
+  if (params.amc_name) q.set("amc_name", params.amc_name);
+  if (params.active_only != null) q.set("active_only", String(params.active_only));
+  q.set("limit", String(params.limit ?? 20));
+  q.set("offset", String(params.offset ?? 0));
+  const suffix = q.toString() ? `?${q.toString()}` : "";
+  return request<MfFundMetadataSearchResponse>(
+    `/mf/fund-metadata/search${suffix}`,
+    undefined,
+    false,
+  );
+}
+
+/** NAV sample for chart + investor detail (public). */
+export interface MfNavChartPoint {
+  nav_date: string;
+  nav: number;
+}
+
+export interface MfNavDerivedReturns {
+  return_1y_abs_pct: number | null;
+  return_3y_cagr_pct: number | null;
+  return_5y_cagr_pct: number | null;
+  return_10y_cagr_pct: number | null;
+  return_inception_abs_pct: number | null;
+  return_inception_cagr_pct: number | null;
+  first_nav_date: string | null;
+  latest_nav: number | null;
+  latest_nav_date: string | null;
+  nav_row_count: number;
+}
+
+export interface MfMetadataReturnsSnapshot {
+  returns_1y_pct: number | null;
+  returns_3y_pct: number | null;
+  returns_5y_pct: number | null;
+  returns_10y_pct: number | null;
+}
+
+export interface MfFundInvestorDetailResponse {
+  metadata_id: string;
+  scheme_code: string;
+  scheme_name: string;
+  amc_name: string;
+  category: string;
+  sub_category: string | null;
+  isin: string | null;
+  isin_div_reinvest: string | null;
+  plan_type: string;
+  option_type: string;
+  is_active: boolean;
+  risk_rating_sebi: string | null;
+  asset_class: string | null;
+  asset_subgroup: string | null;
+  direct_plan_fees: number | null;
+  regular_plan_fees: number | null;
+  exit_load_percent: number | null;
+  exit_load_months: number | null;
+  large_cap_equity_pct: number | null;
+  mid_cap_equity_pct: number | null;
+  small_cap_equity_pct: number | null;
+  debt_pct: number | null;
+  others_pct: number | null;
+  returns_from_nav: MfNavDerivedReturns;
+  returns_from_metadata: MfMetadataReturnsSnapshot;
+  nav_chart: MfNavChartPoint[];
+  disclaimers: string[];
+}
+
+/** Fund scheme page: facts + NAV-derived returns (Groww-style detail). */
+export async function getMfFundInvestorDetail(fundId: string): Promise<MfFundInvestorDetailResponse> {
+  return request<MfFundInvestorDetailResponse>(
+    `/mf/fund-metadata/${encodeURIComponent(fundId)}/investor-detail`,
+    undefined,
+    false,
+  );
 }
 
 export async function listDiscoveryHouseView(): Promise<DiscoveryFund[]> {
