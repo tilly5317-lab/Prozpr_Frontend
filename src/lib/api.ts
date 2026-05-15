@@ -263,6 +263,21 @@ export async function login(p: LoginPayload): Promise<{ user_id: string; access_
   return data;
 }
 
+export interface MobileStatus {
+  exists: boolean;
+  is_onboarding_complete: boolean;
+}
+
+export async function checkMobileStatus(p: {
+  country_code: string;
+  mobile: string;
+}): Promise<MobileStatus> {
+  return request<MobileStatus>("/auth/check-mobile", {
+    method: "POST",
+    body: JSON.stringify(p),
+  }, false);
+}
+
 export async function getMe(): Promise<UserInfo> {
   const cached = getCachedUserContextValue("me");
   if (cached) return cached;
