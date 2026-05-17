@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft,
-  ArrowDown,
   BriefcaseBusiness,
   Car,
   GraduationCap,
@@ -30,7 +29,7 @@ interface TimelineGoal {
   priority: Priority;
 }
 
-const HORIZON_YEARS = 30;
+const HORIZON_YEARS = 24;
 const INFLATION_DEFAULT = 6;
 const PRIORITIES: Priority[] = ["Low", "Medium", "High"];
 
@@ -480,9 +479,9 @@ function AddGoalSheet({ open, initialYear, onClose, onSave }: AddGoalSheetProps)
                         }
                         className="mt-1.5 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10.5px] font-medium"
                         style={{
-                          backgroundColor: "hsl(var(--wealth-green) / 0.10)",
-                          color: "hsl(var(--wealth-green))",
-                          border: "1px solid hsl(var(--wealth-green) / 0.30)",
+                          backgroundColor: "rgba(212, 168, 104, 0.10)",
+                          color: "#D4A868",
+                          border: "1px solid rgba(212, 168, 104, 0.30)",
                         }}
                       >
                         ✨ Tilly suggests {inflationSuggestion.rate}% —{" "}
@@ -610,32 +609,33 @@ const GoalsTimeline = () => {
   );
   const [hoveredYear, setHoveredYear] = useState<number | null>(null);
   const [monthlyContrib, setMonthlyContrib] = useState<number>(MONTHLY_CONTRIBUTION);
+  const [expandedGoals, setExpandedGoals] = useState<Set<string>>(new Set());
+  const [draggingGoalId, setDraggingGoalId] = useState<string | null>(null);
+  const [dropTargetYear, setDropTargetYear] = useState<number | null>(null);
 
-  // Per-goal celebration text — appears on the goal card briefly when the slider
-  // moves that goal earlier on the timeline.
-  const [celebrationByGoal, setCelebrationByGoal] = useState<Map<string, string>>(
-    new Map(),
-  );
-  const celebrationTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
-    new Map(),
-  );
-  const flashCelebration = (goalId: string, text: string) => {
-    setCelebrationByGoal((prev) => {
-      const next = new Map(prev);
-      next.set(goalId, text);
+  const toggleGoalExpanded = (id: string) => {
+    setExpandedGoals((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
-    const existing = celebrationTimersRef.current.get(goalId);
-    if (existing) clearTimeout(existing);
-    const timer = setTimeout(() => {
-      setCelebrationByGoal((prev) => {
-        const next = new Map(prev);
-        next.delete(goalId);
-        return next;
-      });
-      celebrationTimersRef.current.delete(goalId);
-    }, 3500);
-    celebrationTimersRef.current.set(goalId, timer);
+  };
+
+  // DOM refs per year row — used to hit-test where a goal is dropped.
+  const rowRefs = useRef<Map<number, HTMLLIElement | null>>(new Map());
+  const findYearAtClientY = (clientY: number): number | null => {
+    for (const [year, el] of rowRefs.current) {
+      if (!el) continue;
+      const rect = el.getBoundingClientRect();
+      if (clientY >= rect.top && clientY <= rect.bottom) return year;
+    }
+    return null;
+  };
+  const moveGoalToYear = (id: string, year: number) => {
+    setGoals((prev) =>
+      prev.map((g) => (g.id === id ? { ...g, year } : g)),
+    );
   };
 
   const togglePriority = (p: Priority) => {
@@ -676,59 +676,6 @@ const GoalsTimeline = () => {
     return map;
   }, [projection]);
 
-  // Per-goal earliest-affordable year (fractional). Drives the "X mo ahead/behind"
-  // badge on goal cards and the celebratory toasts when the user pulls a goal forward.
-  const earliestByGoal = useMemo(() => {
-    const map = new Map<string, number | null>();
-    for (const g of visibleGoals) {
-      map.set(
-        g.id,
-        earliestAffordableYear(g, currentYear, HORIZON_YEARS, monthlyContrib),
-      );
-    }
-    return map;
-  }, [visibleGoals, currentYear, monthlyContrib]);
-
-  // Milestones flash briefly when first unlocked, then fade out — they're earned
-  // moments, not permanent badges. Seen milestones don't re-flash later.
-  const [flashingMilestones, setFlashingMilestones] = useState<Set<number>>(
-    new Set(),
-  );
-  const seenMilestonesRef = useRef<Set<number>>(new Set());
-
-  // Displayed months-delta — always reacts to the slider, even when the raw
-  // earliest year is unchanged (e.g. a goal that's already affordable today).
-  const monthsDeltaByGoal = useMemo(() => {
-    const map = new Map<string, number | null>();
-    const nudge = Math.round((monthlyContrib - MONTHLY_CONTRIBUTION) / 25_000);
-    for (const g of visibleGoals) {
-      const earliest = earliestByGoal.get(g.id);
-      if (earliest == null) {
-        map.set(g.id, null);
-        continue;
-      }
-      const baseDelta = Math.round((g.year - earliest) * 12);
-      const display = Math.max(-120, Math.min(180, baseDelta + nudge));
-      map.set(g.id, display);
-    }
-    return map;
-  }, [earliestByGoal, visibleGoals, monthlyContrib]);
-
-  // Fire a celebration when the displayed months-delta improves.
-  const prevMonthsDeltaRef = useRef<Map<string, number | null>>(new Map());
-  useEffect(() => {
-    const prev = prevMonthsDeltaRef.current;
-    for (const g of visibleGoals) {
-      const before = prev.get(g.id);
-      const after = monthsDeltaByGoal.get(g.id) ?? null;
-      if (before != null && after != null && after - before >= 1) {
-        const monthsEarlier = after - before;
-        flashCelebration(g.id, `🎉 Moved up ${monthsEarlier} mo`);
-      }
-    }
-    prevMonthsDeltaRef.current = new Map(monthsDeltaByGoal);
-  }, [monthsDeltaByGoal, visibleGoals]);
-
   // First year each milestone is crossed — recomputes as user scrubs invest slider.
   const milestonesByYear = useMemo(() => {
     const map = new Map<number, Milestone[]>();
@@ -744,35 +691,6 @@ const GoalsTimeline = () => {
     }
     return map;
   }, [projection]);
-
-  // Flash newly-unlocked milestones for ~3.5s, then let them quietly disappear.
-  useEffect(() => {
-    const currentValues = new Set<number>();
-    for (const list of milestonesByYear.values()) {
-      for (const m of list) currentValues.add(m.value);
-    }
-    const fresh: number[] = [];
-    for (const v of currentValues) {
-      if (!seenMilestonesRef.current.has(v)) {
-        fresh.push(v);
-        seenMilestonesRef.current.add(v);
-      }
-    }
-    if (fresh.length === 0) return;
-    setFlashingMilestones((prev) => {
-      const next = new Set(prev);
-      for (const v of fresh) next.add(v);
-      return next;
-    });
-    const timer = setTimeout(() => {
-      setFlashingMilestones((prev) => {
-        const next = new Set(prev);
-        for (const v of fresh) next.delete(v);
-        return next;
-      });
-    }, 3500);
-    return () => clearTimeout(timer);
-  }, [milestonesByYear]);
 
   // Anchor the chart's x-axis to the projection at the slider's maximum so the bars
   // grow rightward when the user increases monthly investment (instead of shrinking
@@ -797,8 +715,6 @@ const GoalsTimeline = () => {
     return NAV_PAD_PCT + t * (100 - 2 * NAV_PAD_PCT);
   };
 
-  const finalNav = projection[projection.length - 1]?.endNav ?? START_NAV;
-
   const handleSave = (incoming: Omit<TimelineGoal, "id">) => {
     setGoals((prev) => [
       ...prev,
@@ -821,9 +737,6 @@ const GoalsTimeline = () => {
           </button>
           <div className="min-w-0 flex-1">
             <h1 className="text-lg font-semibold text-foreground">Goals timeline</h1>
-            <p className="text-xs text-muted-foreground">
-              Tap any year to add a goal · {goals.length} planned
-            </p>
           </div>
         </div>
       </header>
@@ -834,48 +747,6 @@ const GoalsTimeline = () => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3, ease: "easeOut" }}
       >
-        {/* Compact context strip — no separate chart, the timeline is the chart. */}
-        <div
-          className="rounded-xl border border-border bg-card/60 px-3 py-2 flex items-center justify-between gap-3 text-[11px]"
-        >
-          <div>
-            <p className="text-[9.5px] uppercase tracking-wide text-muted-foreground">
-              Today
-            </p>
-            <p
-              className="text-[13px] font-semibold tabular-nums text-foreground"
-              style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
-            >
-              {formatINRCompact(START_NAV)}
-            </p>
-          </div>
-          <div className="text-right">
-            <p className="text-[9.5px] uppercase tracking-wide text-muted-foreground">
-              By {currentYear + HORIZON_YEARS}
-            </p>
-            <p
-              className="text-[13px] font-semibold tabular-nums text-foreground"
-              style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
-            >
-              {formatINRCompact(finalNav)}
-            </p>
-          </div>
-          <div className="text-right text-muted-foreground/80 leading-tight max-w-[140px]">
-            <p>
-              {formatINRCompact(monthlyContrib)}/mo
-              {monthlyContrib !== MONTHLY_CONTRIBUTION && (
-                <span className="ml-1 text-foreground/80">·</span>
-              )}{" "}
-              {ANNUAL_RETURN_PCT}%
-            </p>
-            <p className="text-[10px]">
-              {monthlyContrib === MONTHLY_CONTRIBUTION
-                ? "post-tax assumption"
-                : "tuned scenario"}
-            </p>
-          </div>
-        </div>
-
         {/* Priority filter — toggle which goals feed the projection */}
         <div className="flex items-center gap-2 px-1">
           <span className="text-[10px] uppercase tracking-wide text-muted-foreground shrink-0">
@@ -920,7 +791,7 @@ const GoalsTimeline = () => {
 
         {/* Monthly investment — sticky so the slider stays in reach while scrolling */}
         <div
-          className="sticky z-30 -mx-5 bg-background px-5 pb-2 pt-1"
+          className="sticky z-30 -mx-5 mt-1 bg-background px-5 pb-2 pt-2"
           style={{ top: "80px" }}
         >
           <div className="rounded-xl border border-border bg-card px-3 py-1.5 flex items-center gap-3">
@@ -945,7 +816,8 @@ const GoalsTimeline = () => {
             step={5000}
             value={monthlyContrib}
             onChange={(e) => setMonthlyContrib(Number(e.target.value))}
-            className="flex-1 min-w-0 accent-foreground"
+            className="flex-1 min-w-0"
+            style={{ accentColor: "#D4A868", transform: "scaleY(0.9)" }}
             aria-label="Monthly investment amount"
           />
           <button
@@ -981,18 +853,21 @@ const GoalsTimeline = () => {
             // Keep the node consistent — green for everyone. Goal years get a
             // subtle outer halo (rendered separately) so they read as "anchor
             // points" without the busy red/amber dots.
-            const nodeColor = "hsl(var(--wealth-green))";
+            const nodeColor = "#D4A868";
 
             const isHovered = hoveredYear === y;
-            const rowMilestones = (milestonesByYear.get(y) ?? []).filter((m) =>
-              flashingMilestones.has(m.value),
-            );
+            const rowMilestones = milestonesByYear.get(y) ?? [];
             const hasMilestone = rowMilestones.length > 0;
 
+            const isDropTarget = dropTargetYear === y && draggingGoalId !== null;
             return (
               <li
                 key={y}
-                className={`relative ${isFirst ? "sticky z-[15] bg-background" : ""}`}
+                ref={(el) => {
+                  if (el) rowRefs.current.set(y, el);
+                  else rowRefs.current.delete(y);
+                }}
+                className={`relative ${isFirst ? "sticky z-[15] bg-background" : ""} ${isDropTarget ? "rounded-lg ring-2 ring-[#D4A868]/70" : ""}`}
                 style={isFirst ? { top: "132px" } : undefined}
               >
                 <button
@@ -1007,7 +882,7 @@ const GoalsTimeline = () => {
                     setHoveredYear((h) => (h === y ? null : h))
                   }
                   className="group relative w-full text-left flex items-stretch gap-3 px-2 transition-colors hover:bg-muted/20 focus:outline-none focus-visible:ring-1 focus-visible:ring-foreground/40 rounded-lg"
-                  style={{ minHeight: 48 }}
+                  style={{ minHeight: hasGoals ? 48 : 18 }}
                   aria-label={
                     hasGoals ? `Add another goal in ${y}` : `Add a goal in ${y}`
                   }
@@ -1031,12 +906,12 @@ const GoalsTimeline = () => {
                       >
                         <stop
                           offset="0%"
-                          stopColor="hsl(var(--wealth-green))"
+                          stopColor="#D4A868"
                           stopOpacity={0.16}
                         />
                         <stop
                           offset="100%"
-                          stopColor="hsl(var(--wealth-green))"
+                          stopColor="#D4A868"
                           stopOpacity={0.02}
                         />
                       </linearGradient>
@@ -1054,7 +929,7 @@ const GoalsTimeline = () => {
                       y1={isFirst ? 50 : 0}
                       x2={xBottom}
                       y2={isLast ? 50 : 100}
-                      stroke="hsl(var(--wealth-green))"
+                      stroke="#D4A868"
                       strokeOpacity={isHovered ? 0.95 : 0.55}
                       strokeWidth={isHovered ? 2 : 1.5}
                       vectorEffect="non-scaling-stroke"
@@ -1067,7 +942,7 @@ const GoalsTimeline = () => {
                         cy={50}
                         r={5}
                         fill="none"
-                        stroke="hsl(var(--wealth-green))"
+                        stroke="#D4A868"
                         strokeOpacity={0.35}
                         strokeWidth={1}
                         vectorEffect="non-scaling-stroke"
@@ -1100,14 +975,14 @@ const GoalsTimeline = () => {
                       <span className="relative flex h-3 w-3 items-center justify-center">
                         <span
                           className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-75"
-                          style={{ backgroundColor: "hsl(var(--wealth-green))" }}
+                          style={{ backgroundColor: "#D4A868" }}
                         />
                         <span
                           className="relative inline-flex h-2.5 w-2.5 rounded-full"
                           style={{
-                            backgroundColor: "hsl(var(--wealth-green))",
+                            backgroundColor: "#D4A868",
                             border: "1.5px solid hsl(var(--background))",
-                            boxShadow: "0 0 6px hsl(var(--wealth-green) / 0.6)",
+                            boxShadow: "0 0 6px rgba(212, 168, 104, 0.6)",
                           }}
                         />
                       </span>
@@ -1131,9 +1006,9 @@ const GoalsTimeline = () => {
                       <span
                         className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold"
                         style={{
-                          backgroundColor: "hsl(var(--wealth-green))",
+                          backgroundColor: "#D4A868",
                           color: "hsl(var(--background))",
-                          boxShadow: "0 2px 6px hsl(var(--wealth-green) / 0.35)",
+                          boxShadow: "0 2px 6px rgba(212, 168, 104, 0.35)",
                         }}
                       >
                         You are here
@@ -1211,20 +1086,24 @@ const GoalsTimeline = () => {
                   )}
 
                   {/* Year label */}
-                  <div className="relative z-10 w-[40px] shrink-0 flex items-start pt-2">
+                  <div
+                    className={`relative z-10 w-[40px] shrink-0 flex items-start ${hasGoals ? "pt-2" : "pt-0"}`}
+                  >
                     <span
                       className={`text-[11px] tabular-nums ${
                         isMilestone || hasGoals
                           ? "font-semibold text-foreground"
-                          : "text-muted-foreground"
+                          : "text-muted-foreground/60"
                       }`}
                     >
                       {y}
                     </span>
                   </div>
 
-                  {/* Right side: NAV figure + goal cards / add affordance */}
-                  <div className="relative z-10 min-w-0 flex-1 py-1.5">
+                  {/* Right side: NAV figure + goal cards (empty years stay as a thin tick) */}
+                  <div
+                    className={`relative z-10 min-w-0 flex-1 ${hasGoals ? "py-1.5" : "py-0"}`}
+                  >
                     {/* Milestone badge — floats above the row, doesn't push layout */}
                     <AnimatePresence>
                       {hasMilestone && (
@@ -1254,23 +1133,19 @@ const GoalsTimeline = () => {
                       )}
                     </AnimatePresence>
 
-                    <div className="flex items-center justify-between gap-2">
-                      <span
-                        className="text-[10.5px] tabular-nums text-muted-foreground"
-                        style={{
-                          fontFamily:
-                            "ui-monospace, SFMono-Regular, Menlo, monospace",
-                        }}
-                      >
-                        {formatINRCompact(endNav)}
-                      </span>
-                      {!hasGoals && (
-                        <span className="inline-flex items-center gap-1 text-[10.5px] text-muted-foreground/70 group-hover:text-foreground transition-colors">
-                          <Plus className="h-3 w-3" strokeWidth={2.5} />
-                          Add
+                    {hasGoals && (
+                      <div className="flex items-center justify-between gap-2">
+                        <span
+                          className="text-[10.5px] tabular-nums text-muted-foreground"
+                          style={{
+                            fontFamily:
+                              "ui-monospace, SFMono-Regular, Menlo, monospace",
+                          }}
+                        >
+                          {formatINRCompact(endNav)}
                         </span>
-                      )}
-                    </div>
+                      </div>
+                    )}
 
                     {hasGoals && (
                       <div className="mt-1.5 flex flex-col gap-1.5">
@@ -1283,42 +1158,55 @@ const GoalsTimeline = () => {
                             yearsAway,
                           );
                           const GoalIcon = goalIconFor(g.name);
-                          const celebration = celebrationByGoal.get(g.id);
+                          const isExpanded = expandedGoals.has(g.id);
+                          const isDragging = draggingGoalId === g.id;
                           return (
-                            <div
+                            <motion.div
                               key={g.id}
-                              className="relative rounded-xl border border-border bg-card/95 backdrop-blur-[1px] px-3 py-2"
+                              drag="y"
+                              dragMomentum={false}
+                              dragElastic={0.25}
+                              dragSnapToOrigin
+                              onDragStart={() => {
+                                setDraggingGoalId(g.id);
+                                setDropTargetYear(g.year);
+                              }}
+                              onDrag={(_, info) => {
+                                const yr = findYearAtClientY(info.point.y);
+                                setDropTargetYear(yr);
+                              }}
+                              onDragEnd={(_, info) => {
+                                const yr = findYearAtClientY(info.point.y);
+                                if (yr != null && yr !== g.year) moveGoalToYear(g.id, yr);
+                                setDraggingGoalId(null);
+                                setDropTargetYear(null);
+                              }}
+                              whileDrag={{
+                                scale: 1.04,
+                                boxShadow:
+                                  "0 14px 28px rgba(0,0,0,0.18), 0 4px 10px rgba(0,0,0,0.10)",
+                                zIndex: 50,
+                                cursor: "grabbing",
+                              }}
+                              role="button"
+                              tabIndex={0}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (isDragging) return;
+                                toggleGoalExpanded(g.id);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  toggleGoalExpanded(g.id);
+                                }
+                              }}
+                              aria-expanded={isExpanded}
+                              aria-label={`${g.name} — tap to expand, drag to change year`}
+                              className="relative touch-none cursor-grab rounded-xl border border-border bg-card/95 backdrop-blur-[1px] px-3 py-1.5 transition-colors hover:bg-card focus:outline-none focus-visible:ring-1 focus-visible:ring-foreground/40 active:cursor-grabbing"
                             >
-                              {/* Celebration pop — appears right on the goal card */}
-                              <AnimatePresence>
-                                {celebration && (
-                                  <motion.div
-                                    key="goal-celebration"
-                                    initial={{ opacity: 0, y: 4, scale: 0.9 }}
-                                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                                    exit={{ opacity: 0, y: -4, scale: 0.9 }}
-                                    transition={{
-                                      duration: 0.25,
-                                      ease: [0.16, 1, 0.3, 1],
-                                    }}
-                                    className="pointer-events-none absolute -top-2 right-2 z-30"
-                                  >
-                                    <span
-                                      className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap"
-                                      style={{
-                                        backgroundColor:
-                                          "hsl(var(--wealth-green))",
-                                        color: "hsl(var(--background))",
-                                        boxShadow:
-                                          "0 4px 14px hsl(var(--wealth-green) / 0.45)",
-                                      }}
-                                    >
-                                      {celebration}
-                                    </span>
-                                  </motion.div>
-                                )}
-                              </AnimatePresence>
-                              <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-center justify-between gap-2">
                                 <div className="flex min-w-0 items-center gap-2">
                                   <span
                                     className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
@@ -1336,70 +1224,47 @@ const GoalsTimeline = () => {
                                   </p>
                                 </div>
                                 <span
-                                  className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
-                                  style={{
-                                    backgroundColor: chip.bg,
-                                    color: chip.fg,
-                                    border: `1px solid ${chip.border}`,
-                                  }}
-                                >
-                                  {g.priority}
-                                </span>
-                              </div>
-                              <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-                                <span>Today {formatINR(g.presentValue)}</span>
-                                <span
-                                  className="inline-flex items-center gap-1 font-semibold tabular-nums"
-                                  style={{
-                                    fontFamily:
-                                      "ui-monospace, SFMono-Regular, Menlo, monospace",
-                                    color: "rgb(239,68,68)",
-                                  }}
+                                  className="shrink-0 text-[11px] font-semibold tabular-nums"
+                                  style={{ color: "rgb(239,68,68)" }}
                                   title="Drawn from portfolio at target year"
                                 >
-                                  <ArrowDown className="h-3 w-3" />−{formatINR(fv)}
+                                  {formatINRCompact(fv)} drawn in {g.year}
                                 </span>
                               </div>
-                              <div className="mt-0.5 flex items-center justify-between gap-2 text-[10px] text-muted-foreground/80">
-                                <span>Drawn from portfolio in {g.year}</span>
-                                {(() => {
-                                  const monthsDelta = monthsDeltaByGoal.get(g.id);
-                                  if (monthsDelta == null || monthsDelta === 0)
-                                    return null;
-                                  const isAhead = monthsDelta > 0;
-                                  return (
-                                    <motion.span
-                                      key={monthsDelta}
-                                      initial={{ scale: 0.85, opacity: 0 }}
-                                      animate={{ scale: 1, opacity: 1 }}
-                                      transition={{
-                                        duration: 0.25,
-                                        ease: [0.16, 1, 0.3, 1],
-                                      }}
-                                      className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 font-semibold"
-                                      style={{
-                                        backgroundColor: isAhead
-                                          ? "rgba(16,185,129,0.12)"
-                                          : "rgba(239,68,68,0.10)",
-                                        color: isAhead
-                                          ? "rgb(5,150,105)"
-                                          : "rgb(239,68,68)",
-                                        border: `1px solid ${isAhead ? "rgba(16,185,129,0.30)" : "rgba(239,68,68,0.25)"}`,
-                                      }}
-                                      title={
-                                        isAhead
-                                          ? "Affordable earlier than the planned target year"
-                                          : "Pace falls short of the planned target year"
-                                      }
-                                    >
-                                      {isAhead ? "↑" : "↓"}{" "}
-                                      {Math.abs(monthsDelta)} mo{" "}
-                                      {isAhead ? "ahead" : "short"}
-                                    </motion.span>
-                                  );
-                                })()}
-                              </div>
-                            </div>
+                              <AnimatePresence initial={false}>
+                                {isExpanded && (
+                                  <motion.div
+                                    key="goal-details"
+                                    initial={{ height: 0, opacity: 0 }}
+                                    animate={{ height: "auto", opacity: 1 }}
+                                    exit={{ height: 0, opacity: 0 }}
+                                    transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                                    className="overflow-hidden"
+                                  >
+                                    <div className="mt-1.5 border-t border-border/60 pt-1.5 text-[11px] text-muted-foreground space-y-0.5">
+                                      <div className="flex items-center justify-between gap-2">
+                                        <span>Worth today</span>
+                                        <span
+                                          className="font-semibold tabular-nums text-foreground"
+                                          style={{
+                                            fontFamily:
+                                              "ui-monospace, SFMono-Regular, Menlo, monospace",
+                                          }}
+                                        >
+                                          {formatINR(g.presentValue)}
+                                        </span>
+                                      </div>
+                                      <div className="flex items-center justify-between gap-2">
+                                        <span>Growth</span>
+                                        <span className="tabular-nums">
+                                          {g.inflationRate}% / yr
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                            </motion.div>
                           );
                         })}
                       </div>
@@ -1412,9 +1277,9 @@ const GoalsTimeline = () => {
         </ul>
 
         <p className="px-1 text-[10.5px] leading-snug text-muted-foreground/80">
-          The green spine grows with your projected NAV (today&apos;s portfolio,
-          {" "}{formatINRCompact(monthlyContrib)}/mo contributions, {ANNUAL_RETURN_PCT}% p.a.).
-          Red ticks mark the years a goal draws from the portfolio.
+          The gold spine grows with your projected NAV (today&apos;s portfolio, ₹2L/mo
+          contributions, 9% p.a.). Red ticks mark the years a goal draws from the
+          portfolio.
         </p>
 
         <div
@@ -1448,6 +1313,22 @@ const GoalsTimeline = () => {
         onClose={() => setAddYear(null)}
         onSave={handleSave}
       />
+
+      {/* Floating + FAB — opens the add-goal sheet at a sensible default year */}
+      <button
+        type="button"
+        onClick={() => setAddYear(currentYear + 5)}
+        className="fixed right-5 z-40 inline-flex h-12 w-12 items-center justify-center rounded-full transition-transform hover:scale-105 active:scale-95"
+        style={{
+          bottom: "calc(env(safe-area-inset-bottom, 0px) + 72px)",
+          backgroundColor: "#D4A868",
+          color: "hsl(var(--background))",
+          boxShadow: "0 6px 20px rgba(212, 168, 104, 0.45)",
+        }}
+        aria-label="Add a new goal"
+      >
+        <Plus className="h-5 w-5" strokeWidth={2.5} />
+      </button>
 
       <BottomNav />
     </div>
