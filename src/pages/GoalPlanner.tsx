@@ -39,6 +39,7 @@ interface Goal {
   suggestedLabel: string;
   monthlyContribution: number;
   priority: "Low" | "Medium" | "High";
+  downPaymentPct?: number;
 }
 
 /* ── Helpers ── */
@@ -66,6 +67,11 @@ const formatMonthOffset = (months: number): string => {
   const rem = months % 12;
   return `${yrs}y ${rem}m`;
 };
+
+function isMortgageGoalName(name: string): boolean {
+  const s = name.toLowerCase();
+  return /home|house|property|apartment|flat|mortgage|down\s*payment/.test(s);
+}
 
 function goalIconFromName(name: string): React.ReactNode {
   const s = name.toLowerCase();
@@ -132,6 +138,7 @@ function buildLocalGoal(input: {
   investedAmount?: number;
   currentValue?: number;
   monthlyContribution?: number;
+  downPaymentPct?: number;
 }): Goal {
   const investedAmount = input.investedAmount ?? 0;
   const currentValue = input.currentValue ?? 0;
@@ -164,6 +171,7 @@ function buildLocalGoal(input: {
     suggestedLabel: `${formatINR(monthly)}/mo`,
     monthlyContribution: input.monthlyContribution ?? 0,
     priority: input.priority,
+    downPaymentPct: input.downPaymentPct,
   };
 }
 
@@ -702,7 +710,9 @@ const GoalPlanner = () => {
   const [addPriority, setAddPriority] = useState<"Low" | "Medium" | "High">("Medium");
   const [addAmountKind, setAddAmountKind] = useState<"present" | "future">("future");
   const [addInflation, setAddInflation] = useState("");
+  const [addDownPaymentPct, setAddDownPaymentPct] = useState("");
   const inflationSuggestion = useMemo(() => suggestInflationForGoal(addName), [addName]);
+  const addIsMortgageGoal = useMemo(() => isMortgageGoalName(addName), [addName]);
 
   const [editGoal, setEditGoal] = useState<Goal | null>(null);
   const [editName, setEditName] = useState("");
@@ -715,10 +725,12 @@ const GoalPlanner = () => {
   const [editPriority, setEditPriority] = useState<"Low" | "Medium" | "High">("Medium");
   const [editAmountKind, setEditAmountKind] = useState<"present" | "future">("future");
   const [editInflation, setEditInflation] = useState("");
+  const [editDownPaymentPct, setEditDownPaymentPct] = useState("");
   const editInflationSuggestion = useMemo(
     () => suggestInflationForGoal(editName),
     [editName],
   );
+  const editIsMortgageGoal = useMemo(() => isMortgageGoalName(editName), [editName]);
 
   const sortedGoals = useMemo(
     () => [...goals].sort((a, b) => priorityRank[a.priority] - priorityRank[b.priority]),
@@ -746,6 +758,11 @@ const GoalPlanner = () => {
     setEditPriority(goal.priority);
     setEditAmountKind("future");
     setEditInflation("");
+    setEditDownPaymentPct(
+      goal.downPaymentPct != null && Number.isFinite(goal.downPaymentPct)
+        ? String(goal.downPaymentPct)
+        : "",
+    );
   }, []);
 
   const openAchieveGoalInChat = useCallback(
@@ -817,6 +834,20 @@ const GoalPlanner = () => {
       return;
     }
 
+    let downPaymentPct: number | undefined;
+    if (editIsMortgageGoal && editDownPaymentPct.trim() !== "") {
+      const pct = Number(editDownPaymentPct);
+      if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+        toast({
+          title: "Down payment %",
+          description: "Enter a percentage between 0 and 100.",
+          variant: "destructive",
+        });
+        return;
+      }
+      downPaymentPct = pct;
+    }
+
     const updated = buildLocalGoal({
       id: editGoal.id,
       name,
@@ -826,11 +857,12 @@ const GoalPlanner = () => {
       investedAmount: savingsParsed.value,
       currentValue: currentParsed.value,
       monthlyContribution: monthlyParsed.value,
+      downPaymentPct,
     });
     setGoals((prev) => prev.map((g) => (g.id === editGoal.id ? updated : g)));
     setEditGoal(null);
     toast({ title: "Goal updated", description: `${name} has been saved.` });
-  }, [editGoal, editName, editTarget, editMonth, editYear, editSavings, editCurrent, editMonthly, editPriority, editAmountKind, editInflation]);
+  }, [editGoal, editName, editTarget, editMonth, editYear, editSavings, editCurrent, editMonthly, editPriority, editAmountKind, editInflation, editIsMortgageGoal, editDownPaymentPct]);
 
   const deleteGoal = useCallback(() => {
     if (!editGoal) return;
@@ -849,6 +881,7 @@ const GoalPlanner = () => {
     setAddPriority("Medium");
     setAddAmountKind("future");
     setAddInflation("");
+    setAddDownPaymentPct("");
   }, []);
 
   const submitAddGoal = useCallback(async () => {
@@ -889,6 +922,20 @@ const GoalPlanner = () => {
       finalTarget = targetParsed.value * Math.pow(1 + inflationNum / 100, yearsToTarget);
     }
 
+    let downPaymentPct: number | undefined;
+    if (addIsMortgageGoal && addDownPaymentPct.trim() !== "") {
+      const pct = Number(addDownPaymentPct);
+      if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+        toast({
+          title: "Down payment %",
+          description: "Enter a percentage between 0 and 100.",
+          variant: "destructive",
+        });
+        return;
+      }
+      downPaymentPct = pct;
+    }
+
     setAddGoalSaving(true);
     const created = buildLocalGoal({
       name,
@@ -896,13 +943,14 @@ const GoalPlanner = () => {
       targetDate: `${addMonth} ${addYear}`,
       priority: addPriority,
       monthlyContribution: monthlyParsed.value,
+      downPaymentPct,
     });
     setGoals((prev) => [...prev, created]);
     resetAddGoalForm();
     setAddGoalOpen(false);
     setAddGoalSaving(false);
     toast({ title: "Goal added", description: `${name} is now in your plan.` });
-  }, [addName, addTarget, addMonth, addYear, addMonthly, addPriority, addAmountKind, addInflation, resetAddGoalForm]);
+  }, [addName, addTarget, addMonth, addYear, addMonthly, addPriority, addAmountKind, addInflation, addIsMortgageGoal, addDownPaymentPct, resetAddGoalForm]);
 
   const sheetInputClass =
     "w-full min-h-[48px] rounded-xl border border-input bg-background px-4 py-2.5 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -1392,6 +1440,28 @@ const GoalPlanner = () => {
                   ))}
                 </div>
 
+                {editIsMortgageGoal && (
+                  <>
+                    <label className="mt-4 block text-xs font-medium text-muted-foreground">
+                      Down payment % of property value
+                    </label>
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      The share of total property value you plan to put down (e.g. 20%).
+                    </p>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      max={100}
+                      step="1"
+                      value={editDownPaymentPct}
+                      onChange={(e) => setEditDownPaymentPct(e.target.value)}
+                      placeholder="20"
+                      className={`${sheetInputClass} mt-1.5`}
+                    />
+                  </>
+                )}
+
                 <div className="mt-8 space-y-3 border-t border-border/60 pt-6">
                   <button
                     type="button"
@@ -1567,6 +1637,28 @@ const GoalPlanner = () => {
                     </button>
                   ))}
                 </div>
+
+                {addIsMortgageGoal && (
+                  <>
+                    <label className="mt-4 block text-xs font-medium text-muted-foreground">
+                      Down payment % of property value
+                    </label>
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      The share of total property value you plan to put down (e.g. 20%).
+                    </p>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      max={100}
+                      step="1"
+                      value={addDownPaymentPct}
+                      onChange={(e) => setAddDownPaymentPct(e.target.value)}
+                      placeholder="20"
+                      className={`${sheetInputClass} mt-1.5`}
+                    />
+                  </>
+                )}
 
                 <button
                   type="button"
