@@ -22,6 +22,8 @@ import Invest from "./pages/Invest";
 import Execute from "./pages/Execute";
 import RebalanceExplanation from "./pages/RebalanceExplanation";
 import Discovery from "./pages/Discovery";
+import DiscoveryFunds from "./pages/DiscoveryFunds";
+import DiscoveryFundDetail from "./pages/DiscoveryFundDetail";
 import AdvisorMeetings from "./pages/AdvisorMeetings";
 import OTP from "./pages/OTP";
 import LinkAccounts from "./pages/LinkAccounts";
@@ -62,6 +64,8 @@ const App = () => (
             <Route path="/excecute" element={<Execute />} />
             <Route path="/rebalance-explanation" element={<RebalanceExplanation />} />
             <Route path="/discovery" element={<Discovery />} />
+            <Route path="/discovery/funds" element={<DiscoveryFunds />} />
+            <Route path="/discovery/funds/:code" element={<DiscoveryFundDetail />} />
             <Route path="/advisor-meetings" element={<AdvisorMeetings />} />
             <Route path="/profile/complete" element={<CompleteProfile />} />
             <Route path="/profile/ips" element={<InvestmentPolicyStatement />} />
@@ -70,6 +74,7 @@ const App = () => (
             <Route path="/rebalancing" element={<Execute />} />
             <Route path="/goal-planner" element={<GoalPlanner />} />
             <Route path="/goal-planner/timeline" element={<GoalsTimeline />} />
+            <Route path="/goal-planner/timeline-2" element={<GoalsTimeline variant="tornado" />} />
             <Route path="/family" element={<FamilyMembers />} />
             <Route path="*" element={<NotFound />} />
           </Routes>

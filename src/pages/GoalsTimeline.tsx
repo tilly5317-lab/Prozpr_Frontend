@@ -594,9 +594,14 @@ function AddGoalSheet({ open, initialYear, onClose, onSave }: AddGoalSheetProps)
   );
 }
 
-const GoalsTimeline = () => {
+interface GoalsTimelineProps {
+  variant?: "line" | "tornado";
+}
+
+const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   const navigate = useNavigate();
   const currentYear = new Date().getFullYear();
+  const isTornado = variant === "tornado";
   const years = useMemo(
     () => Array.from({ length: HORIZON_YEARS + 1 }, (_, i) => currentYear + i),
     [currentYear],
@@ -715,6 +720,23 @@ const GoalsTimeline = () => {
     return NAV_PAD_PCT + t * (100 - 2 * NAV_PAD_PCT);
   };
 
+  // For the tornado variant: peak positive and negative YoY deltas, anchored
+  // to the slider's maximum so bars grow as contributions rise. Tracking surplus
+  // and deficit separately means a single huge withdrawal (eg. retirement) can't
+  // squash every growth year into a sliver — each side fills its own half.
+  const peaks = useMemo(() => {
+    if (!isTornado) return { surplus: 0, deficit: 0 };
+    const maxProj = buildProjection(visibleGoals, currentYear, HORIZON_YEARS, MONTHLY_MAX);
+    let surplus = 0;
+    let deficit = 0;
+    for (let i = 1; i < maxProj.length; i++) {
+      const d = maxProj[i].endNav - maxProj[i - 1].endNav;
+      if (d > 0) surplus = Math.max(surplus, d);
+      else deficit = Math.max(deficit, -d);
+    }
+    return { surplus, deficit };
+  }, [isTornado, visibleGoals, currentYear]);
+
   const handleSave = (incoming: Omit<TimelineGoal, "id">) => {
     setGoals((prev) => [
       ...prev,
@@ -736,7 +758,9 @@ const GoalsTimeline = () => {
             <ArrowLeft className="h-5 w-5" />
           </button>
           <div className="min-w-0 flex-1">
-            <h1 className="text-lg font-semibold text-foreground">Goals timeline</h1>
+            <h1 className="text-lg font-semibold text-foreground">
+              {isTornado ? "Goals timeline · Surplus view" : "Goals timeline"}
+            </h1>
           </div>
         </div>
       </header>
@@ -846,14 +870,41 @@ const GoalsTimeline = () => {
             const withdrawal = proj?.withdrawal ?? 0;
 
             const xTop = navToX(prevProj?.endNav ?? endNav);
-            const xBottom = navToX(endNav);
+            const xBottomLine = navToX(endNav);
             const isFirst = i === 0;
             const isLast = i === years.length - 1;
 
-            // Keep the node consistent — green for everyone. Goal years get a
-            // subtle outer halo (rendered separately) so they read as "anchor
-            // points" without the busy red/amber dots.
-            const nodeColor = "#D4A868";
+            // Tornado bar geometry: bars extend left (red) for years where NAV
+            // contracted (withdrawal > growth) and right (green) when it grew.
+            // sqrt-scaled so small early-year deltas stay legible against the
+            // late-year peak (mirrors how the line mode scales NAV).
+            const delta = endNav - (prevProj?.endNav ?? endNav);
+            const tornadoIsSurplus = delta >= 0;
+            const tornadoPeak = tornadoIsSurplus ? peaks.surplus : peaks.deficit;
+            const tornadoRatio =
+              tornadoPeak > 0 ? Math.min(1, Math.abs(delta) / tornadoPeak) : 0;
+            const tornadoNorm = Math.sqrt(tornadoRatio);
+            const tornadoHalfMax = 50 - NAV_PAD_PCT;
+            const tornadoHalfWidth = tornadoHalfMax * tornadoNorm;
+            const tornadoX1 = tornadoIsSurplus ? 50 : 50 - tornadoHalfWidth;
+            const tornadoX2 = tornadoIsSurplus ? 50 + tornadoHalfWidth : 50;
+            // Two-tone gradient: light at the axis, deep at the outer tip. The
+            // bar uses both the lighter and darker hues so the colour deepens
+            // as it extends away from centre.
+            const tornadoBaseHue = tornadoIsSurplus ? "16, 185, 129" : "239, 68, 68"; // emerald-500 / red-500
+            const tornadoDeepHue = tornadoIsSurplus ? "5, 95, 70" : "136, 19, 55"; // emerald-800 / rose-900
+            const tornadoFillOpacity = 0.35 + tornadoNorm * 0.65;
+            const tornadoStrokeOpacity = 0.35 + tornadoNorm * 0.55;
+
+            // In tornado mode the year node lives on the centre axis instead of
+            // tracking the gold line. Position markers off this anchor.
+            const xBottom = isTornado ? 50 : xBottomLine;
+
+            const nodeColor = isTornado
+              ? tornadoNorm > 0
+                ? `rgb(${tornadoBaseHue})`
+                : "hsl(var(--muted-foreground))"
+              : "#D4A868";
 
             const isHovered = hoveredYear === y;
             const rowMilestones = milestonesByYear.get(y) ?? [];
@@ -882,12 +933,12 @@ const GoalsTimeline = () => {
                     setHoveredYear((h) => (h === y ? null : h))
                   }
                   className="group relative w-full text-left flex items-stretch gap-3 px-2 transition-colors hover:bg-muted/20 focus:outline-none focus-visible:ring-1 focus-visible:ring-foreground/40 rounded-lg"
-                  style={{ minHeight: hasGoals ? 48 : 18 }}
+                  style={{ minHeight: hasGoals ? 48 : isTornado ? 32 : 18 }}
                   aria-label={
                     hasGoals ? `Add another goal in ${y}` : `Add a goal in ${y}`
                   }
                 >
-                  {/* Full-width NAV chart behind the row content */}
+                  {/* Full-width background chart — gold curve in line mode, tornado bar in tornado mode */}
                   <svg
                     width="100%"
                     height="100%"
@@ -896,127 +947,147 @@ const GoalsTimeline = () => {
                     className="absolute inset-0 pointer-events-none"
                     aria-hidden="true"
                   >
-                    <defs>
-                      <linearGradient
-                        id={`navFill-${y}`}
-                        x1="0"
-                        y1="0"
-                        x2="1"
-                        y2="0"
-                      >
-                        <stop
-                          offset="0%"
-                          stopColor="#D4A868"
-                          stopOpacity={0.16}
+                    {!isTornado && (
+                      <>
+                        <defs>
+                          <linearGradient
+                            id={`navFill-${y}`}
+                            x1="0"
+                            y1="0"
+                            x2="1"
+                            y2="0"
+                          >
+                            <stop offset="0%" stopColor="#D4A868" stopOpacity={0.16} />
+                            <stop offset="100%" stopColor="#D4A868" stopOpacity={0.02} />
+                          </linearGradient>
+                        </defs>
+
+                        <path
+                          d={`M 0 0 L ${xTop} 0 L ${xBottomLine} 100 L 0 100 Z`}
+                          fill={`url(#navFill-${y})`}
                         />
-                        <stop
-                          offset="100%"
-                          stopColor="#D4A868"
-                          stopOpacity={0.02}
+
+                        <line
+                          x1={xTop}
+                          y1={isFirst ? 50 : 0}
+                          x2={xBottomLine}
+                          y2={isLast ? 50 : 100}
+                          stroke="#D4A868"
+                          strokeOpacity={isHovered ? 0.95 : 0.55}
+                          strokeWidth={isHovered ? 2 : 1.5}
+                          vectorEffect="non-scaling-stroke"
                         />
-                      </linearGradient>
-                    </defs>
 
-                    {/* Filled area: left edge → curve segment → bottom-left */}
-                    <path
-                      d={`M 0 0 L ${xTop} 0 L ${xBottom} 100 L 0 100 Z`}
-                      fill={`url(#navFill-${y})`}
-                    />
+                        {hasGoals && (
+                          <circle
+                            cx={xBottomLine}
+                            cy={50}
+                            r={5}
+                            fill="none"
+                            stroke="#D4A868"
+                            strokeOpacity={0.35}
+                            strokeWidth={1}
+                            vectorEffect="non-scaling-stroke"
+                          />
+                        )}
 
-                    {/* Stroke along the curve */}
-                    <line
-                      x1={xTop}
-                      y1={isFirst ? 50 : 0}
-                      x2={xBottom}
-                      y2={isLast ? 50 : 100}
-                      stroke="#D4A868"
-                      strokeOpacity={isHovered ? 0.95 : 0.55}
-                      strokeWidth={isHovered ? 2 : 1.5}
-                      vectorEffect="non-scaling-stroke"
-                    />
-
-                    {/* Subtle halo for goal years — anchors the row without shouting */}
-                    {hasGoals && (
-                      <circle
-                        cx={xBottom}
-                        cy={50}
-                        r={5}
-                        fill="none"
-                        stroke="#D4A868"
-                        strokeOpacity={0.35}
-                        strokeWidth={1}
-                        vectorEffect="non-scaling-stroke"
-                      />
+                        <circle
+                          cx={xBottomLine}
+                          cy={50}
+                          r={isHovered ? 4 : hasGoals ? 3 : 2}
+                          fill={nodeColor}
+                          stroke="hsl(var(--background))"
+                          strokeWidth={1.5}
+                          vectorEffect="non-scaling-stroke"
+                        />
+                      </>
                     )}
 
-                    {/* Year node, on the curve at vertical centre */}
-                    <circle
-                      cx={xBottom}
-                      cy={50}
-                      r={isHovered ? 4 : hasGoals ? 3 : 2}
-                      fill={nodeColor}
-                      stroke="hsl(var(--background))"
-                      strokeWidth={1.5}
-                      vectorEffect="non-scaling-stroke"
-                    />
+                    {isTornado && (
+                      <>
+                        {/* Dramatic two-tone gradient — bar starts fully transparent at the
+                            axis, ramps through the standard hue, and lands on the deeper
+                            shade at the outer tip. Lights up the magnitude side hard. */}
+                        <defs>
+                          <linearGradient
+                            id={`tornadoBar-${y}`}
+                            x1="0"
+                            y1="0"
+                            x2="1"
+                            y2="0"
+                          >
+                            <stop
+                              offset="0%"
+                              stopColor={`rgb(${tornadoIsSurplus ? tornadoBaseHue : tornadoDeepHue})`}
+                              stopOpacity={tornadoIsSurplus ? 0 : 1}
+                            />
+                            <stop
+                              offset="35%"
+                              stopColor={`rgb(${tornadoBaseHue})`}
+                              stopOpacity={tornadoIsSurplus ? 0.55 : 0.95}
+                            />
+                            <stop
+                              offset="65%"
+                              stopColor={`rgb(${tornadoBaseHue})`}
+                              stopOpacity={tornadoIsSurplus ? 0.95 : 0.55}
+                            />
+                            <stop
+                              offset="100%"
+                              stopColor={`rgb(${tornadoIsSurplus ? tornadoDeepHue : tornadoBaseHue})`}
+                              stopOpacity={tornadoIsSurplus ? 1 : 0}
+                            />
+                          </linearGradient>
+                        </defs>
+
+                        {/* Centre axis — quiet vertical guide bars pivot around */}
+                        <line
+                          x1={50}
+                          y1={isFirst ? 50 : 0}
+                          x2={50}
+                          y2={isLast ? 50 : 100}
+                          stroke="hsl(var(--border))"
+                          strokeOpacity={0.7}
+                          strokeWidth={1}
+                          vectorEffect="non-scaling-stroke"
+                        />
+
+                        {tornadoNorm > 0 && (
+                          <rect
+                            x={tornadoX1}
+                            y={14}
+                            width={Math.max(0, tornadoX2 - tornadoX1)}
+                            height={72}
+                            fill={`url(#tornadoBar-${y})`}
+                            fillOpacity={tornadoFillOpacity}
+                          />
+                        )}
+
+                        {hasGoals && (
+                          <circle
+                            cx={50}
+                            cy={50}
+                            r={5}
+                            fill="none"
+                            stroke="hsl(var(--muted-foreground))"
+                            strokeOpacity={0.35}
+                            strokeWidth={1}
+                            vectorEffect="non-scaling-stroke"
+                          />
+                        )}
+
+                        <circle
+                          cx={50}
+                          cy={50}
+                          r={isHovered ? 4 : hasGoals ? 3 : 2}
+                          fill={nodeColor}
+                          stroke="hsl(var(--background))"
+                          strokeWidth={1.5}
+                          vectorEffect="non-scaling-stroke"
+                        />
+                      </>
+                    )}
                   </svg>
 
-                  {/* "You are here" pulsing marker on the current year row */}
-                  {isFirst && (
-                    <div
-                      className="pointer-events-none absolute z-[15]"
-                      style={{
-                        left: `${xBottom}%`,
-                        top: "50%",
-                        transform: "translate(-50%, -50%)",
-                      }}
-                      aria-hidden="true"
-                    >
-                      <span className="relative flex h-3 w-3 items-center justify-center">
-                        <span
-                          className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-75"
-                          style={{ backgroundColor: "#D4A868" }}
-                        />
-                        <span
-                          className="relative inline-flex h-2.5 w-2.5 rounded-full"
-                          style={{
-                            backgroundColor: "#D4A868",
-                            border: "1.5px solid hsl(var(--background))",
-                            boxShadow: "0 0 6px rgba(212, 168, 104, 0.6)",
-                          }}
-                        />
-                      </span>
-                    </div>
-                  )}
-
-                  {isFirst && (
-                    <div
-                      className="pointer-events-none absolute z-[15]"
-                      style={{
-                        left: `${Math.min(92, Math.max(8, xBottom))}%`,
-                        top: "50%",
-                        transform:
-                          xBottom > 80
-                            ? "translate(-100%, -130%)"
-                            : xBottom < 20
-                              ? "translate(0, -130%)"
-                              : "translate(-50%, -130%)",
-                      }}
-                    >
-                      <span
-                        className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold"
-                        style={{
-                          backgroundColor: "#D4A868",
-                          color: "hsl(var(--background))",
-                          boxShadow: "0 2px 6px rgba(212, 168, 104, 0.35)",
-                        }}
-                      >
-                        You are here
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Milestone glow — earned moment, lights up the node briefly */}
                   <AnimatePresence>
                     {hasMilestone && (
                       <motion.div
@@ -1046,8 +1117,7 @@ const GoalsTimeline = () => {
                     )}
                   </AnimatePresence>
 
-                  {/* Trace tooltip — appears at the green line on hover/focus */}
-                  {isHovered && (
+                  {isHovered && (!isTornado || tornadoNorm > 0) && (
                     <div
                       className="pointer-events-none absolute z-20"
                       style={{
@@ -1068,18 +1138,36 @@ const GoalsTimeline = () => {
                             "ui-monospace, SFMono-Regular, Menlo, monospace",
                         }}
                       >
-                        <span className="text-muted-foreground">{y}</span>
-                        <span className="mx-1 text-muted-foreground/50">·</span>
-                        <span className="font-semibold text-foreground">
-                          {formatINRCompact(endNav)}
-                        </span>
-                        {withdrawal > 0 && (
-                          <span
-                            className="ml-1 font-semibold"
-                            style={{ color: "rgb(239,68,68)" }}
-                          >
-                            (−{formatINRCompact(withdrawal)})
-                          </span>
+                        {isTornado ? (
+                          <>
+                            <span
+                              className="font-semibold"
+                              style={{ color: `rgb(${tornadoBaseHue})` }}
+                            >
+                              {tornadoIsSurplus ? "+" : "−"}
+                              {formatINRCompact(Math.abs(delta))}
+                            </span>
+                            <span className="mx-1 text-muted-foreground/50">·</span>
+                            <span className="text-muted-foreground">
+                              {tornadoIsSurplus ? "surplus" : "deficit"}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-muted-foreground">{y}</span>
+                            <span className="mx-1 text-muted-foreground/50">·</span>
+                            <span className="font-semibold text-foreground">
+                              {formatINRCompact(endNav)}
+                            </span>
+                            {withdrawal > 0 && (
+                              <span
+                                className="ml-1 font-semibold"
+                                style={{ color: "rgb(239,68,68)" }}
+                              >
+                                (−{formatINRCompact(withdrawal)})
+                              </span>
+                            )}
+                          </>
                         )}
                       </div>
                     </div>
@@ -1277,9 +1365,19 @@ const GoalsTimeline = () => {
         </ul>
 
         <p className="px-1 text-[10.5px] leading-snug text-muted-foreground/80">
-          The gold spine grows with your projected NAV (today&apos;s portfolio, ₹2L/mo
-          contributions, 9% p.a.). Red ticks mark the years a goal draws from the
-          portfolio.
+          {isTornado ? (
+            <>
+              Each bar shows the year&apos;s change in NAV — green right-bars when growth
+              outran withdrawals (surplus), red left-bars when withdrawals exceeded
+              growth (deficit). Deeper colour means a larger swing.
+            </>
+          ) : (
+            <>
+              The gold spine grows with your projected NAV (today&apos;s portfolio, ₹2L/mo
+              contributions, 9% p.a.). Red ticks mark the years a goal draws from the
+              portfolio.
+            </>
+          )}
         </p>
 
         <div

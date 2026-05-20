@@ -1649,7 +1649,7 @@ const AIChatPanel = ({
                   {embeddedSuggestions.map((q) => (
                     <button
                       key={q}
-                      onClick={() => sendMessage(q)}
+                      onClick={() => (q === "Discover" ? navigate("/discovery") : sendMessage(q))}
                       className="shrink-0 whitespace-nowrap rounded-full border border-border/50 bg-card px-3 py-1.5 text-[11px] font-medium text-muted-foreground shadow-sm transition-colors hover:bg-muted/60"
                     >
                       {q}
