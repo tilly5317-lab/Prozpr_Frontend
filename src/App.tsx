@@ -17,11 +17,14 @@ import MeetingNotes from "./pages/MeetingNotes";
 import MeetingNotesIndex from "./pages/MeetingNotesIndex";
 import Rebalancing from "./pages/Rebalancing";
 import GoalPlanner from "./pages/GoalPlanner";
+import GoalsTimeline from "./pages/GoalsTimeline";
 import Invest from "./pages/Invest";
 import Execute from "./pages/Execute";
+import RebalanceExplanation from "./pages/RebalanceExplanation";
 import Discovery from "./pages/Discovery";
 import MfAllFunds from "./pages/MfAllFunds";
 import MfFundDetail from "./pages/MfFundDetail";
+import AdvisorMeetings from "./pages/AdvisorMeetings";
 import OTP from "./pages/OTP";
 import LinkAccounts from "./pages/LinkAccounts";
 import AboutYou from "./pages/AboutYou";
@@ -60,15 +63,19 @@ const App = () => (
             <Route path="/notifications" element={<Notifications />} />
             <Route path="/invest" element={<Invest />} />
             <Route path="/execute" element={<Execute />} />
+            <Route path="/excecute" element={<Execute />} />
+            <Route path="/rebalance-explanation" element={<RebalanceExplanation />} />
             <Route path="/discovery/mf/:schemeCode" element={<MfFundDetail />} />
             <Route path="/discovery/mf" element={<MfAllFunds />} />
             <Route path="/discovery" element={<Discovery />} />
+            <Route path="/advisor-meetings" element={<AdvisorMeetings />} />
             <Route path="/profile/complete" element={<CompleteProfile />} />
             <Route path="/profile/ips" element={<InvestmentPolicyStatement />} />
             <Route path="/meeting-notes" element={<MeetingNotesIndex />} />
             <Route path="/meeting-notes/detail" element={<MeetingNotes />} />
-            <Route path="/rebalancing" element={<Rebalancing />} />
+            <Route path="/rebalancing" element={<Execute />} />
             <Route path="/goal-planner" element={<GoalPlanner />} />
+            <Route path="/goal-planner/timeline" element={<GoalsTimeline />} />
             <Route path="/family" element={<FamilyMembers />} />
             <Route path="*" element={<NotFound />} />
           </Routes>

@@ -55,13 +55,18 @@ const TOTAL_STORAGE_KEY = "execute:totalInvestment";
 const MIN_TOTAL = 1000;
 const MAX_TOTAL = 100_000_000; // ₹10 Cr
 
+const EQUITY_COLOR = "#3B6FA8";
+const DEBT_COLOR = "#A8872F";
+const GOLD_COLOR = "#E0B84A";
+const CASH_COLOR = "#F1DA9B";
+
 /* Category colors — private bank palette */
 const CAT_COLORS: Record<string, string> = {
-  "India Equity": "#1B3A6B",
-  "US Equity": "#4A7FA5",
-  "Bonds": "#8BA7BC",
-  "Sectoral": "#C4B99A",
-  "Gold": "#D4AF70",
+  "India Equity": EQUITY_COLOR,
+  "US Equity": EQUITY_COLOR,
+  "Bonds": DEBT_COLOR,
+  "Sectoral": CASH_COLOR,
+  "Gold": GOLD_COLOR,
 };
 
 type Bucket = "equity" | "debt" | "hybrid";
@@ -652,23 +657,21 @@ const houseDefaults = defaultETFs.map(
   (e) => HOUSE_DEFAULTS_BY_SHORTNAME[e.shortName] ?? e.allocation,
 );
 
-const DB_ALLOC_COLORS = [
-  "#1B3A6B",
-  "#4A7FA5",
-  "#8BA7BC",
-  "#C4B99A",
-  "#D4AF70",
-  "#10b981",
-  "#f59e0b",
-  "#6366f1",
-  "#ec4899",
-];
+function resolveAllocationColor(assetClass: string, idx: number): string {
+  const key = assetClass.trim().toLowerCase();
+  if (key.includes("equity")) return EQUITY_COLOR;
+  if (key.includes("debt") || key.includes("fixed income") || key.includes("bond")) return DEBT_COLOR;
+  if (key.includes("gold") || key.includes("inflation")) return GOLD_COLOR;
+  if (key.includes("cash") || key.includes("other") || key.includes("hybrid")) return CASH_COLOR;
+  const fallback = [EQUITY_COLOR, DEBT_COLOR, GOLD_COLOR, CASH_COLOR];
+  return fallback[idx % fallback.length];
+}
 
 function portfolioToDonutData(p: PortfolioDetail): { label: string; value: number; color: string }[] {
   const raw = p.allocations.map((a, i) => ({
     label: a.asset_class,
     value: a.allocation_percentage,
-    color: DB_ALLOC_COLORS[i % DB_ALLOC_COLORS.length],
+    color: resolveAllocationColor(a.asset_class, i),
   }));
   const sum = raw.reduce((s, x) => s + x.value, 0);
   if (sum <= 0) return raw;
@@ -1046,7 +1049,7 @@ const Execute = () => {
     <div className="mobile-container bg-background min-h-screen pb-20">
       {/* Header */}
       <div className="px-5 pt-12 pb-1">
-        <h1 className="text-xl font-bold text-foreground">Recommended investment plan</h1>
+        <h1 className="text-lg font-semibold text-foreground">Recommended investment plan</h1>
         {planLoading ? (
           <p className="text-xs text-muted-foreground mt-1">Loading your saved plan…</p>
         ) : null}

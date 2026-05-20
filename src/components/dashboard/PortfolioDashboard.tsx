@@ -1,14 +1,12 @@
 import { useState, useEffect, type ReactNode } from "react";
-import { TrendingUp, TrendingDown } from "lucide-react";
+import { TrendingUp, TrendingDown, MessageCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import BottomNav from "@/components/BottomNav";
 import NetWorthSparkline from "./NetWorthSparkline";
 import CurrentAllocationCard from "./CurrentAllocationCard";
+import AdvisorMeetingsSlot from "./AdvisorMeetingsSlot";
 import LiveEventBanner from "./LiveEventBanner";
-import PeerComparisonCard from "./PeerComparisonCard";
 import PortfolioAnalysisModal from "./PortfolioAnalysisModal";
-import DailyInsights from "./DailyInsights";
-import SkillsQuiz from "./SkillsQuiz";
 import ProfileSwitcher from "./ProfileSwitcher";
 import { useFamily } from "@/context/FamilyContext";
 import {
@@ -75,7 +73,7 @@ function PortfolioMainPanel({
 }) {
   const [analysisOpen, setAnalysisOpen] = useState(false);
 
-  // Headline pill shows the simple total return; TWR / MWR breakdowns live in the Portfolio Analysis modal.
+  // Headline pill shows the simple total return; MWR breakdown lives in the Portfolio Analysis modal.
   const activeGain = portfolio.total_gain_percentage;
   const stop = (e: React.MouseEvent) => e.stopPropagation();
 
@@ -134,6 +132,7 @@ function PortfolioMainPanel({
           type="button"
           onClick={() => setAnalysisOpen(true)}
           className="mt-2 pt-2 block w-full cursor-pointer"
+          style={{ borderTop: "1px solid hsl(var(--hairline))" }}
         >
           <p className="text-[13px] font-medium text-center w-full text-foreground hover:text-accent transition-colors">
             Portfolio analysis →
@@ -204,6 +203,7 @@ function CumulativeMemberBreakdownCard({ data }: { data: CumulativePortfolioResp
 const PortfolioDashboard = () => {
   const { activeView } = useFamily();
   const [timePeriod, setTimePeriod] = useState<"1M" | "6M" | "1Y" | "All">("All");
+  const [hasShownInitialLoad, setHasShownInitialLoad] = useState(false);
 
   const [cumulativeData, setCumulativeData] = useState<CumulativePortfolioResponse | null>(null);
   const [memberPortfolio, setMemberPortfolio] = useState<PortfolioDetail | null>(null);
@@ -217,30 +217,40 @@ const PortfolioDashboard = () => {
   useEffect(() => {
     let cancelled = false;
     if (activeView.type === "cumulative") {
-      setFamilyLoading(true);
+      setFamilyLoading(!hasShownInitialLoad && !cumulativeData);
       getCumulativePortfolio()
         .then((d) => { if (!cancelled) setCumulativeData(d); })
         .catch(() => {
           if (!cancelled) setCumulativeData(cloneDemoCumulativePortfolio());
         })
-        .finally(() => { if (!cancelled) setFamilyLoading(false); });
+        .finally(() => {
+          if (!cancelled) {
+            setFamilyLoading(false);
+            setHasShownInitialLoad(true);
+          }
+        });
     } else if (activeView.type === "member") {
-      setFamilyLoading(true);
+      setFamilyLoading(!hasShownInitialLoad && !memberPortfolio);
       const nick = activeView.member.nickname;
       getFamilyMemberPortfolio(activeView.member.id)
         .then((d) => { if (!cancelled) setMemberPortfolio(d); })
         .catch(() => {
           if (!cancelled) setMemberPortfolio(cloneDemoMemberPortfolio(nick));
         })
-        .finally(() => { if (!cancelled) setFamilyLoading(false); });
+        .finally(() => {
+          if (!cancelled) {
+            setFamilyLoading(false);
+            setHasShownInitialLoad(true);
+          }
+        });
     }
     return () => { cancelled = true; };
-  }, [activeView]);
+  }, [activeView, hasShownInitialLoad]);
 
   useEffect(() => {
     if (activeView.type !== "self") return;
     let cancelled = false;
-    setSelfLoading(true);
+    setSelfLoading(!hasShownInitialLoad && !selfPortfolio);
     Promise.all([
       getMyPortfolio().catch(() => null),
       getFullProfile().catch(() => null),
@@ -271,12 +281,15 @@ const PortfolioDashboard = () => {
         }
       })
       .finally(() => {
-        if (!cancelled) setSelfLoading(false);
+        if (!cancelled) {
+          setSelfLoading(false);
+          setHasShownInitialLoad(true);
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [activeView.type]);
+  }, [activeView.type, hasShownInitialLoad]);
 
   const viewLabel =
     activeView.type === "self"
@@ -288,20 +301,34 @@ const PortfolioDashboard = () => {
   return (
     <div className="mobile-container bg-background flex flex-col min-h-screen">
       {/* Top bar */}
-      <div className="flex items-center justify-between px-[14px] pt-12 pb-2">
+      <div className="flex items-center justify-between px-5 pt-10 pb-2">
         <div>
-          <p style={SECTION_LABEL}>{viewLabel}</p>
+          {activeView.type !== "self" && (
+            <p style={SECTION_LABEL}>{viewLabel}</p>
+          )}
           {activeView.type === "cumulative" && cumulativeData && (
             <p className="text-[9px] text-muted-foreground/60">
               {cumulativeData.member_count} members combined
             </p>
           )}
         </div>
-        <ProfileSwitcher />
+        <div className="flex items-center gap-2">
+          <a
+            href="https://wa.me/"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Chat on WhatsApp"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-muted/60 hover:bg-muted transition-colors"
+            style={{ color: "#25D366" }}
+          >
+            <MessageCircle className="h-4 w-4" strokeWidth={2.2} />
+          </a>
+          <ProfileSwitcher />
+        </div>
       </div>
 
-      {familyLoading && activeView.type !== "self" && (
-        <div className="px-[14px] py-8 flex justify-center">
+      {familyLoading && activeView.type !== "self" && !hasShownInitialLoad && (
+        <div className="px-5 py-8 flex justify-center">
           <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted border-t-foreground" />
         </div>
       )}
@@ -309,8 +336,8 @@ const PortfolioDashboard = () => {
       {/* Cumulative family view */}
       {activeView.type === "cumulative" && (
         <>
-          {!familyLoading && cumulativeData && cumulativeData.total_value > 0 && (
-            <div className="px-[14px] space-y-2">
+          {cumulativeData && cumulativeData.total_value > 0 && (
+            <div className="px-5 space-y-2 pb-24">
               <PortfolioMainPanel
                 portfolio={cumulativeToPortfolioDetail(cumulativeData)}
                 timePeriod={timePeriod}
@@ -320,27 +347,17 @@ const PortfolioDashboard = () => {
                 horizonLabel="Combined family"
                 middleSlot={<CumulativeMemberBreakdownCard data={cumulativeData} />}
               />
+              <AdvisorMeetingsSlot />
               <LiveEventBanner />
-              <div className={CARD} style={CARD_BORDER}>
-                <p className="mb-3" style={SECTION_LABEL}>Test your skills in 2 minutes!</p>
-                <SkillsQuiz />
-              </div>
-              <div className={CARD} style={CARD_BORDER}>
-                <p className="mb-3" style={SECTION_LABEL}>Head to head · 1Y</p>
-                <PeerComparisonCard portfolio={cumulativeToPortfolioDetail(cumulativeData)} />
-              </div>
-              <div className={`${CARD} pb-24`} style={CARD_BORDER}>
-                <DailyInsights />
-              </div>
             </div>
           )}
-          {!familyLoading && cumulativeData && cumulativeData.total_value === 0 && (
-            <div className="px-[14px] py-8 text-center">
+          {cumulativeData && cumulativeData.total_value === 0 && (
+            <div className="px-5 py-8 text-center">
               <p className="text-xs text-muted-foreground">No combined portfolio data yet.</p>
             </div>
           )}
-          {!familyLoading && !cumulativeData && (
-            <div className="px-[14px] py-6 text-center text-xs text-muted-foreground">
+          {!familyLoading && !cumulativeData && hasShownInitialLoad && (
+            <div className="px-5 py-6 text-center text-xs text-muted-foreground">
               Could not load family portfolio. Check your connection and try again.
             </div>
           )}
@@ -350,8 +367,8 @@ const PortfolioDashboard = () => {
       {/* Member view */}
       {activeView.type === "member" && (
         <>
-          {!familyLoading && memberPortfolio && memberPortfolio.total_value > 0 && (
-            <div className="px-[14px] space-y-2">
+          {memberPortfolio && memberPortfolio.total_value > 0 && (
+            <div className="px-5 space-y-2 pb-24">
               <PortfolioMainPanel
                 portfolio={memberPortfolio}
                 timePeriod={timePeriod}
@@ -360,27 +377,17 @@ const PortfolioDashboard = () => {
                 riskCategory={null}
                 horizonLabel={null}
               />
+              <AdvisorMeetingsSlot />
               <LiveEventBanner />
-              <div className={CARD} style={CARD_BORDER}>
-                <p className="mb-3" style={SECTION_LABEL}>Test your skills in 2 minutes!</p>
-                <SkillsQuiz />
-              </div>
-              <div className={CARD} style={CARD_BORDER}>
-                <p className="mb-3" style={SECTION_LABEL}>Head to head · 1Y</p>
-                <PeerComparisonCard portfolio={memberPortfolio} />
-              </div>
-              <div className={`${CARD} pb-24`} style={CARD_BORDER}>
-                <DailyInsights />
-              </div>
             </div>
           )}
-          {!familyLoading && memberPortfolio && memberPortfolio.total_value === 0 && (
-            <div className="px-[14px] py-8 text-center">
+          {memberPortfolio && memberPortfolio.total_value === 0 && (
+            <div className="px-5 py-8 text-center">
               <p className="text-xs text-muted-foreground">No portfolio data available for this member yet.</p>
             </div>
           )}
-          {!familyLoading && !memberPortfolio && (
-            <div className="px-[14px] py-6 text-center text-xs text-muted-foreground">
+          {!familyLoading && !memberPortfolio && hasShownInitialLoad && (
+            <div className="px-5 py-6 text-center text-xs text-muted-foreground">
               Could not load this member&apos;s portfolio. Check your connection and try again.
             </div>
           )}
@@ -390,14 +397,14 @@ const PortfolioDashboard = () => {
       {/* Self view */}
       {activeView.type === "self" && (
         <>
-          {selfLoading && (
-            <div className="px-[14px] py-8 flex justify-center">
+          {selfLoading && !hasShownInitialLoad && (
+            <div className="px-5 py-8 flex justify-center">
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted border-t-foreground" />
             </div>
           )}
 
-          {!selfLoading && selfPortfolio && (
-            <div className="px-[14px] space-y-2">
+          {selfPortfolio && (
+            <div className="px-5 space-y-2 pb-24">
               <PortfolioMainPanel
                 portfolio={selfPortfolio}
                 timePeriod={timePeriod}
@@ -410,23 +417,13 @@ const PortfolioDashboard = () => {
                   null
                 }
               />
+              <AdvisorMeetingsSlot />
               <LiveEventBanner />
-              <div className={CARD} style={CARD_BORDER}>
-                <p className="mb-3" style={SECTION_LABEL}>Test your skills in 2 minutes!</p>
-                <SkillsQuiz />
-              </div>
-              <div className={CARD} style={CARD_BORDER}>
-                <p className="mb-3" style={SECTION_LABEL}>Head to head · 1Y</p>
-                <PeerComparisonCard portfolio={selfPortfolio} />
-              </div>
-              <div className={`${CARD} pb-24`} style={CARD_BORDER}>
-                <DailyInsights />
-              </div>
             </div>
           )}
 
-          {!selfLoading && !selfPortfolio && (
-            <div className="px-[14px] py-6 text-center text-xs text-muted-foreground">
+          {!selfLoading && !selfPortfolio && hasShownInitialLoad && (
+            <div className="px-5 py-6 text-center text-xs text-muted-foreground">
               Could not load your portfolio from the server. Check your connection and try again.
             </div>
           )}

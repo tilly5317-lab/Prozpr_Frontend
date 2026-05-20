@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Send, Mic, MicOff, AlertCircle, Loader2, Sparkles, Check, Square, ChevronDown, ChevronUp, Pencil, ArrowRight, Plus, Clock, Trash2, MessageSquare } from "lucide-react";
+import { X, Send, Mic, MicOff, AlertCircle, Loader2, Sparkles, Check, Square, ChevronDown, ChevronUp, Pencil, ArrowRight, Plus, Trash2, MessageSquare, MessageCircle, Menu } from "lucide-react";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -481,6 +481,59 @@ const GOAL_DEMO_INTRO = `Hi — I'm **Tilly**. I'll help you shape a clear, inve
 Let's start with outcomes: what financial goals are you planning for (for example: retirement, home, education, travel, business)? You can share one or multiple goals.`;
 
 /* ── Session history sidebar ── */
+const DUMMY_SESSIONS: ChatSessionInfo[] = (() => {
+  const now = Date.now();
+  const yesterday = new Date(now - 24 * 3600 * 1000).toISOString();
+  const twoDays = new Date(now - 2 * 24 * 3600 * 1000).toISOString();
+  return [
+    {
+      id: "demo-rebalance",
+      title: "Q3 rebalance plan",
+      status: "active",
+      created_at: twoDays,
+      updated_at: yesterday,
+    },
+    {
+      id: "demo-elss",
+      title: "ELSS picks & 80C strategy",
+      status: "active",
+      created_at: twoDays,
+      updated_at: twoDays,
+    },
+  ];
+})();
+
+const DUMMY_SESSION_MESSAGES: Record<string, Message[]> = {
+  "demo-rebalance": [
+    { role: "user", content: "Equities are running hot — should I rebalance now or wait?" },
+    {
+      role: "ai",
+      content:
+        "Your equity allocation has drifted from **48% → 57%** this quarter. Rebalancing now keeps you on plan and avoids selling more than necessary later.\n\nA tax-aware tilt: trim **₹75k** from the Nifty 50 ETF (least short-term gain) and route it into the **Corporate Bond fund** + **SGB Series X**.",
+    },
+    { role: "user", content: "Any tax impact?" },
+    {
+      role: "ai",
+      content:
+        "I picked units with the lowest capital gains, so the realized LTCG comes to **~₹38k** — well within your ₹1L exemption for the year. Net tax impact: **₹0**.",
+    },
+  ],
+  "demo-elss": [
+    { role: "user", content: "I still have ₹40k of 80C left — best ELSS pick right now?" },
+    {
+      role: "ai",
+      content:
+        "For a 3-year lock-in with strong long-term track record, two solid choices:\n\n- **Parag Parikh Tax Saver** — flexi-cap style, lower drawdowns\n- **Quant ELSS Tax Saver** — momentum-tilted, higher beta\n\nGiven your risk profile (Moderate), I'd lean Parag Parikh.",
+    },
+    { role: "user", content: "SIP or lump sum?" },
+    {
+      role: "ai",
+      content:
+        "Since 80C resets every year and the lock-in is per investment, a **monthly SIP of ₹3,500** spreads the entry risk and locks in ₹42k by Mar — just over your remaining 80C headroom.",
+    },
+  ],
+};
+
 function formatSessionDate(iso: string): string {
   const d = new Date(iso);
   const now = new Date();
@@ -500,11 +553,13 @@ const SessionHistoryPanel = ({
   open,
   onClose,
   onSelectSession,
+  onNewChat,
   activeSessionId,
 }: {
   open: boolean;
   onClose: () => void;
   onSelectSession: (id: string) => void;
+  onNewChat: () => void;
   activeSessionId: string | null;
 }) => {
   const [sessions, setSessions] = useState<ChatSessionInfo[]>([]);
@@ -549,10 +604,17 @@ const SessionHistoryPanel = ({
             transition={{ type: "spring", damping: 28, stiffness: 320 }}
             className="absolute left-0 top-0 bottom-0 z-40 w-[280px] max-w-[80%] flex flex-col bg-background border-r border-border/40 shadow-xl"
           >
-            <div className="flex items-center justify-between px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 border-b border-border/30">
-              <h3 className="text-sm font-semibold text-foreground">Chat History</h3>
-              <button onClick={onClose} className="p-1 rounded-md hover:bg-muted/60 transition-colors">
-                <X className="h-4 w-4 text-muted-foreground" />
+            <div className="px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 border-b border-border/30">
+              <h3 className="text-sm font-semibold text-foreground">Chats</h3>
+            </div>
+
+            <div className="px-3 pt-3 pb-2 border-b border-border/30">
+              <button
+                onClick={() => { onNewChat(); onClose(); }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-[12px] font-semibold text-foreground bg-muted/50 hover:bg-muted transition-colors"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                New chat
               </button>
             </div>
 
@@ -561,14 +623,9 @@ const SessionHistoryPanel = ({
                 <div className="flex items-center justify-center py-12">
                   <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                 </div>
-              ) : sessions.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-                  <MessageSquare className="h-8 w-8 text-muted-foreground/30 mb-2" />
-                  <p className="text-xs text-muted-foreground">No conversations yet</p>
-                </div>
               ) : (
                 <div className="py-1">
-                  {sessions.map((s) => (
+                  {(sessions.length > 0 ? sessions : DUMMY_SESSIONS).map((s) => (
                     <button
                       key={s.id}
                       onClick={() => { onSelectSession(s.id); onClose(); }}
@@ -688,6 +745,22 @@ const AIChatPanel = ({
   }, []);
 
   const handleSelectSession = useCallback(async (sessionId: string) => {
+    // Dummy historical chat — short-circuit, no backend call.
+    const dummyMessages = DUMMY_SESSION_MESSAGES[sessionId];
+    if (dummyMessages) {
+      const dummy = DUMMY_SESSIONS.find((s) => s.id === sessionId);
+      sessionIdRef.current = sessionId;
+      setMessages(dummyMessages.map((m) => ({ ...m })));
+      setChatStartTime(
+        new Date(dummy?.created_at ?? Date.now()).toLocaleString("en-IN", {
+          day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true,
+        }),
+      );
+      setShowFirstUseHint(false);
+      setOnboardingActive(false);
+      setCompletedSections([]);
+      return;
+    }
     try {
       const session = await getChatSession(sessionId);
       sessionIdRef.current = session.id;
@@ -1346,6 +1419,7 @@ const AIChatPanel = ({
           open={historyOpen}
           onClose={() => setHistoryOpen(false)}
           onSelectSession={handleSelectSession}
+          onNewChat={handleNewChat}
           activeSessionId={sessionIdRef.current}
         />
 
@@ -1353,20 +1427,22 @@ const AIChatPanel = ({
         {!goalPlanningDemo && (
           <div className="shrink-0 z-20 flex items-center justify-between px-4 pt-[max(0.5rem,env(safe-area-inset-top))] pb-2 border-b border-border/30 bg-background/95 backdrop-blur-sm">
             <button
-              onClick={handleNewChat}
-              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-primary transition-colors hover:bg-primary/10"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              New Chat
-            </button>
-            <p className="text-xs font-semibold text-foreground">Tilly</p>
-            <button
               onClick={() => setHistoryOpen(true)}
-              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted/60"
+              aria-label="Open chats"
+              className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-colors"
             >
-              <Clock className="h-3.5 w-3.5" />
-              History
+              <Menu className="h-4 w-4" />
             </button>
+            <a
+              href="https://wa.me/"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Chat on WhatsApp"
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-muted/60 hover:bg-muted transition-colors"
+              style={{ color: "#25D366" }}
+            >
+              <MessageCircle className="h-3.5 w-3.5" strokeWidth={2.2} />
+            </a>
           </div>
         )}
 

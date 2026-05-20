@@ -192,7 +192,7 @@ const InvestmentPolicyStatement = () => {
           <button onClick={() => navigate("/profile")} className="text-foreground">
             <ArrowLeft className="h-4.5 w-4.5" />
           </button>
-          <h1 className="text-base font-semibold text-foreground">Investment Policy Statement</h1>
+          <h1 className="text-lg font-semibold text-foreground">Investment Policy Statement</h1>
         </div>
         <button
           onClick={fetchProfile}

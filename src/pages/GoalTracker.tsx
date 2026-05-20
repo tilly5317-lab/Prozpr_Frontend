@@ -162,7 +162,7 @@ const GoalTracker = () => {
         <button onClick={() => navigate("/profile")} className="flex h-7 w-7 items-center justify-center rounded-xl bg-secondary">
           <ArrowLeft className="h-3.5 w-3.5 text-foreground" />
         </button>
-        <h1 className="text-base font-semibold text-foreground">Goal Tracker</h1>
+        <h1 className="text-lg font-semibold text-foreground">Goal Tracker</h1>
       </div>
 
       {/* Goal Card */}
