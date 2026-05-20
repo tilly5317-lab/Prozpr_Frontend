@@ -75,5 +75,7 @@ jobs:
             git fetch --all
             git reset --hard origin/main
             npm install
+            # Vite + large dependency tree needs more than Node's default heap on small VMs
+            export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=4096}"
             npm run build
             sudo cp -r dist/* /var/www/html/
