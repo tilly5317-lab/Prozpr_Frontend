@@ -165,7 +165,7 @@ const LinkAccounts = () => {
         transition={{ delay: 0.1 }}
         className="w-full max-w-[340px] mb-5"
       >
-        <h1 className="text-xl font-semibold text-foreground">Link your accounts</h1>
+        <h1 className="text-lg font-semibold text-foreground">Link your accounts</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
           Select accounts to get a complete picture
         </p>

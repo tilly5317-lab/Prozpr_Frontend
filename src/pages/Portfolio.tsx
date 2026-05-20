@@ -1,31 +1,30 @@
-// import { useState } from "react";
-// import { useNavigate } from "react-router-dom";
-// import { motion, AnimatePresence } from "framer-motion";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
 
 import PortfolioDashboard from "@/components/dashboard/PortfolioDashboard";
 
-// const STORAGE_KEY = "portfolio_first_visit_shown";
+const STORAGE_KEY = "portfolio_first_visit_shown";
 
 const Portfolio = () => {
-  // const navigate = useNavigate();
-  // const [showPopup, setShowPopup] = useState(true);
+  const navigate = useNavigate();
+  const [showPopup, setShowPopup] = useState(true);
 
-  // const dismiss = () => {
-  //   localStorage.setItem(STORAGE_KEY, "true");
-  //   setShowPopup(false);
-  // };
+  const dismiss = () => {
+    localStorage.setItem(STORAGE_KEY, "true");
+    setShowPopup(false);
+  };
 
-  // const handleTakeALook = () => {
-  //   localStorage.setItem(STORAGE_KEY, "true");
-  //   setShowPopup(false);
-  //   navigate("/execute");
-  // };
+  const handleTakeALook = () => {
+    localStorage.setItem(STORAGE_KEY, "true");
+    setShowPopup(false);
+    navigate("/rebalance-explanation");
+  };
 
   return (
     <div className="relative min-h-screen bg-background">
       <PortfolioDashboard />
 
-      {/* First-visit "Tilly has an investment recommendation" modal — disabled for now.
       <AnimatePresence>
         {showPopup && (
           <>
@@ -69,7 +68,6 @@ const Portfolio = () => {
           </>
         )}
       </AnimatePresence>
-      */}
     </div>
   );
 };

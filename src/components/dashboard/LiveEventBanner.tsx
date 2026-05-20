@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, Crown, MapPin, Calendar, Clock, X } from "lucide-react";
+import { ArrowRight, Crown, MapPin, Calendar, Clock, X, MessageCircle, Linkedin } from "lucide-react";
 
 const GOLD = "#d4a868";
 const GOLD_SOFT = "rgba(212, 168, 104, 0.55)";
@@ -17,13 +17,34 @@ interface Attendee {
   name: string;
   tagline: string;
   color: string;
+  whatsappUrl?: string;
+  linkedinUrl?: string;
 }
 
 const ATTENDEES: Attendee[] = [
-  { initial: "AM", name: "Aisha Mehta", tagline: "Investor · Mumbai", color: "#7b4f8f" },
-  { initial: "RP", name: "Raj Patel", tagline: "Founder · Bangalore", color: "#3d6b7c" },
+  {
+    initial: "AM",
+    name: "Aisha Mehta",
+    tagline: "Investor · Mumbai",
+    color: "#7b4f8f",
+    whatsappUrl: "https://wa.me/919999999901",
+    linkedinUrl: "https://www.linkedin.com/in/aisha-mehta",
+  },
+  {
+    initial: "RP",
+    name: "Raj Patel",
+    tagline: "Founder · Bangalore",
+    color: "#3d6b7c",
+    linkedinUrl: "https://www.linkedin.com/in/raj-patel",
+  },
   { initial: "PI", name: "Priya Iyer", tagline: "Designer · Delhi", color: "#a6614a" },
-  { initial: "DW", name: "Daniel Wong", tagline: "VC · Singapore", color: "#5c7c3d" },
+  {
+    initial: "DW",
+    name: "Daniel Wong",
+    tagline: "VC · Singapore",
+    color: "#5c7c3d",
+    whatsappUrl: "https://wa.me/6599999999",
+  },
   { initial: "SK", name: "Sara Khan", tagline: "Architect · Mumbai", color: "#8c6a2b" },
   { initial: "TP", name: "Tom Patel", tagline: "Friend · Mumbai", color: "#7e5a40" },
 ];
@@ -84,7 +105,7 @@ const LiveEventBanner = () => {
           </p>
 
           <div className="mt-2.5 flex items-center justify-between gap-2">
-            <span className="text-[10px] text-white/45">{TOTAL_ATTENDING} members joining</span>
+            <span className="text-[10px] text-white/45">{TOTAL_ATTENDING} members interested</span>
             <span
               className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold"
               style={{
@@ -93,7 +114,7 @@ const LiveEventBanner = () => {
                 border: `1px solid ${GOLD_SOFT}`,
               }}
             >
-              Reserve seat
+              Indicate interest
               <ArrowRight className="h-3 w-3" />
             </span>
           </div>
@@ -124,7 +145,7 @@ const ReserveSheet = ({ onClose }: { onClose: () => void }) => {
         className="fixed inset-x-0 bottom-0 sm:inset-0 sm:flex sm:items-center sm:justify-center z-[60] px-0 sm:px-4"
         role="dialog"
         aria-modal="true"
-        aria-label="Reserve a seat for Beyoncé · Live in Mumbai"
+        aria-label="Indicate interest in Beyoncé · Live in Mumbai"
       >
         <div
           className="mx-auto w-full max-w-md rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col"
@@ -200,13 +221,13 @@ const ReserveSheet = ({ onClose }: { onClose: () => void }) => {
                 className="text-[10px] uppercase font-semibold"
                 style={{ letterSpacing: "1.6px", color: "#5c5247" }}
               >
-                Members attending
+                Members interested
               </p>
               <p
                 className="text-[11px] font-semibold"
                 style={{ color: "#27241f", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
               >
-                {TOTAL_ATTENDING}+ joining
+                {TOTAL_ATTENDING}+ interested
               </p>
             </div>
 
@@ -266,6 +287,36 @@ const ReserveSheet = ({ onClose }: { onClose: () => void }) => {
                       {a.tagline}
                     </p>
                   </div>
+                  {(a.whatsappUrl || a.linkedinUrl) && (
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {a.whatsappUrl && (
+                        <a
+                          href={a.whatsappUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="h-7 w-7 rounded-full inline-flex items-center justify-center"
+                          style={{ backgroundColor: "rgba(34,197,94,0.16)", color: "#16a34a" }}
+                          aria-label={`WhatsApp ${a.name}`}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <MessageCircle className="h-3.5 w-3.5" />
+                        </a>
+                      )}
+                      {a.linkedinUrl && (
+                        <a
+                          href={a.linkedinUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="h-7 w-7 rounded-full inline-flex items-center justify-center"
+                          style={{ backgroundColor: "rgba(59,130,246,0.16)", color: "#2563eb" }}
+                          aria-label={`Connect with ${a.name} on LinkedIn`}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Linkedin className="h-3.5 w-3.5" />
+                        </a>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -297,7 +348,7 @@ const ReserveSheet = ({ onClose }: { onClose: () => void }) => {
                 color: "#f5efe3",
               }}
             >
-              Reserve seat
+              Indicate interest
               <ArrowRight className="h-3.5 w-3.5" />
             </button>
           </div>

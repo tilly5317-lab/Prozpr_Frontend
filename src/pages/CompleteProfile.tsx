@@ -29,6 +29,7 @@ interface Property {
   mortgage: string;
   monthlyRepayment: string;
   yearPurchased: string;
+  mortgageEndDate: string;
 }
 
 interface GoalDetail {
@@ -587,7 +588,7 @@ const CompleteProfile = () => {
   const [liabilities, setLiabilities] = useState("");
   const [otherAssets, setOtherAssets] = useState<OtherAsset[]>([]);
   const [ownsHome, setOwnsHome] = useState(false);
-  const [properties, setProperties] = useState<Property[]>([{ value: "", mortgage: "", monthlyRepayment: "", yearPurchased: "" }]);
+  const [properties, setProperties] = useState<Property[]>([{ value: "", mortgage: "", monthlyRepayment: "", yearPurchased: "", mortgageEndDate: "" }]);
   const [plannedExpenses, setPlannedExpenses] = useState<PlannedExpense[]>([{ description: "", year: "", amount: "", addAsGoal: false }]);
   const [otherAssetsValue, setOtherAssetsValue] = useState("");
   const [otherAssetDescription, setOtherAssetDescription] = useState("");
@@ -684,7 +685,7 @@ const CompleteProfile = () => {
           setLiabilities(parseNum(ip.total_liabilities?.toString()));
           if (ip.property_value) {
             setOwnsHome(true);
-            setProperties([{ value: parseNum(ip.property_value?.toString()), mortgage: parseNum(ip.mortgage_amount?.toString()), monthlyRepayment: "", yearPurchased: "" }]);
+            setProperties([{ value: parseNum(ip.property_value?.toString()), mortgage: parseNum(ip.mortgage_amount?.toString()), monthlyRepayment: "", yearPurchased: "", mortgageEndDate: "" }]);
           }
           // plannedExpenses removed — now structured fields
           setEmergencyFund(parseNum(ip.emergency_fund?.toString()));
@@ -1050,11 +1051,13 @@ const CompleteProfile = () => {
                         <div><label className="text-[10px] text-muted-foreground">Property value</label><TextInput value={prop.value} onChange={(v) => updateProp("value", v)} prefix="₹" placeholder="e.g. 1.20 Cr" /></div>
                         <div><label className="text-[10px] text-muted-foreground">Total outstanding mortgage</label><TextInput value={prop.mortgage} onChange={(v) => updateProp("mortgage", v)} prefix="₹" placeholder="e.g. 45,00,000" /></div>
                         <div><label className="text-[10px] text-muted-foreground">Current monthly repayment</label><TextInput value={prop.monthlyRepayment} onChange={(v) => updateProp("monthlyRepayment", v)} prefix="₹" placeholder="e.g. 35,000" /></div>
-                        
+                        {prop.mortgage.trim() !== "" && (
+                          <div><label className="text-[10px] text-muted-foreground">Mortgage end date</label><TextInput value={prop.mortgageEndDate} onChange={(v) => updateProp("mortgageEndDate", v)} placeholder="e.g. Mar 2042" /></div>
+                        )}
                       </div>
                     );
                   })}
-                  <button onClick={() => setProperties(prev => [...prev, { value: "", mortgage: "", monthlyRepayment: "", yearPurchased: "" }])} className="flex items-center gap-1 text-xs font-medium text-accent hover:text-accent/80 transition-colors mt-1">
+                  <button onClick={() => setProperties(prev => [...prev, { value: "", mortgage: "", monthlyRepayment: "", yearPurchased: "", mortgageEndDate: "" }])} className="flex items-center gap-1 text-xs font-medium text-accent hover:text-accent/80 transition-colors mt-1">
                     <Plus className="h-3 w-3" /> Add another property
                   </button>
                 </div>
@@ -1391,7 +1394,7 @@ const CompleteProfile = () => {
           <ArrowLeft className="h-4 w-4 text-foreground" />
         </button>
         <div>
-          <h1 className="text-base font-semibold text-foreground">Complete Your Investment Profile</h1>
+          <h1 className="text-lg font-semibold text-foreground">Complete Your Investment Profile</h1>
           <p className="text-[11px] text-muted-foreground">Takes 10–15 minutes · We've pre-filled what we already know</p>
         </div>
       </div>
