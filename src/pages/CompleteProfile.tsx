@@ -30,6 +30,7 @@ interface Property {
   monthlyRepayment: string;
   yearPurchased: string;
   mortgageEndDate: string;
+  lastPaymentDate: string;
 }
 
 interface GoalDetail {
@@ -40,6 +41,9 @@ interface GoalDetail {
   minReturn: string;
   notes: string;
   incomeAmount: string;
+  // Home-purchase specific. Empty string when unused.
+  downPaymentPct: string;
+  loanTenureYears: string;
 }
 
 interface AllocationRange {
@@ -52,6 +56,13 @@ interface PlannedExpense {
   year: string;
   amount: string;
   addAsGoal: boolean;
+}
+
+interface LargeIncome {
+  description: string;
+  year: string;
+  amount: string;
+  currency: string;
 }
 
 const STATUS_LABELS: Record<SectionStatus, string> = {
@@ -585,18 +596,18 @@ const CompleteProfile = () => {
   const [primaryWealthSource, setPrimaryWealthSource] = useState<string[]>([]);
   const [wealthSourceOtherText, setWealthSourceOtherText] = useState("");
   const [investableAssets, setInvestableAssets] = useState("");
+  const [monthlyInvestment, setMonthlyInvestment] = useState("");
   const [liabilities, setLiabilities] = useState("");
   const [otherAssets, setOtherAssets] = useState<OtherAsset[]>([]);
   const [ownsHome, setOwnsHome] = useState(false);
-  const [properties, setProperties] = useState<Property[]>([{ value: "", mortgage: "", monthlyRepayment: "", yearPurchased: "", mortgageEndDate: "" }]);
+  const [properties, setProperties] = useState<Property[]>([{ value: "", mortgage: "", monthlyRepayment: "", yearPurchased: "", mortgageEndDate: "", lastPaymentDate: "" }]);
   const [plannedExpenses, setPlannedExpenses] = useState<PlannedExpense[]>([{ description: "", year: "", amount: "", addAsGoal: false }]);
   const [otherAssetsValue, setOtherAssetsValue] = useState("");
   const [otherAssetDescription, setOtherAssetDescription] = useState("");
   const [expectingLargeIncome, setExpectingLargeIncome] = useState(false);
-  const [largeIncomeAmount, setLargeIncomeAmount] = useState("");
-  const [largeIncomeCurrency, setLargeIncomeCurrency] = useState("INR");
-  const [largeIncomeYear, setLargeIncomeYear] = useState("");
-  const [largeIncomeDescription, setLargeIncomeDescription] = useState("");
+  const [largeIncomes, setLargeIncomes] = useState<LargeIncome[]>([
+    { description: "", year: "", amount: "", currency: "INR" },
+  ]);
   const [emergencyFund, setEmergencyFund] = useState("");
   const [emergencyTimeframe, setEmergencyTimeframe] = useState("6 months");
 
@@ -613,6 +624,7 @@ const CompleteProfile = () => {
   const [riskCapacity, setRiskCapacity] = useState("");
   const [investmentExperience, setInvestmentExperience] = useState("");
   const [investmentHorizon, setInvestmentHorizon] = useState("");
+  const [planningUntilAge, setPlanningUntilAge] = useState("");
   const [showBehavModal, setShowBehavModal] = useState(false);
   const [investmentPref, setInvestmentPref] = useState("");
   const [behavQ1, setBehavQ1] = useState("");
@@ -685,7 +697,7 @@ const CompleteProfile = () => {
           setLiabilities(parseNum(ip.total_liabilities?.toString()));
           if (ip.property_value) {
             setOwnsHome(true);
-            setProperties([{ value: parseNum(ip.property_value?.toString()), mortgage: parseNum(ip.mortgage_amount?.toString()), monthlyRepayment: "", yearPurchased: "", mortgageEndDate: "" }]);
+            setProperties([{ value: parseNum(ip.property_value?.toString()), mortgage: parseNum(ip.mortgage_amount?.toString()), monthlyRepayment: "", yearPurchased: "", mortgageEndDate: "", lastPaymentDate: "" }]);
           }
           // plannedExpenses removed — now structured fields
           setEmergencyFund(parseNum(ip.emergency_fund?.toString()));
@@ -773,7 +785,19 @@ const CompleteProfile = () => {
   }, [permittedAssets, allocations]);
 
   const getOrCreateGoalDetail = (objective: string): GoalDetail => {
-    return goalDetails[objective] || { amount: "", currency: "INR", year: "", purposes: [], minReturn: "", notes: "", incomeAmount: "" };
+    return (
+      goalDetails[objective] || {
+        amount: "",
+        currency: "INR",
+        year: "",
+        purposes: [],
+        minReturn: "",
+        notes: "",
+        incomeAmount: "",
+        downPaymentPct: "",
+        loanTenureYears: "",
+      }
+    );
   };
 
   const updateGoalDetail = (objective: string, updates: Partial<GoalDetail>) => {
@@ -868,7 +892,7 @@ const CompleteProfile = () => {
     toast.success(`Section ${idx + 1} confirmed ✓`);
   }, [
     occupation, primaryResidence, earningMembers, dependents, values,
-    primaryWealthSource, investableAssets, liabilities, properties, plannedExpenses, emergencyFund, emergencyTimeframe, otherAssets, otherAssetsValue, ownsHome, expectingLargeIncome, largeIncomeAmount, largeIncomeCurrency, largeIncomeYear,
+    primaryWealthSource, investableAssets, liabilities, properties, plannedExpenses, emergencyFund, emergencyTimeframe, otherAssets, otherAssetsValue, ownsHome, expectingLargeIncome, largeIncomes,
     selectedObjectives, goalDetails,
     riskLevelIdx, riskCapacity, investmentExperience, investmentHorizon, horizonNotes, behavQ1, behavQ2, behavQ3, maxDrawdown, comfortAssets,
     permittedAssets, allocations, prohibited, leverage, derivatives, diversificationNotes,
@@ -1014,10 +1038,19 @@ const CompleteProfile = () => {
                 </div>
               )}
             </div>
-            <div><FieldLabel>Cash and financial assets</FieldLabel><TextInput value={investableAssets} onChange={setInvestableAssets} prefix="₹" placeholder="e.g. 42,00,000" /></div>
+            <div>
+              <FieldLabel>Cash and financial assets</FieldLabel>
+              <p className="text-[10px] text-muted-foreground -mt-0.5 mb-1">Cash, mutual funds, stocks, ETFs, bonds and similar holdings.</p>
+              <TextInput value={investableAssets} onChange={setInvestableAssets} prefix="₹" placeholder="e.g. 42,00,000" />
+            </div>
+            <div>
+              <FieldLabel>Regular monthly investment</FieldLabel>
+              <p className="text-[10px] text-muted-foreground -mt-0.5 mb-1">Optional — SIPs or other recurring contributions you already have in flight.</p>
+              <TextInput value={monthlyInvestment} onChange={setMonthlyInvestment} prefix="₹" placeholder="e.g. 25,000" />
+            </div>
             <div>
               <FieldLabel>Other assets</FieldLabel>
-              <p className="text-[10px] text-muted-foreground -mt-0.5 mb-1">Includes any unlisted shares, gold and other assets</p>
+              <p className="text-[10px] text-muted-foreground -mt-0.5 mb-1">Includes unlisted shares, gold and other assets. Excludes your home.</p>
               <div className="grid grid-cols-2 gap-2">
                 <div><label className="text-[10px] text-muted-foreground">Asset (description)</label><TextInput value={otherAssetDescription} onChange={setOtherAssetDescription} placeholder="e.g. Gold, Unlisted shares" /></div>
                 <div><label className="text-[10px] text-muted-foreground">Amount</label><TextInput value={otherAssetsValue} onChange={setOtherAssetsValue} prefix="₹" placeholder="e.g. 10,00,000" /></div>
@@ -1052,12 +1085,23 @@ const CompleteProfile = () => {
                         <div><label className="text-[10px] text-muted-foreground">Total outstanding mortgage</label><TextInput value={prop.mortgage} onChange={(v) => updateProp("mortgage", v)} prefix="₹" placeholder="e.g. 45,00,000" /></div>
                         <div><label className="text-[10px] text-muted-foreground">Current monthly repayment</label><TextInput value={prop.monthlyRepayment} onChange={(v) => updateProp("monthlyRepayment", v)} prefix="₹" placeholder="e.g. 35,000" /></div>
                         {prop.mortgage.trim() !== "" && (
-                          <div><label className="text-[10px] text-muted-foreground">Mortgage end date</label><TextInput value={prop.mortgageEndDate} onChange={(v) => updateProp("mortgageEndDate", v)} placeholder="e.g. Mar 2042" /></div>
+                          <>
+                            <div><label className="text-[10px] text-muted-foreground">Mortgage end date</label><TextInput value={prop.mortgageEndDate} onChange={(v) => updateProp("mortgageEndDate", v)} placeholder="e.g. Mar 2042" /></div>
+                            <div>
+                              <label className="text-[10px] text-muted-foreground">Last payment date</label>
+                              <TextInput
+                                value={prop.lastPaymentDate}
+                                onChange={(v) => updateProp("lastPaymentDate", v)}
+                                placeholder="e.g. 17 Apr 2026"
+                              />
+                              <p className="mt-0.5 text-[9.5px] text-muted-foreground">Most recent EMI we should trace forward from.</p>
+                            </div>
+                          </>
                         )}
                       </div>
                     );
                   })}
-                  <button onClick={() => setProperties(prev => [...prev, { value: "", mortgage: "", monthlyRepayment: "", yearPurchased: "", mortgageEndDate: "" }])} className="flex items-center gap-1 text-xs font-medium text-accent hover:text-accent/80 transition-colors mt-1">
+                  <button onClick={() => setProperties(prev => [...prev, { value: "", mortgage: "", monthlyRepayment: "", yearPurchased: "", mortgageEndDate: "", lastPaymentDate: "" }])} className="flex items-center gap-1 text-xs font-medium text-accent hover:text-accent/80 transition-colors mt-1">
                     <Plus className="h-3 w-3" /> Add another property
                   </button>
                 </div>
@@ -1109,11 +1153,65 @@ const CompleteProfile = () => {
             <div>
               <FieldLabel>Expected large income</FieldLabel>
               <p className="text-[10px] text-muted-foreground -mt-0.5 mb-1">e.g. bonus, inheritance, property sale</p>
-              <div className="grid grid-cols-3 gap-2">
-                <div><label className="text-[10px] text-muted-foreground">Description</label><TextInput value={largeIncomeDescription} onChange={setLargeIncomeDescription} placeholder="e.g. Bonus" /></div>
-                <div><label className="text-[10px] text-muted-foreground">Year</label><TextInput value={largeIncomeYear} onChange={setLargeIncomeYear} placeholder="e.g. 2026" /></div>
-                <div><label className="text-[10px] text-muted-foreground">Amount</label><TextInput value={largeIncomeAmount} onChange={setLargeIncomeAmount} prefix="₹" placeholder="e.g. 25,00,000" /></div>
-              </div>
+              {largeIncomes.map((inc, idx) => {
+                const updateInc = (field: keyof LargeIncome, val: string) => {
+                  setLargeIncomes((prev) =>
+                    prev.map((p, i) => (i === idx ? { ...p, [field]: val } : p)),
+                  );
+                };
+                return (
+                  <div key={idx} className="mb-3">
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="text-[10px] text-muted-foreground">Description</label>
+                        <TextInput
+                          value={inc.description}
+                          onChange={(v) => updateInc("description", v)}
+                          placeholder="e.g. Bonus"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-muted-foreground">Year</label>
+                        <TextInput
+                          value={inc.year}
+                          onChange={(v) => updateInc("year", v)}
+                          placeholder="e.g. 2026"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-muted-foreground">Amount</label>
+                        <TextInput
+                          value={inc.amount}
+                          onChange={(v) => updateInc("amount", v)}
+                          prefix="₹"
+                          placeholder="e.g. 25,00,000"
+                        />
+                      </div>
+                    </div>
+                    {largeIncomes.length > 1 && (
+                      <button
+                        onClick={() =>
+                          setLargeIncomes((prev) => prev.filter((_, i) => i !== idx))
+                        }
+                        className="mt-1.5 text-[10px] text-destructive hover:underline"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+              <button
+                onClick={() =>
+                  setLargeIncomes((prev) => [
+                    ...prev,
+                    { description: "", year: "", amount: "", currency: "INR" },
+                  ])
+                }
+                className="flex items-center gap-1 text-xs text-accent hover:underline mt-1"
+              >
+                <Plus className="h-3 w-3" /> Add another income
+              </button>
             </div>
 
 
@@ -1217,6 +1315,35 @@ const CompleteProfile = () => {
                       <Chip label="Future Value" active={detail.notes === "Future Value"} onClick={() => updateGoalDetail(obj, { notes: "Future Value" })} />
                     </div>
                   </div>
+                  {obj === "Home purchase" && (
+                    <>
+                      <div className="grid grid-cols-2 gap-2 pt-1">
+                        <div>
+                          <label className="text-[10px] text-muted-foreground">Down payment</label>
+                          <TextInput
+                            value={detail.downPaymentPct}
+                            onChange={(v) => updateGoalDetail(obj, { downPaymentPct: v })}
+                            placeholder="e.g. 20"
+                            prefix="%"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-muted-foreground">Loan tenure</label>
+                          <TextInput
+                            value={detail.loanTenureYears}
+                            onChange={(v) => updateGoalDetail(obj, { loanTenureYears: v })}
+                            placeholder="e.g. 20"
+                          />
+                          <p className="mt-0.5 text-[9.5px] text-muted-foreground">Years</p>
+                        </div>
+                      </div>
+                      <p className="text-[10px] leading-snug text-muted-foreground">
+                        <span className="font-semibold text-foreground/80">Disclaimer · </span>
+                        We assume a 7.5% interest rate for the current mortgage. The
+                        assumption will be revised based on your goal date.
+                      </p>
+                    </>
+                  )}
                 </motion.div>
               );
             })}
@@ -1235,6 +1362,16 @@ const CompleteProfile = () => {
                   <Chip key={h} label={h} active={investmentHorizon === h} onClick={() => setInvestmentHorizon(h)} />
                 ))}
               </div>
+            </div>
+
+            {/* Planning horizon — how far out should we plan? */}
+            <div>
+              <FieldLabel>Plan until what age?</FieldLabel>
+              <TextInput
+                value={planningUntilAge}
+                onChange={setPlanningUntilAge}
+                placeholder="e.g. 75"
+              />
             </div>
 
 
@@ -1293,7 +1430,7 @@ const CompleteProfile = () => {
                 <option value="">Select your slab</option>
                 {MARGINAL_TAX_RATE_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>
-                    {o.label} ({o.slab})
+                    {o.label}
                   </option>
                 ))}
               </select>
@@ -1410,21 +1547,6 @@ const CompleteProfile = () => {
         </div>
       </div>
 
-      {/* Mode toggle */}
-      <div className="px-5 pb-4 flex gap-2">
-        <button
-          onClick={handleTillyMode}
-          className="relative flex-[3] inline-flex flex-col items-center justify-center gap-1 rounded-xl bg-accent text-accent-foreground py-2.5 text-xs font-medium transition-all hover:opacity-90 active:scale-[0.97]"
-        >
-          <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full bg-accent text-accent-foreground px-2 py-0.5 text-[9px] font-semibold leading-none whitespace-nowrap shadow-sm">Recommended</span>
-          <span className="flex items-center gap-1.5"><MessageCircle className="h-3.5 w-3.5 shrink-0" />Guide me (Chat with Tilly)</span>
-        </button>
-        <button
-          className="flex-[2] flex items-center justify-center gap-2 rounded-xl border border-border bg-card text-muted-foreground py-2.5 text-xs font-medium hover:border-accent/40 transition-all active:scale-[0.97]"
-        >
-          <PenLine className="h-3.5 w-3.5" /> I'll fill it in myself
-        </button>
-      </div>
 
       {/* Accordion sections */}
       <div className="px-5 space-y-2">

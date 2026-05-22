@@ -24,7 +24,7 @@ const RANGE_DAYS: Record<Range, number | null> = {
 };
 
 const RETURN_KEYS: { label: string; key: keyof FundReturns }[] = [
-  { label: "1M", key: "m1" },
+  { label: "3M", key: "m3" },
   { label: "1Y", key: "y1" },
   { label: "3Y", key: "y3" },
 ];

@@ -283,12 +283,12 @@ const HoldingDetail = () => {
   const schemeType = holding.instrument_type ?? "Mutual Fund";
 
   const returns = {
-    m1: pctBetween(history, 30),
+    m3: pctBetween(history, 90),
     y1: pctBetween(history, 365),
     y3: pctBetween(history, Math.min(history.length - 1, 365 * 3)),
   };
   const trailingItems: { label: string; value: number | null }[] = [
-    { label: "1M", value: returns.m1 },
+    { label: "3M", value: returns.m3 },
     { label: "1Y", value: returns.y1 },
     { label: "3Y", value: returns.y3 },
   ];
