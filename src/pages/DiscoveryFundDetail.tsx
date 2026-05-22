@@ -23,13 +23,10 @@ const RANGE_DAYS: Record<Range, number | null> = {
   MAX: null,
 };
 
-const RETURN_KEYS: { range: Range; key: keyof FundReturns }[] = [
-  { range: "1M", key: "m1" },
-  { range: "3M", key: "m3" },
-  { range: "6M", key: "m6" },
-  { range: "1Y", key: "y1" },
-  { range: "2Y", key: "y2" },
-  { range: "5Y", key: "y5" },
+const RETURN_KEYS: { label: string; key: keyof FundReturns }[] = [
+  { label: "1M", key: "m1" },
+  { label: "1Y", key: "y1" },
+  { label: "3Y", key: "y3" },
 ];
 
 function formatDate(iso: string): string {
@@ -257,14 +254,14 @@ const DiscoveryFundDetail = () => {
           <p className="mt-0.5 text-[10.5px] text-muted-foreground">
             Total return on the NAV through {formatDate(history[history.length - 1]?.date ?? "")}.
           </p>
-          <div className="mt-3 grid grid-cols-6 gap-1">
-            {RETURN_KEYS.map(({ range: r, key }) => {
+          <div className="mt-3 grid grid-cols-3 gap-1.5">
+            {RETURN_KEYS.map(({ label, key }) => {
               const v = fund.returns[key];
               const positive = v != null && v >= 0;
               return (
-                <div key={r} className="rounded-lg bg-muted/30 px-1.5 py-2 text-center">
+                <div key={label} className="rounded-lg bg-muted/30 px-1.5 py-2 text-center">
                   <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                    {r}
+                    {label}
                   </p>
                   <p
                     className="mt-0.5 text-[11.5px] font-semibold tabular-nums"

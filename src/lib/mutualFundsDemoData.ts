@@ -9,6 +9,7 @@ export interface FundReturns {
   m6: number | null;
   y1: number | null;
   y2: number | null;
+  y3: number | null;
   y5: number | null;
 }
 
@@ -144,6 +145,7 @@ function computeReturns(history: FundNavPoint[]): FundReturns {
     m6: pctBetween(history, 180),
     y1: pctBetween(history, 365),
     y2: pctBetween(history, 365 * 2),
+    y3: pctBetween(history, Math.min(history.length - 1, 365 * 3)),
     y5: pctBetween(history, Math.min(history.length - 1, 365 * 5)),
   };
 }

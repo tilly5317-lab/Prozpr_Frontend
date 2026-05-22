@@ -218,8 +218,7 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
     return stored === "returns" || stored === "nav" || stored === "waterfall" ? stored : "returns";
   });
   const [range, setRange] = useState<AnalysisRange>("1M");
-  const [selectedBenchmarkIds, setSelectedBenchmarkIds] = useState<string[]>(["nifty50"]);
-  const [benchmarkPickerOpen, setBenchmarkPickerOpen] = useState(false);
+  const [selectedBenchmarkIds] = useState<string[]>(["nifty50"]);
   const [infoOpen, setInfoOpen] = useState<"mwr" | null>(null);
 
   useEffect(() => {
@@ -499,13 +498,13 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                           >
                             <div className="flex items-center gap-1 mb-0.5">
                               <p className="text-[9px] uppercase tracking-wide text-muted-foreground">
-                                MWR
+                                XIRR
                               </p>
                               <button
                                 type="button"
                                 onClick={() => setInfoOpen((o) => (o === "mwr" ? null : "mwr"))}
                                 className="text-muted-foreground hover:text-foreground"
-                                aria-label="About MWR"
+                                aria-label="About XIRR"
                               >
                                 <Info className="h-3 w-3" />
                               </button>
@@ -547,7 +546,7 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                             style={{ backgroundColor: "hsl(var(--muted) / 0.6)" }}
                           >
                             <p className="text-[11.5px] text-foreground leading-relaxed">
-                              <strong>MWR</strong> reflects the actual return you experienced,
+                              <strong>XIRR</strong> reflects the actual return you experienced,
                               factoring in the timing and size of your contributions.
                             </p>
                           </div>
@@ -602,7 +601,7 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                               <Line
                                 type="monotone"
                                 dataKey="mwr"
-                                name="MWR"
+                                name="XIRR"
                                 stroke={USER_LINE}
                                 strokeWidth={2}
                                 dot={false}
@@ -631,7 +630,7 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                               className="inline-block h-0.5 w-4"
                               style={{ backgroundColor: USER_LINE }}
                             />
-                            MWR
+                            XIRR
                           </span>
                           {activeBenchmarks.map((b) => (
                             <span key={b.id} className="inline-flex items-center gap-1.5">
@@ -644,66 +643,6 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                           ))}
                         </div>
 
-                        {/* Add / manage benchmarks */}
-                        <div className="mt-3">
-                          <button
-                            type="button"
-                            onClick={() => setBenchmarkPickerOpen((o) => !o)}
-                            className="inline-flex items-center gap-1 rounded-full bg-muted/70 px-2.5 py-1 text-[10.5px] font-semibold text-muted-foreground hover:text-foreground transition-colors"
-                          >
-                            <span>{benchmarkPickerOpen ? "Hide benchmarks" : "+ Add benchmark"}</span>
-                            <span className="text-[9px] text-muted-foreground/70">
-                              {activeBenchmarks.length} selected
-                            </span>
-                          </button>
-                          {benchmarkPickerOpen && (
-                            <div
-                              className="mt-2 rounded-xl px-2.5 py-2"
-                              style={{ border: `1px solid ${HAIRLINE}`, backgroundColor: "hsl(var(--muted) / 0.4)" }}
-                            >
-                              <div className="flex flex-wrap gap-1.5">
-                                {BENCHMARKS.map((b) => {
-                                  const active = selectedBenchmarkIds.includes(b.id);
-                                  const isLastSelected = active && selectedBenchmarkIds.length === 1;
-                                  return (
-                                    <button
-                                      key={b.id}
-                                      type="button"
-                                      onClick={() => {
-                                        setSelectedBenchmarkIds((prev) => {
-                                          if (prev.includes(b.id)) {
-                                            // Don't allow removing the last one.
-                                            return prev.length > 1 ? prev.filter((x) => x !== b.id) : prev;
-                                          }
-                                          return [...prev, b.id];
-                                        });
-                                      }}
-                                      disabled={isLastSelected}
-                                      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10.5px] font-semibold transition-colors ${
-                                        active
-                                          ? "bg-foreground text-background"
-                                          : "bg-card text-muted-foreground hover:text-foreground"
-                                      } ${isLastSelected ? "cursor-not-allowed opacity-70" : ""}`}
-                                      style={{
-                                        border: active ? "none" : `1px solid ${HAIRLINE}`,
-                                      }}
-                                      title={isLastSelected ? "Keep at least one benchmark" : b.fullName}
-                                    >
-                                      <span
-                                        className="h-1.5 w-1.5 rounded-full"
-                                        style={{ backgroundColor: b.color }}
-                                      />
-                                      {b.shortName}
-                                      <span className="ml-1 text-[9.5px] font-normal opacity-75 tabular-nums">
-                                        {fmtPct(benchPctById[b.id])}
-                                      </span>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
-                        </div>
                       </div>
                     )}
 
@@ -1015,6 +954,30 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                               </div>
                             );
                           })}
+                        </div>
+
+                        <div
+                          className="mt-3 flex items-start gap-2 rounded-lg px-2.5 py-2"
+                          style={{
+                            backgroundColor: "hsl(var(--muted) / 0.5)",
+                            border: `1px solid ${HAIRLINE}`,
+                          }}
+                        >
+                          <span
+                            className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold"
+                            style={{
+                              backgroundColor: "hsl(var(--muted-foreground) / 0.18)",
+                              color: "hsl(var(--muted-foreground))",
+                            }}
+                            aria-hidden="true"
+                          >
+                            !
+                          </span>
+                          <p className="text-[10.5px] leading-snug text-muted-foreground">
+                            <span className="font-semibold text-foreground/80">Note · </span>
+                            Dividend distributions are reflected only to the extent they can be
+                            traced through your linked bank accounts.
+                          </p>
                         </div>
                       </div>
                     )}
