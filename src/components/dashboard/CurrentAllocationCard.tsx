@@ -1,7 +1,8 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronDown, X } from "lucide-react";
+import { ArrowRight, ChevronDown, X } from "lucide-react";
 import type { PortfolioDetail } from "@/lib/api";
 import { formatInrCompact } from "@/lib/utils";
 
@@ -226,6 +227,7 @@ interface CurrentAllocationCardProps {
 }
 
 const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: CurrentAllocationCardProps) => {
+  const navigate = useNavigate();
   const [holdingsOpen, setHoldingsOpen] = useState(false);
   const [expandedHolding, setExpandedHolding] = useState<string | null>(null);
   const [collapsedBuckets, setCollapsedBuckets] = useState<Record<HoldingBucket, boolean>>({
@@ -281,7 +283,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
         };
       })
     : [
-        { id: "d1", name: "ICICI Prudential Nifty 50 ETF", sub: "ETF · NIFTYBEES", value: "₹4.8L", pct: "48%", allocationPct: 48, returnPct: 18.2, avgCost: 406000, currentValue: 480000, barBg: HOLDINGS_BAR_BY_BUCKET.equity.bg, barBorder: HOLDINGS_BAR_BY_BUCKET.equity.border, bucket: "equity" as HoldingBucket, subCategory: "Index Fund / ETF" },
+        { id: "d1", name: "Parag Parikh Flexi Cap Fund", sub: "Mutual Fund", value: "₹6.2L", pct: "48%", allocationPct: 48, returnPct: 18.2, avgCost: 480000, currentValue: 620000, barBg: HOLDINGS_BAR_BY_BUCKET.equity.bg, barBorder: HOLDINGS_BAR_BY_BUCKET.equity.border, bucket: "equity" as HoldingBucket, subCategory: "Flexi Cap" },
         { id: "d2", name: "HDFC Corporate Bond Fund", sub: "Mutual Fund", value: "₹2.8L", pct: "28%", allocationPct: 28, returnPct: 7.1, avgCost: 261000, currentValue: 280000, barBg: HOLDINGS_BAR_BY_BUCKET.debt.bg, barBorder: HOLDINGS_BAR_BY_BUCKET.debt.border, bucket: "debt" as HoldingBucket, subCategory: "Corporate Bond" },
         { id: "d3", name: "SBI Gold ETF", sub: "ETF · GOLDBEES", value: "₹1.6L", pct: "16%", allocationPct: 16, returnPct: 12.4, avgCost: 142000, currentValue: 160000, barBg: HOLDINGS_BAR_BY_BUCKET.hybrid.bg, barBorder: HOLDINGS_BAR_BY_BUCKET.hybrid.border, bucket: "hybrid" as HoldingBucket, subCategory: null as string | null },
       ];
@@ -516,8 +518,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                       />
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-medium text-foreground">{row.name}</p>
-                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                          <span className="text-[9px] text-muted-foreground">{row.sub}</span>
+                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                           {row.subCategory ? (
                             <button
                               type="button"
@@ -530,9 +531,11 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                               style={{
                                 fontSize: "10px",
                                 fontWeight: 500,
-                                backgroundColor: SUB_TAG_STYLE[row.bucket].bg,
+                                backgroundColor: "hsl(var(--muted) / 0.55)",
                                 color: SUB_TAG_STYLE[row.bucket].fg,
-                                border: `1px solid ${subFilter === row.subCategory ? SUB_TAG_STYLE[row.bucket].fg : SUB_TAG_STYLE[row.bucket].border}`,
+                                border: subFilter === row.subCategory
+                                  ? `1px solid ${SUB_TAG_STYLE[row.bucket].fg}`
+                                  : "1px solid transparent",
                               }}
                             >
                               {row.subCategory}
@@ -543,9 +546,9 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                               style={{
                                 fontSize: "10px",
                                 fontWeight: 500,
-                                backgroundColor: UNCAT_STYLE.bg,
+                                backgroundColor: "hsl(var(--muted) / 0.55)",
                                 color: UNCAT_STYLE.fg,
-                                border: `1px solid ${UNCAT_STYLE.border}`,
+                                border: "1px solid transparent",
                               }}
                             >
                               Uncategorized
@@ -655,6 +658,31 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                                 <p className={VALUE_CLASS}>{row.pct ?? "—"}</p>
                               </div>
                             </div>
+
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(`/portfolio/holdings/${row.id}`, {
+                                  state: {
+                                    holding: {
+                                      id: row.id,
+                                      instrument_name: row.name,
+                                      instrument_type: row.sub.split(" · ")[0] ?? "Mutual Fund",
+                                      quantity: null,
+                                      average_cost: row.avgCost,
+                                      current_value: row.currentValue,
+                                      allocation_percentage: row.allocationPct,
+                                    },
+                                  },
+                                });
+                              }}
+                              className="mt-3 inline-flex items-center gap-1 rounded-full bg-muted/50 px-3 py-1 text-[11px] font-semibold text-foreground transition-colors hover:bg-muted"
+                              style={{ border: `1px solid ${HAIRLINE}` }}
+                            >
+                              Fund details
+                              <ArrowRight className="h-3 w-3" />
+                            </button>
                           </div>
                         </motion.div>
                       )}
