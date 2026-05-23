@@ -44,6 +44,24 @@ interface GoalDetail {
   // Home-purchase specific. Empty string when unused.
   downPaymentPct: string;
   loanTenureYears: string;
+  // Inflation override. Empty string falls back to Prozpr's suggested rate.
+  inflationRate: string;
+  // Child's-education specific — flips the default suggestion to 8%.
+  educationAbroad: boolean;
+}
+
+// Prozpr's house assumption for goal-cost inflation. Most lifestyle goals
+// default to 6%; education abroad runs hotter because of FX and tuition.
+const INFLATION_OPTIONS = ["4", "5", "6", "7", "8", "9", "10", "12", "15"];
+const INFLATION_OBJECTIVES = new Set([
+  "Home purchase",
+  "Child's education",
+  "Wedding",
+  "Retirement",
+]);
+function suggestedInflationFor(objective: string, abroad: boolean): string {
+  if (objective === "Child's education" && abroad) return "8";
+  return "6";
 }
 
 interface AllocationRange {
@@ -796,6 +814,8 @@ const CompleteProfile = () => {
         incomeAmount: "",
         downPaymentPct: "",
         loanTenureYears: "",
+        inflationRate: "",
+        educationAbroad: false,
       }
     );
   };
@@ -945,7 +965,7 @@ const CompleteProfile = () => {
     setOtherAssets((prev) => prev.map((a, idx) => (idx === i ? { ...a, [field]: value } : a)));
   };
 
-  const handleTillyMode = () => {
+  const handleProzprMode = () => {
     navigate("/chat?from=complete-profile");
   };
 
@@ -1328,22 +1348,57 @@ const CompleteProfile = () => {
                           />
                         </div>
                         <div>
-                          <label className="text-[10px] text-muted-foreground">Loan tenure</label>
+                          <label className="text-[10px] text-muted-foreground">Loan tenure (years)</label>
                           <TextInput
                             value={detail.loanTenureYears}
                             onChange={(v) => updateGoalDetail(obj, { loanTenureYears: v })}
                             placeholder="e.g. 20"
                           />
-                          <p className="mt-0.5 text-[9.5px] text-muted-foreground">Years</p>
                         </div>
                       </div>
-                      <p className="text-[10px] leading-snug text-muted-foreground">
-                        <span className="font-semibold text-foreground/80">Disclaimer · </span>
-                        We assume a 7.5% interest rate for the current mortgage. The
-                        assumption will be revised based on your goal date.
-                      </p>
                     </>
                   )}
+                  {obj === "Child's education" && (
+                    <div>
+                      <label className="text-[10px] text-muted-foreground">Studying abroad?</label>
+                      <div className="mt-1 flex gap-2">
+                        <Chip
+                          label="No"
+                          active={!detail.educationAbroad}
+                          onClick={() => updateGoalDetail(obj, { educationAbroad: false })}
+                        />
+                        <Chip
+                          label="Yes"
+                          active={detail.educationAbroad}
+                          onClick={() => updateGoalDetail(obj, { educationAbroad: true })}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  {INFLATION_OBJECTIVES.has(obj) && (() => {
+                    const suggested = suggestedInflationFor(obj, detail.educationAbroad);
+                    const current = detail.inflationRate || suggested;
+                    return (
+                      <div>
+                        <label className="text-[10px] text-muted-foreground">Inflation rate</label>
+                        <select
+                          value={current}
+                          onChange={(e) => updateGoalDetail(obj, { inflationRate: e.target.value })}
+                          className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-accent transition-colors appearance-none"
+                        >
+                          {INFLATION_OPTIONS.map((rate) => (
+                            <option key={rate} value={rate}>
+                              {rate}%{rate === suggested ? " — Prozpr's suggestion" : ""}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="mt-0.5 text-[9.5px] text-muted-foreground">
+                          Prozpr suggests {suggested}% for this goal — adjust if you have a better
+                          number.
+                        </p>
+                      </div>
+                    );
+                  })()}
                 </motion.div>
               );
             })}

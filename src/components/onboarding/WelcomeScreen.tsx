@@ -25,7 +25,7 @@ const countryCodes = [
   { code: "+65", label: "SG", flag: "🇸🇬" },
 ];
 
-const DEFAULT_PASSWORD = "asktilly2026";
+const DEFAULT_PASSWORD = "askProzpr2026";
 
 type Step = "phone" | "otp";
 
@@ -181,7 +181,7 @@ const WelcomeScreen = ({ onNext }: WelcomeScreenProps) => {
         <div className="mt-0 space-y-2.5 mb-auto">
           {[
             { icon: TrendingUp, label: "Track all investments", sub: "Mutual funds, stocks and more" },
-            { icon: Sparkles, label: "Tilly, your own AI wealth advisor", sub: "Personalized recommendations" },
+            { icon: Sparkles, label: "Prozpr, your own AI wealth advisor", sub: "Personalized recommendations" },
             { icon: Shield, label: "Bank-grade security", sub: "256-bit encryption" },
           ].map((item, i) => (
             <motion.div

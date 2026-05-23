@@ -1,8 +1,8 @@
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").trim().replace(/\/$/, "");
 const API = `${API_BASE}/api/v1`;
-const TOKEN_KEY = "asktilly_token";
-const FAMILY_MEMBER_KEY = "asktilly_family_member_id";
-const USER_CONTEXT_CACHE_KEY = "asktilly.user_context_cache.v1";
+const TOKEN_KEY = "askProzpr_token";
+const FAMILY_MEMBER_KEY = "askProzpr_family_member_id";
+const USER_CONTEXT_CACHE_KEY = "askProzpr.user_context_cache.v1";
 
 type UserContextCache = {
   me?: UserInfo;

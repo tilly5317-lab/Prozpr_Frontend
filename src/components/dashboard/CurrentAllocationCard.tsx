@@ -516,9 +516,9 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                           border: row.barBorder ? `1px solid ${row.barBorder}` : undefined,
                         }}
                       />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium text-foreground">{row.name}</p>
-                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                      <div className="flex-1 min-w-0 flex flex-col justify-between self-stretch min-h-[2.125rem]">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="text-xs font-medium text-foreground truncate">{row.name}</p>
                           {row.subCategory ? (
                             <button
                               type="button"
@@ -527,7 +527,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                                 setSubFilter((prev) => (prev === row.subCategory ? null : row.subCategory));
                               }}
                               title={SUB_DESCRIPTIONS[row.subCategory!] ?? row.subCategory!}
-                              className="inline-flex items-center rounded-full px-1.5 py-0.5 hover:opacity-80 transition-opacity"
+                              className="inline-flex items-center rounded-full px-1.5 py-0.5 hover:opacity-80 transition-opacity shrink-0"
                               style={{
                                 fontSize: "10px",
                                 fontWeight: 500,
@@ -542,7 +542,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                             </button>
                           ) : (
                             <span
-                              className="inline-flex items-center rounded-full px-1.5 py-0.5"
+                              className="inline-flex items-center rounded-full px-1.5 py-0.5 shrink-0"
                               style={{
                                 fontSize: "10px",
                                 fontWeight: 500,
@@ -555,6 +555,29 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                             </span>
                           )}
                         </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/portfolio/holdings/${row.id}`, {
+                              state: {
+                                holding: {
+                                  id: row.id,
+                                  instrument_name: row.name,
+                                  instrument_type: row.sub.split(" · ")[0] ?? "Mutual Fund",
+                                  quantity: null,
+                                  average_cost: row.avgCost,
+                                  current_value: row.currentValue,
+                                  allocation_percentage: row.allocationPct,
+                                },
+                              },
+                            });
+                          }}
+                          className="inline-flex items-center gap-0.5 self-start text-[10.5px] font-medium text-white hover:text-white/80 transition-colors"
+                        >
+                          Fund details
+                          <ArrowRight className="h-2.5 w-2.5" />
+                        </button>
                       </div>
                       <div className="text-right shrink-0 flex items-center gap-2">
                         <div>
@@ -659,30 +682,6 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                               </div>
                             </div>
 
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                navigate(`/portfolio/holdings/${row.id}`, {
-                                  state: {
-                                    holding: {
-                                      id: row.id,
-                                      instrument_name: row.name,
-                                      instrument_type: row.sub.split(" · ")[0] ?? "Mutual Fund",
-                                      quantity: null,
-                                      average_cost: row.avgCost,
-                                      current_value: row.currentValue,
-                                      allocation_percentage: row.allocationPct,
-                                    },
-                                  },
-                                });
-                              }}
-                              className="mt-3 inline-flex items-center gap-1 rounded-full bg-muted/50 px-3 py-1 text-[11px] font-semibold text-foreground transition-colors hover:bg-muted"
-                              style={{ border: `1px solid ${HAIRLINE}` }}
-                            >
-                              Fund details
-                              <ArrowRight className="h-3 w-3" />
-                            </button>
                           </div>
                         </motion.div>
                       )}

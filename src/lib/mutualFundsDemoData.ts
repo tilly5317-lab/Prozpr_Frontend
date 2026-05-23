@@ -210,6 +210,51 @@ export function getNavHistory(code: string): FundNavPoint[] {
   return history;
 }
 
+// Category-appropriate benchmark used on the fund detail chart for relative
+// performance. Names and assumed return/vol mirror what an Indian retail
+// product page would surface.
+export interface BenchmarkInfo {
+  name: string;
+  baseReturn: number;
+  vol: number;
+}
+
+const BENCHMARK_RULES: { test: RegExp; benchmark: BenchmarkInfo }[] = [
+  { test: /flexi cap/i, benchmark: { name: "Nifty 500 TRI", baseReturn: 0.14, vol: 0.14 } },
+  { test: /small cap/i, benchmark: { name: "Nifty Smallcap 250 TRI", baseReturn: 0.17, vol: 0.22 } },
+  { test: /mid cap/i, benchmark: { name: "Nifty Midcap 150 TRI", baseReturn: 0.15, vol: 0.18 } },
+  { test: /(large cap|nifty\s*50)/i, benchmark: { name: "Nifty 50 TRI", baseReturn: 0.12, vol: 0.12 } },
+  { test: /multi cap/i, benchmark: { name: "Nifty 500 TRI", baseReturn: 0.13, vol: 0.13 } },
+  { test: /(elss|tax saver)/i, benchmark: { name: "Nifty 500 TRI", baseReturn: 0.14, vol: 0.14 } },
+  { test: /corporate bond/i, benchmark: { name: "CRISIL Corporate Bond Index", baseReturn: 0.07, vol: 0.03 } },
+  { test: /(dynamic bond|bond)/i, benchmark: { name: "CRISIL Composite Bond Index", baseReturn: 0.065, vol: 0.025 } },
+  { test: /liquid/i, benchmark: { name: "CRISIL Liquid Index", baseReturn: 0.06, vol: 0.004 } },
+  { test: /aggressive hybrid/i, benchmark: { name: "CRISIL Hybrid 65+35 Index", baseReturn: 0.115, vol: 0.09 } },
+  { test: /(balanced hybrid|hybrid)/i, benchmark: { name: "CRISIL Hybrid 35+65 Index", baseReturn: 0.10, vol: 0.07 } },
+  { test: /gold/i, benchmark: { name: "Domestic Gold Index", baseReturn: 0.09, vol: 0.12 } },
+  { test: /index/i, benchmark: { name: "Nifty 50 TRI", baseReturn: 0.12, vol: 0.12 } },
+  { test: /etf/i, benchmark: { name: "Nifty 50 TRI", baseReturn: 0.12, vol: 0.12 } },
+];
+
+export function benchmarkFor(...hints: (string | null | undefined)[]): BenchmarkInfo {
+  const text = hints.filter(Boolean).join(" ");
+  for (const { test, benchmark } of BENCHMARK_RULES) {
+    if (test.test(text)) return benchmark;
+  }
+  return { name: "Nifty 50 TRI", baseReturn: 0.12, vol: 0.12 };
+}
+
+const benchmarkCache = new Map<string, FundNavPoint[]>();
+
+export function generateBenchmarkHistory(seed: string, info: BenchmarkInfo): FundNavPoint[] {
+  const key = `${seed}|${info.name}`;
+  const cached = benchmarkCache.get(key);
+  if (cached) return cached;
+  const history = generateNavHistory(`bench-${seed}`, info.baseReturn, info.vol, 100);
+  benchmarkCache.set(key, history);
+  return history;
+}
+
 export function searchFunds(query: string): MutualFund[] {
   const q = query.trim().toLowerCase();
   const all = getAllFunds();

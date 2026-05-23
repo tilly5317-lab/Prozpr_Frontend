@@ -458,7 +458,7 @@ const GoalCard = ({ goal, onAchieve, achieved, showAchieve }: GoalCardProps) => 
   }, [goal.targetDate, monthOffset]);
 
   // Inflation lift applied to the target when the user shifts the timeline.
-  // 6% is the default Tilly assumption — keeps the headline "(present value)"
+  // 6% is the default Prozpr assumption — keeps the headline "(present value)"
   // honest by surfacing how much further inflation runs when the goal slips.
   const INFLATION_RATE = 0.06;
   const adjustedTargetAmount = useMemo(() => {
@@ -687,16 +687,16 @@ const GoalCard = ({ goal, onAchieve, achieved, showAchieve }: GoalCardProps) => 
           <div className="mt-3.5 rounded-2xl border border-border/60 bg-muted/35 px-3 py-3">
             <p className="text-[11px] leading-relaxed text-muted-foreground">
               <span className="font-medium text-foreground/90">Goal deadline is this month.</span>{" "}
-              Open chat with Tilly to plan your withdrawal and close the goal.
+              Open chat with Prozpr to plan your withdrawal and close the goal.
             </p>
             <button
               type="button"
               onClick={onAchieve}
               className="mt-2.5 inline-flex min-h-[40px] items-center justify-center gap-2 rounded-full border border-primary/35 bg-background px-4 text-xs font-semibold text-primary shadow-sm transition-colors hover:border-primary/50 hover:bg-primary/[0.06] active:scale-[0.99]"
-              aria-label={`Plan withdrawal with Tilly to complete goal: ${goal.label}`}
+              aria-label={`Plan withdrawal with Prozpr to complete goal: ${goal.label}`}
             >
               <MessageCircle className="h-3.5 w-3.5 shrink-0 opacity-90" aria-hidden />
-              Plan withdrawal with Tilly
+              Plan withdrawal with Prozpr
             </button>
           </div>
         )}
@@ -1383,11 +1383,11 @@ const GoalPlanner = () => {
                         className="mt-1.5 inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/[0.06] px-2.5 py-1 text-[10.5px] font-medium text-primary transition-colors hover:bg-primary/10"
                       >
                         <Sparkles className="h-3 w-3" />
-                        Tilly suggests {editInflationSuggestion.rate}% — {editInflationSuggestion.reason}
+                        Prozpr suggests {editInflationSuggestion.rate}% — {editInflationSuggestion.reason}
                       </button>
                     )}
                     <p className="mt-1.5 text-[10.5px] leading-snug text-muted-foreground/80">
-                      You can override this assumption — it&apos;s based on Tilly&apos;s
+                      You can override this assumption — it&apos;s based on Prozpr&apos;s
                       research for this goal category.
                     </p>
                   </>
@@ -1600,11 +1600,11 @@ const GoalPlanner = () => {
                         className="mt-1.5 inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/[0.06] px-2.5 py-1 text-[10.5px] font-medium text-primary transition-colors hover:bg-primary/10"
                       >
                         <Sparkles className="h-3 w-3" />
-                        Tilly suggests {inflationSuggestion.rate}% — {inflationSuggestion.reason}
+                        Prozpr suggests {inflationSuggestion.rate}% — {inflationSuggestion.reason}
                       </button>
                     )}
                     <p className="mt-1.5 text-[10.5px] leading-snug text-muted-foreground/80">
-                      You can override this assumption — it&apos;s based on Tilly&apos;s
+                      You can override this assumption — it&apos;s based on Prozpr&apos;s
                       research for this goal category.
                     </p>
                   </>

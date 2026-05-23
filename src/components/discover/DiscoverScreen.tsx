@@ -19,13 +19,13 @@ import {
   type DiscoverySector,
 } from "@/lib/api";
 
-const PLAN_READY_POPUP_SESSION_KEY = "tilly_discover_plan_ready_popup";
+const PLAN_READY_POPUP_SESSION_KEY = "Prozpr_discover_plan_ready_popup";
 
 export interface DiscoverScreenProps {
   title: string;
   subtitle?: string;
   onBack: () => void;
-  /** Inline glowing card above House View (asktilly_ref Discovery). */
+  /** Inline glowing card above House View (askProzpr_ref Discovery). */
   showRecommendedPlanCard?: boolean;
   onRecommendedPlanClick?: () => void;
   /** Inline “Start Investing” at end of scroll (e.g. /execute) */
