@@ -220,14 +220,14 @@ const RebalanceExplanation = () => {
               className="text-[10px] uppercase font-semibold"
               style={{ letterSpacing: "1.6px", color: "#E5C079" }}
             >
-              Tilly insight
+              Prozpr insight
             </span>
           </div>
           <h1 className="mt-3 text-[21px] leading-tight font-semibold tracking-tight text-[#F5EEDC]">
             Time to fine-tune your mix.
           </h1>
           <p className="mt-2.5 text-[12.5px] leading-5 text-[#C9CFDF]">
-            Equities rallied 9% this quarter, so here's how to glide back to your target without selling more than you need to. Tilly picked units with the lowest capital gains to maximize tax exemption, and rebalancing now also gets ahead of earnings season shifting weights further.
+            Equities rallied 9% this quarter, so here's how to glide back to your target without selling more than you need to. Prozpr picked units with the lowest capital gains to maximize tax exemption, and rebalancing now also gets ahead of earnings season shifting weights further.
           </p>
         </motion.section>
 
@@ -370,6 +370,56 @@ const RebalanceExplanation = () => {
                   </div>
                 </div>
 
+                <div
+                  className="mt-5 rounded-xl px-3 py-2.5"
+                  style={{
+                    border: "1px solid rgba(212, 168, 104, 0.45)",
+                    backgroundColor: "#F5EEDC",
+                  }}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p
+                      className="text-[10px] uppercase tracking-[1.4px]"
+                      style={{ color: "#5C4313", fontWeight: 700 }}
+                    >
+                      Prozpr rating
+                    </p>
+                    <div className="flex shrink-0 items-center gap-0.5" aria-hidden="true">
+                      {[0, 1, 2, 3].map((i) => (
+                        <Star
+                          key={i}
+                          className="h-3.5 w-3.5"
+                          style={{ color: "#D4A868", fill: "#D4A868" }}
+                        />
+                      ))}
+                      <Star
+                        className="h-3.5 w-3.5"
+                        style={{ color: "#D4A868", fill: "url(#trade-half-star-gradient)" }}
+                      />
+                      <svg width="0" height="0" className="absolute" aria-hidden="true">
+                        <defs>
+                          <linearGradient id="trade-half-star-gradient">
+                            <stop offset="50%" stopColor="#D4A868" />
+                            <stop offset="50%" stopColor="transparent" />
+                          </linearGradient>
+                        </defs>
+                      </svg>
+                    </div>
+                  </div>
+                  <p
+                    className="mt-1 text-[11.5px] leading-snug"
+                    style={{ color: "#2E2207" }}
+                  >
+                    Strong 5-year risk-adjusted returns with below-peer drawdowns. Stable
+                    management and a diversified mandate keep it in our top quartile.
+                  </p>
+                </div>
+
+                <div className="mt-3 rounded-xl border border-[#2a2a28] bg-[#252523] px-3 py-3">
+                  <p className="text-[10px] uppercase tracking-[0.14em] text-[#8E98B0]">Why this trade</p>
+                  <p className="mt-1 text-[12px] leading-5 text-[#D0D8EC]">{selectedTrade.fund.rationale}</p>
+                </div>
+
                 <p className="mt-5 text-[11px] uppercase tracking-[0.14em] text-[#7E879C]">Performance vs benchmark</p>
                 <div className="mt-2" style={{ height: 150 }}>
                   <ResponsiveContainer width="100%" height="100%">
@@ -402,11 +452,6 @@ const RebalanceExplanation = () => {
                       <p className="text-[13px] font-semibold text-[#ECF1FF]">{item.value}</p>
                     </div>
                   ))}
-                </div>
-
-                <div className="mt-4 rounded-xl border border-[#2a2a28] bg-[#252523] px-3 py-3">
-                  <p className="text-[10px] uppercase tracking-[0.14em] text-[#8E98B0]">Why this trade</p>
-                  <p className="mt-1 text-[12px] leading-5 text-[#D0D8EC]">{selectedTrade.fund.rationale}</p>
                 </div>
               </div>
               </motion.div>

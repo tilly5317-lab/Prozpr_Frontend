@@ -485,7 +485,7 @@ const FamilyMembers = () => {
                     <div className="flex items-start gap-2 rounded-lg bg-blue-50 px-3 py-2.5">
                       <UserRoundPlus className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
                       <p className="text-[10px] text-blue-800 leading-relaxed">
-                        This will create a new Ask Tilly account for your family member. An OTP will be sent to their phone for consent verification.
+                        This will create a new Ask Prozpr account for your family member. An OTP will be sent to their phone for consent verification.
                       </p>
                     </div>
 

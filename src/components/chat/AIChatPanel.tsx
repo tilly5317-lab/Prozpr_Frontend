@@ -27,7 +27,7 @@ import {
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-const PENDING_CHAT_BOOTSTRAP_KEY = "asktilly.pendingChatBootstrap.v1";
+const PENDING_CHAT_BOOTSTRAP_KEY = "askProzpr.pendingChatBootstrap.v1";
 
 interface AIChatPanelProps {
   isOpen: boolean;
@@ -304,7 +304,7 @@ const MarkdownMessage = ({ text }: { text: string }) => {
   );
 };
 
-const TillyAvatar = () => (
+const ProzprAvatar = () => (
   <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary">
     <Sparkles className="h-2.5 w-2.5 text-primary-foreground" />
   </div>
@@ -358,7 +358,7 @@ const SummaryCard = ({ sectionName, notes }: { sectionName: string; notes: strin
 
   return (
     <div className="relative flex gap-2 items-start max-w-[88%]">
-      <TillyAvatar />
+      <ProzprAvatar />
       <div
         className="rounded-xl flex-1 px-3 py-2.5 relative overflow-visible"
         style={{
@@ -473,7 +473,7 @@ const KudosBubble = ({ text, onDismiss }: { text: string; onDismiss: () => void 
   );
 };
 
-const GOAL_DEMO_INTRO = `Hi — I'm **Tilly**. I'll help you shape a clear, investable goal plan in a few quick steps.
+const GOAL_DEMO_INTRO = `Hi — I'm **Pi**. I'll help you shape a clear, investable goal plan in a few quick steps.
 
 Let's start with outcomes: what financial goals are you planning for (for example: retirement, home, education, travel, business)? You can share one or multiple goals.`;
 
@@ -886,7 +886,7 @@ const AIChatPanel = ({
     return () => { mounted = false; };
   }, [goalPlanningDemo]);
 
-  const tillyInsight = (() => {
+  const ProzprInsight = (() => {
     if (isClientContextLoading) {
       return "Loading your profile and portfolio context...";
     }
@@ -912,7 +912,7 @@ const AIChatPanel = ({
 
   const ensureSession = useCallback(async (): Promise<string> => {
     if (sessionIdRef.current) return sessionIdRef.current;
-    const session = await createChatSession("Tilly Chat");
+    const session = await createChatSession("Pi Chat");
     sessionIdRef.current = session.id;
     return session.id;
   }, []);
@@ -927,7 +927,7 @@ const AIChatPanel = ({
     // Show greeting first, then first question after a delay
     setMessages((prev) => [
       ...prev,
-      { role: "ai", content: "Hi there! 👋 Great to have you here. I'm Tilly, your personal financial guide. There are no wrong answers — we'll go at your pace. Ready to get started? 😊" },
+      { role: "ai", content: "Hi there! 👋 Great to have you here. I'm Pi, your personal financial guide. There are no wrong answers — we'll go at your pace. Ready to get started? 😊" },
     ]);
 
     setTimeout(() => {
@@ -1286,7 +1286,7 @@ const AIChatPanel = ({
             </AnimatePresence>
           ) : msg.type === "goal-demo-widget" && msg.widgetKind === "emergency-fund" ? (
             <div className="flex gap-2 items-start max-w-[95%]">
-              <TillyAvatar />
+              <ProzprAvatar />
               <div className="flex-1 min-w-0">
                 <GoalDemoEmergencyWidget
                   incomeMonthly={demoIncome}
@@ -1310,11 +1310,11 @@ const AIChatPanel = ({
           ) : (
             <div className="flex flex-col gap-2">
               <div className="flex gap-2 items-start max-w-[95%]">
-                <TillyAvatar />
+                <ProzprAvatar />
                 <div
                   className="rounded-2xl rounded-tl-sm px-3 py-2 text-[12px] leading-relaxed text-foreground/90"
                   style={{
-                    backgroundColor: "hsl(var(--tilly-bubble))",
+                    backgroundColor: "hsl(var(--prozpr-bubble))",
                     borderLeft: "2px solid hsla(38, 45%, 54%, 0.3)",
                   }}
                 >
@@ -1369,8 +1369,8 @@ const AIChatPanel = ({
 
       {isTyping && (
         <div className="flex gap-2 items-start">
-          <TillyAvatar />
-          <div className="flex gap-1.5 px-3 py-2.5 rounded-2xl" style={{ backgroundColor: "hsl(var(--tilly-bubble))" }}>
+          <ProzprAvatar />
+          <div className="flex gap-1.5 px-3 py-2.5 rounded-2xl" style={{ backgroundColor: "hsl(var(--prozpr-bubble))" }}>
             {[0, 1, 2].map((i) => (
               <span
                 key={i}
@@ -1453,26 +1453,26 @@ const AIChatPanel = ({
               transition={{ duration: 0.3 }}
               className="flex-1 flex flex-col items-center px-6 pt-24"
             >
-              <h2 className="font-display text-2xl font-semibold text-foreground text-center">Ask Tilly anything.</h2>
+              <h2 className="font-display text-2xl font-semibold text-foreground text-center">Ask Pi anything.</h2>
               <p className="mt-1 text-center text-[12px] text-muted-foreground/60">What would you like to work on today?</p>
 
               <div className="mt-5 flex w-full max-w-[90%] items-start gap-2">
-                <TillyAvatar />
+                <ProzprAvatar />
                 <div
                   className="rounded-2xl rounded-tl-sm px-3 py-1.5 text-left text-[12px] leading-relaxed text-foreground/90"
                   style={{
-                    backgroundColor: "hsl(var(--tilly-bubble))",
+                    backgroundColor: "hsl(var(--prozpr-bubble))",
                     borderLeft: "2px solid hsla(38, 45%, 54%, 0.45)",
                   }}
                 >
-                  <p className="mb-0.5 text-[10px] font-semibold" style={{ color: "hsl(38, 45%, 54%)" }}>💡 Tilly Insight</p>
+                  <p className="mb-0.5 text-[10px] font-semibold" style={{ color: "hsl(38, 45%, 54%)" }}>💡 Pi Insight</p>
                   {isClientContextLoading ? (
                     <span className="inline-flex items-center gap-1.5">
                       <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-                      {tillyInsight}
+                      {ProzprInsight}
                     </span>
                   ) : (
-                    tillyInsight
+                    ProzprInsight
                   )}
                 </div>
               </div>
@@ -1684,7 +1684,7 @@ const AIChatPanel = ({
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder={
-                  onboardingActive ? "Speak or type your answer…" : goalPlanningDemo ? "Reply to Tilly…" : "Ask Tilly…"
+                  onboardingActive ? "Speak or type your answer…" : goalPlanningDemo ? "Reply to Pi…" : "Ask Pi…"
                 }
                 className="flex-1 bg-transparent text-[12px] text-foreground outline-none placeholder:text-muted-foreground/40"
               />
@@ -1738,7 +1738,7 @@ const AIChatPanel = ({
                 animate={{ opacity: 1 }}
                 className="flex flex-col items-center text-center pt-8"
               >
-                <h3 className="font-display text-3xl text-foreground mb-1">Ask Tilly anything</h3>
+                <h3 className="font-display text-3xl text-foreground mb-1">Ask Pi anything</h3>
                 <p className="text-sm text-muted-foreground">by speaking or typing</p>
               </motion.div>
             )}

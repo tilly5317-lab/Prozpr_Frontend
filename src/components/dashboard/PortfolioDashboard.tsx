@@ -219,7 +219,7 @@ function DiscoverEntryCard() {
           className="mt-0.5 text-[13px] font-semibold leading-tight"
           style={{ color: "#F5EEDC" }}
         >
-          Discover rated funds
+          Discover Prozpr rated funds
         </p>
       </div>
       <ArrowRight className="h-4 w-4 shrink-0" style={{ color: "rgba(245, 238, 220, 0.7)" }} />
