@@ -1,14 +1,17 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Loader2 } from "lucide-react";
 import NewOnboardingFlow from "@/components/onboarding/NewOnboardingFlow";
 import PortfolioDashboard from "@/components/dashboard/PortfolioDashboard";
 import { useAuth } from "@/context/AuthContext";
+import { markOnboardingComplete } from "@/lib/api";
 
 type Screen = "onboarding" | "dashboard";
 
 const Index = () => {
-  const { authenticated, loading, user } = useAuth();
+  const navigate = useNavigate();
+  const { authenticated, loading, user, refresh } = useAuth();
   const [screen, setScreen] = useState<Screen>("onboarding");
 
   useEffect(() => {
@@ -17,11 +20,20 @@ const Index = () => {
     const backendDone = user?.is_onboarding_complete === true;
     if (authenticated && (sessionDone || backendDone)) {
       setScreen("dashboard");
+      return;
     }
-  }, [authenticated, loading, user?.is_onboarding_complete]);
+    if (authenticated && user && !backendDone && !sessionDone) {
+      navigate("/link-accounts", { replace: true });
+    }
+  }, [authenticated, loading, user, navigate]);
 
-  const handleOnboardingComplete = () => {
-    sessionStorage.setItem("onboardingComplete", "true");
+  const handleOnboardingComplete = async () => {
+    try {
+      await markOnboardingComplete();
+      await refresh();
+    } catch {
+      sessionStorage.setItem("onboardingComplete", "true");
+    }
     setScreen("dashboard");
   };
 

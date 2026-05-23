@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import WelcomeScreen from "./WelcomeScreen";
-import { saveOnboardingProfile } from "@/lib/api";
+import { persistOnboardingProfile } from "@/lib/api";
+import { toast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight,
@@ -217,6 +218,12 @@ const HORIZON_OPTIONS = [
   { label: "Long term", sub: "5+ years" },
 ];
 
+const INVESTMENT_VIEW_TO_RISK_LEVEL: Record<string, number> = {
+  Conservative: 0,
+  Moderate: 2,
+  "Risk Taking": 4,
+};
+
 
 
 /* ─── Main component ─── */
@@ -255,7 +262,7 @@ const NewOnboardingFlow = ({ onComplete }: NewOnboardingFlowProps) => {
   const handleContinueToLinkAccounts = async () => {
     const dob = `${dobYear}-${String(dobMonth).padStart(2, "0")}-${String(dobDay).padStart(2, "0")}`;
     try {
-      await saveOnboardingProfile({
+      await persistOnboardingProfile({
         date_of_birth: dob,
         selected_goals: selectedGoals,
         custom_goals: customGoals,
@@ -264,9 +271,12 @@ const NewOnboardingFlow = ({ onComplete }: NewOnboardingFlowProps) => {
         annual_income_max: incomeRange[1],
         annual_expense_min: expenseRange[0],
         annual_expense_max: expenseRange[1],
+        risk_level: investmentView ? INVESTMENT_VIEW_TO_RISK_LEVEL[investmentView] : undefined,
       });
-    } catch {
-      // continue even if save fails
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Could not save your answers.";
+      toast({ title: "Save failed", description: msg, variant: "destructive" });
+      return;
     }
     sessionStorage.setItem("completedTellUs", "true");
     navigate("/link-accounts");
