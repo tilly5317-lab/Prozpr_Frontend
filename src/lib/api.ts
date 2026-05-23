@@ -296,6 +296,7 @@ export async function updateMe(p: UserUpdatePayload): Promise<UserInfo> {
 // ── Onboarding API ──────────────────────────────────────
 export interface OnboardingProfilePayload {
   date_of_birth?: string;
+  occupation?: string;
   selected_goals?: string[];
   custom_goals?: string[];
   investment_horizon?: string;
@@ -317,6 +318,55 @@ export async function completeOnboarding() {
     method: "POST",
     body: JSON.stringify({ is_complete: true }),
   });
+}
+
+/** Maps About You investment-preference letters (A–E) to backend risk_level 0–4. */
+export const ONBOARDING_RISK_LETTER_TO_LEVEL: Record<string, number> = {
+  A: 0,
+  B: 1,
+  C: 2,
+  D: 3,
+  E: 4,
+};
+
+export interface PersistOnboardingInput extends OnboardingProfilePayload {
+  occupation?: string;
+  /** A–E from the investment preference questionnaire */
+  risk_choice_letter?: string;
+  /** Direct 0–4 mapping when UI uses labels instead of letters */
+  risk_level?: number;
+}
+
+/** Save onboarding answers across users + personal_finance_profiles + risk_profiles. */
+export async function persistOnboardingProfile(input: PersistOnboardingInput): Promise<void> {
+  const { occupation, risk_choice_letter, risk_level: riskLevelInput, ...profileFields } = input;
+  await saveOnboardingProfile(profileFields);
+  const occupationValue = occupation?.trim();
+  if (occupationValue) {
+    await updatePersonalInfo({ occupation: occupationValue });
+  }
+  const riskLevel =
+    riskLevelInput ??
+    (risk_choice_letter && risk_choice_letter in ONBOARDING_RISK_LETTER_TO_LEVEL
+      ? ONBOARDING_RISK_LETTER_TO_LEVEL[risk_choice_letter]
+      : undefined);
+  if (riskLevel !== undefined) {
+    await updateRiskProfile({
+      risk_level: riskLevel,
+      investment_horizon: profileFields.investment_horizon ?? undefined,
+    });
+  }
+}
+
+/** Flip `users.is_onboarding_complete` and mirror into session for route guards. */
+export async function markOnboardingComplete(): Promise<void> {
+  await completeOnboarding();
+  try {
+    sessionStorage.setItem("onboardingComplete", "true");
+    sessionStorage.setItem("completedTellUs", "true");
+  } catch {
+    // Ignore private browsing / quota errors.
+  }
 }
 
 // ── SimBanks (account aggregator simulator) ─────────────────────────

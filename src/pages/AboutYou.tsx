@@ -3,7 +3,8 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowRight, Briefcase, Calendar, Check, Plus, Target, Wallet, X, ShieldCheck, ChevronDown } from "lucide-react";
-import { saveOnboardingProfile } from "@/lib/api";
+import { persistOnboardingProfile, markOnboardingComplete } from "@/lib/api";
+import { toast } from "@/hooks/use-toast";
 
 interface Props {
   onComplete: () => void;
@@ -210,13 +211,27 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
 
   const handleSaveAndContinue = async () => {
     const dob = `${dobYear}-${String(dobMonth).padStart(2, "0")}-${String(dobDay).padStart(2, "0")}`;
+    const occupationLabel =
+      occupation === "Other" ? occupationOther.trim() : occupation;
     try {
-      await saveOnboardingProfile({
-        date_of_birth: dob, selected_goals: selectedGoals, custom_goals: customGoals,
-        investment_horizon: horizon || undefined, annual_income_min: incomeRange[0],
-        annual_income_max: incomeRange[1], annual_expense_min: expenseRange[0], annual_expense_max: expenseRange[1],
+      await persistOnboardingProfile({
+        date_of_birth: dob,
+        occupation: occupationLabel || undefined,
+        selected_goals: selectedGoals,
+        custom_goals: customGoals,
+        investment_horizon: horizon || undefined,
+        annual_income_min: incomeRange[0],
+        annual_income_max: incomeRange[1],
+        annual_expense_min: expenseRange[0],
+        annual_expense_max: expenseRange[1],
+        risk_choice_letter: investmentView || undefined,
       });
-    } catch { /* continue */ }
+      await markOnboardingComplete();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Could not save your profile.";
+      toast({ title: "Save failed", description: msg, variant: "destructive" });
+      return;
+    }
     onComplete();
   };
 
@@ -485,7 +500,7 @@ const AboutYouPage = () => {
   const navigate = useNavigate();
   return (
     <TellUsAboutYou
-      onComplete={() => { sessionStorage.setItem("onboardingComplete", "true"); navigate("/chat"); }}
+      onComplete={() => navigate("/onboarding-loading")}
       onBack={() => navigate("/link-accounts")}
     />
   );
