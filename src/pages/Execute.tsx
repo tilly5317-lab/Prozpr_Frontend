@@ -705,7 +705,7 @@ const Execute = () => {
   );
   const [portfolioDb, setPortfolioDb] = useState<PortfolioDetail | null>(null);
   const [touchedIdxs, setTouchedIdxs] = useState<number[]>([]);
-  const [showTillyPill, setShowTillyPill] = useState(true);
+  const [showProzprPill, setShowProzprPill] = useState(true);
   const [extraETFs, setExtraETFs] = useState<ETF[]>([]);
   const [searchBucket, setSearchBucket] = useState<Bucket | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -791,7 +791,7 @@ const Execute = () => {
   }, []);
 
   useEffect(() => {
-    const timer = setTimeout(() => setShowTillyPill(false), 5000);
+    const timer = setTimeout(() => setShowProzprPill(false), 5000);
     return () => clearTimeout(timer);
   }, []);
 
@@ -1076,7 +1076,7 @@ const Execute = () => {
               ? "AI recommended plan — adjust below to explore scenarios"
               : "Allocation from your linked account — adjust below to explore scenarios"
             : useAiPlan
-              ? "Loaded from your latest Ask Tilly allocation"
+              ? "Loaded from your latest Ask Prozpr allocation"
               : "Built around your goals and risk profile"}
         </p>
       </div>
@@ -1859,11 +1859,11 @@ const Execute = () => {
         )}
       </AnimatePresence>
 
-      {/* FAB + Tilly pill */}
+      {/* FAB + Prozpr pill */}
       {(
         <div className="fixed bottom-[156px] right-5 z-40 flex flex-col items-center">
           <AnimatePresence>
-            {showTillyPill && (
+            {showProzprPill && (
               <motion.div
                 initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: [0, -4, 0] }}
@@ -1875,7 +1875,7 @@ const Execute = () => {
                 className="mb-1 flex flex-col items-center"
               >
                 <span style={{ background: "rgba(184, 134, 11, 0.70)", color: "#ffffff", fontSize: "12px", fontWeight: 600, padding: "6px 14px", borderRadius: "99px", whiteSpace: "nowrap" }}>
-                  💬 Speak to Tilly
+                  💬 Speak to Prozpr
                 </span>
                 <div style={{ width: 0, height: 0, borderLeft: "6px solid transparent", borderRight: "6px solid transparent", borderTop: "6px solid #B8860B", marginTop: "-1px" }} />
               </motion.div>
