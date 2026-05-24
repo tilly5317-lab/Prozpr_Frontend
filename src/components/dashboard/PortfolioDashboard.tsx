@@ -1,5 +1,6 @@
 import { useState, useEffect, type ReactNode } from "react";
-import { TrendingUp, TrendingDown, MessageCircle } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { TrendingUp, TrendingDown, MessageCircle, Compass, ArrowRight } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import BottomNav from "@/components/BottomNav";
 import NetWorthSparkline from "./NetWorthSparkline";
@@ -157,6 +158,71 @@ function PortfolioMainPanel({
         portfolio={portfolio}
       />
     </div>
+  );
+}
+
+function DiscoverEntryCard() {
+  const navigate = useNavigate();
+  return (
+    <motion.button
+      type="button"
+      onClick={() => navigate("/discovery/mf")}
+      className="relative w-full flex items-center gap-3 rounded-[14px] p-[14px] text-left transition-all hover:shadow-sm active:scale-[0.99]"
+      style={{
+        background: "linear-gradient(135deg, #4A380F 0%, #2D1F05 100%)",
+        border: "1px solid rgba(212, 168, 104, 0.45)",
+        color: "#F5EEDC",
+      }}
+      whileTap={{ scale: 0.99 }}
+      animate={{
+        boxShadow: [
+          "0 0 0 0 rgba(212, 168, 104, 0), 0 0 0 0 rgba(212, 168, 104, 0)",
+          "0 0 28px 2px rgba(212, 168, 104, 0.55), 0 0 64px 6px rgba(212, 168, 104, 0.28)",
+          "0 0 0 0 rgba(212, 168, 104, 0), 0 0 0 0 rgba(212, 168, 104, 0)",
+          "0 0 28px 2px rgba(212, 168, 104, 0.55), 0 0 64px 6px rgba(212, 168, 104, 0.28)",
+          "0 0 0 0 rgba(212, 168, 104, 0), 0 0 0 0 rgba(212, 168, 104, 0)",
+          "0 0 28px 2px rgba(212, 168, 104, 0.55), 0 0 64px 6px rgba(212, 168, 104, 0.28)",
+          "0 0 0 0 rgba(212, 168, 104, 0), 0 0 0 0 rgba(212, 168, 104, 0)",
+          "0 0 28px 2px rgba(212, 168, 104, 0.55), 0 0 64px 6px rgba(212, 168, 104, 0.28)",
+          "0 0 0 0 rgba(212, 168, 104, 0), 0 0 0 0 rgba(212, 168, 104, 0)",
+        ],
+      }}
+      transition={{
+        duration: 5.2,
+        ease: "easeInOut",
+        times: [0, 0.08, 0.18, 0.32, 0.42, 0.56, 0.66, 0.8, 1],
+      }}
+    >
+      <div
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
+        style={{
+          backgroundColor: "rgba(245, 238, 220, 0.14)",
+          color: "#F5EEDC",
+        }}
+      >
+        <Compass className="h-[1.125rem] w-[1.125rem]" strokeWidth={1.8} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p
+          style={{
+            fontSize: 10,
+            fontWeight: 500,
+            textTransform: "uppercase",
+            letterSpacing: "1.5px",
+            color: "rgba(245, 238, 220, 0.75)",
+          }}
+        >
+          Discover
+        </p>
+        <p
+          className="mt-0.5 text-[13px] font-semibold leading-tight"
+          style={{ color: "#F5EEDC" }}
+        >
+          Discover Prozpr rated funds
+        </p>
+      </div>
+      <ArrowRight className="h-4 w-4 shrink-0" style={{ color: "rgba(245, 238, 220, 0.7)" }} />
+    </motion.button>
   );
 }
 
@@ -347,6 +413,7 @@ const PortfolioDashboard = () => {
                 horizonLabel="Combined family"
                 middleSlot={<CumulativeMemberBreakdownCard data={cumulativeData} />}
               />
+              <DiscoverEntryCard />
               <AdvisorMeetingsSlot />
               <LiveEventBanner />
             </div>
@@ -377,6 +444,7 @@ const PortfolioDashboard = () => {
                 riskCategory={null}
                 horizonLabel={null}
               />
+              <DiscoverEntryCard />
               <AdvisorMeetingsSlot />
               <LiveEventBanner />
             </div>
@@ -417,6 +485,7 @@ const PortfolioDashboard = () => {
                   null
                 }
               />
+              <DiscoverEntryCard />
               <AdvisorMeetingsSlot />
               <LiveEventBanner />
             </div>

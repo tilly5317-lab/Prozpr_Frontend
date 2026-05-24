@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Target, Pencil, Loader2, MessageCircle, Sparkles, Home, GraduationCap, Plane, BriefcaseBusiness, Heart, Car, Landmark, Trophy, Info, ChevronDown, CalendarClock } from "lucide-react";
+import { Plus, Target, Loader2, MessageCircle, Sparkles, Home, GraduationCap, Plane, BriefcaseBusiness, Heart, Car, Landmark, Trophy, Info, ChevronDown, CalendarClock, RotateCcw } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import confetti from "canvas-confetti";
 import { useNavigate } from "react-router-dom";
@@ -340,6 +340,24 @@ function goalTrackStatus(g: Goal): TrackStatus {
   return projected >= g.targetAmount ? "on-track" : "behind";
 }
 
+const TIMELINE_STATUS_BADGE = {
+  ahead: {
+    label: "Ahead",
+    cls: "border border-emerald-500/30 bg-emerald-100/70 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300",
+    dot: "#10B981",
+  },
+  "on-schedule": {
+    label: "On schedule",
+    cls: "border border-amber-500/30 bg-amber-100/70 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
+    dot: "#D4A868",
+  },
+  behind: {
+    label: "Behind",
+    cls: "border border-rose-500/30 bg-rose-100/70 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300",
+    dot: "#E04E5C",
+  },
+} as const;
+
 const TRACK_BADGE: Record<TrackStatus, { label: string; cls: string; dot: string }> = {
   "on-track": {
     label: "On track",
@@ -405,15 +423,15 @@ const MILESTONES = [25, 50, 75, 100] as const;
 
 interface GoalCardProps {
   goal: Goal;
-  onEdit: () => void;
   onAchieve: () => void;
   achieved: boolean;
   showAchieve: boolean;
 }
 
-const GoalCard = ({ goal, onEdit, onAchieve, achieved, showAchieve }: GoalCardProps) => {
+const GoalCard = ({ goal, onAchieve, achieved, showAchieve }: GoalCardProps) => {
   const [whatIfOpen, setWhatIfOpen] = useState(false);
-  const [monthOffset, setMonthOffset] = useState(0); // negative = pull forward, positive = push back
+  // Negative = pull forward, positive = push back. Drives the what-if simulation.
+  const [monthOffset, setMonthOffset] = useState(0);
 
   const baseMonthsLeft = useMemo(() => {
     const { month, year } = parseTargetDateParts(goal.targetDate);
@@ -425,9 +443,8 @@ const GoalCard = ({ goal, onEdit, onAchieve, achieved, showAchieve }: GoalCardPr
     return Math.max(0, diff);
   }, [goal.targetDate]);
 
-  const minOffset = Math.max(-baseMonthsLeft, -60);
+  const minOffset = -Math.min(baseMonthsLeft, 60);
   const maxOffset = 120;
-
   const adjustedMonthsLeft = Math.max(0, baseMonthsLeft + monthOffset);
 
   const adjustedTargetLabel = useMemo(() => {
@@ -440,19 +457,45 @@ const GoalCard = ({ goal, onEdit, onAchieve, achieved, showAchieve }: GoalCardPr
     return `${months[d.getMonth()]} ${d.getFullYear()}`;
   }, [goal.targetDate, monthOffset]);
 
-  const baselinePct =
-    goal.targetAmount > 0
-      ? Math.min(100, Math.max(0, (goal.currentValue / goal.targetAmount) * 100))
+  // Inflation lift applied to the target when the user shifts the timeline.
+  // 6% is the default Prozpr assumption — keeps the headline "(present value)"
+  // honest by surfacing how much further inflation runs when the goal slips.
+  const INFLATION_RATE = 0.06;
+  const adjustedTargetAmount = useMemo(() => {
+    if (goal.targetAmount <= 0) return 0;
+    return goal.targetAmount * Math.pow(1 + INFLATION_RATE, monthOffset / 12);
+  }, [goal.targetAmount, monthOffset]);
+
+  const displayedTarget = whatIfOpen ? adjustedTargetAmount : goal.targetAmount;
+  // Donut reflects current funded ratio against the (possibly inflation-shifted)
+  // target. Pushing the date back inflates the target → % drops; pulling it
+  // forward deflates the target → % climbs.
+  const pctTarget = displayedTarget > 0 ? displayedTarget : goal.targetAmount;
+  const displayedPct =
+    pctTarget > 0
+      ? Math.min(100, Math.max(0, (goal.currentValue / pctTarget) * 100))
       : 0;
 
-  const projectedAmount = whatIfOpen
-    ? goal.currentValue + goal.monthlyContribution * adjustedMonthsLeft
-    : goal.currentValue;
+  // Pace-based status: would the projected corpus hit the (inflation-lifted) target
+  // by the (shifted) date? Slack tolerates a small over/undershoot so the badge
+  // doesn't flicker for trivial slider nudges.
+  const timelineStatus: "ahead" | "on-schedule" | "behind" = useMemo(() => {
+    if (adjustedTargetAmount <= 0) return "on-schedule";
+    if (goal.currentValue >= adjustedTargetAmount) return "ahead";
+    if (goal.monthlyContribution <= 0 || adjustedMonthsLeft <= 0) return "behind";
+    const monthsNeeded =
+      (adjustedTargetAmount - goal.currentValue) / goal.monthlyContribution;
+    const slack = Math.max(2, adjustedMonthsLeft * 0.05);
+    if (monthsNeeded <= adjustedMonthsLeft - slack) return "ahead";
+    if (monthsNeeded <= adjustedMonthsLeft + slack) return "on-schedule";
+    return "behind";
+  }, [
+    adjustedTargetAmount,
+    goal.currentValue,
+    goal.monthlyContribution,
+    adjustedMonthsLeft,
+  ]);
 
-  const displayedPct =
-    whatIfOpen && goal.targetAmount > 0
-      ? Math.min(100, Math.max(0, (projectedAmount / goal.targetAmount) * 100))
-      : baselinePct;
 
   // Milestone crossing → small confetti pop.
   const prevPctRef = useRef(displayedPct);
@@ -477,11 +520,6 @@ const GoalCard = ({ goal, onEdit, onAchieve, achieved, showAchieve }: GoalCardPr
     prevPctRef.current = curr;
   }, [displayedPct]);
 
-  const projectedShortBy =
-    goal.targetAmount > 0 && projectedAmount < goal.targetAmount
-      ? goal.targetAmount - projectedAmount
-      : 0;
-
   return (
     <li
       className={`overflow-hidden rounded-2xl border bg-card transition-colors ${
@@ -489,17 +527,8 @@ const GoalCard = ({ goal, onEdit, onAchieve, achieved, showAchieve }: GoalCardPr
       }`}
     >
       <div className="relative p-4 pb-4">
-        <button
-          type="button"
-          onClick={onEdit}
-          className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
-          aria-label={`Edit ${goal.label}`}
-        >
-          <Pencil className="h-3.5 w-3.5" strokeWidth={2} />
-        </button>
-
         {/* Header: icon + name + target line */}
-        <div className="flex items-start gap-3 pr-11">
+        <div className="flex items-start gap-3">
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-border/60 bg-muted/40 text-muted-foreground">
             {goal.icon}
           </span>
@@ -527,8 +556,9 @@ const GoalCard = ({ goal, onEdit, onAchieve, achieved, showAchieve }: GoalCardPr
               Funded
             </span>
           ) : (() => {
-            const status = goalTrackStatus(goal);
-            const cfg = TRACK_BADGE[status];
+            // Surface the timeline-shifted status so the badge updates live as
+            // the user drags the goal-date slider.
+            const cfg = TIMELINE_STATUS_BADGE[timelineStatus];
             return (
               <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${cfg.cls}`}>
                 <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: cfg.dot }} />
@@ -564,30 +594,34 @@ const GoalCard = ({ goal, onEdit, onAchieve, achieved, showAchieve }: GoalCardPr
         <div className="mt-4 flex items-center justify-center gap-6">
           <div className="text-center">
             <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-              {whatIfOpen ? "Projected" : "Current"}
+              Current
             </p>
             <p
               className="mt-1 text-base font-bold text-foreground tabular-nums"
               style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
             >
-              {formatCompact(whatIfOpen ? projectedAmount : goal.currentValue)}
+              {formatCompact(goal.currentValue)}
             </p>
           </div>
           <span className="h-8 w-px bg-border/70" aria-hidden />
           <div className="text-center">
             <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
               Target
+              <span className="ml-1 text-[9px] normal-case tracking-normal text-muted-foreground/70">
+                {whatIfOpen && monthOffset !== 0 ? "(inflation-adjusted)" : "(present value)"}
+              </span>
             </p>
             <p
               className="mt-1 text-base font-bold text-foreground tabular-nums"
               style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
             >
-              {formatCompact(goal.targetAmount)}
+              {formatCompact(displayedTarget)}
             </p>
           </div>
         </div>
 
-        {/* What-if slider panel */}
+        {/* Timeline-adjustment panel — slider shifts the goal date and inflates
+            the target, drives the ahead/on-schedule/behind status. */}
         <AnimatePresence initial={false}>
           {whatIfOpen && (
             <motion.div
@@ -622,47 +656,28 @@ const GoalCard = ({ goal, onEdit, onAchieve, achieved, showAchieve }: GoalCardPr
                   max={maxOffset}
                   step={1}
                   className="mt-2.5"
+                  aria-label={`Shift ${goal.label} target date`}
                 />
                 <div className="mt-1.5 flex justify-between text-[10px] text-muted-foreground/70">
                   <span>Pull up</span>
                   <span>On schedule</span>
                   <span>Push back</span>
                 </div>
-                <div className="mt-3 flex items-start justify-between gap-2">
-                  <p className="text-[11px] leading-snug text-muted-foreground">
-                    {goal.monthlyContribution <= 0 ? (
-                      <>
-                        Add a monthly contribution to project this goal&apos;s timeline.
-                      </>
-                    ) : projectedShortBy > 0 ? (
-                      <>
-                        Short by{" "}
-                        <span className="font-semibold text-destructive">
-                          {formatCompact(projectedShortBy)}
-                        </span>{" "}
-                        by {adjustedTargetLabel}
-                      </>
-                    ) : (
-                      <>
-                        <span className="font-semibold text-emerald-700 dark:text-emerald-400">
-                          On target
-                        </span>{" "}
-                        — surplus {formatCompact(projectedAmount - goal.targetAmount)} by{" "}
-                        {adjustedTargetLabel}
-                      </>
-                    )}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMonthOffset(0);
-                      setWhatIfOpen(false);
-                    }}
-                    className="text-[10.5px] font-medium text-muted-foreground hover:text-foreground"
-                  >
-                    Close
-                  </button>
-                </div>
+
+                {monthOffset !== 0 && (
+                  <div className="mt-2.5 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setMonthOffset(0)}
+                      className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted/50 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      style={{ border: "1px solid hsl(var(--border))" }}
+                      aria-label="Reset goal date to original"
+                      title="Reset to original date"
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                    </button>
+                  </div>
+                )}
               </div>
             </motion.div>
           )}
@@ -672,16 +687,16 @@ const GoalCard = ({ goal, onEdit, onAchieve, achieved, showAchieve }: GoalCardPr
           <div className="mt-3.5 rounded-2xl border border-border/60 bg-muted/35 px-3 py-3">
             <p className="text-[11px] leading-relaxed text-muted-foreground">
               <span className="font-medium text-foreground/90">Goal deadline is this month.</span>{" "}
-              Open chat with Tilly to plan your withdrawal and close the goal.
+              Open chat with Prozpr to plan your withdrawal and close the goal.
             </p>
             <button
               type="button"
               onClick={onAchieve}
               className="mt-2.5 inline-flex min-h-[40px] items-center justify-center gap-2 rounded-full border border-primary/35 bg-background px-4 text-xs font-semibold text-primary shadow-sm transition-colors hover:border-primary/50 hover:bg-primary/[0.06] active:scale-[0.99]"
-              aria-label={`Plan withdrawal with Tilly to complete goal: ${goal.label}`}
+              aria-label={`Plan withdrawal with Prozpr to complete goal: ${goal.label}`}
             >
               <MessageCircle className="h-3.5 w-3.5 shrink-0 opacity-90" aria-hidden />
-              Plan withdrawal with Tilly
+              Plan withdrawal with Prozpr
             </button>
           </div>
         )}
@@ -962,7 +977,6 @@ const GoalPlanner = () => {
         <div className="flex items-center gap-3 px-5 pt-10 pb-3">
           <div className="min-w-0 flex-1">
             <h1 className="text-lg font-semibold text-foreground">Goals</h1>
-            <p className="text-xs text-muted-foreground">Track targets and corpus in one place</p>
           </div>
           <button
             type="button"
@@ -972,6 +986,15 @@ const GoalPlanner = () => {
           >
             <CalendarClock className="h-3.5 w-3.5" strokeWidth={2} />
             Timeline
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate("/goal-planner/timeline-2")}
+            className="inline-flex h-9 items-center gap-1.5 rounded-full border border-border bg-card px-3 text-[11.5px] font-semibold text-foreground shadow-sm transition-colors hover:bg-muted/60"
+            aria-label="Open goals timeline 2"
+          >
+            <CalendarClock className="h-3.5 w-3.5" strokeWidth={2} />
+            Timeline 2
           </button>
           <button
             type="button"
@@ -1252,18 +1275,22 @@ const GoalPlanner = () => {
               </button>
             </div>
           ) : (
-            <ul className="space-y-3">
-              {sortedGoals.map((goal) => (
-                <GoalCard
-                  key={goal.id}
-                  goal={goal}
-                  achieved={isGoalAchieved(goal)}
-                  showAchieve={isGoalDeadlineInCurrentMonth(goal)}
-                  onEdit={() => openEdit(goal)}
-                  onAchieve={() => openAchieveGoalInChat(goal)}
-                />
-              ))}
-            </ul>
+            <>
+              <ul className="space-y-3">
+                {sortedGoals.map((goal) => (
+                  <GoalCard
+                    key={goal.id}
+                    goal={goal}
+                    achieved={isGoalAchieved(goal)}
+                    showAchieve={isGoalDeadlineInCurrentMonth(goal)}
+                    onAchieve={() => openAchieveGoalInChat(goal)}
+                  />
+                ))}
+              </ul>
+              <p className="mt-3 text-[10.5px] italic leading-relaxed text-muted-foreground/80">
+                * Target shown in today&apos;s money (present value). Actual rupees needed at the goal date will be higher to account for inflation.
+              </p>
+            </>
           )}
         </motion.section>
       </motion.main>
@@ -1356,11 +1383,11 @@ const GoalPlanner = () => {
                         className="mt-1.5 inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/[0.06] px-2.5 py-1 text-[10.5px] font-medium text-primary transition-colors hover:bg-primary/10"
                       >
                         <Sparkles className="h-3 w-3" />
-                        Tilly suggests {editInflationSuggestion.rate}% — {editInflationSuggestion.reason}
+                        Prozpr suggests {editInflationSuggestion.rate}% — {editInflationSuggestion.reason}
                       </button>
                     )}
                     <p className="mt-1.5 text-[10.5px] leading-snug text-muted-foreground/80">
-                      You can override this assumption — it&apos;s based on Tilly&apos;s
+                      You can override this assumption — it&apos;s based on Prozpr&apos;s
                       research for this goal category.
                     </p>
                   </>
@@ -1573,11 +1600,11 @@ const GoalPlanner = () => {
                         className="mt-1.5 inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/[0.06] px-2.5 py-1 text-[10.5px] font-medium text-primary transition-colors hover:bg-primary/10"
                       >
                         <Sparkles className="h-3 w-3" />
-                        Tilly suggests {inflationSuggestion.rate}% — {inflationSuggestion.reason}
+                        Prozpr suggests {inflationSuggestion.rate}% — {inflationSuggestion.reason}
                       </button>
                     )}
                     <p className="mt-1.5 text-[10.5px] leading-snug text-muted-foreground/80">
-                      You can override this assumption — it&apos;s based on Tilly&apos;s
+                      You can override this assumption — it&apos;s based on Prozpr&apos;s
                       research for this goal category.
                     </p>
                   </>
@@ -1748,21 +1775,6 @@ const GoalPlanner = () => {
           </motion.div>
         )}
       </AnimatePresence>
-
-      <button
-        type="button"
-        onClick={() => navigate("/chat?mode=goal-planning")}
-        className="fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))] right-4 z-30 flex max-w-[min(100vw-2rem,18rem)] items-center gap-2.5 rounded-full border border-border bg-[#1E2D50] py-3 pl-4 pr-5 text-left transition-opacity hover:opacity-95 active:scale-[0.99]"
-        aria-label="Open goal alignment with Tilly"
-      >
-        <Sparkles className="h-5 w-5 shrink-0 text-white" aria-hidden />
-        <span className="min-w-0">
-          <span className="block text-xs font-semibold leading-tight text-white">Plan goals with Tilly</span>
-          <span className="mt-0.5 block text-[10px] font-normal leading-snug text-white/85">
-            Goal alignment walkthrough
-          </span>
-        </span>
-      </button>
 
       <BottomNav />
     </div>
