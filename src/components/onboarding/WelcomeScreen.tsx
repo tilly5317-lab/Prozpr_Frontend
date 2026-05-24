@@ -48,6 +48,7 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
   const [loading, setLoading] = useState(false);
 
   const [isReturningUser, setIsReturningUser] = useState(false);
+  const [returningUserOnboardingDone, setReturningUserOnboardingDone] = useState(false);
 
   const [pin, setPin] = useState("");
   const [pinError, setPinError] = useState("");
@@ -70,15 +71,17 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
         mobile: digits,
       });
       setIsReturningUser(status.exists);
+      setReturningUserOnboardingDone(status.exists && status.is_onboarding_complete);
     } catch {
       setIsReturningUser(false);
+      setReturningUserOnboardingDone(false);
     }
 
     setLoading(false);
     setStep("pin");
   };
 
-  const finishReturningUserSession = () => {
+  const finishOnboardedSession = () => {
     try {
       sessionStorage.setItem("onboardingComplete", "true");
     } catch {
@@ -89,6 +92,10 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
     } else {
       navigate("/");
     }
+  };
+
+  const resumeOnboarding = () => {
+    navigate("/link-accounts");
   };
 
   const handlePinSubmit = async () => {
@@ -119,7 +126,19 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
       }
       await refresh();
       setLoading(false);
-      finishReturningUserSession();
+      try {
+        const me = await getMe();
+        if (me.is_onboarding_complete || returningUserOnboardingDone) {
+          finishOnboardedSession();
+          return;
+        }
+      } catch {
+        if (returningUserOnboardingDone) {
+          finishOnboardedSession();
+          return;
+        }
+      }
+      resumeOnboarding();
       return;
     }
 
@@ -143,14 +162,14 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
     try {
       const me = await getMe();
       if (me.is_onboarding_complete) {
-        finishReturningUserSession();
+        finishOnboardedSession();
         return;
       }
     } catch {
-      /* continue to CAMS for new users */
+      /* continue into onboarding */
     }
 
-    setStep("cams");
+    resumeOnboarding();
   };
 
   const pickCamsFile = (f: File | null) => {
@@ -258,6 +277,14 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
           Enter password & extract
           <ArrowRight className="h-4 w-4" />
         </motion.button>
+
+        <button
+          type="button"
+          onClick={() => navigate("/link-accounts")}
+          className="mt-3 w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          Skip for now — link accounts later
+        </button>
 
         <CamsStatementPasswordModal
           open={showCamsPasswordModal}

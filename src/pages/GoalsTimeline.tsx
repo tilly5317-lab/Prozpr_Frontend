@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ArrowLeft,
   BriefcaseBusiness,
   Car,
   GraduationCap,
@@ -484,13 +482,13 @@ function AddGoalSheet({ open, initialYear, onClose, onSave }: AddGoalSheetProps)
                           border: "1px solid rgba(212, 168, 104, 0.30)",
                         }}
                       >
-                        ✨ Tilly suggests {inflationSuggestion.rate}% —{" "}
+                        ✨ Prozpr suggests {inflationSuggestion.rate}% —{" "}
                         {inflationSuggestion.reason}
                       </button>
                     )}
                     <p className="mt-1.5 text-[10px] leading-snug text-muted-foreground/80">
                       Override this if you have a better number — it&apos;s based
-                      on Tilly&apos;s research for this goal category.
+                      on Prozpr&apos;s research for this goal category.
                     </p>
                   </div>
                 )}
@@ -594,9 +592,157 @@ function AddGoalSheet({ open, initialYear, onClose, onSave }: AddGoalSheetProps)
   );
 }
 
-const GoalsTimeline = () => {
-  const navigate = useNavigate();
+// Static goals-projection summary surfaced as a popup from the tornado view.
+// Numbers mirror what the GoalPlanner cards used to render, so the page-level
+// flow stays consistent without dragging the whole sandbox slider over.
+interface ProjectionSheetProps {
+  open: boolean;
+  onClose: () => void;
+}
+
+function ProjectionSheet({ open, onClose }: ProjectionSheetProps) {
+  const horizonLabel = "Mar 2051";
+  const monthlyLabel = "₹2.27L/mo";
+  const BEGIN = 1_50_00_000;
+  const INVESTMENTS = 10_74_74_878;
+  const ROI = 24_44_98_818;
+  const ONE_OFF_IN = 1_20_00_000;
+  const ONE_OFF_OUT = -1_00_00_000;
+  const GOALS_OUT = -57_78_00_000;
+  const CLOSING = BEGIN + INVESTMENTS + ROI + ONE_OFF_IN + ONE_OFF_OUT + GOALS_OUT;
+  const rows: { label: string; value: number; kind: "neutral" | "positive" | "negative" }[] = [
+    { label: "Beginning financial assets", value: BEGIN, kind: "neutral" },
+    { label: "+ Investments", value: INVESTMENTS, kind: "positive" },
+    { label: "+ Return on investments", value: ROI, kind: "positive" },
+    { label: "+ One-off income", value: ONE_OFF_IN, kind: "positive" },
+    { label: "− One-off expense", value: ONE_OFF_OUT, kind: "negative" },
+    { label: "− Goals", value: GOALS_OUT, kind: "negative" },
+  ];
+  return (
+    <AnimatePresence>
+      {open && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] bg-black/50"
+            onClick={onClose}
+            aria-hidden="true"
+          />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.96, y: 12 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.96, y: 12 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Goals projection"
+            className="fixed inset-0 z-[60] flex items-center justify-center px-4"
+          >
+            <div
+              className="w-full max-w-md overflow-hidden rounded-2xl bg-card shadow-2xl"
+              style={{ maxHeight: "min(88dvh, 720px)" }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start gap-2 border-b border-border px-4 py-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                    Goals projection
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    Through {horizonLabel} · {monthlyLabel} · 9% post-tax assumption
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="p-1.5 -m-1.5 text-muted-foreground hover:text-foreground"
+                  aria-label="Close"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <ul className="divide-y divide-border/60 overflow-y-auto">
+                {rows.map((row) => (
+                  <li
+                    key={row.label}
+                    className="flex items-center justify-between px-4 py-2.5"
+                  >
+                    <span className="text-xs text-foreground/85">{row.label}</span>
+                    <span
+                      className={`text-xs font-semibold tabular-nums ${
+                        row.kind === "positive"
+                          ? "text-emerald-700 dark:text-emerald-400"
+                          : row.kind === "negative"
+                            ? "text-destructive"
+                            : "text-foreground"
+                      }`}
+                    >
+                      {row.value < 0 ? "−" : ""}
+                      {formatINR(Math.abs(row.value))}
+                    </span>
+                  </li>
+                ))}
+                <li
+                  className="flex items-center justify-between px-4 py-3"
+                  style={{ backgroundColor: "hsl(var(--muted) / 0.4)" }}
+                >
+                  <span className="text-xs font-semibold text-foreground">
+                    Closing financial assets · {horizonLabel}
+                  </span>
+                  <span
+                    className={`text-sm font-bold tabular-nums ${
+                      CLOSING >= 0
+                        ? "text-emerald-700 dark:text-emerald-400"
+                        : "text-destructive"
+                    }`}
+                  >
+                    {CLOSING < 0 ? "−" : ""}
+                    {formatINR(Math.abs(CLOSING))}
+                  </span>
+                </li>
+              </ul>
+
+              <div className="border-t border-border px-4 py-3">
+                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Goal funding status
+                </p>
+                <div className="mt-2 grid grid-cols-[1fr_auto] gap-y-1.5 text-xs">
+                  <span className="text-muted-foreground">Net financial assets</span>
+                  <span className="text-right font-semibold tabular-nums text-foreground">
+                    {formatINR(1_50_00_000)}
+                  </span>
+                  <span className="text-muted-foreground">Goals today (PV)</span>
+                  <span className="text-right font-semibold tabular-nums text-foreground">
+                    {formatINR(3_30_67_257)}
+                  </span>
+                  <span className="text-muted-foreground">Present gap</span>
+                  <span className="text-right font-semibold tabular-nums text-destructive">
+                    −{formatINR(1_80_67_257)}
+                  </span>
+                  <span className="text-muted-foreground">Future gap</span>
+                  <span className="text-right font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
+                    {formatINR(0)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+}
+
+interface GoalsTimelineProps {
+  variant?: "line" | "tornado";
+}
+
+const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   const currentYear = new Date().getFullYear();
+  const isTornado = variant === "tornado";
   const years = useMemo(
     () => Array.from({ length: HORIZON_YEARS + 1 }, (_, i) => currentYear + i),
     [currentYear],
@@ -612,6 +758,7 @@ const GoalsTimeline = () => {
   const [expandedGoals, setExpandedGoals] = useState<Set<string>>(new Set());
   const [draggingGoalId, setDraggingGoalId] = useState<string | null>(null);
   const [dropTargetYear, setDropTargetYear] = useState<number | null>(null);
+  const [projectionOpen, setProjectionOpen] = useState(false);
 
   const toggleGoalExpanded = (id: string) => {
     setExpandedGoals((prev) => {
@@ -715,6 +862,21 @@ const GoalsTimeline = () => {
     return NAV_PAD_PCT + t * (100 - 2 * NAV_PAD_PCT);
   };
 
+  // For the tornado variant: the centre axis is today's NAV (the baseline). A
+  // bar to the right means "NAV is above the baseline" (cumulative growth); a
+  // bar to the left means "NAV has dropped below today" (post-withdrawal).
+  // peakDiff anchors width to the slider's maximum so bars grow as
+  // contributions rise.
+  const baselineNav = START_NAV;
+  const peakDiff = useMemo(() => {
+    if (!isTornado) return 0;
+    const maxProj = buildProjection(visibleGoals, currentYear, HORIZON_YEARS, MONTHLY_MAX);
+    return maxProj.reduce(
+      (m, p) => Math.max(m, Math.abs(p.endNav - baselineNav)),
+      0,
+    );
+  }, [isTornado, visibleGoals, currentYear, baselineNav]);
+
   const handleSave = (incoming: Omit<TimelineGoal, "id">) => {
     setGoals((prev) => [
       ...prev,
@@ -724,25 +886,25 @@ const GoalsTimeline = () => {
   };
 
   return (
-    <div className="mobile-container min-h-screen bg-background pb-28">
+    <div className="mobile-container min-h-screen bg-background pb-20">
       <header className="sticky top-0 z-40 border-b border-border bg-background">
-        <div className="flex items-center gap-3 px-5 pt-10 pb-3">
-          <button
-            type="button"
-            onClick={() => navigate(-1)}
-            className="text-foreground shrink-0"
-            aria-label="Back"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </button>
-          <div className="min-w-0 flex-1">
-            <h1 className="text-lg font-semibold text-foreground">Goals timeline</h1>
-          </div>
+        <div className="flex items-center gap-2 px-5 pt-6 pb-2">
+          <h1 className="text-lg font-semibold text-foreground">Goals timeline</h1>
+          {isTornado && (
+            <button
+              type="button"
+              onClick={() => setProjectionOpen(true)}
+              className="shrink-0 inline-flex items-center gap-1 rounded-full border border-border bg-card px-2.5 py-0.5 text-[11px] font-semibold text-foreground hover:bg-muted/40"
+              aria-label="Open goals projection"
+            >
+              Projection
+            </button>
+          )}
         </div>
       </header>
 
       <motion.main
-        className="px-5 pt-4 space-y-4"
+        className="px-5 pt-2 space-y-2"
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3, ease: "easeOut" }}
@@ -791,8 +953,8 @@ const GoalsTimeline = () => {
 
         {/* Monthly investment — sticky so the slider stays in reach while scrolling */}
         <div
-          className="sticky z-30 -mx-5 mt-1 bg-background px-5 pb-2 pt-2"
-          style={{ top: "80px" }}
+          className="sticky z-30 -mx-5 bg-background px-5 pb-1 pt-1"
+          style={{ top: "60px" }}
         >
           <div className="rounded-xl border border-border bg-card px-3 py-1.5 flex items-center gap-3">
           <div className="shrink-0 leading-tight">
@@ -846,14 +1008,38 @@ const GoalsTimeline = () => {
             const withdrawal = proj?.withdrawal ?? 0;
 
             const xTop = navToX(prevProj?.endNav ?? endNav);
-            const xBottom = navToX(endNav);
+            const xBottomLine = navToX(endNav);
             const isFirst = i === 0;
             const isLast = i === years.length - 1;
 
-            // Keep the node consistent — green for everyone. Goal years get a
-            // subtle outer halo (rendered separately) so they read as "anchor
-            // points" without the busy red/amber dots.
-            const nodeColor = "#D4A868";
+            // Tornado bar geometry: the axis is today's NAV. Bars extend right
+            // for years that finished ABOVE that baseline (growth above today),
+            // left for years that finished BELOW (post-withdrawal dips). Width
+            // = sqrt(|NAV − baseline| / peakDiff), sqrt-scaled so early-year
+            // gains stay visible alongside late-year peaks.
+            const navDiff = endNav - baselineNav;
+            const tornadoIsSurplus = navDiff >= 0;
+            const navRatio = peakDiff > 0 ? Math.min(1, Math.abs(navDiff) / peakDiff) : 0;
+            const tornadoNorm = Math.sqrt(navRatio);
+            const tornadoHalfMax = 50 - NAV_PAD_PCT;
+            const tornadoHalfWidth = tornadoHalfMax * tornadoNorm;
+            const tornadoX1 = tornadoIsSurplus ? 50 : 50 - tornadoHalfWidth;
+            const tornadoX2 = tornadoIsSurplus ? 50 + tornadoHalfWidth : 50;
+            // Two-tone gradient: light at the axis, deep at the outer tip.
+            const tornadoBaseHue = tornadoIsSurplus ? "16, 185, 129" : "239, 68, 68"; // emerald-500 / red-500
+            const tornadoDeepHue = tornadoIsSurplus ? "5, 95, 70" : "136, 19, 55"; // emerald-800 / rose-900
+            const tornadoFillOpacity = 0.35 + tornadoNorm * 0.65;
+            const tornadoStrokeOpacity = 0.35 + tornadoNorm * 0.55;
+
+            // In tornado mode the year node lives on the centre axis instead of
+            // tracking the gold line. Position markers off this anchor.
+            const xBottom = isTornado ? 50 : xBottomLine;
+
+            const nodeColor = isTornado
+              ? tornadoNorm > 0
+                ? `rgb(${tornadoBaseHue})`
+                : "hsl(var(--muted-foreground))"
+              : "#D4A868";
 
             const isHovered = hoveredYear === y;
             const rowMilestones = milestonesByYear.get(y) ?? [];
@@ -868,7 +1054,7 @@ const GoalsTimeline = () => {
                   else rowRefs.current.delete(y);
                 }}
                 className={`relative ${isFirst ? "sticky z-[15] bg-background" : ""} ${isDropTarget ? "rounded-lg ring-2 ring-[#D4A868]/70" : ""}`}
-                style={isFirst ? { top: "132px" } : undefined}
+                style={isFirst ? { top: "108px" } : undefined}
               >
                 <button
                   type="button"
@@ -882,12 +1068,12 @@ const GoalsTimeline = () => {
                     setHoveredYear((h) => (h === y ? null : h))
                   }
                   className="group relative w-full text-left flex items-stretch gap-3 px-2 transition-colors hover:bg-muted/20 focus:outline-none focus-visible:ring-1 focus-visible:ring-foreground/40 rounded-lg"
-                  style={{ minHeight: hasGoals ? 48 : 18 }}
+                  style={{ minHeight: hasGoals ? (isTornado ? 36 : 48) : isTornado ? 12 : 18 }}
                   aria-label={
                     hasGoals ? `Add another goal in ${y}` : `Add a goal in ${y}`
                   }
                 >
-                  {/* Full-width NAV chart behind the row content */}
+                  {/* Full-width background chart — gold curve in line mode, tornado bar in tornado mode */}
                   <svg
                     width="100%"
                     height="100%"
@@ -896,158 +1082,139 @@ const GoalsTimeline = () => {
                     className="absolute inset-0 pointer-events-none"
                     aria-hidden="true"
                   >
-                    <defs>
-                      <linearGradient
-                        id={`navFill-${y}`}
-                        x1="0"
-                        y1="0"
-                        x2="1"
-                        y2="0"
-                      >
-                        <stop
-                          offset="0%"
-                          stopColor="#D4A868"
-                          stopOpacity={0.16}
+                    {!isTornado && (
+                      <>
+                        <defs>
+                          <linearGradient
+                            id={`navFill-${y}`}
+                            x1="0"
+                            y1="0"
+                            x2="1"
+                            y2="0"
+                          >
+                            <stop offset="0%" stopColor="#D4A868" stopOpacity={0.16} />
+                            <stop offset="100%" stopColor="#D4A868" stopOpacity={0.02} />
+                          </linearGradient>
+                        </defs>
+
+                        <path
+                          d={`M 0 0 L ${xTop} 0 L ${xBottomLine} 100 L 0 100 Z`}
+                          fill={`url(#navFill-${y})`}
                         />
-                        <stop
-                          offset="100%"
-                          stopColor="#D4A868"
-                          stopOpacity={0.02}
+
+                        <line
+                          x1={xTop}
+                          y1={isFirst ? 50 : 0}
+                          x2={xBottomLine}
+                          y2={isLast ? 50 : 100}
+                          stroke="#D4A868"
+                          strokeOpacity={isHovered ? 0.95 : 0.55}
+                          strokeWidth={isHovered ? 2 : 1.5}
+                          vectorEffect="non-scaling-stroke"
                         />
-                      </linearGradient>
-                    </defs>
 
-                    {/* Filled area: left edge → curve segment → bottom-left */}
-                    <path
-                      d={`M 0 0 L ${xTop} 0 L ${xBottom} 100 L 0 100 Z`}
-                      fill={`url(#navFill-${y})`}
-                    />
+                        {hasGoals && (
+                          <circle
+                            cx={xBottomLine}
+                            cy={50}
+                            r={5}
+                            fill="none"
+                            stroke="#D4A868"
+                            strokeOpacity={0.35}
+                            strokeWidth={1}
+                            vectorEffect="non-scaling-stroke"
+                          />
+                        )}
 
-                    {/* Stroke along the curve */}
-                    <line
-                      x1={xTop}
-                      y1={isFirst ? 50 : 0}
-                      x2={xBottom}
-                      y2={isLast ? 50 : 100}
-                      stroke="#D4A868"
-                      strokeOpacity={isHovered ? 0.95 : 0.55}
-                      strokeWidth={isHovered ? 2 : 1.5}
-                      vectorEffect="non-scaling-stroke"
-                    />
-
-                    {/* Subtle halo for goal years — anchors the row without shouting */}
-                    {hasGoals && (
-                      <circle
-                        cx={xBottom}
-                        cy={50}
-                        r={5}
-                        fill="none"
-                        stroke="#D4A868"
-                        strokeOpacity={0.35}
-                        strokeWidth={1}
-                        vectorEffect="non-scaling-stroke"
-                      />
+                        <circle
+                          cx={xBottomLine}
+                          cy={50}
+                          r={isHovered ? 4 : hasGoals ? 3 : 2}
+                          fill={nodeColor}
+                          stroke="hsl(var(--background))"
+                          strokeWidth={1.5}
+                          vectorEffect="non-scaling-stroke"
+                        />
+                      </>
                     )}
 
-                    {/* Year node, on the curve at vertical centre */}
-                    <circle
-                      cx={xBottom}
-                      cy={50}
-                      r={isHovered ? 4 : hasGoals ? 3 : 2}
-                      fill={nodeColor}
-                      stroke="hsl(var(--background))"
-                      strokeWidth={1.5}
-                      vectorEffect="non-scaling-stroke"
-                    />
+                    {isTornado && (
+                      <>
+                        {/* Directional two-tone gradient — light at the axis end, deep at
+                            the outer tip. Each bar reads like a beam radiating away from
+                            today's NAV baseline. */}
+                        <defs>
+                          <linearGradient
+                            id={`tornadoBar-${y}`}
+                            x1="0"
+                            y1="0"
+                            x2="1"
+                            y2="0"
+                          >
+                            <stop
+                              offset="0%"
+                              stopColor={`rgb(${tornadoIsSurplus ? tornadoBaseHue : tornadoDeepHue})`}
+                              stopOpacity={tornadoIsSurplus ? 0.25 : 1}
+                            />
+                            <stop
+                              offset="100%"
+                              stopColor={`rgb(${tornadoIsSurplus ? tornadoDeepHue : tornadoBaseHue})`}
+                              stopOpacity={tornadoIsSurplus ? 1 : 0.25}
+                            />
+                          </linearGradient>
+                        </defs>
+
+                        {/* Centre axis — quiet vertical guide bars pivot around */}
+                        <line
+                          x1={50}
+                          y1={isFirst ? 50 : 0}
+                          x2={50}
+                          y2={isLast ? 50 : 100}
+                          stroke="hsl(var(--border))"
+                          strokeOpacity={0.7}
+                          strokeWidth={1}
+                          vectorEffect="non-scaling-stroke"
+                        />
+
+                        {tornadoNorm > 0 && (
+                          <rect
+                            x={tornadoX1}
+                            y={17.5}
+                            width={Math.max(0, tornadoX2 - tornadoX1)}
+                            height={65}
+                            fill={`url(#tornadoBar-${y})`}
+                            fillOpacity={tornadoFillOpacity}
+                          />
+                        )}
+
+                        {hasGoals && (
+                          <circle
+                            cx={50}
+                            cy={50}
+                            r={5}
+                            fill="none"
+                            stroke="hsl(var(--muted-foreground))"
+                            strokeOpacity={0.35}
+                            strokeWidth={1}
+                            vectorEffect="non-scaling-stroke"
+                          />
+                        )}
+
+                        <circle
+                          cx={50}
+                          cy={50}
+                          r={isHovered ? 4 : hasGoals ? 3 : 2}
+                          fill={nodeColor}
+                          stroke="hsl(var(--background))"
+                          strokeWidth={1.5}
+                          vectorEffect="non-scaling-stroke"
+                        />
+                      </>
+                    )}
                   </svg>
 
-                  {/* "You are here" pulsing marker on the current year row */}
-                  {isFirst && (
-                    <div
-                      className="pointer-events-none absolute z-[15]"
-                      style={{
-                        left: `${xBottom}%`,
-                        top: "50%",
-                        transform: "translate(-50%, -50%)",
-                      }}
-                      aria-hidden="true"
-                    >
-                      <span className="relative flex h-3 w-3 items-center justify-center">
-                        <span
-                          className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-75"
-                          style={{ backgroundColor: "#D4A868" }}
-                        />
-                        <span
-                          className="relative inline-flex h-2.5 w-2.5 rounded-full"
-                          style={{
-                            backgroundColor: "#D4A868",
-                            border: "1.5px solid hsl(var(--background))",
-                            boxShadow: "0 0 6px rgba(212, 168, 104, 0.6)",
-                          }}
-                        />
-                      </span>
-                    </div>
-                  )}
 
-                  {isFirst && (
-                    <div
-                      className="pointer-events-none absolute z-[15]"
-                      style={{
-                        left: `${Math.min(92, Math.max(8, xBottom))}%`,
-                        top: "50%",
-                        transform:
-                          xBottom > 80
-                            ? "translate(-100%, -130%)"
-                            : xBottom < 20
-                              ? "translate(0, -130%)"
-                              : "translate(-50%, -130%)",
-                      }}
-                    >
-                      <span
-                        className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold"
-                        style={{
-                          backgroundColor: "#D4A868",
-                          color: "hsl(var(--background))",
-                          boxShadow: "0 2px 6px rgba(212, 168, 104, 0.35)",
-                        }}
-                      >
-                        You are here
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Milestone glow — earned moment, lights up the node briefly */}
-                  <AnimatePresence>
-                    {hasMilestone && (
-                      <motion.div
-                        key="ms-glow"
-                        initial={{ opacity: 0, scale: 0.6 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.6 }}
-                        transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-                        className="pointer-events-none absolute z-[15]"
-                        style={{
-                          left: `${xBottom}%`,
-                          top: "50%",
-                          transform: "translate(-50%, -50%)",
-                        }}
-                        aria-hidden="true"
-                      >
-                        <span
-                          className="block h-6 w-6 rounded-full animate-pulse"
-                          style={{
-                            background:
-                              "radial-gradient(circle, rgba(229,192,121,0.30) 0%, transparent 65%)",
-                            border: "1.5px solid rgba(229,192,121,0.75)",
-                            boxShadow: "0 0 12px rgba(229,192,121,0.55)",
-                          }}
-                        />
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-
-                  {/* Trace tooltip — appears at the green line on hover/focus */}
-                  {isHovered && (
+                  {isHovered && (!isTornado || tornadoNorm > 0) && (
                     <div
                       className="pointer-events-none absolute z-20"
                       style={{
@@ -1068,18 +1235,37 @@ const GoalsTimeline = () => {
                             "ui-monospace, SFMono-Regular, Menlo, monospace",
                         }}
                       >
-                        <span className="text-muted-foreground">{y}</span>
-                        <span className="mx-1 text-muted-foreground/50">·</span>
-                        <span className="font-semibold text-foreground">
-                          {formatINRCompact(endNav)}
-                        </span>
-                        {withdrawal > 0 && (
-                          <span
-                            className="ml-1 font-semibold"
-                            style={{ color: "rgb(239,68,68)" }}
-                          >
-                            (−{formatINRCompact(withdrawal)})
-                          </span>
+                        {isTornado ? (
+                          <>
+                            <span className="text-muted-foreground">{y}</span>
+                            <span className="mx-1 text-muted-foreground/50">·</span>
+                            <span className="font-semibold text-foreground">
+                              {formatINRCompact(endNav)}
+                            </span>
+                            <span
+                              className="ml-1 font-semibold"
+                              style={{ color: `rgb(${tornadoBaseHue})` }}
+                            >
+                              ({tornadoIsSurplus ? "+" : "−"}
+                              {formatINRCompact(Math.abs(navDiff))} vs today)
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-muted-foreground">{y}</span>
+                            <span className="mx-1 text-muted-foreground/50">·</span>
+                            <span className="font-semibold text-foreground">
+                              {formatINRCompact(endNav)}
+                            </span>
+                            {withdrawal > 0 && (
+                              <span
+                                className="ml-1 font-semibold"
+                                style={{ color: "rgb(239,68,68)" }}
+                              >
+                                (−{formatINRCompact(withdrawal)})
+                              </span>
+                            )}
+                          </>
                         )}
                       </div>
                     </div>
@@ -1157,6 +1343,17 @@ const GoalsTimeline = () => {
                             g.inflationRate,
                             yearsAway,
                           );
+                          // Dummy per-goal funding progress. Hardcoded so the demo
+                          // shows distinct numbers per goal rather than all maxing
+                          // out at 100%.
+                          const HARDCODED_ACHIEVED: Record<string, number> = {
+                            "seed-home": 72,
+                            "seed-education": 48,
+                            "seed-retirement": 25,
+                          };
+                          const computedPct =
+                            fv > 0 ? Math.min(100, Math.round(((endNav + withdrawal) / fv) * 100)) : 0;
+                          const pctAchieved = HARDCODED_ACHIEVED[g.id] ?? computedPct;
                           const GoalIcon = goalIconFor(g.name);
                           const isExpanded = expandedGoals.has(g.id);
                           const isDragging = draggingGoalId === g.id;
@@ -1255,9 +1452,17 @@ const GoalsTimeline = () => {
                                         </span>
                                       </div>
                                       <div className="flex items-center justify-between gap-2">
-                                        <span>Growth</span>
-                                        <span className="tabular-nums">
-                                          {g.inflationRate}% / yr
+                                        <span>% achieved</span>
+                                        <span
+                                          className="font-semibold tabular-nums"
+                                          style={{
+                                            color:
+                                              pctAchieved >= 100
+                                                ? "rgb(16, 185, 129)"
+                                                : "hsl(var(--foreground))",
+                                          }}
+                                        >
+                                          {pctAchieved}%
                                         </span>
                                       </div>
                                     </div>
@@ -1276,35 +1481,14 @@ const GoalsTimeline = () => {
           })}
         </ul>
 
-        <p className="px-1 text-[10.5px] leading-snug text-muted-foreground/80">
-          The gold spine grows with your projected NAV (today&apos;s portfolio, ₹2L/mo
-          contributions, 9% p.a.). Red ticks mark the years a goal draws from the
-          portfolio.
-        </p>
-
-        <div
-          className="flex items-start gap-2 rounded-lg px-2.5 py-2"
-          style={{
-            backgroundColor: "hsl(var(--muted) / 0.5)",
-            border: "1px solid hsl(var(--hairline))",
-          }}
-        >
-          <span
-            className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold"
-            style={{
-              backgroundColor: "hsl(var(--muted-foreground) / 0.18)",
-              color: "hsl(var(--muted-foreground))",
-            }}
-            aria-hidden="true"
-          >
-            !
+        <p className="px-1 text-[9.5px] leading-snug text-muted-foreground/70">
+          {isTornado
+            ? "Centre = today's NAV. Right (green) = cumulative growth above today; left (red) = pulled back below today by a withdrawal."
+            : "Gold spine = projected NAV (today's portfolio, ₹2L/mo, 9% p.a.). Red ticks = goal-draw years."}
+          <span className="ml-1 text-muted-foreground/60">
+            Directional guide, not a forecast.
           </span>
-          <p className="text-[10.5px] leading-snug text-muted-foreground">
-            <span className="font-semibold text-foreground/80">Note · </span>
-            Future projections depend on market returns, which are outside anyone&apos;s
-            control. Treat this as a directional guide, not a forecast.
-          </p>
-        </div>
+        </p>
       </motion.main>
 
       <AddGoalSheet
@@ -1313,6 +1497,8 @@ const GoalsTimeline = () => {
         onClose={() => setAddYear(null)}
         onSave={handleSave}
       />
+
+      <ProjectionSheet open={projectionOpen} onClose={() => setProjectionOpen(false)} />
 
       {/* Floating + FAB — opens the add-goal sheet at a sensible default year */}
       <button

@@ -47,6 +47,7 @@
     --wealth-surface: 220 15% 98%;
     --wealth-card-shadow: 222 30% 78%;
     --tilly-bubble: 40 9% 96%;
+    --prozpr-bubble: 40 9% 96%;
     --tilly-accent-border: 222 47% 14%;
     --user-bubble: 222 47% 20%;
     --sidebar-background: 0 0% 98%;
@@ -115,6 +116,7 @@
     --wealth-surface: 0 0% 8%;
     --wealth-card-shadow: 0 0% 0%;
     --tilly-bubble: 60 2% 14%;
+    --prozpr-bubble: 60 2% 14%;
     --tilly-accent-border: 48 18% 93%;
     --user-bubble: 215 70% 32%;
 

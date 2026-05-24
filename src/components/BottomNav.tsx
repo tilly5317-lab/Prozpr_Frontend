@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 const tabs = [
   { icon: MessageSquare, label: "Chat", path: "/chat" },
   { icon: Home, label: "Portfolio", path: "/portfolio" },
-  { icon: Compass, label: "Discover", path: "/discovery" },
+  { icon: Compass, label: "Invest", path: "/rebalance-explanation" },
   { icon: Target, label: "Goals", path: "/goal-planner" },
   { icon: Bell, label: "Alerts", path: "/notifications", badge: 2 },
 ];
@@ -18,7 +18,10 @@ const BottomNav = () => {
     <nav className="fixed bottom-0 left-0 right-0 z-50 bg-card/80 backdrop-blur-xl border-t border-border/50">
       <div className="max-w-md mx-auto flex items-center justify-around py-2 pb-[env(safe-area-inset-bottom,8px)]">
         {tabs.map((tab) => {
-          const isActive = location.pathname === tab.path;
+          const isActive =
+            location.pathname === tab.path ||
+            (tab.path === "/rebalance-explanation" &&
+              (location.pathname === "/execute" || location.pathname.startsWith("/rebalance")));
           return (
             <button
               key={tab.path}

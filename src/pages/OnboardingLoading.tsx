@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
 
 const OnboardingLoading = () => {
   const navigate = useNavigate();
+  const { refresh } = useAuth();
   const [progress, setProgress] = useState(0);
 
   useEffect(() => {
+    void refresh();
     const start = Date.now();
 
     const t1 = window.setInterval(() => {
@@ -25,7 +28,7 @@ const OnboardingLoading = () => {
       if (t1) window.clearInterval(t1);
       if (t2) window.clearTimeout(t2);
     };
-  }, [navigate]);
+  }, [navigate, refresh]);
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center px-6">

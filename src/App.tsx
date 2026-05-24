@@ -74,8 +74,10 @@ const App = () => (
             <Route path="/meeting-notes" element={<MeetingNotesIndex />} />
             <Route path="/meeting-notes/detail" element={<MeetingNotes />} />
             <Route path="/rebalancing" element={<Execute />} />
-            <Route path="/goal-planner" element={<GoalPlanner />} />
+            <Route path="/goal-planner" element={<GoalsTimeline variant="tornado" />} />
+            <Route path="/goal-planner/cards" element={<GoalPlanner />} />
             <Route path="/goal-planner/timeline" element={<GoalsTimeline />} />
+            <Route path="/goal-planner/timeline-2" element={<GoalsTimeline variant="tornado" />} />
             <Route path="/family" element={<FamilyMembers />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
