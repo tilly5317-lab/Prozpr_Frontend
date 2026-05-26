@@ -26,6 +26,7 @@ import {
 } from "@/lib/api";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { ChartRenderer } from "@/components/chat/visualization_tools/ChartRenderer";
 
 const PENDING_CHAT_BOOTSTRAP_KEY = "askProzpr.pendingChatBootstrap.v1";
 
@@ -62,6 +63,8 @@ interface Message {
   widgetKind?: "emergency-fund";
   /** Backend saved an ideal rebalancing plan — show CTA to open `/execute`. */
   showViewExecutePlan?: boolean;
+  /** Chart visualization payloads from backend AI modules. */
+  chartPayloads?: any[] | null;
 }
 
 const DUMMY_USER_CONTEXT: UserInfo = {
@@ -765,6 +768,7 @@ const AIChatPanel = ({
         session.messages.map((m) => ({
           role: m.role === "assistant" ? ("ai" as const) : ("user" as const),
           content: m.content,
+          chartPayloads: m.chart_payloads || null,
         })),
       );
       setChatStartTime(
@@ -875,6 +879,7 @@ const AIChatPanel = ({
             session.messages.map((m) => ({
               role: m.role === "assistant" ? ("ai" as const) : ("user" as const),
               content: m.content,
+              chartPayloads: m.chart_payloads || null,
             })),
           );
         }
@@ -1135,6 +1140,7 @@ const AIChatPanel = ({
           role: "ai",
           content: resp.assistant_message.content,
           ...(hasSavedPlan ? { showViewExecutePlan: true } : {}),
+          chartPayloads: resp.assistant_message.chart_payloads || null,
         },
       ]);
     } catch (err: any) {
@@ -1354,6 +1360,13 @@ const AIChatPanel = ({
                   </div>
                 </button>
               ) : null}
+              {msg.chartPayloads && msg.chartPayloads.length > 0 && (
+                <div className="ml-7 mt-1 max-w-[95%]">
+                  {msg.chartPayloads.map((cp: any, cpIdx: number) => (
+                    <ChartRenderer key={cpIdx} payload={cp} />
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </motion.div>

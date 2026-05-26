@@ -548,6 +548,24 @@ export interface ChatSessionInfo {
   updated_at: string;
 }
 
+export interface CashflowAnnualBarPayload {
+  type: "cashflow_annual_bar";
+  title: string;
+  data: {
+    fy_label: string;
+    income: number;
+    household_expense: number;
+    savings_post_emi: number;
+    corpus_closing: number;
+    monthly_investment: number;
+    goal_payout: number;
+  }[];
+  annual_cashflow: AnnualCashflowRow[];
+  monthly_cashflow: MonthlyCashflowRow[];
+}
+
+export type ChatChartPayload = CashflowAnnualBarPayload | Record<string, unknown>;
+
 export interface ChatMessageInfo {
   id: string;
   role: string;
@@ -555,7 +573,7 @@ export interface ChatMessageInfo {
   intent: string | null;
   intent_confidence: number | null;
   intent_reasoning: string | null;
-  chart_payloads: unknown[] | null;
+  chart_payloads: ChatChartPayload[] | null;
   created_at: string;
 }
 
@@ -1245,6 +1263,7 @@ export interface GoalResponse {
   suggested_contribution: number | null;
   priority: string;
   status: string;
+  inflation_rate?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -1259,6 +1278,7 @@ export interface GoalCreatePayload {
   target_amount: number;
   target_date?: string;
   priority?: string;
+  inflation_rate?: number;
   notes?: string;
 }
 
@@ -1274,6 +1294,7 @@ export interface GoalUpdatePayload {
   target_amount?: number;
   target_date?: string;
   priority?: string;
+  inflation_rate?: number;
   notes?: string;
 }
 
@@ -1301,6 +1322,121 @@ export async function addGoalContribution(
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+// ── Cashflow API ─────────────────────────────────────
+
+export interface AnnualCashflowRow {
+  fy_end_date: string;
+  fy_label: string;
+  income: number;
+  income_tax: number;
+  household_expense: number;
+  savings_pre_emi: number;
+  existing_mortgage_emi: number;
+  goal_mortgage_emi: number;
+  savings_post_emi: number;
+  one_off_inflow: number;
+  one_off_outflow: number;
+  corpus_opening: number;
+  monthly_investment: number;
+  investment_returns: number;
+  goal_payout: number;
+  corpus_closing: number;
+  is_funded: boolean;
+}
+
+export interface MonthlyCashflowRow {
+  month_end_date: string;
+  fy_label: string;
+  income: number;
+  income_tax: number;
+  household_expense: number;
+  savings_pre_emi: number;
+  existing_mortgage_emi: number;
+  goal_mortgage_emi: number;
+  savings_post_emi: number;
+  one_off_inflow: number;
+  one_off_outflow: number;
+  corpus_opening: number;
+  monthly_investment: number;
+  investment_source?: string;
+  investment_returns: number;
+  goal_payout: number;
+  corpus_closing: number;
+  is_funded: boolean;
+}
+
+export interface HeadlineStatus {
+  years_to_last_goal: number;
+  last_goal_date: string;
+  last_fy_end_date: string;
+  number_of_goals: number;
+  corpus_today: number;
+  total_corpus_required_today: number;
+  surplus_or_shortfall_today: number;
+  corpus_closing: number;
+  total_shortfall_fv: number;
+  total_funded_amount: number;
+}
+
+export interface FundFlowSummary {
+  corpus_opening: number;
+  total_investments: number;
+  total_roi: number;
+  total_one_off_in: number;
+  total_one_off_out: number;
+  total_goals_paid: number;
+  corpus_closing: number;
+  corpus_today: number;
+  total_corpus_required_today: number;
+  surplus_or_shortfall_today: number;
+}
+
+export interface PlanSummary {
+  top_line: string;
+  retirement_note: string;
+  cashflow_note: string;
+  goals: { name: string; verdict: string; headline_amount: string; note: string }[];
+  risks: string[];
+  next_steps: string[];
+  summary_error?: string | null;
+}
+
+export interface CashflowPlanRunDetail {
+  id: string;
+  user_id: string | null;
+  chat_session_id: string | null;
+  engine_version: string;
+  cause: string;
+  assumption_id: string;
+  warnings: string[];
+  computed_at: string;
+  created_at: string;
+  updated_at: string;
+  headline: HeadlineStatus | null;
+  fund_flow_summary: FundFlowSummary | null;
+  plan_summary: PlanSummary | null;
+  annual_cashflow: AnnualCashflowRow[];
+  monthly_cashflow: MonthlyCashflowRow[] | null;
+}
+
+export async function getCashflowLatest(): Promise<CashflowPlanRunDetail> {
+  return request<CashflowPlanRunDetail>(
+    "/cashflow/latest",
+    undefined,
+    true,
+    CHAT_REQUEST_TIMEOUT_MS,
+  );
+}
+
+export async function computeCashflow(): Promise<CashflowPlanRunDetail> {
+  return request<CashflowPlanRunDetail>(
+    "/cashflow/compute",
+    { method: "POST" },
+    true,
+    CHAT_REQUEST_TIMEOUT_MS,
+  );
 }
 
 // ── Discovery API ─────────────────────────────────────
