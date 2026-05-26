@@ -8,6 +8,7 @@ import { CategoryGapBar } from "./CategoryGapBar/Chart";
 import { PlannedDonut } from "./PlannedDonut/Chart";
 import { TaxCostBar } from "./TaxCostBar/Chart";
 import { BuySellLedger } from "./BuySellLedger/Chart";
+import { CashflowAnnualBar } from "./CashflowAnnualBar/Chart";
 
 interface ChartRendererProps {
   payload: ChartPayload;
@@ -33,6 +34,8 @@ export function ChartRenderer({ payload }: ChartRendererProps) {
       return <TaxCostBar payload={payload} />;
     case "buy_sell_ledger":
       return <BuySellLedger payload={payload} />;
+    case "cashflow_annual_bar":
+      return <CashflowAnnualBar payload={payload as any} />;
     default: {
       const _exhaustive: never = payload;
       return null;
