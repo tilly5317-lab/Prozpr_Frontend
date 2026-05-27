@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import NewOnboardingFlow from "@/components/onboarding/NewOnboardingFlow";
@@ -6,6 +6,7 @@ import PortfolioDashboard from "@/components/dashboard/PortfolioDashboard";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
+import { getMe } from "@/lib/api";
 
 type Screen = "onboarding" | "dashboard";
 
@@ -20,6 +21,27 @@ const OTP = () => {
   const hasCompletedOnboarding = sessionStorage.getItem("onboardingComplete") === "true";
   const [screen, setScreen] = useState<Screen>(hasCompletedOnboarding ? "dashboard" : "onboarding");
   const [showPopup, setShowPopup] = useState(true);
+
+  // Returning users (existing phone) should skip onboarding even if the
+  // per-tab session flag is missing. The backend is the source of truth.
+  useEffect(() => {
+    if (hasCompletedOnboarding) return;
+    let cancelled = false;
+    getMe()
+      .then((me) => {
+        if (cancelled) return;
+        if (me?.is_onboarding_complete) {
+          sessionStorage.setItem("onboardingComplete", "true");
+          setScreen("dashboard");
+        }
+      })
+      .catch(() => {
+        // Not authenticated or transient error — leave onboarding visible.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [hasCompletedOnboarding]);
   const [selected, setSelected] = useState<Record<string, boolean>>(
     Object.fromEntries(MOCK_ACCOUNTS.map((a) => [a.id, true]))
   );

@@ -4,6 +4,7 @@ import { TrendingUp, TrendingDown, MessageCircle, Compass, ArrowRight } from "lu
 import { motion, AnimatePresence } from "framer-motion";
 import BottomNav from "@/components/BottomNav";
 import NetWorthSparkline from "./NetWorthSparkline";
+import PortfolioNavChart from "./PortfolioNavChart";
 import CurrentAllocationCard from "./CurrentAllocationCard";
 import AdvisorMeetingsSlot from "./AdvisorMeetingsSlot";
 import LiveEventBanner from "./LiveEventBanner";
@@ -63,6 +64,7 @@ function PortfolioMainPanel({
   riskCategory,
   horizonLabel,
   middleSlot,
+  useNavChart = false,
 }: {
   portfolio: PortfolioDetail;
   timePeriod: "1M" | "6M" | "1Y" | "All";
@@ -71,6 +73,8 @@ function PortfolioMainPanel({
   riskCategory: string | null;
   horizonLabel: string | null;
   middleSlot?: ReactNode;
+  /** When true, show the dated per-user NAV chart with its own horizon picker. */
+  useNavChart?: boolean;
 }) {
   const [analysisOpen, setAnalysisOpen] = useState(false);
 
@@ -107,27 +111,33 @@ function PortfolioMainPanel({
 
         <p className="text-[10px] text-muted-foreground/80 mt-1 mb-3">Invested {formatInrPaisa(portfolio.total_invested)}</p>
 
-        <div className="flex gap-1.5 mb-3" onClick={stop}>
-          {(["1M", "6M", "1Y", "All"] as const).map((period) => (
-            <button
-              key={period}
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setTimePeriod(period);
-              }}
-              className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition-all ${
-                timePeriod === period
-                  ? "bg-accent/15 text-accent"
-                  : "bg-muted/60 text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {period}
-            </button>
-          ))}
-        </div>
+        {useNavChart ? (
+          <PortfolioNavChart fallbackValues={sparkline} />
+        ) : (
+          <>
+            <div className="flex gap-1.5 mb-3" onClick={stop}>
+              {(["1M", "6M", "1Y", "All"] as const).map((period) => (
+                <button
+                  key={period}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setTimePeriod(period);
+                  }}
+                  className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition-all ${
+                    timePeriod === period
+                      ? "bg-accent/15 text-accent"
+                      : "bg-muted/60 text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {period}
+                </button>
+              ))}
+            </div>
 
-        <NetWorthSparkline values={sparkline} />
+            <NetWorthSparkline values={sparkline} />
+          </>
+        )}
 
         <button
           type="button"
@@ -484,6 +494,7 @@ const PortfolioDashboard = () => {
                   selfProfile?.risk_profile?.investment_horizon ??
                   null
                 }
+                useNavChart
               />
               <DiscoverEntryCard />
               <AdvisorMeetingsSlot />
