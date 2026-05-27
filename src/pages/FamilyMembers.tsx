@@ -275,7 +275,7 @@ const FamilyMembers = () => {
   return (
     <div className="mobile-container bg-background pb-20 min-h-screen">
       {/* Header */}
-      <div className="flex items-center gap-3 px-5 pt-8 pb-4">
+      <div className="flex items-center gap-3 px-5 pt-10 pb-4">
         <button onClick={() => navigate(-1)} className="flex h-8 w-8 items-center justify-center rounded-full bg-muted/60 hover:bg-muted transition-colors">
           <ArrowLeft className="h-4 w-4 text-foreground" />
         </button>

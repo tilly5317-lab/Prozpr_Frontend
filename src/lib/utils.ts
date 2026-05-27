@@ -10,6 +10,11 @@ export function formatInrPaisa(n: number): string {
   return `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+/** Full rupee amount with Indian grouping, rounded to whole rupees (no paisa). */
+export function formatInrWhole(n: number): string {
+  return `₹${Math.round(n).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+}
+
 /** Compact INR format for tight spaces (e.g. ₹13.00L, ₹78.89k). */
 export function formatInrCompact(n: number): string {
   if (n >= 10000000) return `₹${(n / 10000000).toFixed(2)}Cr`;

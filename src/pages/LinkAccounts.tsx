@@ -127,7 +127,7 @@ const LinkAccounts = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center px-4 pt-8 pb-6">
+    <div className="min-h-screen bg-background flex flex-col items-center px-5 pt-10 pb-6">
       {/* Stepper — Step 1 active, Step 2 inactive */}
       <motion.div
         initial={{ opacity: 0, y: -10 }}

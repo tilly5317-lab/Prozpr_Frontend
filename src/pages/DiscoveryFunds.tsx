@@ -55,7 +55,7 @@ const DiscoveryFunds = () => {
   return (
     <div className="mobile-container min-h-screen bg-background pb-24">
       <header className="sticky top-0 z-20 border-b border-border/60 bg-background">
-        <div className="flex items-center gap-2 px-4 pt-10 pb-3">
+        <div className="flex items-center gap-2 px-5 pt-10 pb-3">
           <button
             type="button"
             onClick={() => navigate(-1)}

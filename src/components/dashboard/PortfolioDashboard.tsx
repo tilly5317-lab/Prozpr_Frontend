@@ -1,5 +1,5 @@
 import { useState, useEffect, type ReactNode } from "react";
-import { TrendingUp, TrendingDown, MessageCircle, Compass, ArrowRight } from "lucide-react";
+import { TrendingUp, TrendingDown, Compass, ArrowRight } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import BottomNav from "@/components/BottomNav";
@@ -26,7 +26,7 @@ import {
   cloneDemoMemberPortfolio,
   cloneDemoSelfPortfolio,
 } from "@/lib/portfolioDemoData";
-import { formatInrCompact, formatInrPaisa } from "@/lib/utils";
+import { formatInrCompact, formatInrPaisa, formatInrWhole } from "@/lib/utils";
 
 // Unified card style — uses tokens so it flips correctly in dark mode.
 const CARD = "bg-card rounded-[14px] p-[14px]" as const;
@@ -84,7 +84,7 @@ function PortfolioMainPanel({
         <p className="mb-3" style={SECTION_LABEL}>Total Portfolio</p>
 
         <div className="flex items-center gap-2.5">
-          <p className="text-2xl font-bold text-foreground tracking-tight">{formatInrPaisa(portfolio.total_value)}</p>
+          <p className="text-2xl font-bold text-foreground tracking-tight">{formatInrWhole(portfolio.total_value)}</p>
           {activeGain != null && (
             <span
               className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
@@ -104,7 +104,7 @@ function PortfolioMainPanel({
           )}
         </div>
 
-        <p className="text-[10px] text-muted-foreground/80 mt-1 mb-3">Invested {formatInrPaisa(portfolio.total_invested)}</p>
+        <p className="text-[10px] text-muted-foreground/80 mt-1 mb-3">Invested {formatInrWhole(portfolio.total_invested)}</p>
 
         <div className="flex gap-1.5 mb-3" onClick={stop}>
           {(["1M", "6M", "1Y", "All"] as const).map((period) => (
@@ -388,7 +388,14 @@ const PortfolioDashboard = () => {
             className="flex h-9 w-9 items-center justify-center rounded-full bg-muted/60 hover:bg-muted transition-colors"
             style={{ color: "#25D366" }}
           >
-            <MessageCircle className="h-4 w-4" strokeWidth={2.2} />
+            <svg
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              aria-hidden="true"
+              className="h-[18px] w-[18px]"
+            >
+              <path d="M19.05 4.91A9.82 9.82 0 0 0 12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38a9.9 9.9 0 0 0 4.74 1.21h.01c5.46 0 9.91-4.45 9.91-9.91a9.82 9.82 0 0 0-2.91-7.01zM12.04 20.15h-.01a8.2 8.2 0 0 1-4.18-1.15l-.3-.18-3.11.82.83-3.04-.2-.31a8.25 8.25 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24 2.2 0 4.27.86 5.83 2.42a8.18 8.18 0 0 1 2.41 5.83c0 4.54-3.7 8.23-8.25 8.23zm4.52-6.16c-.25-.13-1.47-.72-1.69-.81-.23-.08-.39-.13-.56.13-.17.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.12-1.05-.39-2-1.24-.74-.66-1.24-1.47-1.39-1.72-.14-.25-.02-.39.11-.51.11-.11.25-.29.37-.43.12-.14.17-.25.25-.41.08-.17.04-.31-.02-.43-.06-.12-.55-1.34-.76-1.84-.2-.48-.41-.42-.56-.42-.14-.01-.31-.01-.48-.01s-.43.06-.66.31c-.23.25-.86.85-.86 2.07s.88 2.4 1 2.56c.12.17 1.74 2.65 4.21 3.71.59.25 1.05.4 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.14-1.18-.06-.11-.23-.17-.48-.29z"/>
+            </svg>
           </a>
           <ProfileSwitcher />
         </div>

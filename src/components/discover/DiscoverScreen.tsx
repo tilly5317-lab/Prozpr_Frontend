@@ -374,7 +374,7 @@ export function DiscoverScreen({
 
   return (
     <div className="mobile-container min-h-screen bg-background pb-[calc(3.5rem+env(safe-area-inset-bottom,8px)+12px)]">
-      <div className="flex items-center gap-3 px-5 pb-3 pt-12">
+      <div className="flex items-center gap-3 px-5 pb-3 pt-10">
         <button
           type="button"
           onClick={onBack}
