@@ -127,6 +127,25 @@ export interface BuySellLedger extends ChartBase {
   rows: BuySellRow[];
 }
 
+// ─── Cashflow ───
+
+export interface CashflowAnnualBarData {
+  fy_label: string;
+  income: number;
+  household_expense: number;
+  savings_post_emi: number;
+  corpus_closing: number;
+  monthly_investment: number;
+  goal_payout: number;
+}
+
+export interface CashflowAnnualBar extends ChartBase {
+  type: "cashflow_annual_bar";
+  data: CashflowAnnualBarData[];
+  annual_cashflow: unknown[];
+  monthly_cashflow: unknown[];
+}
+
 // ─── Unified union ───
 
 export type ChartPayload =
@@ -138,4 +157,5 @@ export type ChartPayload =
   | CategoryGapBar
   | PlannedDonut
   | TaxCostBar
-  | BuySellLedger;
+  | BuySellLedger
+  | CashflowAnnualBar;

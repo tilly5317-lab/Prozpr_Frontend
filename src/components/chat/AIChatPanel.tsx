@@ -62,6 +62,8 @@ interface Message {
   widgetKind?: "emergency-fund";
   /** Backend saved an ideal rebalancing plan — show CTA to open `/execute`. */
   showViewExecutePlan?: boolean;
+  /** Chart visualization payloads from backend AI modules. */
+  chartPayloads?: any[] | null;
 }
 
 const DUMMY_USER_CONTEXT: UserInfo = {
@@ -765,6 +767,7 @@ const AIChatPanel = ({
         session.messages.map((m) => ({
           role: m.role === "assistant" ? ("ai" as const) : ("user" as const),
           content: m.content,
+          chartPayloads: m.chart_payloads || null,
         })),
       );
       setChatStartTime(
@@ -875,6 +878,7 @@ const AIChatPanel = ({
             session.messages.map((m) => ({
               role: m.role === "assistant" ? ("ai" as const) : ("user" as const),
               content: m.content,
+              chartPayloads: m.chart_payloads || null,
             })),
           );
         }
@@ -1135,6 +1139,7 @@ const AIChatPanel = ({
           role: "ai",
           content: resp.assistant_message.content,
           ...(hasSavedPlan ? { showViewExecutePlan: true } : {}),
+          chartPayloads: resp.assistant_message.chart_payloads || null,
         },
       ]);
     } catch (err: any) {

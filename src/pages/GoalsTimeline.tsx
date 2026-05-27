@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   BriefcaseBusiness,
   Car,
+  Download,
   GraduationCap,
   Heart,
   Home,
   Landmark,
+  Loader2,
   Plane,
   Plus,
   RotateCcw,
@@ -15,6 +17,18 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import BottomNav from "@/components/BottomNav";
+import { toast } from "sonner";
+import {
+  listGoals,
+  createGoal,
+  updateGoal,
+  removeGoal,
+  getCashflowLatest,
+  computeCashflow,
+  type CashflowPlanRunDetail,
+  type GoalResponse,
+} from "@/lib/api";
+import { exportCashflowXls } from "@/lib/export-xls";
 
 type Priority = "Low" | "Medium" | "High";
 
@@ -38,6 +52,7 @@ const ANNUAL_RETURN_PCT = 9;
 
 // NAV chart spans the full row width and renders behind the row content.
 const NAV_PAD_PCT = 4; // horizontal padding (%) so the line never touches the edges
+const TORNADO_CENTER_X = 50; // viewBox x for ₹0 (symmetric tornado axis)
 const MONTHLY_MAX = 500000; // upper bound of the monthly investment slider
 
 // Earned milestones — light up the first year the projected NAV crosses each.
@@ -58,32 +73,46 @@ const MILESTONES: Milestone[] = [
   { value: 50_00_00_000, label: "₹50Cr ✨" },
 ];
 
-const SEED_GOALS: TimelineGoal[] = [
-  {
-    id: "seed-home",
-    name: "Home down payment",
-    year: 2030,
-    presentValue: 1_50_00_000,
-    inflationRate: 6,
-    priority: "High",
-  },
-  {
-    id: "seed-education",
-    name: "Aarav's education fund",
-    year: 2034,
-    presentValue: 90_00_000,
-    inflationRate: 10,
-    priority: "Medium",
-  },
-  {
-    id: "seed-retirement",
-    name: "Early retirement",
-    year: 2045,
-    presentValue: 8_00_00_000,
-    inflationRate: 6,
-    priority: "Medium",
-  },
-];
+function mapApiPriority(p: string): Priority {
+  const u = p.toUpperCase();
+  if (u === "HIGH" || u === "PRIMARY") return "High";
+  if (u === "LOW" || u === "SECONDARY") return "Low";
+  return "Medium";
+}
+
+function mapGoalFromApi(g: GoalResponse, currentYear: number): TimelineGoal {
+  const targetYear = g.target_date ? new Date(g.target_date).getFullYear() : currentYear + 5;
+  return {
+    id: g.id,
+    name: g.name,
+    year: targetYear,
+    presentValue: g.target_amount ?? 0,
+    inflationRate: g.inflation_rate ?? 6,
+    priority: mapApiPriority(g.priority),
+  };
+}
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isPersistedGoalId(id: string): boolean {
+  return UUID_RE.test(id);
+}
+
+function yearToTargetDate(year: number): string {
+  return `${year}-07-01`;
+}
+
+/** Calendar year for an annual cashflow row (matches Excel FY-end column). */
+function timelineYearFromAnnualRow(row: {
+  fy_end_date: string;
+  fy_label?: string;
+}): number | null {
+  const parsed = Date.parse(row.fy_end_date);
+  if (!Number.isNaN(parsed)) return new Date(parsed).getFullYear();
+  const m = row.fy_label?.match(/(\d{4})/);
+  return m ? Number(m[1]) : null;
+}
 
 function formatINR(v: number): string {
   if (!Number.isFinite(v)) return "—";
@@ -106,6 +135,31 @@ function futureValue(presentValue: number, ratePct: number, years: number): numb
   const r = ratePct / 100;
   const t = Math.max(0, years);
   return presentValue * Math.pow(1 + r, t);
+}
+
+/** Bar-width scale max — ignores a lone spike so earlier years stay visible. */
+function tornadoBarScaleMax(absValues: number[]): number {
+  const sorted = absValues.filter((v) => v > 0).sort((a, b) => a - b);
+  if (sorted.length === 0) return 0;
+  if (sorted.length === 1) return sorted[0]!;
+  const max = sorted[sorted.length - 1]!;
+  const second = sorted[sorted.length - 2]!;
+  const p90 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.9))]!;
+  if (max > second * 3) return Math.max(second * 1.2, p90);
+  return max;
+}
+
+function corpusToTornadoX(
+  corpus: number,
+  scaleMax: number,
+  halfSpan: number,
+): number {
+  if (scaleMax <= 0 || corpus === 0) return TORNADO_CENTER_X;
+  const sign = corpus > 0 ? 1 : -1;
+  let norm = Math.abs(corpus) / scaleMax;
+  if (norm > 0 && norm < 0.04) norm = 0.04;
+  norm = Math.min(1, norm);
+  return TORNADO_CENTER_X + sign * norm * halfSpan;
 }
 
 function priorityChipStyle(p: Priority): { bg: string; fg: string; border: string } {
@@ -177,6 +231,12 @@ interface ProjectionPoint {
   year: number;
   endNav: number;
   withdrawal: number;
+}
+
+/** Per-year cashflow engine corpus (tornado bars use this only). */
+interface TornadoCorpusRow {
+  corpusClosing: number;
+  goalPayout: number;
 }
 
 /**
@@ -261,12 +321,22 @@ function buildProjection(
 interface AddGoalSheetProps {
   open: boolean;
   initialYear: number | null;
+  editingGoal: TimelineGoal | null;
+  saving: boolean;
   onClose: () => void;
-  onSave: (goal: Omit<TimelineGoal, "id">) => void;
+  onSubmit: (goal: Omit<TimelineGoal, "id">, editingId?: string) => void | Promise<void>;
 }
 
-function AddGoalSheet({ open, initialYear, onClose, onSave }: AddGoalSheetProps) {
+function AddGoalSheet({
+  open,
+  initialYear,
+  editingGoal,
+  saving,
+  onClose,
+  onSubmit,
+}: AddGoalSheetProps) {
   const currentYear = new Date().getFullYear();
+  const isEdit = editingGoal !== null;
   const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
   const [year, setYear] = useState<number>(initialYear ?? currentYear + 5);
@@ -275,15 +345,23 @@ function AddGoalSheet({ open, initialYear, onClose, onSave }: AddGoalSheetProps)
   const [amountKind, setAmountKind] = useState<"present" | "future">("present");
 
   useEffect(() => {
-    if (open) {
-      setName("");
-      setAmount("");
-      setYear(initialYear ?? currentYear + 5);
-      setInflation(String(INFLATION_DEFAULT));
-      setPriority("Medium");
-      setAmountKind("present");
+    if (!open) return;
+    if (editingGoal) {
+      setName(editingGoal.name);
+      setAmount(String(Math.round(editingGoal.presentValue)));
+      setYear(editingGoal.year);
+      setInflation(String(editingGoal.inflationRate));
+      setPriority(editingGoal.priority);
+      setAmountKind(editingGoal.inflationRate === 0 ? "future" : "present");
+      return;
     }
-  }, [open, initialYear, currentYear]);
+    setName("");
+    setAmount("");
+    setYear(initialYear ?? currentYear + 5);
+    setInflation(String(INFLATION_DEFAULT));
+    setPriority("Medium");
+    setAmountKind("present");
+  }, [open, initialYear, currentYear, editingGoal]);
 
   const inflationSuggestion = useMemo(
     () => suggestInflationForGoal(name),
@@ -332,10 +410,10 @@ function AddGoalSheet({ open, initialYear, onClose, onSave }: AddGoalSheetProps)
               <div className="flex items-center gap-2 border-b border-border px-4 py-3">
                 <div className="min-w-0 flex-1">
                   <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                    New goal
+                    {isEdit ? "Edit goal" : "New goal"}
                   </p>
                   <h2 className="text-base font-semibold text-foreground truncate">
-                    Plan for {year}
+                    {isEdit ? editingGoal!.name : `Plan for ${year}`}
                   </h2>
                 </div>
                 <button
@@ -562,26 +640,29 @@ function AddGoalSheet({ open, initialYear, onClose, onSave }: AddGoalSheetProps)
                 </button>
                 <button
                   type="button"
-                  disabled={!canSave}
+                  disabled={!canSave || saving}
                   onClick={() => {
-                    onSave({
-                      name: name.trim(),
-                      year,
-                      // When the user entered the future-dated amount, store it
-                      // as a present value with 0% inflation so projections leave
-                      // it alone (FV at year N = PV * 1 = entered amount).
-                      presentValue: pv,
-                      inflationRate: amountKind === "future" ? 0 : infl,
-                      priority,
-                    });
+                    void onSubmit(
+                      {
+                        name: name.trim(),
+                        year,
+                        // When the user entered the future-dated amount, store it
+                        // as a present value with 0% inflation so projections leave
+                        // it alone (FV at year N = PV * 1 = entered amount).
+                        presentValue: pv,
+                        inflationRate: amountKind === "future" ? 0 : infl,
+                        priority,
+                      },
+                      editingGoal?.id,
+                    );
                   }}
                   className={`flex-1 rounded-full py-2 text-[12px] font-bold transition-opacity ${
-                    canSave
+                    canSave && !saving
                       ? "bg-foreground text-background"
                       : "bg-muted text-muted-foreground cursor-not-allowed opacity-60"
                   }`}
                 >
-                  Add to timeline
+                  {saving ? "Saving…" : isEdit ? "Save changes" : "Add to timeline"}
                 </button>
               </div>
             </div>
@@ -748,8 +829,11 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
     [currentYear],
   );
 
-  const [goals, setGoals] = useState<TimelineGoal[]>(SEED_GOALS);
+  const [goals, setGoals] = useState<TimelineGoal[]>([]);
+  const [goalsLoading, setGoalsLoading] = useState(true);
+  const [goalSaving, setGoalSaving] = useState(false);
   const [addYear, setAddYear] = useState<number | null>(null);
+  const [editGoal, setEditGoal] = useState<TimelineGoal | null>(null);
   const [enabledPriorities, setEnabledPriorities] = useState<Set<Priority>>(
     new Set<Priority>(["Low", "Medium", "High"]),
   );
@@ -759,6 +843,51 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   const [draggingGoalId, setDraggingGoalId] = useState<string | null>(null);
   const [dropTargetYear, setDropTargetYear] = useState<number | null>(null);
   const [projectionOpen, setProjectionOpen] = useState(false);
+
+  const [cashflowData, setCashflowData] = useState<CashflowPlanRunDetail | null>(null);
+  const [cashflowLoading, setCashflowLoading] = useState(false);
+  const [cashflowError, setCashflowError] = useState<string | null>(null);
+
+  const reloadGoals = useCallback(async () => {
+    setGoalsLoading(true);
+    try {
+      const res = await listGoals();
+      setGoals(res.map((g) => mapGoalFromApi(g, currentYear)));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Could not load goals";
+      toast.error(msg);
+    } finally {
+      setGoalsLoading(false);
+    }
+  }, [currentYear]);
+
+  useEffect(() => {
+    void reloadGoals();
+  }, [reloadGoals]);
+
+  const fetchCashflow = useCallback(async () => {
+    setCashflowLoading(true);
+    setCashflowError(null);
+    try {
+      const res = await getCashflowLatest();
+      setCashflowData(res);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Cashflow unavailable";
+      setCashflowError(msg);
+      setCashflowData(null);
+      toast.error(msg);
+    } finally {
+      setCashflowLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchCashflow(); }, [fetchCashflow]);
+
+  useEffect(() => {
+    if (cashflowData?.annual_cashflow?.[0]) {
+      setMonthlyContrib(Math.round(cashflowData.annual_cashflow[0].monthly_investment));
+    }
+  }, [cashflowData]);
 
   const toggleGoalExpanded = (id: string) => {
     setExpandedGoals((prev) => {
@@ -779,11 +908,95 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
     }
     return null;
   };
-  const moveGoalToYear = (id: string, year: number) => {
-    setGoals((prev) =>
-      prev.map((g) => (g.id === id ? { ...g, year } : g)),
-    );
-  };
+  const moveGoalToYear = useCallback(
+    (id: string, year: number) => {
+      setGoals((prev) => prev.map((g) => (g.id === id ? { ...g, year } : g)));
+      if (!isPersistedGoalId(id)) return;
+      updateGoal(id, { target_date: yearToTargetDate(year) })
+        .then(() => fetchCashflow())
+        .catch((err) => {
+          const msg = err instanceof Error ? err.message : "Could not update goal year";
+          toast.error(msg);
+          void reloadGoals();
+        });
+    },
+    [fetchCashflow, reloadGoals],
+  );
+
+  const closeGoalSheet = useCallback(() => {
+    setAddYear(null);
+    setEditGoal(null);
+  }, []);
+
+  const handleGoalSubmit = useCallback(
+    async (incoming: Omit<TimelineGoal, "id">, editingId?: string) => {
+      if (incoming.name.trim().toLowerCase() === "retirement") {
+        toast.error(
+          "Retirement is modeled from your profile (age & target corpus), not as a separate goal.",
+        );
+        return;
+      }
+
+      const payload = {
+        name: incoming.name.trim(),
+        target_amount: Math.round(incoming.presentValue),
+        target_date: yearToTargetDate(incoming.year),
+        priority: incoming.priority.toUpperCase(),
+        inflation_rate: incoming.inflationRate,
+      };
+
+      setGoalSaving(true);
+      try {
+        if (editingId && isPersistedGoalId(editingId)) {
+          const res = await updateGoal(editingId, payload);
+          setGoals((prev) =>
+            prev.map((g) =>
+              g.id === editingId ? mapGoalFromApi(res, currentYear) : g,
+            ),
+          );
+          toast.success("Goal updated");
+        } else {
+          const res = await createGoal(payload);
+          setGoals((prev) => [...prev, mapGoalFromApi(res, currentYear)]);
+          toast.success("Goal added");
+        }
+        closeGoalSheet();
+        await fetchCashflow();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Could not save goal";
+        toast.error(msg);
+      } finally {
+        setGoalSaving(false);
+      }
+    },
+    [currentYear, closeGoalSheet, fetchCashflow],
+  );
+
+  const handleDeleteGoal = useCallback(
+    async (id: string) => {
+      const goal = goals.find((g) => g.id === id);
+      setGoals((prev) => prev.filter((g) => g.id !== id));
+      setExpandedGoals((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      if (!isPersistedGoalId(id)) {
+        toast.success("Goal removed");
+        return;
+      }
+      try {
+        await removeGoal(id);
+        toast.success(goal ? `${goal.name} removed` : "Goal removed");
+        await fetchCashflow();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Could not delete goal";
+        toast.error(msg);
+        await reloadGoals();
+      }
+    },
+    [goals, fetchCashflow, reloadGoals],
+  );
 
   const togglePriority = (p: Priority) => {
     setEnabledPriorities((prev) => {
@@ -812,9 +1025,44 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
     return map;
   }, [visibleGoals]);
 
+  /** FY-end corpus_closing keyed by FY end calendar year (from fy_end_date). */
+  const tornadoCorpusByYear = useMemo((): Map<number, TornadoCorpusRow> | null => {
+    if (!cashflowData?.annual_cashflow?.length) return null;
+    const rows = [...cashflowData.annual_cashflow].sort(
+      (a, b) => Date.parse(a.fy_end_date) - Date.parse(b.fy_end_date),
+    );
+    const map = new Map<number, TornadoCorpusRow>();
+    for (const row of rows) {
+      const year = timelineYearFromAnnualRow(row);
+      if (year == null) continue;
+      map.set(year, {
+        corpusClosing: row.corpus_closing,
+        goalPayout: row.goal_payout,
+      });
+    }
+    return map.size > 0 ? map : null;
+  }, [cashflowData]);
+
+  const cashflowProjection: ProjectionPoint[] | null = useMemo(() => {
+    if (!tornadoCorpusByYear) return null;
+    const points: ProjectionPoint[] = [];
+    for (let i = 0; i <= HORIZON_YEARS; i++) {
+      const year = currentYear + i;
+      const row = tornadoCorpusByYear.get(year);
+      if (row) {
+        points.push({
+          year,
+          endNav: row.corpusClosing,
+          withdrawal: row.goalPayout,
+        });
+      }
+    }
+    return points.length > 0 ? points : null;
+  }, [tornadoCorpusByYear, currentYear]);
+
   const projection = useMemo(
-    () => buildProjection(visibleGoals, currentYear, HORIZON_YEARS, monthlyContrib),
-    [visibleGoals, currentYear, monthlyContrib],
+    () => cashflowProjection ?? buildProjection(visibleGoals, currentYear, HORIZON_YEARS, monthlyContrib),
+    [cashflowProjection, visibleGoals, currentYear, monthlyContrib],
   );
 
   const projectionByYear = useMemo(() => {
@@ -839,22 +1087,45 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
     return map;
   }, [projection]);
 
-  // Anchor the chart's x-axis to the projection at the slider's maximum so the bars
-  // grow rightward when the user increases monthly investment (instead of shrinking
-  // left because the dynamic peak grows faster than the early-year values).
-  const peakAnchor = useMemo(() => {
-    const maxProj = buildProjection(
-      visibleGoals,
-      currentYear,
-      HORIZON_YEARS,
-      MONTHLY_MAX,
-    );
-    return maxProj.reduce((m, p) => (p.endNav > m ? p.endNav : m), 0);
-  }, [visibleGoals, currentYear]);
+  const baselineNav =
+    cashflowData?.headline?.corpus_today ??
+    cashflowData?.annual_cashflow?.[0]?.corpus_opening ??
+    cashflowProjection?.[0]?.endNav ??
+    START_NAV;
 
-  // Map a NAV value to a 0–100 viewBox x coordinate. We use a square-root scale
-  // so compounding growth at low contributions is visible (linear scaling
-  // collapses early-year values into a thin sliver against the max anchor).
+  const tornadoAbsValues = useMemo(() => {
+    if (!tornadoCorpusByYear?.size) return [] as number[];
+    return [...tornadoCorpusByYear.values()].map((r) => Math.abs(r.corpusClosing));
+  }, [tornadoCorpusByYear]);
+
+  /** True max |closing| in the plan (e.g. retirement shortfall spike). */
+  const tornadoTrueMaxAbs = useMemo(
+    () => (tornadoAbsValues.length ? Math.max(...tornadoAbsValues) : 0),
+    [tornadoAbsValues],
+  );
+
+  /** Half-width scale — excludes lone outliers so ₹8L–₹9Cr years stay visible. */
+  const tornadoBarScale = useMemo(
+    () => tornadoBarScaleMax(tornadoAbsValues),
+    [tornadoAbsValues],
+  );
+
+  const tornadoHalfSpan = TORNADO_CENTER_X - NAV_PAD_PCT;
+
+  const corpusToTornadoXCb = useCallback(
+    (corpus: number) => corpusToTornadoX(corpus, tornadoBarScale, tornadoHalfSpan),
+    [tornadoBarScale, tornadoHalfSpan],
+  );
+
+  const peakAnchor = useMemo(() => {
+    if (cashflowProjection) {
+      return cashflowProjection.reduce((m, p) => (p.endNav > m ? p.endNav : m), 0);
+    }
+    const maxProj = buildProjection(visibleGoals, currentYear, HORIZON_YEARS, MONTHLY_MAX);
+    return maxProj.reduce((m, p) => (p.endNav > m ? p.endNav : m), 0);
+  }, [cashflowProjection, visibleGoals, currentYear]);
+
+  // Line mode: sqrt scale from left edge (0) to max NAV.
   const navToX = (nav: number): number => {
     if (peakAnchor <= 0) return NAV_PAD_PCT;
     const ratio = Math.max(0, Math.min(1, nav / peakAnchor));
@@ -862,28 +1133,8 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
     return NAV_PAD_PCT + t * (100 - 2 * NAV_PAD_PCT);
   };
 
-  // For the tornado variant: the centre axis is today's NAV (the baseline). A
-  // bar to the right means "NAV is above the baseline" (cumulative growth); a
-  // bar to the left means "NAV has dropped below today" (post-withdrawal).
-  // peakDiff anchors width to the slider's maximum so bars grow as
-  // contributions rise.
-  const baselineNav = START_NAV;
-  const peakDiff = useMemo(() => {
-    if (!isTornado) return 0;
-    const maxProj = buildProjection(visibleGoals, currentYear, HORIZON_YEARS, MONTHLY_MAX);
-    return maxProj.reduce(
-      (m, p) => Math.max(m, Math.abs(p.endNav - baselineNav)),
-      0,
-    );
-  }, [isTornado, visibleGoals, currentYear, baselineNav]);
-
-  const handleSave = (incoming: Omit<TimelineGoal, "id">) => {
-    setGoals((prev) => [
-      ...prev,
-      { ...incoming, id: `g-${Date.now().toString(36)}` },
-    ]);
-    setAddYear(null);
-  };
+  const goalSheetOpen = addYear !== null || editGoal !== null;
+  const goalSheetYear = addYear ?? editGoal?.year ?? currentYear + 5;
 
   return (
     <div className="mobile-container min-h-screen bg-background pb-20">
@@ -900,6 +1151,57 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
               Projection
             </button>
           )}
+          <div className="ml-auto flex items-center gap-2">
+            {goalsLoading && (
+              <span className="text-[10px] text-muted-foreground">Goals…</span>
+            )}
+            {!goalsLoading && cashflowData && (
+              <span className="text-[10px] font-medium text-emerald-600">Live data</span>
+            )}
+            {cashflowLoading && (
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+            )}
+            {cashflowData ? (
+              <button
+                type="button"
+                onClick={() =>
+                  exportCashflowXls(
+                    cashflowData.annual_cashflow,
+                    cashflowData.monthly_cashflow ?? [],
+                  )
+                }
+                className="shrink-0 inline-flex items-center gap-1 rounded-full border border-border bg-card px-2.5 py-0.5 text-[11px] font-semibold text-foreground hover:bg-muted/40"
+                aria-label="Download cashflow XLS"
+              >
+                <Download className="h-3 w-3" />
+                XLS
+              </button>
+            ) : (
+              !cashflowLoading && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCashflowLoading(true);
+                    setCashflowError(null);
+                    computeCashflow()
+                      .then((res) => {
+                        setCashflowData(res);
+                        toast.success("Cashflow projection ready");
+                      })
+                      .catch((err) => {
+                        const msg = err instanceof Error ? err.message : "Cashflow failed";
+                        setCashflowError(msg);
+                        toast.error(msg);
+                      })
+                      .finally(() => setCashflowLoading(false));
+                  }}
+                  className="shrink-0 inline-flex items-center gap-1 rounded-full border border-[#D4A868]/50 bg-card px-2.5 py-0.5 text-[11px] font-semibold text-[#D4A868] hover:bg-muted/40"
+                >
+                  Run cashflow
+                </button>
+              )
+            )}
+          </div>
         </div>
       </header>
 
@@ -909,6 +1211,17 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3, ease: "easeOut" }}
       >
+        {cashflowError && !cashflowLoading && (
+          <p className="px-1 text-[11px] text-amber-600">{cashflowError}</p>
+        )}
+        {goalsLoading && (
+          <p className="px-1 text-[11px] text-muted-foreground">Loading goals from your plan…</p>
+        )}
+        {!goalsLoading && goals.length === 0 && (
+          <p className="px-1 text-[11px] text-muted-foreground">
+            No goals in your account yet. Use + to add one.
+          </p>
+        )}
         {/* Priority filter — toggle which goals feed the projection */}
         <div className="flex items-center gap-2 px-1">
           <span className="text-[10px] uppercase tracking-wide text-muted-foreground shrink-0">
@@ -951,7 +1264,14 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
           </div>
         </div>
 
-        {/* Monthly investment — sticky so the slider stays in reach while scrolling */}
+        {isTornado && !tornadoCorpusByYear && !cashflowLoading && (
+          <p className="px-1 text-[11px] text-amber-600">
+            Run cashflow to load corpus closing bars from your plan.
+          </p>
+        )}
+
+        {/* Monthly investment — line mode only (tornado uses engine corpus_closing) */}
+        {!isTornado && (
         <div
           className="sticky z-30 -mx-5 bg-background px-5 pb-1 pt-1"
           style={{ top: "60px" }}
@@ -995,6 +1315,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
           </button>
           </div>
         </div>
+        )}
 
         {/* Integrated vertical NAV chart + goal timeline */}
         <ul className="space-y-0">
@@ -1004,39 +1325,37 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
             const isMilestone = y % 5 === 0;
             const proj = projectionByYear.get(y);
             const prevProj = i > 0 ? projection[i - 1] : proj;
-            const endNav = proj?.endNav ?? 0;
-            const withdrawal = proj?.withdrawal ?? 0;
+            const tornadoRow = isTornado ? tornadoCorpusByYear?.get(y) : undefined;
+            const corpusClosing = isTornado
+              ? (tornadoRow?.corpusClosing ?? 0)
+              : (proj?.endNav ?? 0);
+            const withdrawal = tornadoRow?.goalPayout ?? proj?.withdrawal ?? 0;
+            const hasTornadoBar = isTornado && tornadoRow != null;
 
-            const xTop = navToX(prevProj?.endNav ?? endNav);
-            const xBottomLine = navToX(endNav);
+            const xTop = navToX(prevProj?.endNav ?? corpusClosing);
+            const xBottomLine = navToX(corpusClosing);
             const isFirst = i === 0;
             const isLast = i === years.length - 1;
 
-            // Tornado bar geometry: the axis is today's NAV. Bars extend right
-            // for years that finished ABOVE that baseline (growth above today),
-            // left for years that finished BELOW (post-withdrawal dips). Width
-            // = sqrt(|NAV − baseline| / peakDiff), sqrt-scaled so early-year
-            // gains stay visible alongside late-year peaks.
-            const navDiff = endNav - baselineNav;
-            const tornadoIsSurplus = navDiff >= 0;
-            const navRatio = peakDiff > 0 ? Math.min(1, Math.abs(navDiff) / peakDiff) : 0;
-            const tornadoNorm = Math.sqrt(navRatio);
-            const tornadoHalfMax = 50 - NAV_PAD_PCT;
-            const tornadoHalfWidth = tornadoHalfMax * tornadoNorm;
-            const tornadoX1 = tornadoIsSurplus ? 50 : 50 - tornadoHalfWidth;
-            const tornadoX2 = tornadoIsSurplus ? 50 + tornadoHalfWidth : 50;
-            // Two-tone gradient: light at the axis, deep at the outer tip.
-            const tornadoBaseHue = tornadoIsSurplus ? "16, 185, 129" : "239, 68, 68"; // emerald-500 / red-500
-            const tornadoDeepHue = tornadoIsSurplus ? "5, 95, 70" : "136, 19, 55"; // emerald-800 / rose-900
+            // Tornado: centre = ₹0; bar tip at corpus_closing (width vs tornadoBarScale).
+            const tipX = corpusToTornadoXCb(corpusClosing);
+            const tornadoIsPositive = corpusClosing >= 0;
+            const tornadoOffScale =
+              tornadoBarScale > 0 && Math.abs(corpusClosing) > tornadoBarScale;
+            const tornadoNorm =
+              tornadoBarScale > 0
+                ? Math.min(1, Math.abs(corpusClosing) / tornadoBarScale)
+                : 0;
+            const tornadoX1 = Math.min(TORNADO_CENTER_X, tipX);
+            const tornadoX2 = Math.max(TORNADO_CENTER_X, tipX);
+            const tornadoBaseHue = tornadoIsPositive ? "16, 185, 129" : "239, 68, 68";
+            const tornadoDeepHue = tornadoIsPositive ? "5, 95, 70" : "136, 19, 55";
             const tornadoFillOpacity = 0.35 + tornadoNorm * 0.65;
-            const tornadoStrokeOpacity = 0.35 + tornadoNorm * 0.55;
 
-            // In tornado mode the year node lives on the centre axis instead of
-            // tracking the gold line. Position markers off this anchor.
-            const xBottom = isTornado ? 50 : xBottomLine;
+            const xBottom = isTornado ? tipX : xBottomLine;
 
             const nodeColor = isTornado
-              ? tornadoNorm > 0
+              ? hasTornadoBar
                 ? `rgb(${tornadoBaseHue})`
                 : "hsl(var(--muted-foreground))"
               : "#D4A868";
@@ -1140,9 +1459,6 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
 
                     {isTornado && (
                       <>
-                        {/* Directional two-tone gradient — light at the axis end, deep at
-                            the outer tip. Each bar reads like a beam radiating away from
-                            today's NAV baseline. */}
                         <defs>
                           <linearGradient
                             id={`tornadoBar-${y}`}
@@ -1153,30 +1469,30 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                           >
                             <stop
                               offset="0%"
-                              stopColor={`rgb(${tornadoIsSurplus ? tornadoBaseHue : tornadoDeepHue})`}
-                              stopOpacity={tornadoIsSurplus ? 0.25 : 1}
+                              stopColor={`rgb(${tornadoIsPositive ? tornadoBaseHue : tornadoDeepHue})`}
+                              stopOpacity={tornadoIsPositive ? 0.3 : 1}
                             />
                             <stop
                               offset="100%"
-                              stopColor={`rgb(${tornadoIsSurplus ? tornadoDeepHue : tornadoBaseHue})`}
-                              stopOpacity={tornadoIsSurplus ? 1 : 0.25}
+                              stopColor={`rgb(${tornadoIsPositive ? tornadoDeepHue : tornadoBaseHue})`}
+                              stopOpacity={tornadoIsPositive ? 1 : 0.3}
                             />
                           </linearGradient>
                         </defs>
 
-                        {/* Centre axis — quiet vertical guide bars pivot around */}
+                        {/* Zero axis — corpus_closing bars extend left (negative) or right (positive). */}
                         <line
-                          x1={50}
+                          x1={TORNADO_CENTER_X}
                           y1={isFirst ? 50 : 0}
-                          x2={50}
+                          x2={TORNADO_CENTER_X}
                           y2={isLast ? 50 : 100}
-                          stroke="hsl(var(--border))"
-                          strokeOpacity={0.7}
+                          stroke="hsl(var(--foreground))"
+                          strokeOpacity={0.35}
                           strokeWidth={1}
                           vectorEffect="non-scaling-stroke"
                         />
 
-                        {tornadoNorm > 0 && (
+                        {hasTornadoBar && tornadoX2 > tornadoX1 && (
                           <rect
                             x={tornadoX1}
                             y={17.5}
@@ -1187,9 +1503,9 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                           />
                         )}
 
-                        {hasGoals && (
+                        {hasGoals && hasTornadoBar && (
                           <circle
-                            cx={50}
+                            cx={tipX}
                             cy={50}
                             r={5}
                             fill="none"
@@ -1201,7 +1517,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                         )}
 
                         <circle
-                          cx={50}
+                          cx={hasTornadoBar ? tipX : TORNADO_CENTER_X}
                           cy={50}
                           r={isHovered ? 4 : hasGoals ? 3 : 2}
                           fill={nodeColor}
@@ -1214,16 +1530,16 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                   </svg>
 
 
-                  {isHovered && (!isTornado || tornadoNorm > 0) && (
+                  {isHovered && (!isTornado || hasTornadoBar) && (
                     <div
                       className="pointer-events-none absolute z-20"
                       style={{
                         left: `${Math.min(95, Math.max(5, xBottom))}%`,
                         top: "50%",
                         transform:
-                          xBottom > 80
+                          xBottom > 75
                             ? "translate(-100%, -120%)"
-                            : xBottom < 20
+                            : xBottom < 25
                               ? "translate(0, -120%)"
                               : "translate(-50%, -120%)",
                       }}
@@ -1240,22 +1556,28 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                             <span className="text-muted-foreground">{y}</span>
                             <span className="mx-1 text-muted-foreground/50">·</span>
                             <span className="font-semibold text-foreground">
-                              {formatINRCompact(endNav)}
+                              Close {formatINRCompact(corpusClosing)}
                             </span>
-                            <span
-                              className="ml-1 font-semibold"
-                              style={{ color: `rgb(${tornadoBaseHue})` }}
-                            >
-                              ({tornadoIsSurplus ? "+" : "−"}
-                              {formatINRCompact(Math.abs(navDiff))} vs today)
-                            </span>
+                            {tornadoOffScale && (
+                              <span className="ml-1 text-[10px] text-amber-600">
+                                (off-scale)
+                              </span>
+                            )}
+                            {withdrawal > 0 && (
+                              <span
+                                className="ml-1 font-semibold"
+                                style={{ color: "rgb(239,68,68)" }}
+                              >
+                                (−{formatINRCompact(withdrawal)} goals)
+                              </span>
+                            )}
                           </>
                         ) : (
                           <>
                             <span className="text-muted-foreground">{y}</span>
                             <span className="mx-1 text-muted-foreground/50">·</span>
                             <span className="font-semibold text-foreground">
-                              {formatINRCompact(endNav)}
+                              {formatINRCompact(corpusClosing)}
                             </span>
                             {withdrawal > 0 && (
                               <span
@@ -1319,7 +1641,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                       )}
                     </AnimatePresence>
 
-                    {hasGoals && (
+                    {hasGoals && (!isTornado || hasTornadoBar) && (
                       <div className="flex items-center justify-between gap-2">
                         <span
                           className="text-[10.5px] tabular-nums text-muted-foreground"
@@ -1328,7 +1650,8 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                               "ui-monospace, SFMono-Regular, Menlo, monospace",
                           }}
                         >
-                          {formatINRCompact(endNav)}
+                          {isTornado ? "Close " : ""}
+                          {formatINRCompact(corpusClosing)}
                         </span>
                       </div>
                     )}
@@ -1352,7 +1675,9 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                             "seed-retirement": 25,
                           };
                           const computedPct =
-                            fv > 0 ? Math.min(100, Math.round(((endNav + withdrawal) / fv) * 100)) : 0;
+                            fv > 0
+                              ? Math.min(100, Math.round(((corpusClosing + withdrawal) / fv) * 100))
+                              : 0;
                           const pctAchieved = HARDCODED_ACHIEVED[g.id] ?? computedPct;
                           const GoalIcon = goalIconFor(g.name);
                           const isExpanded = expandedGoals.has(g.id);
@@ -1465,6 +1790,29 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                                           {pctAchieved}%
                                         </span>
                                       </div>
+                                      <div className="flex items-center gap-2 pt-2">
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setEditGoal(g);
+                                            setAddYear(null);
+                                          }}
+                                          className="flex-1 rounded-lg border border-border py-1.5 text-[11px] font-semibold text-foreground hover:bg-muted/50"
+                                        >
+                                          Edit
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            void handleDeleteGoal(g.id);
+                                          }}
+                                          className="flex-1 rounded-lg border border-destructive/40 py-1.5 text-[11px] font-semibold text-destructive hover:bg-destructive/10"
+                                        >
+                                          Delete
+                                        </button>
+                                      </div>
                                     </div>
                                   </motion.div>
                                 )}
@@ -1483,7 +1831,11 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
 
         <p className="px-1 text-[9.5px] leading-snug text-muted-foreground/70">
           {isTornado
-            ? "Centre = today's NAV. Right (green) = cumulative growth above today; left (red) = pulled back below today by a withdrawal."
+            ? `Centre = ₹0. Bars = corpus closing (scale ±${formatINRCompact(tornadoBarScale)}${
+                tornadoTrueMaxAbs > tornadoBarScale * 1.05
+                  ? `; extremes to ±${formatINRCompact(tornadoTrueMaxAbs)} clipped at edge`
+                  : ""
+              }). Green = positive, red = negative.`
             : "Gold spine = projected NAV (today's portfolio, ₹2L/mo, 9% p.a.). Red ticks = goal-draw years."}
           <span className="ml-1 text-muted-foreground/60">
             Directional guide, not a forecast.
@@ -1492,10 +1844,12 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
       </motion.main>
 
       <AddGoalSheet
-        open={addYear !== null}
-        initialYear={addYear}
-        onClose={() => setAddYear(null)}
-        onSave={handleSave}
+        open={goalSheetOpen}
+        initialYear={goalSheetYear}
+        editingGoal={editGoal}
+        saving={goalSaving}
+        onClose={closeGoalSheet}
+        onSubmit={handleGoalSubmit}
       />
 
       <ProjectionSheet open={projectionOpen} onClose={() => setProjectionOpen(false)} />
