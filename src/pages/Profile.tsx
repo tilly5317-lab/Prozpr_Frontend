@@ -346,72 +346,11 @@ const Profile = () => {
         </div>
       </div>
 
-      {/* Personal Info */}
-      <div className="px-5 mb-2">
-        <SectionCard
-          title="Personal Information"
-          icon={Briefcase}
-          completeness={personalCompleteness}
-          isOpen={openSection === "personal"}
-          onToggle={() => toggleSection("personal")}
-        >
-          <div className="flex justify-end mb-1.5">
-            <EditSaveBtn editing={editingPersonal} onEdit={() => setEditingPersonal(true)} onSave={savePersonal} />
-          </div>
-          {editingPersonal ? (
-            <div className="space-y-2">
-              <div>
-                <p className="text-[9px] uppercase tracking-wider text-muted-foreground mb-0.5">Occupation</p>
-                <ProfileInput value={personalDraft.occupation} onChange={(v) => setPersonalDraft((d) => ({ ...d, occupation: v }))} placeholder="e.g. Software engineer" />
-              </div>
-              <div>
-                <p className="text-[9px] uppercase tracking-wider text-muted-foreground mb-0.5">Family Status</p>
-                <ProfileInput value={personalDraft.family_status} onChange={(v) => setPersonalDraft((d) => ({ ...d, family_status: v }))} placeholder="e.g. Married, 2 kids" />
-              </div>
-              <div>
-                <p className="text-[9px] uppercase tracking-wider text-muted-foreground mb-0.5">Wealth Sources</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {["Salary", "Business", "Inheritance/gift", "Investment returns", "One-off windfall"].map((s) => (
-                    <ProfileChip
-                      key={s}
-                      label={s}
-                      active={personalDraft.wealth_sources.includes(s)}
-                      onClick={() =>
-                        setPersonalDraft((d) => ({
-                          ...d,
-                          wealth_sources: d.wealth_sources.includes(s) ? d.wealth_sources.filter((x) => x !== s) : [...d.wealth_sources, s],
-                        }))
-                      }
-                    />
-                  ))}
-                </div>
-              </div>
-              <div>
-                <p className="text-[9px] uppercase tracking-wider text-muted-foreground mb-0.5">Values / Exclusions</p>
-                <ProfileInput value={personalDraft.personal_values} onChange={(v) => setPersonalDraft((d) => ({ ...d, personal_values: v }))} placeholder="e.g. ESG preferred" />
-              </div>
-              <div>
-                <p className="text-[9px] uppercase tracking-wider text-muted-foreground mb-0.5">Address</p>
-                <ProfileInput value={personalDraft.address} onChange={(v) => setPersonalDraft((d) => ({ ...d, address: v }))} placeholder="Your address" />
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-1.5">
-              <FieldRow label="Occupation" value={pi?.occupation} />
-              <FieldRow label="Family Status" value={pi?.family_status} />
-              <FieldRow label="Wealth Sources" value={pi?.wealth_sources?.join(", ")} />
-              <FieldRow label="Values" value={pi?.personal_values?.join(", ")} />
-              <FieldRow label="Address" value={pi?.address} />
-            </div>
-          )}
-        </SectionCard>
-      </div>
 
       {/* Navigation rows */}
       {([
         { icon: FileText, title: "Investment Policy Statement", sub: "Investment guidelines", route: "/profile/ips", showDot: false },
         { icon: User, title: "Tell Us More About You", sub: "Goals, risk tolerance & mandates", route: "/profile/complete", showDot: true },
-        { icon: MessageSquareText, title: "Meeting Notes", sub: "Review past meeting transcripts", route: "/meeting-notes", showDot: false },
       ] as const).map((item) => (
         <div key={item.title} className="px-5 mb-1.5">
           <button
