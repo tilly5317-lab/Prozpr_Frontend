@@ -126,7 +126,7 @@ function parseRecommendationOptions(rec: RebalancingRecommendationInfo): ETFOpti
     .filter((row): row is ETFOption => Boolean(row));
 }
 
-const TillyAvatar = () => (
+const ProzprAvatar = () => (
   <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary">
     <Sparkles className="h-2.5 w-2.5 text-primary-foreground" />
   </div>
@@ -150,12 +150,12 @@ const Rebalancing = () => {
   ]);
   const [chatInput, setChatInput] = useState("");
   const [micActive, setMicActive] = useState(false);
-  const [showTillyPill, setShowTillyPill] = useState(true);
+  const [showProzprPill, setShowProzprPill] = useState(true);
   const [options, setOptions] = useState<ETFOption[]>(DEFAULT_OPTIONS);
 
   // Auto-dismiss pill after 5 seconds
   useEffect(() => {
-    const timer = setTimeout(() => setShowTillyPill(false), 5000);
+    const timer = setTimeout(() => setShowProzprPill(false), 5000);
     return () => clearTimeout(timer);
   }, []);
 
@@ -371,8 +371,8 @@ const Rebalancing = () => {
               {/* Chat header */}
               <div className="flex items-center justify-between px-4 pt-3 pb-2 border-b border-border/30">
                 <div className="flex items-center gap-2">
-                  <TillyAvatar />
-                  <span className="text-sm font-semibold text-foreground">Ask Tilly</span>
+                  <ProzprAvatar />
+                  <span className="text-sm font-semibold text-foreground">Ask Prozpr</span>
                 </div>
                 <button onClick={() => setChatOpen(false)} className="text-muted-foreground">
                   <X className="h-4 w-4" />
@@ -394,11 +394,11 @@ const Rebalancing = () => {
                       </div>
                     ) : (
                       <div className="flex gap-2 items-start max-w-[88%]">
-                        <TillyAvatar />
+                        <ProzprAvatar />
                         <div
                           className="rounded-2xl rounded-tl-sm px-3 py-2 text-[12px] leading-relaxed text-foreground/90"
                           style={{
-                            backgroundColor: "hsl(var(--tilly-bubble))",
+                            backgroundColor: "hsl(var(--Prozpr-bubble))",
                             borderLeft: "2px solid hsl(var(--wealth-navy) / 0.3)",
                           }}
                         >
@@ -450,12 +450,12 @@ const Rebalancing = () => {
         )}
       </AnimatePresence>
 
-      {/* FAB + Tilly pill */}
+      {/* FAB + Prozpr pill */}
       {!chatOpen && (
         <div className="fixed bottom-20 right-5 z-40 flex flex-col items-center">
-          {/* Speak to Tilly pill */}
+          {/* Speak to Prozpr pill */}
           <AnimatePresence>
-            {showTillyPill && (
+            {showProzprPill && (
               <motion.div
                 initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: [0, -4, 0] }}
@@ -477,7 +477,7 @@ const Rebalancing = () => {
                     whiteSpace: "nowrap",
                   }}
                 >
-                  💬 Speak to Tilly
+                  💬 Speak to Prozpr
                 </span>
                 {/* Caret */}
                 <div
