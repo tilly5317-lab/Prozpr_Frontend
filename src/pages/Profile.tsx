@@ -265,7 +265,7 @@ const Profile = () => {
 
   return (
     <div className="mobile-container bg-background pb-20 min-h-screen">
-      <div className="px-5 pt-8 pb-2">
+      <div className="px-5 pt-10 pb-2">
         <h1 className="text-base font-semibold text-foreground">Profile</h1>
       </div>
 

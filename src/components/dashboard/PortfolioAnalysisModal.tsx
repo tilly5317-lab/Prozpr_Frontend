@@ -387,19 +387,19 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
           />
           {/* Modal */}
           <motion.div
-            initial={{ opacity: 0, y: 24, scale: 0.98 }}
+            initial={{ opacity: 0, y: 16, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 16, scale: 0.98 }}
+            exit={{ opacity: 0, y: 12, scale: 0.98 }}
             transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
             role="dialog"
             aria-modal="true"
             aria-label="Portfolio analysis"
-            className="fixed inset-x-0 bottom-0 sm:inset-0 sm:flex sm:items-center sm:justify-center z-[60] px-0 sm:px-4"
+            className="fixed inset-0 z-[60] flex items-center justify-center px-4"
           >
             <div
-              className="mx-auto w-full max-w-md rounded-t-2xl sm:rounded-2xl bg-card shadow-2xl flex flex-col overflow-hidden"
+              className="mx-auto w-full max-w-md rounded-2xl bg-card shadow-2xl flex flex-col overflow-hidden"
               style={{
-                maxHeight: "min(92dvh, 720px)",
+                maxHeight: "min(88dvh, 720px)",
                 borderTop: "1px solid rgba(255,255,255,0.04)",
               }}
               onClick={(e) => e.stopPropagation()}

@@ -124,7 +124,7 @@ const VoiceOnboarding = () => {
   return (
     <div className="mobile-container bg-background flex flex-col min-h-screen relative">
       {/* Top bar */}
-      <div className="flex items-center justify-between px-5 pt-12 pb-3">
+      <div className="flex items-center justify-between px-5 pt-10 pb-3">
         <button
           onClick={() => navigate("/portfolio-popup")}
           className="flex items-center gap-1 text-muted-foreground active:scale-95 transition-transform"

@@ -14,7 +14,11 @@
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8085/)",
       "Bash(npm run *)",
       "mcp__Claude_Preview__preview_start",
-      "PowerShell(Get-NetTCPConnection -LocalPort 8080 -ErrorAction SilentlyContinue)"
+      "PowerShell(Get-NetTCPConnection -LocalPort 8080 -ErrorAction SilentlyContinue)",
+      "Bash(git show *)",
+      "Read(//tmp/**)",
+      "Bash(curl *)",
+      "Bash(echo \"EXIT=$?\")"
     ]
   }
 }

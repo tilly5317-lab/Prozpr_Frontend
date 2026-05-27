@@ -17,7 +17,7 @@ import {
   type FullProfileResponse,
 } from "@/lib/api";
 
-type SectionStatus = "not_started" | "in_progress" | "confirmed";
+type SectionStatus = "not_started" | "auto_filled" | "in_progress" | "confirmed";
 
 interface OtherAsset {
   name: string;
@@ -85,12 +85,14 @@ interface LargeIncome {
 
 const STATUS_LABELS: Record<SectionStatus, string> = {
   not_started: "Not started",
+  auto_filled: "Auto filled already",
   in_progress: "In progress",
   confirmed: "Confirmed",
 };
 
 const STATUS_COLORS: Record<SectionStatus, string> = {
   not_started: "bg-muted text-muted-foreground",
+  auto_filled: "bg-[hsl(210_50%_94%)] text-[hsl(210_60%_38%)]",
   in_progress: "bg-[hsl(38_80%_93%)] text-[hsl(38_80%_38%)]",
   confirmed: "bg-[hsl(160_30%_93%)] text-[hsl(160_50%_38%)]",
 };
@@ -595,7 +597,11 @@ const BehaviouralRiskModal = ({
 const CompleteProfile = () => {
   const navigate = useNavigate();
   const [openSection, setOpenSection] = useState(0);
-  const [statuses, setStatuses] = useState<SectionStatus[]>(Array(4).fill("not_started"));
+  const [statuses, setStatuses] = useState<SectionStatus[]>(() => {
+    const s: SectionStatus[] = Array(4).fill("not_started");
+    s[0] = "auto_filled";
+    return s;
+  });
   const [profileLoaded, setProfileLoaded] = useState(false);
 
   // Section 0 — Who are you?
@@ -693,6 +699,7 @@ const CompleteProfile = () => {
         const p = await getFullProfile();
         if (cancelled) return;
         const newStatuses: SectionStatus[] = Array(SECTION_TITLES.length).fill("not_started");
+        newStatuses[0] = "auto_filled";
 
         // Load personal info data (no longer a separate section)
         if (p.personal_info) {

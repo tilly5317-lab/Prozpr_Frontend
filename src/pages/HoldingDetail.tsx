@@ -45,22 +45,22 @@ function formatINRPaisa(v: number): string {
   if (!Number.isFinite(v)) return "—";
   const abs = Math.abs(v);
   return `${v < 0 ? "−" : ""}₹${abs.toLocaleString("en-IN", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
   })}`;
 }
 
 function formatINRCompact(v: number): string {
   if (!Number.isFinite(v)) return "—";
   if (v < 0) return `−${formatINRCompact(-v)}`;
-  if (v >= 1_00_00_000) return `₹${(v / 1_00_00_000).toFixed(2)}Cr`;
-  if (v >= 1_00_000) return `₹${(v / 1_00_000).toFixed(2)}L`;
+  if (v >= 1_00_00_000) return `₹${(v / 1_00_00_000).toFixed(1)}Cr`;
+  if (v >= 1_00_000) return `₹${(v / 1_00_000).toFixed(1)}L`;
   if (v >= 1_000) return `₹${(v / 1_000).toFixed(1)}k`;
   return `₹${Math.round(v).toLocaleString("en-IN")}`;
 }
 
 function formatUnits(n: number): string {
-  return n.toLocaleString("en-IN", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  return n.toLocaleString("en-IN", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 }
 
 function formatDate(iso: string): string {
@@ -74,7 +74,7 @@ function formatDate(iso: string): string {
 function formatPct(n: number | null): string {
   if (n == null) return "—";
   const sign = n >= 0 ? "+" : "";
-  return `${sign}${n.toFixed(2)}%`;
+  return `${sign}${n.toFixed(1)}%`;
 }
 
 function pctBetween(history: FundNavPoint[], daysAgo: number): number | null {
@@ -278,10 +278,10 @@ function NavChart({
         />
       </svg>
       <div className="pointer-events-none absolute left-1 top-1 text-[10px] text-muted-foreground/80 tabular-nums">
-        ₹{hi.toFixed(2)}
+        ₹{hi.toFixed(1)}
       </div>
       <div className="pointer-events-none absolute right-1 top-1 text-[10px] text-muted-foreground/80 tabular-nums">
-        ₹{lo.toFixed(2)}
+        ₹{lo.toFixed(1)}
       </div>
       <div className="pointer-events-none absolute bottom-1 left-1 text-[10px] text-muted-foreground/80">
         {formatDate(sampled[0].date)}
@@ -305,10 +305,10 @@ function StatBlock({
   valueColor?: string;
 }) {
   return (
-    <div className="rounded-xl border border-border/70 bg-card p-3">
-      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
+    <div className="rounded-lg border border-border/70 bg-card px-3 py-2 text-center">
+      <p className="text-[9.5px] uppercase tracking-wide text-muted-foreground">{label}</p>
       <p
-        className="mt-1 text-[14px] font-semibold tabular-nums"
+        className="mt-0.5 text-[13px] font-semibold tabular-nums leading-tight"
         style={{
           fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
           color: valueColor ?? "hsl(var(--foreground))",
@@ -316,7 +316,7 @@ function StatBlock({
       >
         {value}
       </p>
-      {hint && <p className="mt-0.5 text-[10px] text-muted-foreground">{hint}</p>}
+      {hint && <p className="mt-0.5 text-[9.5px] text-muted-foreground leading-tight">{hint}</p>}
     </div>
   );
 }
@@ -426,7 +426,7 @@ const HoldingDetail = () => {
   return (
     <div className="mobile-container min-h-screen bg-background pb-24">
       <header className="sticky top-0 z-20 border-b border-border/60 bg-background">
-        <div className="flex items-start gap-2 px-4 pt-10 pb-3">
+        <div className="flex items-start gap-2 px-5 pt-10 pb-3">
           <button
             type="button"
             onClick={() => navigate(-1)}
@@ -471,7 +471,7 @@ const HoldingDetail = () => {
                 className="mt-0.5 text-[18px] font-semibold tabular-nums text-foreground"
                 style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
               >
-                ₹{last.toFixed(4)}
+                ₹{last.toFixed(1)}
               </p>
             </div>
             <div className="text-right">
@@ -526,7 +526,7 @@ const HoldingDetail = () => {
                     }}
                   >
                     {outperfPositive ? "+" : "−"}
-                    {Math.abs(outperf).toFixed(2)}%
+                    {Math.abs(outperf).toFixed(1)}%
                   </span>
                 </span>
               </div>
@@ -592,7 +592,12 @@ const HoldingDetail = () => {
         <section className="rounded-2xl border border-border/70 bg-card p-4">
           <div className="flex items-center gap-2">
             <Wallet className="h-3.5 w-3.5 text-muted-foreground" />
-            <p className="text-[12px] font-semibold text-foreground">Your holding</p>
+            <p className="text-[12px] font-semibold text-foreground">
+              Your holding{" "}
+              <span className="font-normal text-muted-foreground tabular-nums">
+                ({formatUnits(units)} units)
+              </span>
+            </p>
           </div>
           <p className="mt-0.5 text-[10.5px] text-muted-foreground">
             Aggregated across folios held in your primary portfolio (CAMS-linked positions).
@@ -606,19 +611,10 @@ const HoldingDetail = () => {
               hint={formatPct(unrealisedPct)}
               valueColor={unrealisedGain >= 0 ? "hsl(160 50% 38%)" : "hsl(0 84% 50%)"}
             />
-            <StatBlock label="Units" value={formatUnits(units)} />
             <StatBlock
               label="Avg cost / unit"
-              value={`₹${avgCostPerUnit.toFixed(2)}`}
+              value={`₹${avgCostPerUnit.toFixed(1)}`}
             />
-            <StatBlock
-              label="Latest NAV"
-              value={`₹${last.toFixed(2)}`}
-              hint={`as of ${formatDate(latestNavDate)}`}
-            />
-          </div>
-          <div className="mt-3 rounded-lg bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">
-            Folios <span className="ml-1 font-semibold text-foreground">1</span>
           </div>
         </section>
 
@@ -629,7 +625,7 @@ const HoldingDetail = () => {
             <p className="text-[12px] font-semibold text-foreground">Transactions</p>
           </div>
           <p className="mt-0.5 text-[10.5px] text-muted-foreground">
-            Ledger rows traced from your CAS imports and consolidation pipeline.
+            Traced from your CAS imports.
           </p>
 
           {transactions.length === 0 ? (
@@ -660,7 +656,7 @@ const HoldingDetail = () => {
                       {formatINRCompact(t.amount)}
                     </span>
                     <span className="col-span-2 text-right text-muted-foreground">
-                      ₹{t.nav.toFixed(2)}
+                      ₹{t.nav.toFixed(1)}
                     </span>
                   </li>
                 ))}
@@ -668,10 +664,6 @@ const HoldingDetail = () => {
             </div>
           )}
 
-          <p className="mt-2 text-[10px] leading-snug text-muted-foreground/80">
-            Edit chart and holding returns use sb_nav_history; holdings and transactions reflect CAS
-            tagged inputs and consolidations.
-          </p>
         </section>
       </main>
 

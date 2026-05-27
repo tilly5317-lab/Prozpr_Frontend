@@ -37,7 +37,7 @@ function formatDate(iso: string): string {
 }
 
 function formatNav(n: number): string {
-  return n.toFixed(4);
+  return n.toFixed(1);
 }
 
 function formatPct(n: number | null): string {
@@ -284,7 +284,7 @@ const DiscoveryFundDetail = () => {
   return (
     <div className="mobile-container min-h-screen bg-background pb-24">
       <header className="sticky top-0 z-20 border-b border-border/60 bg-background">
-        <div className="flex items-start gap-2 px-4 pt-10 pb-3">
+        <div className="flex items-start gap-2 px-5 pt-10 pb-3">
           <button
             type="button"
             onClick={() => navigate(-1)}

@@ -83,44 +83,34 @@ const formatINR = (v: number) => {
   return `₹${v}`;
 };
 
-/* ─── Dual Range Slider ─── */
-const SLIDER_TICKS = [
-  { value: 0, label: "₹0" }, { value: 2500000, label: "₹25L" }, { value: 5000000, label: "₹50L" },
-  { value: 10000000, label: "₹1Cr" }, { value: 50000000, label: "₹5Cr" }, { value: 100000000, label: "₹10Cr+" },
-];
-
-const DualRangeSlider = ({ label, range, onChange, subtext }: {
-  label: string; range: [number, number]; onChange: (r: [number, number]) => void; subtext?: string;
-}) => {
-  const max = 100000000;
-  const minPct = (range[0] / max) * 100;
-  const maxPct = (range[1] / max) * 100;
-  const isSingleValue = range[0] === range[1];
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-muted-foreground">{label}</span>
-        <span className="text-xs font-semibold text-foreground">
-          {isSingleValue ? formatINR(range[0]) : `${formatINR(range[0])} – ${formatINR(range[1])}`}
-        </span>
-      </div>
-      <div className="relative h-2 rounded-full bg-secondary">
-        <div className="absolute h-full rounded-full bg-primary" style={{ left: `${minPct}%`, width: `${Math.max(0, maxPct - minPct)}%` }} />
-        <input type="range" min={0} max={max} step={100000} value={range[0]}
-          onChange={(e) => { const v = Math.max(0, Math.min(Number(e.target.value), range[1])); onChange([v, range[1]]); }}
-          className="absolute inset-0 w-full h-full appearance-none bg-transparent cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-card [&::-webkit-slider-thumb]:shadow-md pointer-events-none [&::-webkit-slider-thumb]:pointer-events-auto" />
-        <input type="range" min={0} max={max} step={100000} value={range[1]}
-          onChange={(e) => { const v = Math.max(Number(e.target.value), range[0]); onChange([range[0], v]); }}
-          className="absolute inset-0 w-full h-full appearance-none bg-transparent cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-card [&::-webkit-slider-thumb]:shadow-md pointer-events-none [&::-webkit-slider-thumb]:pointer-events-auto" />
-      </div>
-      <div className="flex justify-between">
-        {SLIDER_TICKS.map((t) => (<span key={t.value} className="text-[9px] text-muted-foreground/50">{t.label}</span>))}
-      </div>
-      {subtext && <p className="text-[11px] text-muted-foreground italic">{subtext}</p>}
+/* ─── Single-value INR input ─── */
+const NumberInputINR = ({
+  label, description, value, onChange, placeholder, subtext,
+}: {
+  label: string; description?: string; value: number; onChange: (v: number) => void; placeholder?: string; subtext?: string;
+}) => (
+  <div className="space-y-1.5">
+    <span className="text-sm font-medium text-foreground">{label}</span>
+    {description && (
+      <p className="text-[11px] text-muted-foreground leading-snug">{description}</p>
+    )}
+    <div className="relative pt-1">
+      <span className="absolute left-3 top-[calc(50%+2px)] -translate-y-1/2 text-sm text-muted-foreground">₹</span>
+      <input
+        type="text"
+        inputMode="numeric"
+        value={value > 0 ? String(value) : ""}
+        onChange={(e) => {
+          const digits = e.target.value.replace(/[^0-9]/g, "");
+          onChange(digits ? Number(digits) : 0);
+        }}
+        placeholder={placeholder ?? "Enter amount"}
+        className="w-full rounded-xl border border-border bg-card pl-7 pr-3 py-2.5 text-sm text-foreground outline-none focus:border-primary transition-colors tabular-nums"
+      />
     </div>
-  );
-};
+    {subtext && <p className="text-[11px] text-muted-foreground italic">{subtext}</p>}
+  </div>
+);
 
 /* ─── Constants ─── */
 const DEFAULT_GOALS = [
@@ -156,21 +146,19 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
   const [addingGoal, setAddingGoal] = useState(false);
   const [newGoalText, setNewGoalText] = useState("");
   const [horizon, setHorizon] = useState("");
-  const [incomeRange, setIncomeRange] = useState<[number, number]>([30000000, 70000000]);
-  const [expenseRange, setExpenseRange] = useState<[number, number]>([20000000, 50000000]);
+  const [income, setIncome] = useState<number>(0);
+  const [expense, setExpense] = useState<number>(0);
   const [investmentView, setInvestmentView] = useState("");
   const [occupation, setOccupation] = useState("");
   const [occupationOther, setOccupationOther] = useState("");
 
   const [openSection, setOpenSection] = useState<SectionId | null>("basic");
-  // Track which sections user has interacted with (income starts as visited since it has defaults)
-  const [incomeVisited, setIncomeVisited] = useState(false);
 
   const isSectionComplete = (id: SectionId): boolean => {
     switch (id) {
       case "basic": return occupation !== "" && (occupation !== "Other" || occupationOther.trim() !== "");
       case "goals": return selectedGoals.length > 0 && horizon !== "";
-      case "income": return incomeVisited;
+      case "income": return income > 0 && expense > 0;
       case "risk": return investmentView !== "";
     }
   };
@@ -187,14 +175,7 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
         return () => clearTimeout(timer);
       }
     }
-  }, [occupation, occupationOther, selectedGoals, horizon, incomeVisited, investmentView, openSection]);
-
-  // Mark income as visited when the income section is opened
-  useEffect(() => {
-    if (openSection === "income" && !incomeVisited) {
-      setIncomeVisited(true);
-    }
-  }, [openSection, incomeVisited]);
+  }, [occupation, occupationOther, selectedGoals, horizon, income, expense, investmentView, openSection]);
 
   const toggleGoal = (g: string) =>
     setSelectedGoals((prev) => (prev.includes(g) ? prev.filter((x) => x !== g) : [...prev, g]));
@@ -213,18 +194,15 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
     try {
       await saveOnboardingProfile({
         date_of_birth: dob, selected_goals: selectedGoals, custom_goals: customGoals,
-        investment_horizon: horizon || undefined, annual_income_min: incomeRange[0],
-        annual_income_max: incomeRange[1], annual_expense_min: expenseRange[0], annual_expense_max: expenseRange[1],
+        investment_horizon: horizon || undefined, annual_income_min: income,
+        annual_income_max: income, annual_expense_min: expense, annual_expense_max: expense,
       });
     } catch { /* continue */ }
     onComplete();
   };
 
-  const avgIncome = (incomeRange[0] + incomeRange[1]) / 2;
-  const avgExpense = (expenseRange[0] + expenseRange[1]) / 2;
-  const estSavingsLow = Math.max(0, incomeRange[0] - expenseRange[1]);
-  const estSavingsHigh = Math.max(0, incomeRange[1] - expenseRange[0]);
-  const expensePct = avgIncome > 0 ? Math.round((avgExpense / avgIncome) * 100) : 0;
+  const estSavings = Math.max(0, income - expense);
+  const expensePct = income > 0 ? Math.round((expense / income) * 100) : 0;
 
   const toggleSection = (id: SectionId) => {
     setOpenSection((prev) => (prev === id ? null : id));
@@ -420,10 +398,22 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
                   className="overflow-hidden"
                 >
                   <div className="px-4 pb-4 space-y-5">
-                    <DualRangeSlider label="Annual Income Range (₹)" range={incomeRange} onChange={setIncomeRange}
-                      subtext={`Estimated savings: ${formatINR(estSavingsLow)} – ${formatINR(estSavingsHigh)} / year`} />
-                    <DualRangeSlider label="Annual Expenses Range (₹)" range={expenseRange} onChange={setExpenseRange}
-                      subtext={`That's roughly ${expensePct}% of your income range`} />
+                    <NumberInputINR
+                      label="Annual income"
+                      description="Includes salary and regular income (e.g. rental income)"
+                      value={income}
+                      onChange={setIncome}
+                      placeholder="e.g. 5000000"
+                      subtext={income > 0 && expense > 0 ? `Estimated savings: ${formatINR(estSavings)} / year` : undefined}
+                    />
+                    <NumberInputINR
+                      label="Annual expense"
+                      description="Excludes all debt obligations (e.g. loans)"
+                      value={expense}
+                      onChange={setExpense}
+                      placeholder="e.g. 1200000"
+                      subtext={income > 0 && expense > 0 ? `That's roughly ${expensePct}% of your income` : undefined}
+                    />
                   </div>
                 </motion.div>
               )}
@@ -444,7 +434,10 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
                   className="overflow-hidden"
                 >
                   <div className="px-4 pb-4">
-                    <p className="text-xs font-medium text-muted-foreground mb-2.5">Which scenario best fits your comfort level?</p>
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Which scenario best fits your comfort level?</p>
+                    <p className="text-[11px] italic text-muted-foreground/80 mb-3 leading-snug">
+                      <span className="font-semibold text-foreground/80">Worst</span> = the drop in a bad year, <span className="font-semibold text-foreground/80">Best</span> = the gain in a good one. Higher upside, deeper drawdowns — pick the combination you're most comfortable with.
+                    </p>
                     <div className="space-y-2">
                       {INVESTMENT_PREF_OPTIONS.map((opt) => {
                         const isSelected = investmentView === opt.letter;

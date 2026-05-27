@@ -888,7 +888,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   return (
     <div className="mobile-container min-h-screen bg-background pb-20">
       <header className="sticky top-0 z-40 border-b border-border bg-background">
-        <div className="flex items-center gap-2 px-5 pt-6 pb-2">
+        <div className="flex items-center gap-2 px-5 pt-10 pb-2">
           <h1 className="text-lg font-semibold text-foreground">Goals timeline</h1>
           {isTornado && (
             <button

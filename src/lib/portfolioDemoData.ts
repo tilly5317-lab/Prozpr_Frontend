@@ -20,9 +20,10 @@ export const demoSelfPortfolio: PortfolioDetail = {
   created_at: DEMO_TS,
   updated_at: DEMO_TS,
   allocations: [
-    { id: "a1", asset_class: "Equity", allocation_percentage: 58, amount: 14_21_000, performance_percentage: 18.2 },
-    { id: "a2", asset_class: "Debt", allocation_percentage: 32, amount: 7_84_000, performance_percentage: 7.1 },
+    { id: "a1", asset_class: "Equity", allocation_percentage: 50, amount: 12_25_000, performance_percentage: 18.2 },
+    { id: "a2", asset_class: "Debt", allocation_percentage: 30, amount: 7_35_000, performance_percentage: 7.1 },
     { id: "a3", asset_class: "Gold", allocation_percentage: 10, amount: 2_45_000, performance_percentage: 12.4 },
+    { id: "a4", asset_class: "Cash", allocation_percentage: 10, amount: 2_45_000, performance_percentage: 3.5 },
   ],
   holdings: [
     {
@@ -75,10 +76,21 @@ export const demoSelfPortfolio: PortfolioDetail = {
       instrument_type: "Mutual Fund",
       ticker_symbol: null,
       quantity: null,
-      average_cost: 5_10_000,
+      average_cost: 2_90_000,
       current_price: null,
-      current_value: 5_65_000,
-      allocation_percentage: 23.1,
+      current_value: 3_20_000,
+      allocation_percentage: 13.1,
+    },
+    {
+      id: "h6",
+      instrument_name: "Idle Cash (Bank Savings)",
+      instrument_type: "Cash",
+      ticker_symbol: null,
+      quantity: null,
+      average_cost: 2_40_000,
+      current_price: null,
+      current_value: 2_45_000,
+      allocation_percentage: 10.0,
     },
   ],
 };
@@ -200,9 +212,10 @@ export function cloneDemoCumulativePortfolio(): CumulativePortfolioResponse {
     member_count: members.length,
     members,
     combined_allocations: [
-      { asset_class: "Equity", total_amount: Math.round(total_value * 0.56), allocation_percentage: 56 },
-      { asset_class: "Debt", total_amount: Math.round(total_value * 0.34), allocation_percentage: 34 },
+      { asset_class: "Equity", total_amount: Math.round(total_value * 0.5), allocation_percentage: 50 },
+      { asset_class: "Debt", total_amount: Math.round(total_value * 0.3), allocation_percentage: 30 },
       { asset_class: "Gold", total_amount: Math.round(total_value * 0.1), allocation_percentage: 10 },
+      { asset_class: "Cash", total_amount: Math.round(total_value * 0.1), allocation_percentage: 10 },
     ],
   };
 }

@@ -6,30 +6,29 @@ import { ArrowRight, ChevronDown, X } from "lucide-react";
 import type { PortfolioDetail } from "@/lib/api";
 import { formatInrCompact } from "@/lib/utils";
 
-// Bucket classification mirrors the Recommended Investment Plan page.
-type HoldingBucket = "equity" | "debt" | "hybrid";
+// Bucket classification mirrors the pie chart legend: Equity / Debt / Gold / Cash & Other.
+type HoldingBucket = "equity" | "debt" | "gold" | "cash";
 
 const EQUITY_COLOR = "#3B6FA8";
 const DEBT_COLOR = "#A8872F";
 const GOLD_COLOR = "#E0B84A";
 const CASH_COLOR = "#F1DA9B";
 
-const BUCKET_ORDER: HoldingBucket[] = ["equity", "debt", "hybrid"];
+const BUCKET_ORDER: HoldingBucket[] = ["equity", "debt", "gold", "cash"];
 
 const BUCKET_LABEL: Record<HoldingBucket, string> = {
   equity: "Equity",
   debt: "Debt",
-  hybrid: "Hybrid & Others",
+  gold: "Gold",
+  cash: "Cash",
 };
 
 function classifyHoldingBucket(name: string, instrumentType: string): HoldingBucket {
   const n = `${name} ${instrumentType}`.toLowerCase();
+  if (/gold|silver|commodity/.test(n)) return "gold";
   if (/bond|gilt|treasury|debt|liquid|credit/.test(n)) return "debt";
-  if (/gold|silver|commodity|hybrid|balanced|multi.?asset|sectoral|psu bank|energy|pharma|it etf|reit/.test(n)) {
-    return "hybrid";
-  }
-  if (/nifty|sensex|cap|flexi|equity|s&p|nasdaq|growth|value|dividend/.test(n)) return "equity";
-  return "hybrid";
+  if (/nifty|sensex|cap|flexi|equity|s&p|nasdaq|growth|value|dividend|sectoral|psu bank|energy|pharma|it etf/.test(n)) return "equity";
+  return "cash";
 }
 
 const SUB_DESCRIPTIONS: Record<string, string> = {
@@ -71,11 +70,12 @@ const SUB_DESCRIPTIONS: Record<string, string> = {
   "Equity Savings": "Equity + arbitrage + debt for low-volatility equity exposure.",
 };
 
-// Pill colour per bucket — shades of purple for equity, gold for debt, pale gold/beige for hybrid.
+// Pill colour per bucket — matches pie chart legend palette.
 const SUB_TAG_STYLE: Record<HoldingBucket, { bg: string; fg: string; border: string }> = {
   equity: { bg: "#E8F0FA", fg: EQUITY_COLOR, border: "#C9DBEE" },
   debt: { bg: "#F3E8CD", fg: DEBT_COLOR, border: "#E5D3AA" },
-  hybrid: { bg: "#FAF2DC", fg: GOLD_COLOR, border: "#EED9A0" },
+  gold: { bg: "#FAF2DC", fg: GOLD_COLOR, border: "#EED9A0" },
+  cash: { bg: "#FBF6E3", fg: "#8E7228", border: "#EED9A0" },
 };
 
 const UNCAT_STYLE = { bg: "#EFEFEF", fg: "#6b6b6b", border: "#E3E3E3" };
@@ -119,7 +119,10 @@ function classifySubCategory(name: string, bucket: HoldingBucket): string | null
     if (/corporate bond|bharat bond/.test(n)) return "Corporate Bond";
     return null;
   }
-  // hybrid
+  if (bucket === "gold") {
+    return null;
+  }
+  // cash & other (hybrid, sectoral, arbitrage, etc.)
   if (/conservative hybrid/.test(n)) return "Conservative Hybrid";
   if (/aggressive hybrid/.test(n)) return "Aggressive Hybrid";
   if (/balanced hybrid/.test(n)) return "Balanced Hybrid";
@@ -212,7 +215,8 @@ function getColor(name: string, i: number) {
 const HOLDINGS_BAR_BY_BUCKET: Record<HoldingBucket, { bg: string; border?: string }> = {
   equity: { bg: EQUITY_COLOR },
   debt: { bg: DEBT_COLOR, border: "#8E7228" },
-  hybrid: { bg: GOLD_COLOR },
+  gold: { bg: GOLD_COLOR },
+  cash: { bg: CASH_COLOR, border: "#DCCB96" },
 };
 
 function computeReturn(avgCost: number | null, currentPrice: number | null): number | null {
@@ -233,7 +237,8 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
   const [collapsedBuckets, setCollapsedBuckets] = useState<Record<HoldingBucket, boolean>>({
     equity: false,
     debt: false,
-    hybrid: false,
+    gold: false,
+    cash: false,
   });
   const [subFilter, setSubFilter] = useState<string | null>(null);
   const hasAllocations = portfolio && portfolio.allocations.length > 0;
@@ -245,10 +250,10 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
         color: getColor(a.asset_class, i),
       }))
     : [
-        { name: "Equity", value: 48, color: EQUITY_COLOR },
+        { name: "Equity", value: 46, color: EQUITY_COLOR },
         { name: "Debt", value: 28, color: DEBT_COLOR },
         { name: "Gold", value: 16, color: GOLD_COLOR },
-        { name: "Cash/Other", value: 8, color: CASH_COLOR },
+        { name: "Cash", value: 10, color: CASH_COLOR },
       ];
 
   const centerLabel =
@@ -285,7 +290,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
     : [
         { id: "d1", name: "Parag Parikh Flexi Cap Fund", sub: "Mutual Fund", value: "₹6.2L", pct: "48%", allocationPct: 48, returnPct: 18.2, avgCost: 480000, currentValue: 620000, barBg: HOLDINGS_BAR_BY_BUCKET.equity.bg, barBorder: HOLDINGS_BAR_BY_BUCKET.equity.border, bucket: "equity" as HoldingBucket, subCategory: "Flexi Cap" },
         { id: "d2", name: "HDFC Corporate Bond Fund", sub: "Mutual Fund", value: "₹2.8L", pct: "28%", allocationPct: 28, returnPct: 7.1, avgCost: 261000, currentValue: 280000, barBg: HOLDINGS_BAR_BY_BUCKET.debt.bg, barBorder: HOLDINGS_BAR_BY_BUCKET.debt.border, bucket: "debt" as HoldingBucket, subCategory: "Corporate Bond" },
-        { id: "d3", name: "SBI Gold ETF", sub: "ETF · GOLDBEES", value: "₹1.6L", pct: "16%", allocationPct: 16, returnPct: 12.4, avgCost: 142000, currentValue: 160000, barBg: HOLDINGS_BAR_BY_BUCKET.hybrid.bg, barBorder: HOLDINGS_BAR_BY_BUCKET.hybrid.border, bucket: "hybrid" as HoldingBucket, subCategory: null as string | null },
+        { id: "d3", name: "SBI Gold ETF", sub: "ETF · GOLDBEES", value: "₹1.6L", pct: "16%", allocationPct: 16, returnPct: 12.4, avgCost: 142000, currentValue: 160000, barBg: HOLDINGS_BAR_BY_BUCKET.gold.bg, barBorder: HOLDINGS_BAR_BY_BUCKET.gold.border, bucket: "gold" as HoldingBucket, subCategory: null as string | null },
       ];
 
   const filteredRows = subFilter
@@ -430,11 +435,11 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                     >
                       <div className="flex-1 min-w-0">
                         <p
-                          className="uppercase text-muted-foreground"
+                          className="text-muted-foreground"
                           style={{
-                            fontSize: "10px",
+                            fontSize: "11px",
                             fontWeight: 600,
-                            letterSpacing: "1.2px",
+                            letterSpacing: "0.2px",
                           }}
                         >
                           {BUCKET_LABEL[group.bucket]} · {group.items.length}{" "}
