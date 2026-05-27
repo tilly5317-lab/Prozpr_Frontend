@@ -145,11 +145,11 @@ const BEHAV_Q1_OPTIONS = [
 ];
 
 const BEHAV_Q2_OPTIONS = [
-  "Preferably guaranteed returns, before tax efficiency.",
-  "Stable, reliable returns, minimal tax efficiency.",
-  "Some variability in returns, some tax efficiency.",
-  "Moderate variability in returns, reasonable tax efficiency.",
-  "Unstable, but potentially higher returns, maximizing tax efficiency.",
+  "Guaranteed",
+  "Stable reliable",
+  "Some variability",
+  "Moderate variability",
+  "High returns",
 ];
 
 const BEHAV_Q3_OPTIONS = [
