@@ -9,11 +9,11 @@ import {
   Legend,
   CartesianGrid,
 } from "recharts";
-import type { CashflowAnnualBarPayload } from "@/lib/api";
 import { formatInrIndian, exportCashflowXls } from "@/lib/export-xls";
+import type { CashflowAnnualBar } from "../types";
 
 interface Props {
-  payload: CashflowAnnualBarPayload;
+  payload: CashflowAnnualBar;
 }
 
 export function CashflowAnnualBar({ payload }: Props) {

@@ -1,3 +1,5 @@
+import type { AnnualCashflowRow, MonthlyCashflowRow } from "@/lib/api";
+
 import type { ChartBase } from "./_base";
 
 // ─── AA charts (typed) ───
@@ -142,8 +144,8 @@ export interface CashflowAnnualBarData {
 export interface CashflowAnnualBar extends ChartBase {
   type: "cashflow_annual_bar";
   data: CashflowAnnualBarData[];
-  annual_cashflow: unknown[];
-  monthly_cashflow: unknown[];
+  annual_cashflow: AnnualCashflowRow[];
+  monthly_cashflow: MonthlyCashflowRow[];
 }
 
 // ─── Unified union ───

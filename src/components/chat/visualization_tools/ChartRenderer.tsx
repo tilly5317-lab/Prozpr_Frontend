@@ -35,7 +35,7 @@ export function ChartRenderer({ payload }: ChartRendererProps) {
     case "buy_sell_ledger":
       return <BuySellLedger payload={payload} />;
     case "cashflow_annual_bar":
-      return <CashflowAnnualBar payload={payload as any} />;
+      return <CashflowAnnualBar payload={payload} />;
     default: {
       const _exhaustive: never = payload;
       return null;
