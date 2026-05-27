@@ -1247,6 +1247,37 @@ export async function updatePortfolioHistory(
   });
 }
 
+export type PortfolioNavHorizon = "1M" | "1Y" | "3Y" | "MAX";
+
+export interface PortfolioNavHistoryPoint {
+  recorded_date: string;
+  total_value: number;
+  total_invested: number;
+  gain_percentage: number;
+}
+
+export interface PortfolioNavHistoryResponse {
+  horizon: PortfolioNavHorizon;
+  points: PortfolioNavHistoryPoint[];
+  total_invested: number;
+  current_value: number;
+  gain_percentage: number;
+}
+
+export async function getPortfolioNavHistory(
+  horizon: PortfolioNavHorizon = "1Y"
+): Promise<PortfolioNavHistoryResponse> {
+  return request<PortfolioNavHistoryResponse>(
+    `/portfolio/nav-history?horizon=${horizon}`
+  );
+}
+
+export async function refreshPortfolioNavHistory(): Promise<PortfolioNavHistoryResponse> {
+  return request<PortfolioNavHistoryResponse>("/portfolio/nav-history/refresh", {
+    method: "POST",
+  });
+}
+
 // ── Goals API ───────────────────────────────────────────
 
 export interface GoalResponse {
