@@ -274,6 +274,15 @@ const WelcomeScreen = ({ onNext }: WelcomeScreenProps) => {
         Get Started
         <ArrowRight className="h-4 w-4" />
       </motion.button>
+
+      <motion.p
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 1.0, duration: 0.5 }}
+        className="mt-3 text-center text-[10px] leading-snug text-muted-foreground/70"
+      >
+        Prozpr is <span className="font-semibold">not</span> an authorized Registered Investment Adviser (RIA). This app is a prototype for user testing only and does not constitute investment advice.
+      </motion.p>
     </div>
   );
 };
