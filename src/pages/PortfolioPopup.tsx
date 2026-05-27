@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
@@ -49,7 +49,7 @@ const PortfolioPopup = () => {
                 {/* Content */}
                 <div className="flex flex-col items-center text-center pt-2">
                   <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                    <span className="text-lg">✦</span>
+                    <span className="text-lg">âœ¦</span>
                   </div>
 
                   <h2 className="text-[17px] font-semibold text-foreground leading-tight">
@@ -57,14 +57,14 @@ const PortfolioPopup = () => {
                   </h2>
 
                   <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
-                    Tell us a little more about you so Tilly can give you smarter, tailored advice.
+                    Tell us a little more about you so Prozpr can give you smarter, tailored advice.
                   </p>
 
                   <button
                     onClick={() => navigate("/voice-onboarding")}
                     className="mt-5 w-full rounded-xl bg-foreground py-3 text-[14px] font-semibold text-background transition-all active:scale-[0.97]"
                   >
-                    Chat with Tilly →
+                    Chat with Prozpr â†’
                   </button>
                 </div>
               </div>

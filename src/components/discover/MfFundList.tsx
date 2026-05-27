@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+﻿import { useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { ArrowDownRight, ArrowUpRight, Loader2, TrendingUp } from "lucide-react";
 import type { MfFundMetadataListItem } from "@/lib/api";
@@ -18,7 +18,7 @@ interface MfFundListProps {
 }
 
 const fmtPct = (n: number | null | undefined): string => {
-  if (n == null) return "—";
+  if (n == null) return "ΓÇö";
   return `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
 };
 
@@ -35,7 +35,7 @@ const riskBadge = (rating: string | null): string => {
  *
  * Infinite scroll math: an `IntersectionObserver` sentinel is rendered
  * `sentinelOffsetFromEnd` rows before the last item. As soon as the sentinel
- * scrolls into the viewport, `onLoadMore()` fires — so the next 20 rows are
+ * scrolls into the viewport, `onLoadMore()` fires ΓÇö so the next 20 rows are
  * fetched while several earlier rows are still on screen, eliminating the
  * "blank end" flash users normally see when they hit the bottom.
  */
@@ -114,7 +114,7 @@ export function MfFundList({
                   <p className="truncate text-xs font-semibold text-foreground">{fund.scheme_name}</p>
                   <div className="mt-0.5 flex items-center gap-1.5">
                     <span className="truncate text-[10px] text-muted-foreground">
-                      {fund.amc_name} · {fund.sub_category ?? fund.category}
+                      {fund.amc_name} ┬╖ {fund.sub_category ?? fund.category}
                     </span>
                     {fund.risk_rating_sebi && (
                       <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-medium ${riskBadge(fund.risk_rating_sebi)}`}>
@@ -150,7 +150,7 @@ export function MfFundList({
 
       {!hasMore && items.length > 0 && (
         <p className="pt-1 text-center text-[10px] text-muted-foreground/70">
-          {total} {total === 1 ? "fund" : "funds"} · end of list
+          {total} {total === 1 ? "fund" : "funds"} ┬╖ end of list
         </p>
       )}
 

@@ -1,4 +1,4 @@
-import { useRef, useCallback, useState } from "react";
+﻿import { useRef, useCallback, useState } from "react";
 import { motion, AnimatePresence, useDragControls, PanInfo } from "framer-motion";
 import { Mic, Send } from "lucide-react";
 import AIChatPanel from "@/components/chat/AIChatPanel";
@@ -87,7 +87,7 @@ const AIChatSheet = ({ isOpen, onClose, onOpen }: Props) => {
             {mode === "minimized" ? (
               /* Minimized bar */
               <div className="flex items-center justify-between px-5 pb-1" onClick={() => setMode("partial")}>
-                <span className="text-xs font-medium text-muted-foreground tracking-wide">Ask Tilly, your AI Advisor</span>
+                <span className="text-xs font-medium text-muted-foreground tracking-wide">Ask Prozpr, your AI Advisor</span>
                 <div className="flex items-center gap-2">
                   <div className="h-7 w-7 rounded-full wealth-gradient flex items-center justify-center">
                     <Mic className="h-3 w-3 text-primary-foreground" />

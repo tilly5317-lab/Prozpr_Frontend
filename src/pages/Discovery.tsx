@@ -3,7 +3,7 @@ import { DiscoverScreen } from "@/components/discover/DiscoverScreen";
 
 const Discovery = () => {
   const navigate = useNavigate();
-  const goExecute = () => navigate("/execute");
+  const goRebalanceExplanation = () => navigate("/rebalance-explanation");
   return (
     <DiscoverScreen
       title="Discover"
@@ -11,9 +11,9 @@ const Discovery = () => {
       onBack={() => navigate("/")}
       showRecommendedPlanCard
       showPlanReadyPopup
-      onRecommendedPlanClick={goExecute}
-      onStartInvesting={goExecute}
-      onInvestNow={goExecute}
+      onRecommendedPlanClick={goRebalanceExplanation}
+      onStartInvesting={goRebalanceExplanation}
+      onInvestNow={goRebalanceExplanation}
       primaryCtaLabel="Start Investing"
     />
   );
