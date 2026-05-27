@@ -333,10 +333,10 @@ const RebalanceExplanation = () => {
                 exit={{ opacity: 0, y: 8, scale: 0.97 }}
                 transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
                 className="relative w-full max-w-md rounded-2xl text-white overflow-hidden pointer-events-auto"
-                style={{ background: "#1c1c1b", maxHeight: "min(86dvh, 720px)", display: "flex", flexDirection: "column" }}
+                style={{ background: "#1c1c1b", maxHeight: "min(94dvh, 720px)", display: "flex", flexDirection: "column" }}
                 onClick={(e) => e.stopPropagation()}
               >
-                <div className="shrink-0 flex items-center justify-end px-4 pt-3 pb-2">
+                <div className="shrink-0 flex items-center justify-end px-4 pt-2 pb-1">
                   <button
                     onClick={() => setSelectedTrade(null)}
                     className="h-7 w-7 rounded-full flex items-center justify-center text-[#9CA6BF] hover:text-white hover:bg-white/10 transition-colors"
@@ -347,7 +347,7 @@ const RebalanceExplanation = () => {
                 </div>
                 <div
                   className="flex-1 min-h-0 overflow-y-auto px-5"
-                  style={{ paddingBottom: "1.5rem" }}
+                  style={{ paddingBottom: "1rem" }}
                 >
                 <div className="flex items-center gap-2">
                   {selectedTrade.type === "BUY" ? (
@@ -355,12 +355,12 @@ const RebalanceExplanation = () => {
                   ) : (
                     <ArrowUpRight className="h-4 w-4 text-[#FF6559]" />
                   )}
-                  <p className="text-[11px] tracking-[0.12em] uppercase text-[#8E98B0]">{selectedTrade.type} trade details</p>
+                  <p className="text-[10.5px] tracking-[0.12em] uppercase text-[#8E98B0]">{selectedTrade.type} trade details</p>
                 </div>
-                <h3 className="mt-2 text-[16px] font-semibold text-[#ECF1FF]">{selectedTrade.fund.name}</h3>
-                <p className="text-[12px] text-[#97A3BE]">{selectedTrade.fund.amc} · {selectedTrade.fund.category} · {selectedTrade.fund.benchmark}</p>
-                <div className="mt-3 flex items-center gap-2">
-                  <span className="px-2 py-1 rounded-full text-xs font-semibold" style={{ backgroundColor: riskBadge.bg, color: riskBadge.fg }}>
+                <h3 className="mt-1 text-[15px] font-semibold leading-tight text-[#ECF1FF]">{selectedTrade.fund.name}</h3>
+                <p className="text-[11px] text-[#97A3BE] leading-tight">{selectedTrade.fund.amc} · {selectedTrade.fund.category} · {selectedTrade.fund.benchmark}</p>
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ backgroundColor: riskBadge.bg, color: riskBadge.fg }}>
                     Risk · {selectedTrade.fund.risk}
                   </span>
                   <div className="flex items-center gap-0.5">
@@ -371,7 +371,7 @@ const RebalanceExplanation = () => {
                 </div>
 
                 <div
-                  className="mt-5 rounded-xl px-3 py-2.5"
+                  className="mt-3 rounded-xl px-3 py-2"
                   style={{
                     border: "1px solid rgba(212, 168, 104, 0.45)",
                     backgroundColor: "#F5EEDC",
@@ -407,7 +407,7 @@ const RebalanceExplanation = () => {
                     </div>
                   </div>
                   <p
-                    className="mt-1 text-[11.5px] leading-snug"
+                    className="mt-0.5 text-[11px] leading-snug"
                     style={{ color: "#2E2207" }}
                   >
                     Strong 5-year risk-adjusted returns with below-peer drawdowns. Stable
@@ -415,13 +415,13 @@ const RebalanceExplanation = () => {
                   </p>
                 </div>
 
-                <div className="mt-3 rounded-xl border border-[#2a2a28] bg-[#252523] px-3 py-3">
+                <div className="mt-2 rounded-xl border border-[#2a2a28] bg-[#252523] px-3 py-2">
                   <p className="text-[10px] uppercase tracking-[0.14em] text-[#8E98B0]">Why this trade</p>
-                  <p className="mt-1 text-[12px] leading-5 text-[#D0D8EC]">{selectedTrade.fund.rationale}</p>
+                  <p className="mt-0.5 text-[11.5px] leading-snug text-[#D0D8EC]">{selectedTrade.fund.rationale}</p>
                 </div>
 
-                <p className="mt-5 text-[11px] uppercase tracking-[0.14em] text-[#7E879C]">Performance vs benchmark</p>
-                <div className="mt-2" style={{ height: 150 }}>
+                <p className="mt-3 text-[10.5px] uppercase tracking-[0.14em] text-[#7E879C]">Performance vs benchmark</p>
+                <div className="mt-1" style={{ height: 110 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={selectedTrade.fund.series} margin={{ top: 4, right: 8, left: -12, bottom: 4 }}>
                       <CartesianGrid stroke="#2a2a28" vertical={false} />
@@ -437,8 +437,8 @@ const RebalanceExplanation = () => {
                   </ResponsiveContainer>
                 </div>
 
-                <p className="mt-4 text-[11px] uppercase tracking-[0.14em] text-[#7E879C]">Key stats</p>
-                <div className="mt-2 grid grid-cols-2 gap-3">
+                <p className="mt-2 text-[10.5px] uppercase tracking-[0.14em] text-[#7E879C]">Key stats</p>
+                <div className="mt-1 grid grid-cols-3 gap-x-3 gap-y-1.5">
                   {[
                     { label: "Amount", value: selectedTrade.amount },
                     { label: "Expense ratio", value: selectedTrade.fund.expenseRatio },
@@ -448,8 +448,8 @@ const RebalanceExplanation = () => {
                     { label: "3Y CAGR", value: selectedTrade.fund.returns3Y },
                   ].map((item) => (
                     <div key={item.label}>
-                      <p className="text-[10px] uppercase text-[#7E879C]">{item.label}</p>
-                      <p className="text-[13px] font-semibold text-[#ECF1FF]">{item.value}</p>
+                      <p className="text-[9.5px] uppercase text-[#7E879C] leading-tight">{item.label}</p>
+                      <p className="text-[12px] font-semibold text-[#ECF1FF] leading-tight">{item.value}</p>
                     </div>
                   ))}
                 </div>
