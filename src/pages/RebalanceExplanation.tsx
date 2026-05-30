@@ -22,9 +22,12 @@ type DriftRow = {
   amountText: string;
 };
 
+type TradeBucket = "equity" | "debt" | "gold" | "cash";
+
 type Trade = {
   id: string;
   type: "BUY" | "SELL";
+  bucket: TradeBucket;
   amount: string;
   subtitle: string;
   fund: {
@@ -55,6 +58,7 @@ const trades: Trade[] = [
   {
     id: "parag-parikh",
     type: "SELL",
+    bucket: "equity",
     amount: "₹45,000",
     subtitle: "Trim equity overweight",
     fund: {
@@ -81,6 +85,7 @@ const trades: Trade[] = [
   {
     id: "mirae-large-cap",
     type: "SELL",
+    bucket: "equity",
     amount: "₹30,000",
     subtitle: "Trim equity overweight",
     fund: {
@@ -107,6 +112,7 @@ const trades: Trade[] = [
   {
     id: "icici-corp-bond",
     type: "BUY",
+    bucket: "debt",
     amount: "₹50,000",
     subtitle: "Restore debt allocation",
     fund: {
@@ -133,6 +139,7 @@ const trades: Trade[] = [
   {
     id: "sgb-series-x",
     type: "BUY",
+    bucket: "gold",
     amount: "₹25,000",
     subtitle: "Restore gold allocation",
     fund: {
@@ -276,30 +283,51 @@ const RebalanceExplanation = () => {
             <p className="text-[10px] tracking-[0.16em] uppercase text-[#7E879C]">Proposed trades</p>
             <p className="text-[11px] text-[#34D39A]">Tax impact · ₹0 LTCG</p>
           </div>
-          <div className="mt-3 divide-y divide-white/10">
-            {trades.map((trade) => (
-              <button
-                key={trade.id}
-                type="button"
-                onClick={() => setSelectedTrade(trade)}
-                className="w-full py-3 text-left flex items-center gap-3"
-              >
-                <span
-                  className="px-2 py-1 rounded-md text-[11px] font-semibold tracking-wide"
-                  style={{
-                    backgroundColor: trade.type === "SELL" ? "#3A1717" : "#113126",
-                    color: trade.type === "SELL" ? "#FF6559" : "#3FD998",
-                  }}
-                >
-                  {trade.type}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[13px] leading-tight font-medium text-[#EAF0FF] truncate">{trade.fund.name}</p>
-                  <p className="text-[11px] text-[#8E99B1]">{trade.subtitle}</p>
+          <div className="mt-3 space-y-4">
+            {driftRows
+              .map((row) => ({ row, bucketTrades: trades.filter((t) => t.bucket === row.key) }))
+              .filter(({ bucketTrades }) => bucketTrades.length > 0)
+              .map(({ row, bucketTrades }) => (
+                <div key={row.key}>
+                  <div className="flex items-center gap-2 pb-1.5">
+                    <span
+                      className="h-1.5 w-3 rounded-full"
+                      style={{ backgroundColor: row.color, boxShadow: `0 0 10px ${row.color}55` }}
+                    />
+                    <p
+                      className="text-[10px] tracking-[0.14em] uppercase"
+                      style={{ color: row.color }}
+                    >
+                      {row.label}
+                    </p>
+                  </div>
+                  <div className="divide-y divide-white/8">
+                    {bucketTrades.map((trade) => (
+                      <button
+                        key={trade.id}
+                        type="button"
+                        onClick={() => setSelectedTrade(trade)}
+                        className="w-full py-2.5 text-left flex items-center gap-3"
+                      >
+                        <span
+                          className="px-2 py-0.5 rounded-md text-[11px] font-semibold tracking-wide shrink-0"
+                          style={{
+                            backgroundColor: trade.type === "SELL" ? "#3A1717" : "#113126",
+                            color: trade.type === "SELL" ? "#FF6559" : "#3FD998",
+                          }}
+                        >
+                          {trade.type}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[13px] leading-tight font-medium text-[#EAF0FF] truncate">{trade.fund.name}</p>
+                          <p className="text-[10.5px] text-[#8E99B1] truncate">{trade.subtitle}</p>
+                        </div>
+                        <p className="text-[14px] leading-none font-semibold text-[#EEF3FF] shrink-0">{trade.amount}</p>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <p className="text-[15px] leading-none font-semibold text-[#EEF3FF]">{trade.amount}</p>
-              </button>
-            ))}
+              ))}
           </div>
         </section>
 

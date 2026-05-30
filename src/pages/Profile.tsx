@@ -394,17 +394,23 @@ const Profile = () => {
         </div>
       ))}
 
-      {/* Sign Out */}
-      <div className="px-5 mt-3 mb-4">
+      {/* Sign Out — styled as a navigation row, listed below the other options */}
+      <div className="px-5 mb-1.5">
         <button
           onClick={() => {
             signOut();
             navigate("/");
           }}
-          className="w-full flex items-center justify-center gap-2 rounded-xl border border-destructive/30 py-2.5 text-xs font-medium text-destructive hover:bg-destructive/5 transition-colors"
+          className="wealth-card !p-2.5 w-full text-left flex items-center gap-2.5 active:scale-[0.98] transition-transform"
         >
-          <LogOut className="h-3.5 w-3.5" />
-          Sign Out
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-destructive/10">
+            <LogOut className="h-3 w-3 text-destructive" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-xs font-semibold text-destructive">Sign out</h3>
+            <p className="text-[10px] text-muted-foreground">End this session</p>
+          </div>
+          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
         </button>
       </div>
 
