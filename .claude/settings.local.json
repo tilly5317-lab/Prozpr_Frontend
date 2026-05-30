@@ -18,7 +18,9 @@
       "Bash(git show *)",
       "Read(//tmp/**)",
       "Bash(curl *)",
-      "Bash(echo \"EXIT=$?\")"
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(git pull *)",
+      "Bash(git merge *)"
     ]
   }
 }

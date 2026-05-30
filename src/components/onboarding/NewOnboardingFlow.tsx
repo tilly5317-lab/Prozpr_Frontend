@@ -151,7 +151,7 @@ const NumberInputINR = ({
       <input
         type="text"
         inputMode="numeric"
-        value={value > 0 ? String(value) : ""}
+        value={value > 0 ? value.toLocaleString("en-IN") : ""}
         onChange={(e) => {
           const digits = e.target.value.replace(/[^0-9]/g, "");
           onChange(digits ? Number(digits) : 0);

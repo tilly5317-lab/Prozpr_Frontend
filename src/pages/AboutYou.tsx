@@ -99,7 +99,7 @@ const NumberInputINR = ({
       <input
         type="text"
         inputMode="numeric"
-        value={value > 0 ? String(value) : ""}
+        value={value > 0 ? value.toLocaleString("en-IN") : ""}
         onChange={(e) => {
           const digits = e.target.value.replace(/[^0-9]/g, "");
           onChange(digits ? Number(digits) : 0);
@@ -125,11 +125,11 @@ const HORIZON_OPTIONS = [
 ];
 
 const INVESTMENT_PREF_OPTIONS = [
-  { letter: "A", equity: 10, debt: 90, best: 11, worst: -2, riskLabel: "Conservative" },
-  { letter: "B", equity: 30, debt: 70, best: 18, worst: -6, riskLabel: "Moderately conservative" },
-  { letter: "C", equity: 50, debt: 50, best: 24, worst: -13, riskLabel: "Balanced" },
+  { letter: "A", equity: 10, debt: 90, best: 10, worst: -2, riskLabel: "Conservative" },
+  { letter: "B", equity: 30, debt: 70, best: 15, worst: -5, riskLabel: "Moderately conservative" },
+  { letter: "C", equity: 50, debt: 50, best: 25, worst: -15, riskLabel: "Balanced" },
   { letter: "D", equity: 70, debt: 30, best: 30, worst: -20, riskLabel: "Moderately aggressive" },
-  { letter: "E", equity: 90, debt: 10, best: 37, worst: -27, riskLabel: "Aggressive" },
+  { letter: "E", equity: 90, debt: 10, best: 40, worst: -30, riskLabel: "Aggressive" },
 ];
 
 
