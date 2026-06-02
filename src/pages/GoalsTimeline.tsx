@@ -327,6 +327,18 @@ interface AddGoalSheetProps {
   onSubmit: (goal: Omit<TimelineGoal, "id">, editingId?: string) => void | Promise<void>;
 }
 
+// Quick-pick goal categories shown as the first step of the add-goal sheet.
+// "Retirement" is intentionally omitted — the planner models retirement from the
+// user's profile (age & target corpus), and the save handler rejects it.
+const GOAL_CATEGORIES: { id: string; label: string; icon: LucideIcon }[] = [
+  { id: "house", label: "Buy property", icon: Home },
+  { id: "education", label: "Education", icon: GraduationCap },
+  { id: "marriage", label: "Marriage", icon: Heart },
+  { id: "travel", label: "Travel", icon: Plane },
+  { id: "car", label: "Car", icon: Car },
+  { id: "custom", label: "Other", icon: Plus },
+];
+
 function AddGoalSheet({
   open,
   initialYear,
@@ -337,8 +349,11 @@ function AddGoalSheet({
 }: AddGoalSheetProps) {
   const currentYear = new Date().getFullYear();
   const isEdit = editingGoal !== null;
-  const [name, setName] = useState("");
+  const [category, setCategory] = useState<string>("");
+  const [customName, setCustomName] = useState("");
   const [amount, setAmount] = useState("");
+  const [upfront, setUpfront] = useState("");
+  const [mortgage, setMortgage] = useState("");
   const [year, setYear] = useState<number>(initialYear ?? currentYear + 5);
   const [inflation, setInflation] = useState<string>(String(INFLATION_DEFAULT));
   const [priority, setPriority] = useState<Priority>("Medium");
@@ -347,35 +362,55 @@ function AddGoalSheet({
   useEffect(() => {
     if (!open) return;
     if (editingGoal) {
-      setName(editingGoal.name);
-      setAmount(String(Math.round(editingGoal.presentValue)));
+      // Persisted goals carry only a free-text name → edit through the "Other" path.
+      setCategory("custom");
+      setCustomName(editingGoal.name);
+      setAmount(Math.round(editingGoal.presentValue).toLocaleString("en-IN"));
+      setUpfront("");
+      setMortgage("");
       setYear(editingGoal.year);
       setInflation(String(editingGoal.inflationRate));
       setPriority(editingGoal.priority);
       setAmountKind(editingGoal.inflationRate === 0 ? "future" : "present");
       return;
     }
-    setName("");
+    setCategory("");
+    setCustomName("");
     setAmount("");
+    setUpfront("");
+    setMortgage("");
     setYear(initialYear ?? currentYear + 5);
     setInflation(String(INFLATION_DEFAULT));
     setPriority("Medium");
     setAmountKind("present");
   }, [open, initialYear, currentYear, editingGoal]);
 
+  const isHouse = category === "house";
+  const isCustom = category === "custom";
+
+  const resolvedName = (() => {
+    if (isCustom) return customName.trim();
+    const match = GOAL_CATEGORIES.find((c) => c.id === category);
+    return match ? match.label : "";
+  })();
+
   const inflationSuggestion = useMemo(
-    () => suggestInflationForGoal(name),
-    [name],
+    () => suggestInflationForGoal(resolvedName),
+    [resolvedName],
   );
 
   const yearsAway = Math.max(0, year - currentYear);
-  const pv = Number(amount.replace(/[^\d.]/g, "")) || 0;
+  const houseUpfront = Number(upfront.replace(/[^\d.]/g, "")) || 0;
+  const houseMortgage = Number(mortgage.replace(/[^\d.]/g, "")) || 0;
+  const houseTotal = houseUpfront + houseMortgage;
+  const baseAmount = Number(amount.replace(/[^\d.]/g, "")) || 0;
+  const pv = isHouse ? houseUpfront : baseAmount;
   const infl = amountKind === "present" ? Number(inflation) || 0 : 0;
   const fv =
     amountKind === "future" ? pv : futureValue(pv, infl, yearsAway);
 
   const canSave =
-    name.trim().length > 0 &&
+    resolvedName.length > 0 &&
     pv > 0 &&
     year >= currentYear &&
     year <= currentYear + HORIZON_YEARS;
@@ -428,41 +463,129 @@ function AddGoalSheet({
 
               <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
                 <div>
-                  <label
-                    htmlFor="timeline-goal-name"
-                    className="text-[10px] uppercase tracking-wide text-muted-foreground"
-                  >
-                    Goal name
-                  </label>
-                  <input
-                    id="timeline-goal-name"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="e.g. New car, kids' MBA, sabbatical"
-                    className="mt-1 w-full rounded-lg bg-muted/40 px-3 py-2 text-[13px] text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-foreground/30"
-                    style={{ border: "1px solid hsl(var(--border))" }}
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label
-                      htmlFor="timeline-goal-amount"
-                      className="text-[10px] uppercase tracking-wide text-muted-foreground"
-                    >
-                      Cost (₹)
-                    </label>
+                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5">
+                    Goal category
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {GOAL_CATEGORIES.map((c) => {
+                      const Icon = c.icon;
+                      const active = category === c.id;
+                      return (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => setCategory(c.id)}
+                          className={`flex items-center gap-2 rounded-xl px-3 py-2 text-left transition-colors ${
+                            active
+                              ? "border-foreground/30 bg-muted/60 text-foreground"
+                              : "bg-card text-muted-foreground hover:bg-muted/40"
+                          }`}
+                          style={{
+                            border: `1px solid ${active ? "hsl(var(--foreground) / 0.30)" : "hsl(var(--border))"}`,
+                          }}
+                          aria-pressed={active}
+                        >
+                          <Icon className="h-3.5 w-3.5 shrink-0" />
+                          <span className="text-[11.5px] font-semibold">{c.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {isCustom && (
                     <input
-                      id="timeline-goal-amount"
-                      value={amount}
-                      onChange={(e) => setAmount(e.target.value)}
-                      inputMode="numeric"
-                      placeholder="50,00,000"
-                      className="mt-1 w-full rounded-lg bg-muted/40 px-3 py-2 text-[13px] text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-foreground/30"
+                      id="timeline-goal-name"
+                      value={customName}
+                      onChange={(e) => setCustomName(e.target.value)}
+                      placeholder="Name this goal (e.g. sabbatical, gadget)"
+                      className="mt-2 w-full rounded-lg bg-muted/40 px-3 py-2 text-[13px] text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-foreground/30"
                       style={{ border: "1px solid hsl(var(--border))" }}
                     />
+                  )}
+                </div>
+
+                {isHouse && (
+                  <div className="rounded-xl border border-border bg-muted/30 p-3 space-y-3">
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                      House details
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label
+                          htmlFor="timeline-goal-upfront"
+                          className="text-[10px] uppercase tracking-wide text-muted-foreground"
+                        >
+                          Deposit (₹)
+                        </label>
+                        <input
+                          id="timeline-goal-upfront"
+                          value={upfront}
+                          onChange={(e) => {
+                            const digits = e.target.value.replace(/[^\d]/g, "");
+                            setUpfront(digits ? Number(digits).toLocaleString("en-IN") : "");
+                          }}
+                          inputMode="numeric"
+                          placeholder="30,00,000"
+                          className="mt-1 w-full rounded-lg bg-card px-3 py-2 text-[13px] tabular-nums text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-foreground/30"
+                          style={{ border: "1px solid hsl(var(--border))" }}
+                        />
+                      </div>
+                      <div>
+                        <label
+                          htmlFor="timeline-goal-mortgage"
+                          className="text-[10px] uppercase tracking-wide text-muted-foreground"
+                        >
+                          Mortgage (₹)
+                        </label>
+                        <input
+                          id="timeline-goal-mortgage"
+                          value={mortgage}
+                          onChange={(e) => {
+                            const digits = e.target.value.replace(/[^\d]/g, "");
+                            setMortgage(digits ? Number(digits).toLocaleString("en-IN") : "");
+                          }}
+                          inputMode="numeric"
+                          placeholder="1,20,00,000"
+                          className="mt-1 w-full rounded-lg bg-card px-3 py-2 text-[13px] tabular-nums text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-foreground/30"
+                          style={{ border: "1px solid hsl(var(--border))" }}
+                        />
+                      </div>
+                    </div>
+                    {houseTotal > 0 && (
+                      <p className="text-[10.5px] text-muted-foreground">
+                        Total property cost ≈{" "}
+                        <span className="font-semibold text-foreground tabular-nums">
+                          {formatINR(houseTotal)}
+                        </span>{" "}
+                        — we&apos;ll save toward the deposit and plan the rest as mortgage.
+                      </p>
+                    )}
                   </div>
-                  <div>
+                )}
+
+                <div className="grid grid-cols-2 gap-3">
+                  {!isHouse && (
+                    <div>
+                      <label
+                        htmlFor="timeline-goal-amount"
+                        className="text-[10px] uppercase tracking-wide text-muted-foreground"
+                      >
+                        Cost (₹)
+                      </label>
+                      <input
+                        id="timeline-goal-amount"
+                        value={amount}
+                        onChange={(e) => {
+                          const digits = e.target.value.replace(/[^\d]/g, "");
+                          setAmount(digits ? Number(digits).toLocaleString("en-IN") : "");
+                        }}
+                        inputMode="numeric"
+                        placeholder="50,00,000"
+                        className="mt-1 w-full rounded-lg bg-muted/40 px-3 py-2 text-[13px] tabular-nums text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-foreground/30"
+                        style={{ border: "1px solid hsl(var(--border))" }}
+                      />
+                    </div>
+                  )}
+                  <div className={isHouse ? "col-span-2" : undefined}>
                     <label
                       htmlFor="timeline-goal-year"
                       className="text-[10px] uppercase tracking-wide text-muted-foreground"
@@ -644,7 +767,7 @@ function AddGoalSheet({
                   onClick={() => {
                     void onSubmit(
                       {
-                        name: name.trim(),
+                        name: resolvedName,
                         year,
                         // When the user entered the future-dated amount, store it
                         // as a present value with 0% inflation so projections leave
@@ -1139,8 +1262,8 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   return (
     <div className="mobile-container min-h-screen bg-background pb-20">
       <header className="sticky top-0 z-40 border-b border-border bg-background">
-        <div className="flex items-center gap-2 px-5 pt-6 pb-2">
-          <h1 className="text-lg font-semibold text-foreground">Goals timeline</h1>
+        <div className="flex items-center gap-2 px-5 pt-10 pb-2">
+          <h1 className="text-lg font-semibold text-foreground">Goal planning</h1>
           {isTornado && (
             <button
               type="button"
@@ -1315,6 +1438,21 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
           </button>
           </div>
         </div>
+        )}
+
+        {/* Chart axis legend — explains what the bars mean */}
+        {isTornado && (
+          <div className="flex items-center justify-between px-1 pt-2 pb-1 text-[10px] text-muted-foreground">
+            <div className="flex items-center gap-1.5">
+              <span className="inline-block h-2 w-3 rounded-sm" style={{ backgroundColor: "rgb(239,68,68)" }} />
+              <span>Negative NAV</span>
+            </div>
+            <span className="font-semibold tracking-wide text-foreground/80">Portfolio Value</span>
+            <div className="flex items-center gap-1.5">
+              <span>Positive NAV</span>
+              <span className="inline-block h-2 w-3 rounded-sm" style={{ backgroundColor: "rgb(16,185,129)" }} />
+            </div>
+          </div>
         )}
 
         {/* Integrated vertical NAV chart + goal timeline */}
@@ -1831,16 +1969,19 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
 
         <p className="px-1 text-[9.5px] leading-snug text-muted-foreground/70">
           {isTornado
-            ? `Centre = ₹0. Bars = corpus closing (scale ±${formatINRCompact(tornadoBarScale)}${
-                tornadoTrueMaxAbs > tornadoBarScale * 1.05
-                  ? `; extremes to ±${formatINRCompact(tornadoTrueMaxAbs)} clipped at edge`
-                  : ""
-              }). Green = positive, red = negative.`
+            ? "Each bar = total portfolio NAV at the end of that year. Green = positive NAV (you still have money). Red = negative NAV (goals have outpaced what you've saved). Wider = larger amount."
             : "Gold spine = projected NAV (today's portfolio, ₹2L/mo, 9% p.a.). Red ticks = goal-draw years."}
           <span className="ml-1 text-muted-foreground/60">
             Directional guide, not a forecast.
           </span>
         </p>
+
+        {/* Assumptions — plain-text return rates */}
+        {isTornado && (
+          <p className="px-1 pt-2 text-[10.5px] leading-snug text-muted-foreground/80">
+            Assumes Equity return of 12% p.a. and Debt return of 7% p.a.
+          </p>
+        )}
       </motion.main>
 
       <AddGoalSheet
@@ -1854,21 +1995,27 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
 
       <ProjectionSheet open={projectionOpen} onClose={() => setProjectionOpen(false)} />
 
-      {/* Floating + FAB — opens the add-goal sheet at a sensible default year */}
-      <button
-        type="button"
-        onClick={() => setAddYear(currentYear + 5)}
-        className="fixed right-5 z-40 inline-flex h-12 w-12 items-center justify-center rounded-full transition-transform hover:scale-105 active:scale-95"
-        style={{
-          bottom: "calc(env(safe-area-inset-bottom, 0px) + 72px)",
-          backgroundColor: "#D4A868",
-          color: "hsl(var(--background))",
-          boxShadow: "0 6px 20px rgba(212, 168, 104, 0.45)",
-        }}
-        aria-label="Add a new goal"
+      {/* Floating + FAB — pinned to the right edge of the page column */}
+      <div
+        className="pointer-events-none fixed inset-x-0 z-40 mx-auto max-w-md"
+        style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 72px)" }}
       >
-        <Plus className="h-5 w-5" strokeWidth={2.5} />
-      </button>
+        <div className="flex justify-end px-5">
+          <button
+            type="button"
+            onClick={() => setAddYear(currentYear + 5)}
+            className="pointer-events-auto inline-flex h-12 w-12 items-center justify-center rounded-full transition-transform hover:scale-105 active:scale-95"
+            style={{
+              backgroundColor: "#D4A868",
+              color: "hsl(var(--background))",
+              boxShadow: "0 6px 20px rgba(212, 168, 104, 0.45)",
+            }}
+            aria-label="Add a new goal"
+          >
+            <Plus className="h-5 w-5" strokeWidth={2.5} />
+          </button>
+        </div>
+      </div>
 
       <BottomNav />
     </div>

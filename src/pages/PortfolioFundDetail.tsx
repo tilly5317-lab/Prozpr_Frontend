@@ -251,7 +251,14 @@ export default function PortfolioFundDetail() {
             <section className="rounded-2xl border border-border/70 bg-card p-4">
               <div className="flex items-center gap-2">
                 <Wallet className="h-3.5 w-3.5 text-muted-foreground" />
-                <p className="text-[12px] font-semibold text-foreground">Your holding</p>
+                <p className="text-[12px] font-semibold text-foreground">
+                  Your holding
+                  {pos && (
+                    <span className="font-normal text-muted-foreground tabular-nums">
+                      {" "}({formatUnits(units)} units)
+                    </span>
+                  )}
+                </p>
               </div>
               <p className="mt-0.5 text-[10.5px] text-muted-foreground">
                 Aggregated across folios held in your primary portfolio (CAMS-linked positions).
@@ -261,34 +268,23 @@ export default function PortfolioFundDetail() {
                   No position found for this scheme yet. Import a CAS statement or sync holdings.
                 </p>
               ) : (
-                <>
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    <StatBlock
-                      label="Current value"
-                      value={current != null ? formatINRPaisa(current) : "—"}
-                    />
-                    <StatBlock
-                      label="Invested"
-                      value={invested != null ? formatINRPaisa(invested) : "—"}
-                    />
-                    <StatBlock
-                      label="Unrealised gain"
-                      value={`${unrealisedGain >= 0 ? "+" : "−"}${formatINRPaisa(Math.abs(unrealisedGain))}`}
-                      hint={formatPct(unrealisedPct)}
-                      valueColor={unrealisedGain >= 0 ? "hsl(160 50% 38%)" : "hsl(0 84% 50%)"}
-                    />
-                    <StatBlock label="Units" value={formatUnits(units)} />
-                    <StatBlock label="Avg cost / unit" value={`₹${avgCostPerUnit.toFixed(2)}`} />
-                    <StatBlock
-                      label="Latest NAV"
-                      value={`₹${last.toFixed(2)}`}
-                      hint={latestNavDate ? `as of ${formatDate(latestNavDate)}` : undefined}
-                    />
-                  </div>
-                  <div className="mt-3 rounded-lg bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">
-                    Folios <span className="ml-1 font-semibold text-foreground">{pos.folios ?? 0}</span>
-                  </div>
-                </>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <StatBlock
+                    label="Current value"
+                    value={current != null ? formatINRPaisa(current) : "—"}
+                  />
+                  <StatBlock
+                    label="Invested"
+                    value={invested != null ? formatINRPaisa(invested) : "—"}
+                  />
+                  <StatBlock
+                    label="Unrealised gain"
+                    value={`${unrealisedGain >= 0 ? "+" : "−"}${formatINRPaisa(Math.abs(unrealisedGain))}`}
+                    hint={formatPct(unrealisedPct)}
+                    valueColor={unrealisedGain >= 0 ? "hsl(160 50% 38%)" : "hsl(0 84% 50%)"}
+                  />
+                  <StatBlock label="Avg cost / unit" value={`₹${avgCostPerUnit.toFixed(1)}`} />
+                </div>
               )}
             </section>
 
