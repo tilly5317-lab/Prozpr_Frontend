@@ -313,6 +313,19 @@ export async function saveOnboardingProfile(p: OnboardingProfilePayload) {
   });
 }
 
+/** Read-back of the onboarding profile — used where we need the user's DOB/age. */
+export interface OnboardingProfileResponse {
+  user_id: string;
+  date_of_birth: string | null;
+  assumed_lifespan_years: number | null;
+  occupation: string | null;
+  updated_at: string | null;
+}
+
+export async function getOnboardingProfile(): Promise<OnboardingProfileResponse> {
+  return request<OnboardingProfileResponse>("/onboarding/profile");
+}
+
 export async function completeOnboarding() {
   return request("/onboarding/complete", {
     method: "POST",
