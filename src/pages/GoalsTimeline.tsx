@@ -25,6 +25,8 @@ import {
   removeGoal,
   getCashflowLatest,
   computeCashflow,
+  getOnboardingProfile,
+  getInvestmentProfile,
   type CashflowPlanRunDetail,
   type GoalResponse,
 } from "@/lib/api";
@@ -44,6 +46,28 @@ interface TimelineGoal {
 const HORIZON_YEARS = 24;
 const INFLATION_DEFAULT = 6;
 const PRIORITIES: Priority[] = ["Low", "Medium", "High"];
+
+// Timeline-extent assumptions. The visible timeline ends at the later of the
+// last goal year and the retirement year (age 60 by default); dragging a goal
+// past the bottom can reveal future rows up to the lifespan cap (age 100).
+const DEFAULT_RETIREMENT_AGE = 60;
+const LIFESPAN_CAP_AGE = 100;
+// Used only when we have no DOB to anchor the user's age.
+const FALLBACK_CURRENT_AGE = 30;
+// Always show at least this many years even if retirement is in the past.
+const MIN_HORIZON_YEARS = 5;
+
+function clamp(v: number, lo: number, hi: number): number {
+  return Math.min(hi, Math.max(lo, v));
+}
+
+/** Birth year parsed from an ISO date string (YYYY-MM-DD); null if unparseable. */
+function birthYearFromDob(dob: string | null | undefined): number | null {
+  if (!dob) return null;
+  const parsed = Date.parse(dob);
+  if (Number.isNaN(parsed)) return null;
+  return new Date(parsed).getFullYear();
+}
 
 // Portfolio projection assumptions — sourced from the planner's headline figures.
 const START_NAV = 2_85_50_000;
@@ -321,6 +345,7 @@ function buildProjection(
 interface AddGoalSheetProps {
   open: boolean;
   initialYear: number | null;
+  maxYear: number;
   editingGoal: TimelineGoal | null;
   saving: boolean;
   onClose: () => void;
@@ -342,6 +367,7 @@ const GOAL_CATEGORIES: { id: string; label: string; icon: LucideIcon }[] = [
 function AddGoalSheet({
   open,
   initialYear,
+  maxYear,
   editingGoal,
   saving,
   onClose,
@@ -413,7 +439,7 @@ function AddGoalSheet({
     resolvedName.length > 0 &&
     pv > 0 &&
     year >= currentYear &&
-    year <= currentYear + HORIZON_YEARS;
+    year <= maxYear;
 
   return (
     <AnimatePresence>
@@ -597,7 +623,7 @@ function AddGoalSheet({
                       type="number"
                       inputMode="numeric"
                       min={currentYear}
-                      max={currentYear + HORIZON_YEARS}
+                      max={maxYear}
                       value={year}
                       onChange={(e) => {
                         const v = Number(e.target.value);
@@ -947,10 +973,6 @@ interface GoalsTimelineProps {
 const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   const currentYear = new Date().getFullYear();
   const isTornado = variant === "tornado";
-  const years = useMemo(
-    () => Array.from({ length: HORIZON_YEARS + 1 }, (_, i) => currentYear + i),
-    [currentYear],
-  );
 
   const [goals, setGoals] = useState<TimelineGoal[]>([]);
   const [goalsLoading, setGoalsLoading] = useState(true);
@@ -966,6 +988,12 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   const [draggingGoalId, setDraggingGoalId] = useState<string | null>(null);
   const [dropTargetYear, setDropTargetYear] = useState<number | null>(null);
   const [projectionOpen, setProjectionOpen] = useState(false);
+
+  // Birth year (from DOB) + retirement age drive where the timeline ends.
+  const [birthYear, setBirthYear] = useState<number | null>(null);
+  const [retirementAge, setRetirementAge] = useState<number>(DEFAULT_RETIREMENT_AGE);
+  // Transient extra extent revealed while dragging a goal past the bottom row.
+  const [revealEndYear, setRevealEndYear] = useState<number | null>(null);
 
   const [cashflowData, setCashflowData] = useState<CashflowPlanRunDetail | null>(null);
   const [cashflowLoading, setCashflowLoading] = useState(false);
@@ -987,6 +1015,34 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   useEffect(() => {
     void reloadGoals();
   }, [reloadGoals]);
+
+  // Pull DOB (for the user's age) and retirement age so the timeline can end at
+  // max(last goal, retirement). Both are best-effort — failures fall back to
+  // sensible defaults rather than blocking the page.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const [onboardingRes, investmentRes] = await Promise.allSettled([
+        getOnboardingProfile(),
+        getInvestmentProfile(),
+      ]);
+      if (cancelled) return;
+      if (onboardingRes.status === "fulfilled") {
+        const by = birthYearFromDob(onboardingRes.value.date_of_birth);
+        if (by != null) setBirthYear(by);
+      }
+      if (
+        investmentRes.status === "fulfilled" &&
+        typeof investmentRes.value.retirement_age === "number" &&
+        investmentRes.value.retirement_age > 0
+      ) {
+        setRetirementAge(investmentRes.value.retirement_age);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const fetchCashflow = useCallback(async () => {
     setCashflowLoading(true);
@@ -1031,6 +1087,32 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
     }
     return null;
   };
+
+  // While dragging a goal near/below the bottom row, grow the timeline one year
+  // at a time (up to the lifespan cap) so future years smoothly appear, and
+  // nudge-scroll when dragging against the bottom edge of the viewport.
+  const revealMoreOnDrag = useCallback((clientY: number) => {
+    let lastYear = -Infinity;
+    let lastBottom = -Infinity;
+    for (const [yr, el] of rowRefs.current) {
+      if (!el) continue;
+      const rect = el.getBoundingClientRect();
+      if (rect.bottom > lastBottom) {
+        lastBottom = rect.bottom;
+        lastYear = yr;
+      }
+    }
+    if (!Number.isFinite(lastYear)) return;
+
+    if (clientY > lastBottom - 24 && lastYear < capYearRef.current) {
+      const target = Math.min(capYearRef.current, lastYear + 1);
+      setRevealEndYear((prev) => (prev == null ? target : Math.max(prev, target)));
+    }
+
+    if (clientY > window.innerHeight - 90) {
+      window.scrollBy({ top: 28 });
+    }
+  }, []);
   const moveGoalToYear = useCallback(
     (id: string, year: number) => {
       setGoals((prev) => prev.map((g) => (g.id === id ? { ...g, year } : g)));
@@ -1147,6 +1229,40 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
     }
     return map;
   }, [visibleGoals]);
+
+  // ── Timeline extent ──────────────────────────────────────────────────────
+  // End the timeline at the later of the last goal year and the retirement
+  // year (age 60 by default). Dragging a goal down can temporarily reveal rows
+  // up to the lifespan cap (age 100). All goals count toward the last-goal year
+  // (not just visible ones) so toggling a priority filter never shrinks it.
+  const effectiveBirthYear = birthYear ?? currentYear - FALLBACK_CURRENT_AGE;
+  const retirementYear = effectiveBirthYear + retirementAge;
+  const capYear = effectiveBirthYear + LIFESPAN_CAP_AGE;
+  const lastGoalYear = useMemo(
+    () => goals.reduce((m, g) => Math.max(m, g.year), currentYear),
+    [goals, currentYear],
+  );
+  const baseEndYear = clamp(
+    Math.max(lastGoalYear, retirementYear, currentYear + MIN_HORIZON_YEARS),
+    currentYear + MIN_HORIZON_YEARS,
+    capYear,
+  );
+  const displayEndYear = Math.min(
+    capYear,
+    Math.max(baseEndYear, revealEndYear ?? baseEndYear),
+  );
+  const years = useMemo(
+    () =>
+      Array.from(
+        { length: Math.max(1, displayEndYear - currentYear + 1) },
+        (_, i) => currentYear + i,
+      ),
+    [currentYear, displayEndYear],
+  );
+
+  // Kept fresh for the drag handler so it never reads a stale cap.
+  const capYearRef = useRef(capYear);
+  capYearRef.current = capYear;
 
   /** FY-end corpus_closing keyed by FY end calendar year (from fy_end_date). */
   const tornadoCorpusByYear = useMemo((): Map<number, TornadoCorpusRow> | null => {
@@ -1457,12 +1573,13 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
 
         {/* Integrated vertical NAV chart + goal timeline */}
         <ul className="space-y-0">
+          <AnimatePresence initial={false}>
           {years.map((y, i) => {
             const yearGoals = goalsByYear.get(y) ?? [];
             const hasGoals = yearGoals.length > 0;
             const isMilestone = y % 5 === 0;
             const proj = projectionByYear.get(y);
-            const prevProj = i > 0 ? projection[i - 1] : proj;
+            const prevProj = projectionByYear.get(y - 1) ?? proj;
             const tornadoRow = isTornado ? tornadoCorpusByYear?.get(y) : undefined;
             const corpusClosing = isTornado
               ? (tornadoRow?.corpusClosing ?? 0)
@@ -1503,15 +1620,25 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
             const hasMilestone = rowMilestones.length > 0;
 
             const isDropTarget = dropTargetYear === y && draggingGoalId !== null;
+            // Rows past the settled timeline end are the transient tail that
+            // appears/collapses as the user drags a goal — animate those.
+            const isRevealTail = y > baseEndYear;
             return (
-              <li
+              <motion.li
                 key={y}
-                ref={(el) => {
+                ref={(el: HTMLLIElement | null) => {
                   if (el) rowRefs.current.set(y, el);
                   else rowRefs.current.delete(y);
                 }}
+                initial={isRevealTail ? { height: 0, opacity: 0 } : false}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
                 className={`relative ${isFirst ? "sticky z-[15] bg-background" : ""} ${isDropTarget ? "rounded-lg ring-2 ring-[#D4A868]/70" : ""}`}
-                style={isFirst ? { top: "108px" } : undefined}
+                style={{
+                  ...(isFirst ? { top: "108px" } : {}),
+                  ...(isRevealTail ? { overflow: "hidden" } : {}),
+                }}
               >
                 <button
                   type="button"
@@ -1832,14 +1959,16 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                                 setDropTargetYear(g.year);
                               }}
                               onDrag={(_, info) => {
+                                revealMoreOnDrag(info.point.y);
                                 const yr = findYearAtClientY(info.point.y);
-                                setDropTargetYear(yr);
+                                if (yr != null) setDropTargetYear(yr);
                               }}
                               onDragEnd={(_, info) => {
                                 const yr = findYearAtClientY(info.point.y);
                                 if (yr != null && yr !== g.year) moveGoalToYear(g.id, yr);
                                 setDraggingGoalId(null);
                                 setDropTargetYear(null);
+                                setRevealEndYear(null);
                               }}
                               whileDrag={{
                                 scale: 1.04,
@@ -1962,9 +2091,10 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                     )}
                   </div>
                 </button>
-              </li>
+              </motion.li>
             );
           })}
+          </AnimatePresence>
         </ul>
 
         <p className="px-1 text-[9.5px] leading-snug text-muted-foreground/70">
@@ -1987,6 +2117,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
       <AddGoalSheet
         open={goalSheetOpen}
         initialYear={goalSheetYear}
+        maxYear={capYear}
         editingGoal={editGoal}
         saving={goalSaving}
         onClose={closeGoalSheet}
