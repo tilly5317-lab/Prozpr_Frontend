@@ -326,6 +326,30 @@ export async function getOnboardingProfile(): Promise<OnboardingProfileResponse>
   return request<OnboardingProfileResponse>("/onboarding/profile");
 }
 
+/** Non-financial-asset holdings (gold, unlisted shares, etc.) — other_investments. */
+export interface OtherAssetPayload {
+  asset_name: string;
+  asset_type?: string | null;
+  current_value?: number | null;
+}
+
+export interface OtherAssetResponse {
+  id: string;
+  asset_name: string;
+  asset_type: string | null;
+  current_value: number | null;
+}
+
+/** Full-replace write of the user's "other assets" list. */
+export async function saveOtherAssets(
+  assets: OtherAssetPayload[],
+): Promise<OtherAssetResponse[]> {
+  return request<OtherAssetResponse[]>("/onboarding/other-assets", {
+    method: "POST",
+    body: JSON.stringify({ assets }),
+  });
+}
+
 export async function completeOnboarding() {
   return request("/onboarding/complete", {
     method: "POST",
@@ -799,6 +823,63 @@ export async function updateInvestmentProfile(p: InvestmentProfilePayload): Prom
   return request<InvestmentProfileResponse>("/profile/investment", {
     method: "PUT",
     body: JSON.stringify(p),
+  });
+}
+
+// ── Household personal-finance scalars (personal_finance_profiles) ──────────
+export interface PersonalFinancePayload {
+  annual_income?: number | null;
+  effective_tax_rate?: number | null;
+  financial_assets?: number | null;
+  financial_liabilities_excl_mortgage?: number | null;
+  monthly_household_expense?: number | null;
+  starting_monthly_investment?: number | null;
+  selected_goals?: string[] | null;
+  custom_goals?: string[] | null;
+  investment_horizon?: string | null;
+  wealth_sources?: string[] | null;
+  personal_values?: string[] | null;
+}
+
+export interface PersonalFinanceResponse extends PersonalFinancePayload {
+  user_id: string;
+  updated_at: string | null;
+}
+
+export async function getPersonalFinance(): Promise<PersonalFinanceResponse> {
+  return request<PersonalFinanceResponse>("/profile/personal-finance");
+}
+
+export async function updatePersonalFinance(p: PersonalFinancePayload): Promise<PersonalFinanceResponse> {
+  return request<PersonalFinanceResponse>("/profile/personal-finance", {
+    method: "PUT",
+    body: JSON.stringify(p),
+  });
+}
+
+// ── Owned properties (user_current_properties) ─────────────────────────────
+export interface CurrentPropertyPayload {
+  name: string;
+  property_value?: number | null;
+  has_mortgage: boolean;
+  mortgage_emi?: number | null;
+  mortgage_end_date?: string | null; // ISO yyyy-mm-dd
+}
+
+export interface CurrentPropertyResponse extends CurrentPropertyPayload {
+  id: number;
+}
+
+export async function getCurrentProperties(): Promise<CurrentPropertyResponse[]> {
+  return request<CurrentPropertyResponse[]>("/profile/current-properties");
+}
+
+export async function updateCurrentProperties(
+  properties: CurrentPropertyPayload[],
+): Promise<CurrentPropertyResponse[]> {
+  return request<CurrentPropertyResponse[]>("/profile/current-properties", {
+    method: "PUT",
+    body: JSON.stringify({ properties }),
   });
 }
 
