@@ -1,6 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import {
   BriefcaseBusiness,
   Car,
   Download,
@@ -52,6 +63,10 @@ const PRIORITIES: Priority[] = ["Low", "Medium", "High"];
 // past the bottom can reveal future rows up to the lifespan cap (age 100).
 const DEFAULT_RETIREMENT_AGE = 60;
 const LIFESPAN_CAP_AGE = 100;
+// Mirrors the backend cashflow engine's horizon cap (compute_horizon_years
+// cap=80 FY-years from today) so the timeline never extends past where the
+// engine produces corpus-closing bars.
+const ENGINE_HORIZON_CAP_YEARS = 80;
 // Used only when we have no DOB to anchor the user's age.
 const FALLBACK_CURRENT_AGE = 30;
 // Always show at least this many years even if retirement is in the past.
@@ -237,6 +252,10 @@ function suggestInflationForGoal(name: string): InflationSuggestion | null {
   return null;
 }
 
+function isPropertyGoalName(name: string): boolean {
+  return /home|house|property|apartment|flat/.test(name.toLowerCase());
+}
+
 function goalIconFor(name: string): LucideIcon {
   const s = name.toLowerCase();
   if (s.includes("home") || s.includes("house")) return Home;
@@ -378,8 +397,9 @@ function AddGoalSheet({
   const [category, setCategory] = useState<string>("");
   const [customName, setCustomName] = useState("");
   const [amount, setAmount] = useState("");
-  const [upfront, setUpfront] = useState("");
-  const [mortgage, setMortgage] = useState("");
+  const [propertyValue, setPropertyValue] = useState("");
+  const [fundedByLoan, setFundedByLoan] = useState(false);
+  const [loanPct, setLoanPct] = useState("");
   const [year, setYear] = useState<number>(initialYear ?? currentYear + 5);
   const [inflation, setInflation] = useState<string>(String(INFLATION_DEFAULT));
   const [priority, setPriority] = useState<Priority>("Medium");
@@ -389,11 +409,19 @@ function AddGoalSheet({
     if (!open) return;
     if (editingGoal) {
       // Persisted goals carry only a free-text name → edit through the "Other" path.
+      // Property goals are detected by name so the loan / down-payment options
+      // resurface on update. The saved presentValue is the down payment, so we
+      // seed property value with it (no loan) as a starting point.
       setCategory("custom");
       setCustomName(editingGoal.name);
       setAmount(Math.round(editingGoal.presentValue).toLocaleString("en-IN"));
-      setUpfront("");
-      setMortgage("");
+      setPropertyValue(
+        isPropertyGoalName(editingGoal.name)
+          ? Math.round(editingGoal.presentValue).toLocaleString("en-IN")
+          : "",
+      );
+      setFundedByLoan(false);
+      setLoanPct("");
       setYear(editingGoal.year);
       setInflation(String(editingGoal.inflationRate));
       setPriority(editingGoal.priority);
@@ -403,8 +431,9 @@ function AddGoalSheet({
     setCategory("");
     setCustomName("");
     setAmount("");
-    setUpfront("");
-    setMortgage("");
+    setPropertyValue("");
+    setFundedByLoan(false);
+    setLoanPct("");
     setYear(initialYear ?? currentYear + 5);
     setInflation(String(INFLATION_DEFAULT));
     setPriority("Medium");
@@ -425,12 +454,20 @@ function AddGoalSheet({
     [resolvedName],
   );
 
+  // Property goals show the loan / down-payment block. Detected by the chosen
+  // category on create, and by the goal name on edit (custom path).
+  const showHouseDetails = isHouse || (isCustom && isPropertyGoalName(customName));
+
   const yearsAway = Math.max(0, year - currentYear);
-  const houseUpfront = Number(upfront.replace(/[^\d.]/g, "")) || 0;
-  const houseMortgage = Number(mortgage.replace(/[^\d.]/g, "")) || 0;
-  const houseTotal = houseUpfront + houseMortgage;
+  const propertyVal = Number(propertyValue.replace(/[^\d.]/g, "")) || 0;
   const baseAmount = Number(amount.replace(/[^\d.]/g, "")) || 0;
-  const pv = isHouse ? houseUpfront : baseAmount;
+  // Total value the goal targets — property value for property goals, else cost.
+  const totalValue = showHouseDetails ? propertyVal : baseAmount;
+  const loanPctNum = Math.min(100, Math.max(0, Number(loanPct.replace(/[^\d.]/g, "")) || 0));
+  const loanAmount = fundedByLoan ? (totalValue * loanPctNum) / 100 : 0;
+  // The portion the user actually saves toward (down payment / self-funded share).
+  const selfFunded = Math.max(0, totalValue - loanAmount);
+  const pv = selfFunded;
   const infl = amountKind === "present" ? Number(inflation) || 0 : 0;
   const fv =
     amountKind === "future" ? pv : futureValue(pv, infl, yearsAway);
@@ -529,67 +566,31 @@ function AddGoalSheet({
                   )}
                 </div>
 
-                {isHouse && (
-                  <div className="rounded-xl border border-border bg-muted/30 p-3 space-y-3">
-                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                      House details
-                    </p>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label
-                          htmlFor="timeline-goal-upfront"
-                          className="text-[10px] uppercase tracking-wide text-muted-foreground"
-                        >
-                          Deposit (₹)
-                        </label>
-                        <input
-                          id="timeline-goal-upfront"
-                          value={upfront}
-                          onChange={(e) => {
-                            const digits = e.target.value.replace(/[^\d]/g, "");
-                            setUpfront(digits ? Number(digits).toLocaleString("en-IN") : "");
-                          }}
-                          inputMode="numeric"
-                          placeholder="30,00,000"
-                          className="mt-1 w-full rounded-lg bg-card px-3 py-2 text-[13px] tabular-nums text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-foreground/30"
-                          style={{ border: "1px solid hsl(var(--border))" }}
-                        />
-                      </div>
-                      <div>
-                        <label
-                          htmlFor="timeline-goal-mortgage"
-                          className="text-[10px] uppercase tracking-wide text-muted-foreground"
-                        >
-                          Mortgage (₹)
-                        </label>
-                        <input
-                          id="timeline-goal-mortgage"
-                          value={mortgage}
-                          onChange={(e) => {
-                            const digits = e.target.value.replace(/[^\d]/g, "");
-                            setMortgage(digits ? Number(digits).toLocaleString("en-IN") : "");
-                          }}
-                          inputMode="numeric"
-                          placeholder="1,20,00,000"
-                          className="mt-1 w-full rounded-lg bg-card px-3 py-2 text-[13px] tabular-nums text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-foreground/30"
-                          style={{ border: "1px solid hsl(var(--border))" }}
-                        />
-                      </div>
-                    </div>
-                    {houseTotal > 0 && (
-                      <p className="text-[10.5px] text-muted-foreground">
-                        Total property cost ≈{" "}
-                        <span className="font-semibold text-foreground tabular-nums">
-                          {formatINR(houseTotal)}
-                        </span>{" "}
-                        — we&apos;ll save toward the deposit and plan the rest as mortgage.
-                      </p>
-                    )}
+                {showHouseDetails && (
+                  <div>
+                    <label
+                      htmlFor="timeline-goal-property-value"
+                      className="text-[10px] uppercase tracking-wide text-muted-foreground"
+                    >
+                      Property value (₹)
+                    </label>
+                    <input
+                      id="timeline-goal-property-value"
+                      value={propertyValue}
+                      onChange={(e) => {
+                        const digits = e.target.value.replace(/[^\d]/g, "");
+                        setPropertyValue(digits ? Number(digits).toLocaleString("en-IN") : "");
+                      }}
+                      inputMode="numeric"
+                      placeholder="1,50,00,000"
+                      className="mt-1 w-full rounded-lg bg-muted/40 px-3 py-2 text-[13px] tabular-nums text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-foreground/30"
+                      style={{ border: "1px solid hsl(var(--border))" }}
+                    />
                   </div>
                 )}
 
                 <div className="grid grid-cols-2 gap-3">
-                  {!isHouse && (
+                  {!showHouseDetails && (
                     <div>
                       <label
                         htmlFor="timeline-goal-amount"
@@ -611,7 +612,7 @@ function AddGoalSheet({
                       />
                     </div>
                   )}
-                  <div className={isHouse ? "col-span-2" : undefined}>
+                  <div className={showHouseDetails ? "col-span-2" : undefined}>
                     <label
                       htmlFor="timeline-goal-year"
                       className="text-[10px] uppercase tracking-wide text-muted-foreground"
@@ -639,6 +640,77 @@ function AddGoalSheet({
                     ? "Within this year"
                     : `${yearsAway} year${yearsAway === 1 ? "" : "s"} away`}
                 </p>
+
+                {category !== "" && (
+                  <div className="rounded-xl border border-border bg-muted/30 p-3 space-y-3">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5">
+                        Funded partially by a loan?
+                      </p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {([
+                          { val: true, label: "Yes" },
+                          { val: false, label: "No" },
+                        ] as const).map((opt) => {
+                          const active = fundedByLoan === opt.val;
+                          return (
+                            <button
+                              key={opt.label}
+                              type="button"
+                              onClick={() => setFundedByLoan(opt.val)}
+                              className={`rounded-xl px-3 py-2 text-[11.5px] font-semibold transition-colors ${
+                                active
+                                  ? "border-foreground/30 bg-muted/60 text-foreground"
+                                  : "bg-card text-muted-foreground hover:bg-muted/40"
+                              }`}
+                              style={{
+                                border: `1px solid ${active ? "hsl(var(--foreground) / 0.30)" : "hsl(var(--border))"}`,
+                              }}
+                              aria-pressed={active}
+                            >
+                              {opt.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {fundedByLoan && (
+                      <>
+                        <div>
+                          <label
+                            htmlFor="timeline-goal-loan-pct"
+                            className="text-[10px] uppercase tracking-wide text-muted-foreground"
+                          >
+                            Loan (% of {showHouseDetails ? "property value" : "goal cost"})
+                          </label>
+                          <input
+                            id="timeline-goal-loan-pct"
+                            value={loanPct}
+                            onChange={(e) => setLoanPct(e.target.value.replace(/[^\d.]/g, ""))}
+                            inputMode="decimal"
+                            placeholder="80"
+                            className="mt-1 w-full rounded-lg bg-card px-3 py-2 text-[13px] tabular-nums text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-foreground/30"
+                            style={{ border: "1px solid hsl(var(--border))" }}
+                          />
+                        </div>
+                        {totalValue > 0 && loanPctNum > 0 && (
+                          <p className="text-[10.5px] text-muted-foreground">
+                            Loan ≈{" "}
+                            <span className="font-semibold text-foreground tabular-nums">
+                              {formatINR(loanAmount)}
+                            </span>{" "}
+                            · You&apos;ll save toward{" "}
+                            <span className="font-semibold text-foreground tabular-nums">
+                              {formatINR(selfFunded)}
+                            </span>{" "}
+                            ({showHouseDetails ? "down payment" : "self-funded"}).
+                          </p>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
 
                 <div>
                   <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5">
@@ -830,24 +902,103 @@ interface ProjectionSheetProps {
   onClose: () => void;
 }
 
+// Sensitivity scenarios for the projection — only return-on-investment reacts
+// to the assumed post-tax rate; everything else (contributions, one-offs, goals)
+// is held constant so the user sees the pure effect of returns.
+const PROJECTION_BASE_RATE = 9;
+const PROJECTION_SCENARIOS: { id: string; label: string; rate: number }[] = [
+  { id: "cons", label: "Conservative", rate: 7 },
+  { id: "base", label: "Base", rate: 9 },
+  { id: "opt", label: "Optimistic", rate: 11 },
+];
+
+type WaterfallKind = "base" | "positive" | "negative" | "total";
+
+const waterfallBarColor = (kind: WaterfallKind): string =>
+  kind === "base"
+    ? "hsl(var(--accent))"
+    : kind === "total"
+      ? "hsl(var(--primary))"
+      : kind === "negative"
+        ? "hsl(var(--destructive))"
+        : "hsl(var(--wealth-green))";
+
+// Two-line XAxis tick so labels like "One-off in" don't overlap.
+const ProjectionAxisTick = (props: { x?: number; y?: number; payload?: { value?: string } }) => {
+  const { x = 0, y = 0, payload } = props;
+  const text = String(payload?.value ?? "");
+  const tokens = text.split(" ");
+  const line1 = tokens.length >= 2 ? tokens[0] : text;
+  const line2 = tokens.length >= 2 ? tokens.slice(1).join(" ") : "";
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <text textAnchor="middle" fontSize={8.5} fill="hsl(var(--muted-foreground))">
+        <tspan x={0} dy="0.95em">{line1}</tspan>
+        {line2 && <tspan x={0} dy="1.05em">{line2}</tspan>}
+      </text>
+    </g>
+  );
+};
+
 function ProjectionSheet({ open, onClose }: ProjectionSheetProps) {
+  const horizonYear = 2051;
   const horizonLabel = "Mar 2051";
   const monthlyLabel = "₹2.27L/mo";
+  const [scenarioId, setScenarioId] = useState("base");
+  const scenario = PROJECTION_SCENARIOS.find((s) => s.id === scenarioId) ?? PROJECTION_SCENARIOS[1];
+
   const BEGIN = 1_50_00_000;
   const INVESTMENTS = 10_74_74_878;
-  const ROI = 24_44_98_818;
+  const ROI_BASE = 24_44_98_818;
   const ONE_OFF_IN = 1_20_00_000;
   const ONE_OFF_OUT = -1_00_00_000;
   const GOALS_OUT = -57_78_00_000;
+
+  // Scale the base ROI by the ratio of compounding factors so the Base scenario
+  // lands exactly on the headline number while the others fan out realistically.
+  const horizonYears = Math.max(1, horizonYear - new Date().getFullYear());
+  const ROI = useMemo(() => {
+    const factor =
+      Math.pow(1 + scenario.rate / 100, horizonYears) /
+      Math.pow(1 + PROJECTION_BASE_RATE / 100, horizonYears);
+    return Math.round(ROI_BASE * factor);
+  }, [scenario.rate, horizonYears, ROI_BASE]);
+
   const CLOSING = BEGIN + INVESTMENTS + ROI + ONE_OFF_IN + ONE_OFF_OUT + GOALS_OUT;
-  const rows: { label: string; value: number; kind: "neutral" | "positive" | "negative" }[] = [
-    { label: "Beginning financial assets", value: BEGIN, kind: "neutral" },
-    { label: "+ Investments", value: INVESTMENTS, kind: "positive" },
-    { label: "+ Return on investments", value: ROI, kind: "positive" },
-    { label: "+ One-off income", value: ONE_OFF_IN, kind: "positive" },
-    { label: "− One-off expense", value: ONE_OFF_OUT, kind: "negative" },
-    { label: "− Goals", value: GOALS_OUT, kind: "negative" },
+
+  const items: { axis: string; label: string; value: number; kind: WaterfallKind }[] = [
+    { axis: "Beginning", label: "Beginning financial assets", value: BEGIN, kind: "base" },
+    { axis: "Investments", label: "+ Investments", value: INVESTMENTS, kind: "positive" },
+    { axis: "Returns", label: "+ Return on investments", value: ROI, kind: "positive" },
+    { axis: "One-off in", label: "+ One-off income", value: ONE_OFF_IN, kind: "positive" },
+    { axis: "One-off out", label: "− One-off expense", value: ONE_OFF_OUT, kind: "negative" },
+    { axis: "Goals", label: "− Goals", value: GOALS_OUT, kind: "negative" },
+    { axis: "Closing", label: "= Closing financial assets", value: CLOSING, kind: "total" },
   ];
+
+  // Floating-bar waterfall: each bar spans [low, high]. A 2-tuple dataKey lets
+  // recharts draw the floating bars — and the − Goals bar crossing zero — cleanly.
+  let running = 0;
+  const data = items.map((it) => {
+    let start: number;
+    let end: number;
+    if (it.kind === "base" || it.kind === "total") {
+      start = 0;
+      end = it.value;
+      running = it.value;
+    } else {
+      start = running;
+      end = running + it.value;
+      running = end;
+    }
+    return {
+      axis: it.axis,
+      range: [Math.min(start, end), Math.max(start, end)] as [number, number],
+      kind: it.kind,
+      display: it.value,
+    };
+  });
+
   return (
     <AnimatePresence>
       {open && (
@@ -871,7 +1022,7 @@ function ProjectionSheet({ open, onClose }: ProjectionSheetProps) {
             className="fixed inset-0 z-[60] flex items-center justify-center px-4"
           >
             <div
-              className="w-full max-w-md overflow-hidden rounded-2xl bg-card shadow-2xl"
+              className="flex w-full max-w-md flex-col overflow-hidden rounded-2xl bg-card shadow-2xl"
               style={{ maxHeight: "min(88dvh, 720px)" }}
               onClick={(e) => e.stopPropagation()}
             >
@@ -881,7 +1032,7 @@ function ProjectionSheet({ open, onClose }: ProjectionSheetProps) {
                     Goals projection
                   </p>
                   <p className="mt-0.5 text-[11px] text-muted-foreground">
-                    Through {horizonLabel} · {monthlyLabel} · 9% post-tax assumption
+                    Through {horizonLabel} · {monthlyLabel} · {scenario.rate}% post-tax
                   </p>
                 </div>
                 <button
@@ -894,69 +1045,171 @@ function ProjectionSheet({ open, onClose }: ProjectionSheetProps) {
                 </button>
               </div>
 
-              <ul className="divide-y divide-border/60 overflow-y-auto">
-                {rows.map((row) => (
-                  <li
-                    key={row.label}
-                    className="flex items-center justify-between px-4 py-2.5"
-                  >
-                    <span className="text-xs text-foreground/85">{row.label}</span>
-                    <span
-                      className={`text-xs font-semibold tabular-nums ${
-                        row.kind === "positive"
-                          ? "text-emerald-700 dark:text-emerald-400"
-                          : row.kind === "negative"
-                            ? "text-destructive"
-                            : "text-foreground"
-                      }`}
-                    >
-                      {row.value < 0 ? "−" : ""}
-                      {formatINR(Math.abs(row.value))}
-                    </span>
-                  </li>
-                ))}
-                <li
-                  className="flex items-center justify-between px-4 py-3"
-                  style={{ backgroundColor: "hsl(var(--muted) / 0.4)" }}
-                >
-                  <span className="text-xs font-semibold text-foreground">
-                    Closing financial assets · {horizonLabel}
-                  </span>
+              <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+                {/* Sensitivity — return scenario */}
+                <div>
+                  <p className="mb-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                    Return scenario · sensitivity
+                  </p>
+                  <div className="flex rounded-full bg-muted/60 p-0.5">
+                    {PROJECTION_SCENARIOS.map((s) => {
+                      const active = s.id === scenarioId;
+                      return (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => setScenarioId(s.id)}
+                          className={`flex-1 rounded-full py-1.5 text-[11px] font-semibold transition-colors ${
+                            active
+                              ? "bg-card text-foreground shadow-sm"
+                              : "text-muted-foreground hover:text-foreground"
+                          }`}
+                          aria-pressed={active}
+                        >
+                          {s.label}
+                          <span className="ml-1 text-[9.5px] font-normal tabular-nums opacity-70">
+                            {s.rate}%
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Closing headline (live) */}
+                <div className="flex items-center justify-between rounded-xl border border-border bg-muted/30 px-3 py-2.5">
+                  <div className="min-w-0">
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                      Closing financial assets
+                    </p>
+                    <p className="text-[11px] text-muted-foreground/80">{horizonLabel}</p>
+                  </div>
                   <span
-                    className={`text-sm font-bold tabular-nums ${
-                      CLOSING >= 0
-                        ? "text-emerald-700 dark:text-emerald-400"
-                        : "text-destructive"
-                    }`}
+                    className="text-lg font-bold tabular-nums"
+                    style={{
+                      fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                      color:
+                        CLOSING >= 0 ? "hsl(160 50% 38%)" : "hsl(var(--destructive))",
+                    }}
                   >
                     {CLOSING < 0 ? "−" : ""}
-                    {formatINR(Math.abs(CLOSING))}
-                  </span>
-                </li>
-              </ul>
-
-              <div className="border-t border-border px-4 py-3">
-                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Goal funding status
-                </p>
-                <div className="mt-2 grid grid-cols-[1fr_auto] gap-y-1.5 text-xs">
-                  <span className="text-muted-foreground">Net financial assets</span>
-                  <span className="text-right font-semibold tabular-nums text-foreground">
-                    {formatINR(1_50_00_000)}
-                  </span>
-                  <span className="text-muted-foreground">Goals today (PV)</span>
-                  <span className="text-right font-semibold tabular-nums text-foreground">
-                    {formatINR(3_30_67_257)}
-                  </span>
-                  <span className="text-muted-foreground">Present gap</span>
-                  <span className="text-right font-semibold tabular-nums text-destructive">
-                    −{formatINR(1_80_67_257)}
-                  </span>
-                  <span className="text-muted-foreground">Future gap</span>
-                  <span className="text-right font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
-                    {formatINR(0)}
+                    {formatINRCompact(Math.abs(CLOSING))}
                   </span>
                 </div>
+
+                {/* Waterfall chart */}
+                <div className="h-[230px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={data}
+                      margin={{ top: 8, right: 8, left: 0, bottom: 30 }}
+                      barCategoryGap="20%"
+                    >
+                      <CartesianGrid stroke="hsl(var(--border))" vertical={false} />
+                      <XAxis
+                        dataKey="axis"
+                        tick={<ProjectionAxisTick />}
+                        interval={0}
+                        axisLine={false}
+                        tickLine={false}
+                        height={34}
+                      />
+                      <YAxis
+                        tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                        tickFormatter={(v) => formatINRCompact(Number(v))}
+                        axisLine={false}
+                        tickLine={false}
+                        width={48}
+                      />
+                      <ReferenceLine y={0} stroke="hsl(var(--border))" />
+                      <Tooltip
+                        cursor={{ fill: "hsl(var(--muted) / 0.4)" }}
+                        content={({ active, payload }) => {
+                          if (!active || !payload || payload.length === 0) return null;
+                          const point = payload[0]!.payload as (typeof data)[number];
+                          const full = items.find((it) => it.axis === point.axis);
+                          return (
+                            <div
+                              style={{
+                                fontSize: 11,
+                                borderRadius: 8,
+                                border: "1px solid hsl(var(--border))",
+                                backgroundColor: "hsl(var(--card))",
+                                color: "hsl(var(--foreground))",
+                                padding: "6px 10px",
+                              }}
+                            >
+                              <div style={{ fontWeight: 600, marginBottom: 2 }}>
+                                {full?.label ?? point.axis}
+                              </div>
+                              <div className="tabular-nums">
+                                {point.display < 0 ? "−" : ""}
+                                {formatINR(Math.abs(point.display))}
+                              </div>
+                            </div>
+                          );
+                        }}
+                      />
+                      <Bar dataKey="range" radius={[3, 3, 3, 3]} isAnimationActive={false}>
+                        {data.map((entry, i) => (
+                          <Cell key={`wf-${i}`} fill={waterfallBarColor(entry.kind)} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* Compact breakdown */}
+                <div className="overflow-hidden rounded-xl border border-border">
+                  {items.map((it, idx) => {
+                    const isLast = idx === items.length - 1;
+                    const color =
+                      it.kind === "negative"
+                        ? "hsl(var(--destructive))"
+                        : it.kind === "positive"
+                          ? "hsl(160 50% 38%)"
+                          : "hsl(var(--foreground))";
+                    return (
+                      <div
+                        key={it.label}
+                        className="flex items-center justify-between px-3 py-2"
+                        style={{
+                          borderBottom: isLast ? undefined : "1px solid hsl(var(--border))",
+                          backgroundColor:
+                            it.kind === "total" ? "hsl(var(--muted) / 0.45)" : undefined,
+                        }}
+                      >
+                        <span
+                          className="text-[11.5px]"
+                          style={{
+                            color:
+                              it.kind === "total"
+                                ? "hsl(var(--foreground))"
+                                : "hsl(var(--muted-foreground))",
+                            fontWeight: it.kind === "total" ? 600 : 400,
+                          }}
+                        >
+                          {it.label}
+                        </span>
+                        <span
+                          className="text-[12px] font-semibold tabular-nums"
+                          style={{
+                            color,
+                            fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                          }}
+                        >
+                          {it.value < 0 ? "−" : ""}
+                          {formatINRCompact(Math.abs(it.value))}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <p className="text-[10px] leading-snug text-muted-foreground/80">
+                  Sensitivity varies only investment returns; contributions, one-off flows and goal
+                  outflows are held constant. Assumptions, not a guarantee.
+                </p>
               </div>
             </div>
           </motion.div>
@@ -1088,44 +1341,83 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
     return null;
   };
 
-  // While dragging a goal near/below the bottom row, grow the timeline one year
-  // at a time (up to the lifespan cap) so future years smoothly appear, and
-  // nudge-scroll when dragging against the bottom edge of the viewport.
-  const revealMoreOnDrag = useCallback((clientY: number) => {
-    let lastYear = -Infinity;
-    let lastBottom = -Infinity;
-    for (const [yr, el] of rowRefs.current) {
-      if (!el) continue;
-      const rect = el.getBoundingClientRect();
-      if (rect.bottom > lastBottom) {
-        lastBottom = rect.bottom;
-        lastYear = yr;
+  // rAF loop: while a goal is dragged into the top/bottom edge band, scroll the
+  // window in that direction. When dragging against the page bottom, reveal the
+  // next future year so the timeline keeps growing smoothly up to the lifespan
+  // cap — runs continuously even when the pointer is held still, which a
+  // pointer-move handler cannot do.
+  const EDGE_BAND = 110; // px from a viewport edge that triggers auto-scroll
+  const SCROLL_STEP = 18; // px scrolled per frame
+  const autoScrollTick = useCallback(() => {
+    const y = dragPointerYRef.current;
+    if (y == null) {
+      autoScrollRafRef.current = null;
+      return;
+    }
+    const vh = window.innerHeight;
+    const doc = document.documentElement;
+    const atBottom = window.scrollY + vh >= doc.scrollHeight - 2;
+
+    if (y > vh - EDGE_BAND) {
+      if (atBottom) {
+        // Page already scrolled to the end — grow the timeline by a year so
+        // there's somewhere further to drop (scrollHeight then expands).
+        const last = displayEndYearRef.current;
+        if (last < capYearRef.current) {
+          setRevealEndYear((prev) =>
+            Math.min(capYearRef.current, Math.max(prev ?? last, last) + 1),
+          );
+        }
+      } else {
+        window.scrollBy(0, SCROLL_STEP);
       }
+    } else if (y < EDGE_BAND) {
+      window.scrollBy(0, -SCROLL_STEP);
     }
-    if (!Number.isFinite(lastYear)) return;
+    autoScrollRafRef.current = requestAnimationFrame(autoScrollTick);
+  }, []);
 
-    if (clientY > lastBottom - 24 && lastYear < capYearRef.current) {
-      const target = Math.min(capYearRef.current, lastYear + 1);
-      setRevealEndYear((prev) => (prev == null ? target : Math.max(prev, target)));
-    }
+  const startAutoScroll = useCallback(
+    (clientY: number) => {
+      dragPointerYRef.current = clientY;
+      if (autoScrollRafRef.current == null) {
+        autoScrollRafRef.current = requestAnimationFrame(autoScrollTick);
+      }
+    },
+    [autoScrollTick],
+  );
 
-    if (clientY > window.innerHeight - 90) {
-      window.scrollBy({ top: 28 });
+  const stopAutoScroll = useCallback(() => {
+    dragPointerYRef.current = null;
+    if (autoScrollRafRef.current != null) {
+      cancelAnimationFrame(autoScrollRafRef.current);
+      autoScrollRafRef.current = null;
     }
   }, []);
+
+  // Safety net: never leave the rAF loop running if the component unmounts mid-drag.
+  useEffect(() => stopAutoScroll, [stopAutoScroll]);
   const moveGoalToYear = useCallback(
     (id: string, year: number) => {
       setGoals((prev) => prev.map((g) => (g.id === id ? { ...g, year } : g)));
       if (!isPersistedGoalId(id)) return;
+      // Force a fresh cashflow projection (not getCashflowLatest, which only
+      // recomputes when the stored run is stale) so the corpus-closing bars
+      // extend out to the goal's new year.
+      setCashflowLoading(true);
+      setCashflowError(null);
       updateGoal(id, { target_date: yearToTargetDate(year) })
-        .then(() => fetchCashflow())
+        .then(() => computeCashflow())
+        .then((res) => setCashflowData(res))
         .catch((err) => {
           const msg = err instanceof Error ? err.message : "Could not update goal year";
+          setCashflowError(msg);
           toast.error(msg);
           void reloadGoals();
-        });
+        })
+        .finally(() => setCashflowLoading(false));
     },
-    [fetchCashflow, reloadGoals],
+    [reloadGoals],
   );
 
   const closeGoalSheet = useCallback(() => {
@@ -1237,7 +1529,12 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   // (not just visible ones) so toggling a priority filter never shrinks it.
   const effectiveBirthYear = birthYear ?? currentYear - FALLBACK_CURRENT_AGE;
   const retirementYear = effectiveBirthYear + retirementAge;
-  const capYear = effectiveBirthYear + LIFESPAN_CAP_AGE;
+  // Cap at the lifespan age (100) but never past the cashflow engine's horizon
+  // (80 FY-years from today), so every draggable year still gets corpus bars.
+  const capYear = Math.min(
+    effectiveBirthYear + LIFESPAN_CAP_AGE,
+    currentYear + ENGINE_HORIZON_CAP_YEARS,
+  );
   const lastGoalYear = useMemo(
     () => goals.reduce((m, g) => Math.max(m, g.year), currentYear),
     [goals, currentYear],
@@ -1260,9 +1557,15 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
     [currentYear, displayEndYear],
   );
 
-  // Kept fresh for the drag handler so it never reads a stale cap.
+  // Kept fresh for the drag handlers so they never read stale values.
   const capYearRef = useRef(capYear);
   capYearRef.current = capYear;
+  const displayEndYearRef = useRef(displayEndYear);
+  displayEndYearRef.current = displayEndYear;
+  // Latest drag pointer Y (viewport coords) + the requestAnimationFrame handle
+  // driving the auto-scroll/reveal loop while a goal is being dragged.
+  const dragPointerYRef = useRef<number | null>(null);
+  const autoScrollRafRef = useRef<number | null>(null);
 
   /** FY-end corpus_closing keyed by FY end calendar year (from fy_end_date). */
   const tornadoCorpusByYear = useMemo((): Map<number, TornadoCorpusRow> | null => {
@@ -1284,17 +1587,18 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
 
   const cashflowProjection: ProjectionPoint[] | null = useMemo(() => {
     if (!tornadoCorpusByYear) return null;
+    // Cover every projected FY the engine returned (no fixed-horizon cap), so
+    // milestones/tooltips stay correct even for goals dragged far out.
     const points: ProjectionPoint[] = [];
-    for (let i = 0; i <= HORIZON_YEARS; i++) {
-      const year = currentYear + i;
-      const row = tornadoCorpusByYear.get(year);
-      if (row) {
-        points.push({
-          year,
-          endNav: row.corpusClosing,
-          withdrawal: row.goalPayout,
-        });
-      }
+    for (const [year, row] of [...tornadoCorpusByYear.entries()].sort(
+      (a, b) => a[0] - b[0],
+    )) {
+      if (year < currentYear) continue;
+      points.push({
+        year,
+        endNav: row.corpusClosing,
+        withdrawal: row.goalPayout,
+      });
     }
     return points.length > 0 ? points : null;
   }, [tornadoCorpusByYear, currentYear]);
@@ -1954,16 +2258,18 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                               dragMomentum={false}
                               dragElastic={0.25}
                               dragSnapToOrigin
-                              onDragStart={() => {
+                              onDragStart={(_, info) => {
                                 setDraggingGoalId(g.id);
                                 setDropTargetYear(g.year);
+                                startAutoScroll(info.point.y);
                               }}
                               onDrag={(_, info) => {
-                                revealMoreOnDrag(info.point.y);
+                                dragPointerYRef.current = info.point.y;
                                 const yr = findYearAtClientY(info.point.y);
                                 if (yr != null) setDropTargetYear(yr);
                               }}
                               onDragEnd={(_, info) => {
+                                stopAutoScroll();
                                 const yr = findYearAtClientY(info.point.y);
                                 if (yr != null && yr !== g.year) moveGoalToYear(g.id, yr);
                                 setDraggingGoalId(null);

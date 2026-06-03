@@ -21,8 +21,10 @@ import GoalsTimeline from "./pages/GoalsTimeline";
 import Invest from "./pages/Invest";
 import Execute from "./pages/Execute";
 import RebalanceExplanation from "./pages/RebalanceExplanation";
+import RebalanceTradeDetail from "./pages/RebalanceTradeDetail";
 import Discovery from "./pages/Discovery";
 import MfAllFunds from "./pages/MfAllFunds";
+import MfCompare from "./pages/MfCompare";
 import MfFundDetail from "./pages/MfFundDetail";
 import AdvisorMeetings from "./pages/AdvisorMeetings";
 import OTP from "./pages/OTP";
@@ -65,6 +67,8 @@ const App = () => (
             <Route path="/execute" element={<Execute />} />
             <Route path="/excecute" element={<Execute />} />
             <Route path="/rebalance-explanation" element={<RebalanceExplanation />} />
+            <Route path="/rebalance-explanation/trade/:tradeId" element={<RebalanceTradeDetail />} />
+            <Route path="/discovery/compare" element={<MfCompare />} />
             <Route path="/discovery/mf/:schemeCode" element={<MfFundDetail />} />
             <Route path="/discovery/mf" element={<MfAllFunds />} />
             <Route path="/discovery" element={<Discovery />} />
