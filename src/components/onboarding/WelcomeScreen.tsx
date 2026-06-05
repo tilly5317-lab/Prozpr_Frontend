@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { ArrowRight, Shield, TrendingUp, Sparkles, ChevronDown, ArrowLeft, Loader2, FileText, UploadCloud } from "lucide-react";
 import CamsStatementPasswordModal from "./CamsStatementPasswordModal";
 import prozprLogo from "@/assets/prozpr-logo-v2.png";
-import { signup, login, getMe, checkMobileStatus } from "@/lib/api";
+import { signup, login, getMe, updateMe, checkMobileStatus } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import {
   InputOTP,
@@ -36,9 +36,9 @@ const countryCodes = [
 
 const MAX_PDF_BYTES = 20 * 1024 * 1024;
 
-type Step = "phone" | "pin" | "cams";
+type Step = "phone" | "setup" | "pin" | "cams";
 
-const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
+const WelcomeScreen = ({ onExistingUserLogin }: WelcomeScreenProps) => {
   const navigate = useNavigate();
   const { refresh } = useAuth();
   const [step, setStep] = useState<Step>("phone");
@@ -53,6 +53,14 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
   const [pin, setPin] = useState("");
   const [pinError, setPinError] = useState("");
 
+  // New-user account setup (first login)
+  const [name, setName] = useState("");
+  const [nameError, setNameError] = useState("");
+  const [newPin, setNewPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
+  const [email, setEmail] = useState("");
+  const [emailError, setEmailError] = useState("");
+
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [camsFile, setCamsFile] = useState<File | null>(null);
   const [camsPickError, setCamsPickError] = useState("");
@@ -65,11 +73,13 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
     setLoading(true);
     const digits = phone.replace(/\s/g, "");
 
+    let exists = false;
     try {
       const status = await checkMobileStatus({
         country_code: countryCode.code,
         mobile: digits,
       });
+      exists = status.exists;
       setIsReturningUser(status.exists);
       setReturningUserOnboardingDone(status.exists && status.is_onboarding_complete);
     } catch {
@@ -78,7 +88,9 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
     }
 
     setLoading(false);
-    setStep("pin");
+    // Returning users go straight to the PIN prompt; new users set up their
+    // account (name + PIN + confirm + email) on one page before onboarding.
+    setStep(exists ? "pin" : "setup");
   };
 
   const finishOnboardedSession = () => {
@@ -98,6 +110,7 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
     navigate("/link-accounts");
   };
 
+  // Returning user: verify the PIN they set at signup and drop them into the app.
   const handlePinSubmit = async () => {
     if (pin.length < 4) {
       setPinError("Enter your 4-digit PIN");
@@ -112,64 +125,105 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
       password: pin,
     };
 
-    if (isReturningUser) {
-      try {
-        await login(creds);
-      } catch {
-        try {
-          await login({ country_code: creds.country_code, mobile: creds.mobile });
-        } catch {
-          setPinError("Could not sign in. Check your PIN and try again.");
-          setLoading(false);
-          return;
-        }
-      }
-      await refresh();
-      setLoading(false);
-      try {
-        const me = await getMe();
-        if (me.is_onboarding_complete || returningUserOnboardingDone) {
-          finishOnboardedSession();
-          return;
-        }
-      } catch {
-        if (returningUserOnboardingDone) {
-          finishOnboardedSession();
-          return;
-        }
-      }
-      resumeOnboarding();
-      return;
-    }
-
     try {
-      await signup({
-        ...creds,
-        first_name: "User",
-      });
+      await login(creds);
     } catch {
       try {
-        await login(creds);
+        await login({ country_code: creds.country_code, mobile: creds.mobile });
       } catch {
-        setPinError("Could not create your account. Try again.");
+        setPinError("Could not sign in. Check your PIN and try again.");
         setLoading(false);
         return;
       }
     }
     await refresh();
     setLoading(false);
-
     try {
       const me = await getMe();
-      if (me.is_onboarding_complete) {
+      if (me.is_onboarding_complete || returningUserOnboardingDone) {
         finishOnboardedSession();
         return;
       }
     } catch {
-      /* continue into onboarding */
+      if (returningUserOnboardingDone) {
+        finishOnboardedSession();
+        return;
+      }
+    }
+    resumeOnboarding();
+  };
+
+  const isEmailValid = (v: string) => {
+    const t = v.trim().toLowerCase();
+    return t.includes("@") && (t.split("@")[1] ?? "").includes(".");
+  };
+
+  // New user: validate every field on the single setup page, then create the
+  // account, making sure each response is persisted before onboarding continues.
+  const handleCreateAccount = async () => {
+    setNameError("");
+    setPinError("");
+    setEmailError("");
+
+    let ok = true;
+    if (!name.trim()) {
+      setNameError("Please tell us what to call you");
+      ok = false;
+    }
+    if (newPin.length < 4) {
+      setPinError("Choose a 4-digit PIN");
+      ok = false;
+    } else if (confirmPin.length < 4) {
+      setPinError("Re-enter your 4-digit PIN to confirm");
+      ok = false;
+    } else if (confirmPin !== newPin) {
+      setPinError("PINs don't match. Please try again.");
+      setConfirmPin("");
+      ok = false;
+    }
+    if (!isEmailValid(email)) {
+      setEmailError("Enter a valid email address");
+      ok = false;
+    }
+    if (!ok) return;
+
+    setLoading(true);
+    const digits = phone.replace(/\s/g, "");
+    const cleanName = name.trim();
+    const cleanEmail = email.trim().toLowerCase();
+    const creds = {
+      country_code: countryCode.code,
+      mobile: digits,
+      password: newPin,
+    };
+
+    try {
+      await signup({ ...creds, first_name: cleanName, email: cleanEmail });
+    } catch (e) {
+      // The phone may already have an account — try signing in with the PIN.
+      // If that also fails, surface the real reason (e.g. email already in use).
+      const signupMsg = e instanceof Error ? e.message : "";
+      try {
+        await login(creds);
+      } catch {
+        setEmailError(signupMsg || "Could not create your account. Please try again.");
+        setLoading(false);
+        return;
+      }
     }
 
-    resumeOnboarding();
+    // Safety net: guarantee name + email land in the users table even if the
+    // phone record already existed (so no response the user gave is lost).
+    try {
+      await updateMe({ first_name: cleanName, email: cleanEmail });
+    } catch {
+      /* non-fatal — these were already sent on signup */
+    }
+
+    await refresh();
+    setLoading(false);
+    // First onboarding step after account setup: upload the CAMS statement.
+    navigate("/cams-upload");
   };
 
   const pickCamsFile = (f: File | null) => {
@@ -298,7 +352,136 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
     );
   }
 
-  /* â”€â”€â”€ PIN Screen (existing user) â”€â”€â”€ */
+  /* ─── New user: account setup (name + PIN + confirm + email on one page) ─── */
+  if (step === "setup") {
+    return (
+      <div className="mobile-container flex flex-col bg-background px-6 pb-6 pt-12">
+        <motion.div
+          initial={{ opacity: 0, x: 40 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.35 }}
+          className="flex-1 flex flex-col overflow-y-auto"
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setStep("phone");
+              setName("");
+              setNewPin("");
+              setConfirmPin("");
+              setEmail("");
+              setNameError("");
+              setPinError("");
+              setEmailError("");
+            }}
+            className="flex items-center gap-1 text-sm text-muted-foreground mb-6 hover:text-foreground transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4" /> Back
+          </button>
+
+          <h1 className="text-xl font-semibold text-foreground mb-2">Set up your account</h1>
+          <p className="text-xs text-muted-foreground mb-1">
+            A few quick details to get you started.
+          </p>
+          <p className="text-xs font-semibold text-foreground mb-6">
+            {countryCode.code} {phone}
+          </p>
+
+          {/* Name */}
+          <div className="mb-5">
+            <label className="text-xs font-medium text-muted-foreground mb-2 block">
+              What should we call you?
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Your name"
+              className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-primary"
+            />
+            {nameError && (
+              <p className="text-xs text-destructive mt-2">{nameError}</p>
+            )}
+          </div>
+
+          {/* PIN */}
+          <div className="mb-5">
+            <label className="text-xs font-medium text-muted-foreground mb-2 block">
+              Set a 4-digit PIN
+            </label>
+            <InputOTP maxLength={4} value={newPin} onChange={setNewPin}>
+              <InputOTPGroup>
+                <InputOTPSlot index={0} />
+                <InputOTPSlot index={1} />
+                <InputOTPSlot index={2} />
+                <InputOTPSlot index={3} />
+              </InputOTPGroup>
+            </InputOTP>
+          </div>
+
+          {/* Confirm PIN */}
+          <div className="mb-5">
+            <label className="text-xs font-medium text-muted-foreground mb-2 block">
+              Confirm PIN
+            </label>
+            <InputOTP maxLength={4} value={confirmPin} onChange={setConfirmPin}>
+              <InputOTPGroup>
+                <InputOTPSlot index={0} />
+                <InputOTPSlot index={1} />
+                <InputOTPSlot index={2} />
+                <InputOTPSlot index={3} />
+              </InputOTPGroup>
+            </InputOTP>
+            <p className="text-[11px] text-muted-foreground mt-2">
+              You&apos;ll use this PIN to sign in next time.
+            </p>
+            {pinError && (
+              <p className="text-xs text-destructive mt-2">{pinError}</p>
+            )}
+          </div>
+
+          {/* Email */}
+          <div className="mb-2">
+            <label className="text-xs font-medium text-muted-foreground mb-2 block">
+              Your email
+            </label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && void handleCreateAccount()}
+              placeholder="you@example.com"
+              className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-primary"
+            />
+            {emailError && (
+              <p className="text-xs text-destructive mt-2">{emailError}</p>
+            )}
+          </div>
+        </motion.div>
+
+        <motion.button
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2, duration: 0.4 }}
+          type="button"
+          onClick={() => void handleCreateAccount()}
+          disabled={loading}
+          className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold text-primary-foreground tracking-wide transition-all active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none"
+        >
+          {loading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <>
+              Create account
+              <ArrowRight className="h-4 w-4" />
+            </>
+          )}
+        </motion.button>
+      </div>
+    );
+  }
+
+  /* ─── Returning user: PIN ─── */
   if (step === "pin") {
     return (
       <div className="mobile-container flex flex-col bg-background px-6 pb-6 pt-12">
@@ -321,12 +504,10 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
           </button>
 
           <h1 className="text-xl font-semibold text-foreground mb-2">
-            {isReturningUser ? "Welcome back" : "Set your PIN"}
+            Welcome back
           </h1>
           <p className="text-xs text-muted-foreground mb-1">
-            {isReturningUser
-              ? "Enter your 4-digit PIN to continue"
-              : "Choose a 4-digit PIN to secure your account"}
+            Enter your 4-digit PIN to continue
           </p>
           <p className="text-xs font-semibold text-foreground mb-8">
             {countryCode.code} {phone}

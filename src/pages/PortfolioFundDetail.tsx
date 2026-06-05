@@ -104,10 +104,13 @@ export default function PortfolioFundDetail() {
 
   const pos = data?.position;
   const invested = pos?.invested_amount ?? 0;
-  const current = pos?.current_value ?? 0;
-  const unrealisedGain = pos?.unrealised_gain ?? current - invested;
-  const unrealisedPct = pos?.unrealised_gain_pct ?? (invested > 0 ? (unrealisedGain / invested) * 100 : 0);
   const units = pos?.units ?? 0;
+  const latestNav = data?.latest_nav ?? last;
+  // Current value = latest NAV × units held. Fall back to the backend's value only
+  // when we have no unit count to multiply.
+  const current = units > 0 ? units * latestNav : (pos?.current_value ?? 0);
+  const unrealisedGain = current - invested;
+  const unrealisedPct = invested > 0 ? (unrealisedGain / invested) * 100 : 0;
   const avgCostPerUnit = pos?.average_cost ?? (units > 0 ? invested / units : 0);
 
   const planLabel = (data?.plan_type ?? "REGULAR").toUpperCase();
@@ -283,7 +286,7 @@ export default function PortfolioFundDetail() {
                     hint={formatPct(unrealisedPct)}
                     valueColor={unrealisedGain >= 0 ? "hsl(160 50% 38%)" : "hsl(0 84% 50%)"}
                   />
-                  <StatBlock label="Avg cost / unit" value={`₹${avgCostPerUnit.toFixed(1)}`} />
+                  <StatBlock label="Avg cost / unit" value={`₹${avgCostPerUnit.toFixed(4)}`} />
                 </div>
               )}
             </section>
