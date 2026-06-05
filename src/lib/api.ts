@@ -304,6 +304,12 @@ export interface OnboardingProfilePayload {
   annual_income_max?: number;
   annual_expense_min?: number;
   annual_expense_max?: number;
+  // Canonical household-finance scalars (personal_finance_profiles).
+  annual_income?: number;
+  monthly_household_expense?: number;
+  financial_assets?: number;
+  financial_liabilities_excl_mortgage?: number;
+  starting_monthly_investment?: number;
 }
 
 export async function saveOnboardingProfile(p: OnboardingProfilePayload) {
@@ -319,6 +325,14 @@ export interface OnboardingProfileResponse {
   date_of_birth: string | null;
   assumed_lifespan_years: number | null;
   occupation: string | null;
+  selected_goals?: string[];
+  custom_goals?: string[];
+  investment_horizon?: string | null;
+  annual_income?: number | null;
+  monthly_household_expense?: number | null;
+  financial_assets?: number | null;
+  financial_liabilities_excl_mortgage?: number | null;
+  starting_monthly_investment?: number | null;
   updated_at: string | null;
 }
 
@@ -350,10 +364,37 @@ export interface PersistOnboardingInput extends OnboardingProfilePayload {
   risk_level?: number;
 }
 
+const _midpoint = (lo?: number, hi?: number): number | undefined => {
+  const vals = [lo, hi].filter((v): v is number => typeof v === "number");
+  return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : undefined;
+};
+
 /** Save onboarding answers across users + personal_finance_profiles + risk_profiles. */
 export async function persistOnboardingProfile(input: PersistOnboardingInput): Promise<void> {
-  const { occupation, risk_choice_letter, risk_level: riskLevelInput, ...profileFields } = input;
-  await saveOnboardingProfile(profileFields);
+  const {
+    occupation,
+    risk_choice_letter,
+    risk_level: riskLevelInput,
+    annual_income_min,
+    annual_income_max,
+    annual_expense_min,
+    annual_expense_max,
+    ...profileFields
+  } = input;
+
+  // The backend stores canonical scalars (annual_income + monthly_household_expense),
+  // not the min/max ranges the onboarding UI collects — collapse them here so the
+  // answers actually persist and can be pre-filled later.
+  const annualIncome = input.annual_income ?? _midpoint(annual_income_min, annual_income_max);
+  const annualExpense = _midpoint(annual_expense_min, annual_expense_max);
+  const monthlyExpense =
+    input.monthly_household_expense ?? (annualExpense != null ? annualExpense / 12 : undefined);
+
+  await saveOnboardingProfile({
+    ...profileFields,
+    ...(annualIncome != null ? { annual_income: annualIncome } : {}),
+    ...(monthlyExpense != null ? { monthly_household_expense: monthlyExpense } : {}),
+  });
   const occupationValue = occupation?.trim();
   if (occupationValue) {
     await updatePersonalInfo({ occupation: occupationValue });

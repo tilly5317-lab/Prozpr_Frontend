@@ -2,7 +2,7 @@ import type React from "react";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, Briefcase, Calendar, Check, Plus, Target, Wallet, X, ShieldCheck, ChevronDown } from "lucide-react";
+import { ArrowRight, Briefcase, Calendar, Check, Plus, Target, Wallet, X, ShieldCheck, ChevronDown, Loader2 } from "lucide-react";
 import { persistOnboardingProfile, markOnboardingComplete } from "@/lib/api";
 import { toast } from "@/hooks/use-toast";
 
@@ -154,6 +154,10 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
   const [occupationOther, setOccupationOther] = useState("");
 
   const [openSection, setOpenSection] = useState<SectionId | null>("basic");
+  const [submitting, setSubmitting] = useState(false);
+  // Sections we've already auto-advanced away from once. After that, the tab is
+  // under manual control — reopening it won't auto-close.
+  const autoAdvancedRef = useRef<Set<SectionId>>(new Set());
 
   const isSectionComplete = (id: SectionId): boolean => {
     switch (id) {
@@ -166,13 +170,21 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
 
   const allComplete = SECTION_ORDER.every(isSectionComplete);
 
-  // Auto-advance: when the current open section becomes complete, open the next incomplete one
+  // Auto-advance: the FIRST time the open section becomes complete, open the next
+  // incomplete one. Once a section has auto-advanced once, it's marked — reopening
+  // it later (to edit) won't auto-close, so it stays open until manually closed.
   useEffect(() => {
     if (openSection == null || !isSectionComplete(openSection)) return;
+    if (autoAdvancedRef.current.has(openSection)) return;
     const currentIdx = SECTION_ORDER.indexOf(openSection);
     for (let i = currentIdx + 1; i < SECTION_ORDER.length; i++) {
       if (!isSectionComplete(SECTION_ORDER[i])) {
-        const timer = setTimeout(() => setOpenSection(SECTION_ORDER[i]), 400);
+        const from = openSection;
+        const next = SECTION_ORDER[i];
+        const timer = setTimeout(() => {
+          autoAdvancedRef.current.add(from);
+          setOpenSection(next);
+        }, 400);
         return () => clearTimeout(timer);
       }
     }
@@ -191,9 +203,11 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
   };
 
   const handleSaveAndContinue = async () => {
+    if (submitting) return;
     const dob = `${dobYear}-${String(dobMonth).padStart(2, "0")}-${String(dobDay).padStart(2, "0")}`;
     const occupationLabel =
       occupation === "Other" ? occupationOther.trim() : occupation;
+    setSubmitting(true);
     try {
       await persistOnboardingProfile({
         date_of_birth: dob,
@@ -211,6 +225,7 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Could not save your profile.";
       toast({ title: "Save failed", description: msg, variant: "destructive" });
+      setSubmitting(false);
       return;
     }
     onComplete();
@@ -476,12 +491,19 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
       {/* Fixed bottom actions */}
       <div className="fixed bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-background via-background to-transparent">
         <div className="max-w-md mx-auto flex flex-col items-center gap-3">
-          <button onClick={onBack} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
+          <button onClick={onBack} disabled={submitting} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40">
             ← Back
           </button>
-          <button onClick={handleSaveAndContinue} disabled={!allComplete}
+          <button onClick={handleSaveAndContinue} disabled={!allComplete || submitting}
             className={`flex w-full items-center justify-center gap-2 rounded-xl py-3.5 text-[15px] font-semibold tracking-wide transition-all active:scale-[0.98] disabled:pointer-events-none ${allComplete ? "bg-foreground text-background" : "bg-secondary text-muted-foreground"}`}>
-            Generate my portfolio ✦
+            {submitting ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Generating your portfolio…
+              </>
+            ) : (
+              "Generate my portfolio ✦"
+            )}
           </button>
         </div>
       </div>
