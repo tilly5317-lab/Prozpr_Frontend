@@ -1332,6 +1332,38 @@ export async function refreshPortfolioNavHistory(): Promise<PortfolioNavHistoryR
   });
 }
 
+export type NetworthJobState =
+  | "none"
+  | "pending"
+  | "running"
+  | "success"
+  | "failed";
+
+export interface NetworthJobStatus {
+  status: NetworthJobState;
+  phase: string | null;
+  progress_pct: number;
+  message: string | null;
+  history_from: string | null;
+  days_total: number | null;
+  /** True once a real net-worth series exists (skip the CTA). */
+  has_history: boolean;
+  started_at: string | null;
+  finished_at: string | null;
+}
+
+/** Poll the one-time net-worth-history backfill job (status + % completion). */
+export async function getNetworthHistoryStatus(): Promise<NetworthJobStatus> {
+  return request<NetworthJobStatus>("/portfolio/networth-history/status");
+}
+
+/** Kick off the one-time net-worth-history backfill (NAV fetch + compute). */
+export async function buildNetworthHistory(): Promise<NetworthJobStatus> {
+  return request<NetworthJobStatus>("/portfolio/networth-history/build", {
+    method: "POST",
+  });
+}
+
 // ── Goals API ───────────────────────────────────────────
 
 export interface GoalResponse {

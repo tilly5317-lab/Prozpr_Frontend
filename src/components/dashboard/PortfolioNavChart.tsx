@@ -9,7 +9,10 @@ import {
   YAxis,
 } from "recharts";
 import {
+  buildNetworthHistory,
+  getNetworthHistoryStatus,
   getPortfolioNavHistory,
+  type NetworthJobStatus,
   type PortfolioNavHistoryPoint,
   type PortfolioNavHorizon,
 } from "@/lib/api";
@@ -81,6 +84,10 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
   const [points, setPoints] = useState<PortfolioNavHistoryPoint[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [errored, setErrored] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  // One-time net-worth-history backfill job (null = not checked / no job yet).
+  const [job, setJob] = useState<NetworthJobStatus | null>(null);
+  const [starting, setStarting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -102,7 +109,73 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
     return () => {
       cancelled = true;
     };
-  }, [horizon]);
+  }, [horizon, reloadKey]);
+
+  const hasPoints = !!points && points.length > 0;
+  const jobActive = job?.status === "pending" || job?.status === "running";
+
+  // When there's no series yet, check whether a build job is already in flight
+  // (e.g. the user reloaded mid-build) so we resume showing progress.
+  useEffect(() => {
+    if (loading || hasPoints || errored) return;
+    let cancelled = false;
+    getNetworthHistoryStatus()
+      .then((s) => {
+        if (!cancelled) setJob(s);
+      })
+      .catch(() => {
+        /* leave job null — the CTA still shows */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, hasPoints, errored]);
+
+  // Poll while a build is pending/running; reload the chart once it succeeds.
+  useEffect(() => {
+    if (!jobActive) return;
+    let cancelled = false;
+    const id = window.setTimeout(() => {
+      getNetworthHistoryStatus()
+        .then((s) => {
+          if (cancelled) return;
+          setJob(s);
+          if (s.status === "success" || s.has_history) {
+            setReloadKey((k) => k + 1);
+          }
+        })
+        .catch(() => {
+          /* transient — next tick retries */
+        });
+    }, 1800);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(id);
+    };
+  }, [jobActive, job]);
+
+  const startBuild = async () => {
+    setStarting(true);
+    try {
+      const s = await buildNetworthHistory();
+      setJob(s);
+      if (s.has_history) setReloadKey((k) => k + 1);
+    } catch {
+      setJob({
+        status: "failed",
+        phase: null,
+        progress_pct: 0,
+        message: "Couldn't start. Please try again.",
+        history_from: null,
+        days_total: null,
+        has_history: false,
+        started_at: null,
+        finished_at: null,
+      });
+    } finally {
+      setStarting(false);
+    }
+  };
 
   const chartData = useMemo(() => {
     if (points && points.length) {
@@ -161,19 +234,62 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
       </div>
 
       <div className="h-36 w-full" onClick={(e) => e.stopPropagation()}>
-        {loading && (
+        {loading && !hasPoints && (
           <div className="h-full w-full flex items-center justify-center">
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-muted border-t-foreground" />
           </div>
         )}
-        {!loading && chartData.length === 0 && (
-          <div className="h-full w-full flex items-center justify-center">
-            <p className="text-[11px] text-muted-foreground">
-              {errored ? "Could not load chart." : "No NAV history yet."}
-            </p>
+        {!loading && !hasPoints && (
+          <div className="h-full w-full flex flex-col items-center justify-center gap-2 px-3 text-center">
+            {job?.status === "failed" ? (
+              <>
+                <p className="text-[11px] text-destructive">
+                  {job.message ?? "Couldn't build your net-worth history."}
+                </p>
+                <button
+                  type="button"
+                  onClick={startBuild}
+                  disabled={starting}
+                  className="rounded-full bg-accent/15 px-3 py-1.5 text-[11px] font-semibold text-accent transition-colors hover:bg-accent/25 disabled:opacity-50"
+                >
+                  Try again
+                </button>
+              </>
+            ) : jobActive ? (
+              <>
+                <div className="h-1.5 w-44 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-accent transition-all duration-500"
+                    style={{ width: `${Math.max(3, Math.round(job?.progress_pct ?? 0))}%` }}
+                  />
+                </div>
+                <p className="text-[11px] font-medium text-foreground">
+                  Calculating your net worth history… {Math.round(job?.progress_pct ?? 0)}%
+                </p>
+                {job?.message && (
+                  <p className="text-[10px] text-muted-foreground">{job.message}</p>
+                )}
+              </>
+            ) : (
+              <>
+                <p className="text-[11px] text-muted-foreground">
+                  {errored
+                    ? "Could not load chart."
+                    : "Build your real net-worth history from your statement."}
+                </p>
+                <button
+                  type="button"
+                  onClick={startBuild}
+                  disabled={starting}
+                  className="rounded-full bg-accent/15 px-3 py-1.5 text-[11px] font-semibold text-accent transition-colors hover:bg-accent/25 disabled:opacity-50"
+                >
+                  {starting ? "Starting…" : "Fetch Net Worth History"}
+                </button>
+              </>
+            )}
           </div>
         )}
-        {!loading && chartData.length > 0 && (
+        {hasPoints && (
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart
               data={chartData}
@@ -209,7 +325,7 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
               />
               <Tooltip content={<ChartTooltip />} cursor={{ stroke: "hsl(var(--border))" }} />
               <Area
-                type="monotone"
+                type="linear"
                 dataKey="total_value"
                 stroke={strokeColor}
                 strokeWidth={2}
@@ -221,7 +337,9 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
                   stroke: "hsl(var(--card))",
                   strokeWidth: 2,
                 }}
-                isAnimationActive={false}
+                isAnimationActive={true}
+                animationDuration={550}
+                animationEasing="ease-out"
               />
             </AreaChart>
           </ResponsiveContainer>
