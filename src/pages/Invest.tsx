@@ -17,7 +17,7 @@ const Invest = () => {
             Your recommended plan is ready.
           </p>
           <button
-            onClick={() => navigate("/execute")}
+            onClick={() => navigate("/rebalance-explanation")}
             className="inline-flex items-center justify-center gap-2 rounded-full text-sm font-semibold text-primary-foreground px-6 py-3 transition-colors hover:opacity-90"
             style={{ backgroundColor: "hsl(var(--wealth-navy))" }}
           >
