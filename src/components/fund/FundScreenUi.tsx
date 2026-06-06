@@ -304,6 +304,9 @@ export function NavChart({
   const revealStartedRef = useRef(false);
   const [revealDone, setRevealDone] = useState(false);
   const [revealClip, setRevealClip] = useState("inset(0 100% 0 0)");
+  const containerRef = useRef<HTMLDivElement>(null);
+  // Index into `sampled` of the NAV point under the pointer (null = not hovering).
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
   const hasData = points.length >= 2;
 
@@ -348,8 +351,26 @@ export function NavChart({
   const { linePath, areaPath, benchPath, hi, lo } = paths;
   const morphTransition = revealDone ? MORPH_TRANSITION : { duration: 0 };
 
+  // Hover read-out. The SVG stretches a 0..100 viewBox over the box
+  // (preserveAspectRatio="none"), so these percentages map straight to the
+  // overlay's CSS left/top — the guide, dot and tooltip line up with the curve.
+  const n = sampled.length;
+  const active = hoverIdx != null && hoverIdx >= 0 && hoverIdx < n ? sampled[hoverIdx]! : null;
+  const hoverXPct = active ? (hoverIdx! / (n - 1)) * 100 : 0;
+  const hoverYPct = active ? 100 - ((active.nav - lo) / (hi - lo)) * 100 : 0;
+
+  // Map a pointer x-coordinate to the nearest sampled point (mouse, touch & pen).
+  const updateHoverFromClientX = (clientX: number) => {
+    const el = containerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    if (rect.width === 0) return;
+    const frac = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    setHoverIdx(Math.round(frac * (n - 1)));
+  };
+
   return (
-    <div className="relative h-[180px] w-full">
+    <div ref={containerRef} className="relative h-[180px] w-full">
       <motion.div
         className="absolute inset-0"
         initial={false}
@@ -416,6 +437,40 @@ export function NavChart({
       <div className="pointer-events-none absolute bottom-1 right-1 text-[10px] text-muted-foreground/80">
         {formatDate(sampled[sampled.length - 1]!.date)}
       </div>
+
+      {/* Transparent layer that captures hover/touch and reports the nearest point. */}
+      <div
+        className="absolute inset-0 z-10"
+        style={{ touchAction: "none" }}
+        onPointerMove={(e) => updateHoverFromClientX(e.clientX)}
+        onPointerDown={(e) => updateHoverFromClientX(e.clientX)}
+        onPointerLeave={() => setHoverIdx(null)}
+        onPointerUp={() => setHoverIdx(null)}
+      />
+      {active && (
+        <>
+          {/* Vertical guide at the hovered date. */}
+          <div
+            className="pointer-events-none absolute bottom-0 top-0 w-px bg-foreground/25"
+            style={{ left: `${hoverXPct}%` }}
+          />
+          {/* Marker dot sitting on the NAV line. */}
+          <div
+            className="pointer-events-none absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background"
+            style={{ left: `${hoverXPct}%`, top: `${hoverYPct}%`, backgroundColor: stroke }}
+          />
+          {/* Date-wise NAV read-out, clamped so it stays inside the chart. */}
+          <div
+            className="pointer-events-none absolute top-1 z-20 -translate-x-1/2 whitespace-nowrap rounded-md border border-border/70 bg-card px-2 py-1 text-center shadow-sm"
+            style={{ left: `${Math.min(82, Math.max(18, hoverXPct))}%` }}
+          >
+            <p className="text-[10px] text-muted-foreground">{formatDate(active.date)}</p>
+            <p className="text-[12px] font-semibold tabular-nums text-foreground">
+              ₹{formatNav(active.nav)}
+            </p>
+          </div>
+        </>
+      )}
     </div>
   );
 }
