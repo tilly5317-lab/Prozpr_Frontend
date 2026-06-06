@@ -19,6 +19,7 @@ import {
 } from "@/lib/api";
 import { exportCashflowXls } from "@/lib/export-xls";
 import AnnualCashflowChart from "@/components/goals/AnnualCashflowChart";
+import CashflowGate from "@/components/goals/CashflowGate";
 
 /* ── Types ── */
 interface Holding {
@@ -1902,6 +1903,10 @@ const GoalPlanner = () => {
       </AnimatePresence>
 
       <BottomNav />
+
+      {/* Locks the page (blur + unlock card) until every cashflow input is
+          present, then loads the real projection. */}
+      <CashflowGate onReady={fetchCashflow} />
     </div>
   );
 };
