@@ -703,6 +703,9 @@ export interface PersonalInfoPayload {
   personal_values?: string[] | null;
   address?: string | null;
   currency?: string | null;
+  /** Stored on `users`; required by the cashflow / goal-planning engine. */
+  date_of_birth?: string | null;
+  assumed_lifespan_years?: number | null;
 }
 
 export interface PersonalInfoResponse {
@@ -712,6 +715,29 @@ export interface PersonalInfoResponse {
   personal_values: string[] | null;
   address: string | null;
   currency: string;
+  date_of_birth?: string | null;
+  assumed_lifespan_years?: number | null;
+}
+
+/** Canonical household-finance scalars stored on `personal_finance_profiles`. */
+export interface PersonalFinancePayload {
+  annual_income?: number | null;
+  /** Blended post-deduction rate as a fraction (e.g. 0.22), NOT a percentage. */
+  effective_tax_rate?: number | null;
+  financial_assets?: number | null;
+  financial_liabilities_excl_mortgage?: number | null;
+  monthly_household_expense?: number | null;
+  starting_monthly_investment?: number | null;
+}
+
+export interface PersonalFinanceResponse extends PersonalFinancePayload {
+  user_id: string;
+  selected_goals: string[];
+  custom_goals: string[];
+  investment_horizon: string | null;
+  wealth_sources: string[];
+  personal_values: string[];
+  updated_at: string | null;
 }
 
 export interface InvestmentProfilePayload {
@@ -827,6 +853,17 @@ export async function getPersonalInfo(): Promise<PersonalInfoResponse> {
 
 export async function updatePersonalInfo(p: PersonalInfoPayload): Promise<PersonalInfoResponse> {
   return request<PersonalInfoResponse>("/profile/personal-info", {
+    method: "PUT",
+    body: JSON.stringify(p),
+  });
+}
+
+export async function getPersonalFinance(): Promise<PersonalFinanceResponse> {
+  return request<PersonalFinanceResponse>("/profile/personal-finance");
+}
+
+export async function updatePersonalFinance(p: PersonalFinancePayload): Promise<PersonalFinanceResponse> {
+  return request<PersonalFinanceResponse>("/profile/personal-finance", {
     method: "PUT",
     body: JSON.stringify(p),
   });
@@ -1538,22 +1575,117 @@ export interface CashflowPlanRunDetail {
   monthly_cashflow: MonthlyCashflowRow[] | null;
 }
 
-export async function getCashflowLatest(): Promise<CashflowPlanRunDetail> {
-  return request<CashflowPlanRunDetail>(
-    "/cashflow/latest",
-    undefined,
-    true,
-    CHAT_REQUEST_TIMEOUT_MS,
-  );
+/**
+ * True when the error is the engine refusing to run because the user hasn't
+ * supplied the required cashflow inputs yet. The backend returns a 422 whose
+ * `detail` is `{message, missing[]}`, which `request()` stringifies into the
+ * Error message — so we parse it back. Callers treat this as "no plan yet"
+ * (the CashflowGate handles asking the user), never as a hard error.
+ */
+export function isCashflowInputsMissingError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  try {
+    const d = JSON.parse(err.message) as { missing?: unknown };
+    return d != null && typeof d === "object" && Array.isArray(d.missing);
+  } catch {
+    return false;
+  }
 }
 
-export async function computeCashflow(): Promise<CashflowPlanRunDetail> {
-  return request<CashflowPlanRunDetail>(
-    "/cashflow/compute",
-    { method: "POST" },
-    true,
-    CHAT_REQUEST_TIMEOUT_MS,
-  );
+export async function getCashflowLatest(): Promise<CashflowPlanRunDetail | null> {
+  try {
+    return await request<CashflowPlanRunDetail>(
+      "/cashflow/latest",
+      undefined,
+      true,
+      CHAT_REQUEST_TIMEOUT_MS,
+    );
+  } catch (err) {
+    if (isCashflowInputsMissingError(err)) return null;
+    throw err;
+  }
+}
+
+export async function computeCashflow(): Promise<CashflowPlanRunDetail | null> {
+  try {
+    return await request<CashflowPlanRunDetail>(
+      "/cashflow/compute",
+      { method: "POST" },
+      true,
+      CHAT_REQUEST_TIMEOUT_MS,
+    );
+  } catch (err) {
+    if (isCashflowInputsMissingError(err)) return null;
+    throw err;
+  }
+}
+
+// ── Cashflow readiness (goal-planning gate) ───────────────
+/** One required/optional input the cashflow engine needs from the user. */
+export interface CashflowReadinessField {
+  key: string;
+  label: string;
+  group: string;
+  kind: "money" | "int" | "percent" | "date";
+  unit: string | null;
+  help: string | null;
+  optional: boolean;
+  present: boolean;
+  /** Current stored value. `percent` is already scaled (e.g. 22 for 0.22). */
+  value: number | string | null;
+}
+
+export interface CashflowReadiness {
+  ready: boolean;
+  missing: string[];
+  fields: CashflowReadinessField[];
+}
+
+/** Which inputs the goal-planning / cashflow engine still needs from the user. */
+export async function getCashflowReadiness(): Promise<CashflowReadiness> {
+  return request<CashflowReadiness>("/cashflow/readiness");
+}
+
+/** Values the cashflow unlock form collects, keyed by readiness field key. */
+export interface CashflowInputValues {
+  date_of_birth?: string;
+  assumed_lifespan_years?: number;
+  retirement_age?: number;
+  annual_income?: number;
+  monthly_household_expense?: number;
+  /** Fraction (0-1). The form collects a percentage and divides before calling. */
+  effective_tax_rate?: number;
+  starting_monthly_investment?: number;
+  financial_assets?: number;
+  financial_liabilities_excl_mortgage?: number;
+}
+
+/**
+ * Persist the cashflow inputs to their canonical homes, using the dedicated
+ * (exclude_unset) profile endpoints so we never wipe untouched fields:
+ *  - PFP scalars + tax → PUT /profile/personal-finance
+ *  - date_of_birth + assumed_lifespan_years (on `users`) → PUT /profile/personal-info
+ *  - retirement_age → PUT /profile/investment
+ */
+export async function saveCashflowInputs(v: CashflowInputValues): Promise<void> {
+  const finance: PersonalFinancePayload = {};
+  if (v.annual_income != null) finance.annual_income = v.annual_income;
+  if (v.monthly_household_expense != null) finance.monthly_household_expense = v.monthly_household_expense;
+  if (v.effective_tax_rate != null) finance.effective_tax_rate = v.effective_tax_rate;
+  if (v.starting_monthly_investment != null) finance.starting_monthly_investment = v.starting_monthly_investment;
+  if (v.financial_assets != null) finance.financial_assets = v.financial_assets;
+  if (v.financial_liabilities_excl_mortgage != null)
+    finance.financial_liabilities_excl_mortgage = v.financial_liabilities_excl_mortgage;
+  if (Object.keys(finance).length > 0) await updatePersonalFinance(finance);
+
+  const personal: PersonalInfoPayload = {};
+  if (v.date_of_birth != null) personal.date_of_birth = v.date_of_birth;
+  if (v.assumed_lifespan_years != null) personal.assumed_lifespan_years = v.assumed_lifespan_years;
+  if (Object.keys(personal).length > 0) await updatePersonalInfo(personal);
+
+  if (v.retirement_age != null) await updateInvestmentProfile({ retirement_age: v.retirement_age });
+
+  invalidateUserContextCache();
 }
 
 // ── Discovery API ─────────────────────────────────────
