@@ -1,17 +1,9 @@
-import { type CSSProperties, useMemo, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import { ArrowDownLeft, ArrowRight, ArrowUpRight, Sparkles, Star, X } from "lucide-react";
-import {
-  CartesianGrid,
-  Legend,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip as RTooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { type CSSProperties } from "react";
+import { motion } from "framer-motion";
+import { ArrowRight, Sparkles } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import BottomNav from "@/components/BottomNav";
+import { trades } from "@/lib/rebalanceTrades";
 
 type DriftRow = {
   key: string;
@@ -22,147 +14,11 @@ type DriftRow = {
   amountText: string;
 };
 
-type TradeBucket = "equity" | "debt" | "gold" | "cash";
-
-type Trade = {
-  id: string;
-  type: "BUY" | "SELL";
-  bucket: TradeBucket;
-  amount: string;
-  subtitle: string;
-  fund: {
-    name: string;
-    category: string;
-    amc: string;
-    benchmark: string;
-    risk: "Low" | "Moderate" | "High";
-    stars: number;
-    aum: string;
-    nav: string;
-    expenseRatio: string;
-    returns1Y: string;
-    returns3Y: string;
-    rationale: string;
-    series: { label: string; fund: number; benchmark: number }[];
-  };
-};
-
 const driftRows: DriftRow[] = [
   { key: "equity", label: "Equity", color: "#3B6FA8", current: 54, target: 48, amountText: "6% overweight · +₹75K" },
   { key: "debt", label: "Debt", color: "#A8872F", current: 24, target: 28, amountText: "4% underweight · -₹50K" },
   { key: "gold", label: "Gold", color: "#E0B84A", current: 14, target: 16, amountText: "2% underweight · -₹25K" },
   { key: "cash", label: "Cash", color: "#F1DA9B", current: 8, target: 8, amountText: "On target" },
-];
-
-const trades: Trade[] = [
-  {
-    id: "parag-parikh",
-    type: "SELL",
-    bucket: "equity",
-    amount: "₹45,000",
-    subtitle: "Trim equity overweight",
-    fund: {
-      name: "Parag Parikh Flexi Cap",
-      category: "Flexi Cap Equity",
-      amc: "PPFAS",
-      benchmark: "Nifty 500 TRI",
-      risk: "Moderate",
-      stars: 5,
-      aum: "₹69,400 Cr",
-      nav: "₹84.21",
-      expenseRatio: "0.64%",
-      returns1Y: "+19.4%",
-      returns3Y: "+18.2%",
-      rationale: "High overlap with existing equity sleeve and currently above target weight. Partial trim helps normalize equity risk without full exit.",
-      series: [
-        { label: "Start", fund: 0, benchmark: 0 },
-        { label: "1Y", fund: 19.4, benchmark: 15.1 },
-        { label: "3Y", fund: 38.2, benchmark: 30.5 },
-        { label: "5Y", fund: 82.7, benchmark: 63.1 },
-      ],
-    },
-  },
-  {
-    id: "mirae-large-cap",
-    type: "SELL",
-    bucket: "equity",
-    amount: "₹30,000",
-    subtitle: "Trim equity overweight",
-    fund: {
-      name: "Mirae Large Cap",
-      category: "Large Cap Equity",
-      amc: "Mirae Asset",
-      benchmark: "Nifty 100 TRI",
-      risk: "Moderate",
-      stars: 4,
-      aum: "₹41,250 Cr",
-      nav: "₹122.47",
-      expenseRatio: "0.52%",
-      returns1Y: "+16.8%",
-      returns3Y: "+14.1%",
-      rationale: "Large-cap bucket is overweight against target. This sell keeps core equity exposure while reducing concentration.",
-      series: [
-        { label: "Start", fund: 0, benchmark: 0 },
-        { label: "1Y", fund: 16.8, benchmark: 13.3 },
-        { label: "3Y", fund: 31.2, benchmark: 27.5 },
-        { label: "5Y", fund: 58.6, benchmark: 49.2 },
-      ],
-    },
-  },
-  {
-    id: "icici-corp-bond",
-    type: "BUY",
-    bucket: "debt",
-    amount: "₹50,000",
-    subtitle: "Restore debt allocation",
-    fund: {
-      name: "ICICI Prudential Corp Bond",
-      category: "Corporate Bond",
-      amc: "ICICI Prudential",
-      benchmark: "CRISIL Corporate Bond A-II",
-      risk: "Low",
-      stars: 5,
-      aum: "₹29,800 Cr",
-      nav: "₹28.92",
-      expenseRatio: "0.25%",
-      returns1Y: "+7.8%",
-      returns3Y: "+7.4%",
-      rationale: "Debt is under target. This buy stabilizes drawdown risk and improves balance between growth and preservation buckets.",
-      series: [
-        { label: "Start", fund: 0, benchmark: 0 },
-        { label: "1Y", fund: 7.8, benchmark: 7.2 },
-        { label: "3Y", fund: 15.6, benchmark: 14.5 },
-        { label: "5Y", fund: 32.4, benchmark: 29.8 },
-      ],
-    },
-  },
-  {
-    id: "sgb-series-x",
-    type: "BUY",
-    bucket: "gold",
-    amount: "₹25,000",
-    subtitle: "Restore gold allocation",
-    fund: {
-      name: "SGB Series X (Nov '24)",
-      category: "Sovereign Gold Bond",
-      amc: "RBI",
-      benchmark: "Domestic Gold Spot",
-      risk: "Moderate",
-      stars: 4,
-      aum: "Govt issue",
-      nav: "Issue linked",
-      expenseRatio: "Nil",
-      returns1Y: "+12.4%",
-      returns3Y: "+11.1%",
-      rationale: "Gold allocation is below target and helps improve macro hedge coverage during equity volatility windows.",
-      series: [
-        { label: "Start", fund: 0, benchmark: 0 },
-        { label: "1Y", fund: 12.4, benchmark: 11.8 },
-        { label: "3Y", fund: 24.7, benchmark: 22.9 },
-        { label: "5Y", fund: 46.1, benchmark: 42.4 },
-      ],
-    },
-  },
 ];
 
 const cardStyle: CSSProperties = {
@@ -172,14 +28,7 @@ const cardStyle: CSSProperties = {
 };
 
 const RebalanceExplanation = () => {
-  const [selectedTrade, setSelectedTrade] = useState<Trade | null>(null);
-
-  const riskBadge = useMemo(() => {
-    if (!selectedTrade) return { bg: "#24324A", fg: "#9DB7E6" };
-    if (selectedTrade.fund.risk === "Low") return { bg: "#163128", fg: "#5FD3A2" };
-    if (selectedTrade.fund.risk === "High") return { bg: "#3A1E20", fg: "#F09595" };
-    return { bg: "#3D321C", fg: "#EACB73" };
-  }, [selectedTrade]);
+  const navigate = useNavigate();
 
   return (
     <div className="mobile-container bg-background min-h-screen pb-24">
@@ -306,7 +155,7 @@ const RebalanceExplanation = () => {
                       <button
                         key={trade.id}
                         type="button"
-                        onClick={() => setSelectedTrade(trade)}
+                        onClick={() => navigate(`/rebalance-explanation/trade/${trade.id}`)}
                         className="w-full py-2.5 text-left flex items-center gap-3"
                       >
                         <span
@@ -340,153 +189,6 @@ const RebalanceExplanation = () => {
         </button>
       </div>
 
-      <AnimatePresence>
-        {selectedTrade && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-50 bg-black/60 backdrop-blur-[2px]"
-              onClick={() => setSelectedTrade(null)}
-            />
-            <div
-              className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 pointer-events-none"
-              role="dialog"
-              aria-modal="true"
-            >
-              <motion.div
-                initial={{ opacity: 0, y: 12, scale: 0.97 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 8, scale: 0.97 }}
-                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                className="relative w-full max-w-md rounded-2xl text-white overflow-hidden pointer-events-auto"
-                style={{ background: "#1c1c1b", maxHeight: "min(94dvh, 720px)", display: "flex", flexDirection: "column" }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="shrink-0 flex items-center justify-end px-4 pt-2 pb-1">
-                  <button
-                    onClick={() => setSelectedTrade(null)}
-                    className="h-7 w-7 rounded-full flex items-center justify-center text-[#9CA6BF] hover:text-white hover:bg-white/10 transition-colors"
-                    aria-label="Close"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-                <div
-                  className="flex-1 min-h-0 overflow-y-auto px-5"
-                  style={{ paddingBottom: "1rem" }}
-                >
-                <div className="flex items-center gap-2">
-                  {selectedTrade.type === "BUY" ? (
-                    <ArrowDownLeft className="h-4 w-4 text-[#3FD998]" />
-                  ) : (
-                    <ArrowUpRight className="h-4 w-4 text-[#FF6559]" />
-                  )}
-                  <p className="text-[10.5px] tracking-[0.12em] uppercase text-[#8E98B0]">{selectedTrade.type} trade details</p>
-                </div>
-                <h3 className="mt-1 text-[15px] font-semibold leading-tight text-[#ECF1FF]">{selectedTrade.fund.name}</h3>
-                <p className="text-[11px] text-[#97A3BE] leading-tight">{selectedTrade.fund.amc} · {selectedTrade.fund.category} · {selectedTrade.fund.benchmark}</p>
-                <div className="mt-2 flex items-center gap-2">
-                  <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ backgroundColor: riskBadge.bg, color: riskBadge.fg }}>
-                    Risk · {selectedTrade.fund.risk}
-                  </span>
-                  <div className="flex items-center gap-0.5">
-                    {[1, 2, 3, 4, 5].map((n) => (
-                      <Star key={n} className="h-3 w-3" style={{ color: "#E3C061", fill: n <= selectedTrade.fund.stars ? "#E3C061" : "transparent" }} />
-                    ))}
-                  </div>
-                </div>
-
-                <div
-                  className="mt-3 rounded-xl px-3 py-2"
-                  style={{
-                    border: "1px solid rgba(212, 168, 104, 0.45)",
-                    backgroundColor: "#F5EEDC",
-                  }}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <p
-                      className="text-[10px] uppercase tracking-[1.4px]"
-                      style={{ color: "#5C4313", fontWeight: 700 }}
-                    >
-                      Prozpr rating
-                    </p>
-                    <div className="flex shrink-0 items-center gap-0.5" aria-hidden="true">
-                      {[0, 1, 2, 3].map((i) => (
-                        <Star
-                          key={i}
-                          className="h-3.5 w-3.5"
-                          style={{ color: "#D4A868", fill: "#D4A868" }}
-                        />
-                      ))}
-                      <Star
-                        className="h-3.5 w-3.5"
-                        style={{ color: "#D4A868", fill: "url(#trade-half-star-gradient)" }}
-                      />
-                      <svg width="0" height="0" className="absolute" aria-hidden="true">
-                        <defs>
-                          <linearGradient id="trade-half-star-gradient">
-                            <stop offset="50%" stopColor="#D4A868" />
-                            <stop offset="50%" stopColor="transparent" />
-                          </linearGradient>
-                        </defs>
-                      </svg>
-                    </div>
-                  </div>
-                  <p
-                    className="mt-0.5 text-[11px] leading-snug"
-                    style={{ color: "#2E2207" }}
-                  >
-                    Strong 5-year risk-adjusted returns with below-peer drawdowns. Stable
-                    management and a diversified mandate keep it in our top quartile.
-                  </p>
-                </div>
-
-                <div className="mt-2 rounded-xl border border-[#2a2a28] bg-[#252523] px-3 py-2">
-                  <p className="text-[10px] uppercase tracking-[0.14em] text-[#8E98B0]">Why this trade</p>
-                  <p className="mt-0.5 text-[11.5px] leading-snug text-[#D0D8EC]">{selectedTrade.fund.rationale}</p>
-                </div>
-
-                <p className="mt-3 text-[10.5px] uppercase tracking-[0.14em] text-[#7E879C]">Performance vs benchmark</p>
-                <div className="mt-1" style={{ height: 110 }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={selectedTrade.fund.series} margin={{ top: 4, right: 8, left: -12, bottom: 4 }}>
-                      <CartesianGrid stroke="#2a2a28" vertical={false} />
-                      <XAxis dataKey="label" tick={{ fill: "#8A94AC", fontSize: 10 }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fill: "#8A94AC", fontSize: 10 }} axisLine={false} tickLine={false} width={32} />
-                      <RTooltip
-                        contentStyle={{ background: "#1c1c1b", border: "1px solid #2a2a28", borderRadius: 8, fontSize: 11 }}
-                      />
-                      <Legend wrapperStyle={{ fontSize: 10, color: "#A3ADC4" }} />
-                      <Line type="monotone" dataKey="fund" name="Fund" stroke="#3FD998" strokeWidth={2} dot={{ r: 2.5 }} />
-                      <Line type="monotone" dataKey="benchmark" name="Benchmark" stroke="#6C7897" strokeWidth={1.8} dot={false} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-
-                <p className="mt-2 text-[10.5px] uppercase tracking-[0.14em] text-[#7E879C]">Key stats</p>
-                <div className="mt-1 grid grid-cols-3 gap-x-3 gap-y-1.5">
-                  {[
-                    { label: "Amount", value: selectedTrade.amount },
-                    { label: "Expense ratio", value: selectedTrade.fund.expenseRatio },
-                    { label: "AUM", value: selectedTrade.fund.aum },
-                    { label: "NAV", value: selectedTrade.fund.nav },
-                    { label: "1Y return", value: selectedTrade.fund.returns1Y },
-                    { label: "3Y CAGR", value: selectedTrade.fund.returns3Y },
-                  ].map((item) => (
-                    <div key={item.label}>
-                      <p className="text-[9.5px] uppercase text-[#7E879C] leading-tight">{item.label}</p>
-                      <p className="text-[12px] font-semibold text-[#ECF1FF] leading-tight">{item.value}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              </motion.div>
-            </div>
-          </>
-        )}
-      </AnimatePresence>
       <BottomNav />
     </div>
   );
