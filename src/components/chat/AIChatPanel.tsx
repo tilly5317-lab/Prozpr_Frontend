@@ -1328,7 +1328,7 @@ const AIChatPanel = ({
               </div>
               {showBackToInvest && i === 0 && msg.role === "ai" && (
                 <button
-                  onClick={() => navigate("/execute")}
+                  onClick={() => navigate("/rebalance-explanation")}
                   className="ml-7 mt-2 self-start flex items-center gap-3 rounded-xl px-4 py-3 transition-opacity hover:opacity-90"
                   style={{ backgroundColor: "hsl(220, 40%, 20%)" }}
                 >
@@ -1347,7 +1347,7 @@ const AIChatPanel = ({
               {msg.showViewExecutePlan ? (
                 <button
                   type="button"
-                  onClick={() => navigate("/execute")}
+                  onClick={() => navigate("/rebalance-explanation")}
                   className="ml-7 mt-2 self-start flex items-center gap-3 rounded-xl px-4 py-3 transition-opacity hover:opacity-90 border border-primary/25 bg-primary/5"
                 >
                   <div className="flex flex-col text-left">

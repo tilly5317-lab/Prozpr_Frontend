@@ -2017,3 +2017,136 @@ export async function updateRebalancingStatus(
     body: JSON.stringify({ status }),
   });
 }
+
+// ── Rebalancing run detail (normalized) ─────────────────
+// The /rebalancing endpoints return the normalized rebalancing_* family — a run
+// with totals + subgroup roll-ups + the BUY/SELL/EXIT trades. These typed
+// helpers back the /invest page; the legacy `recommendation_data` shape above is
+// kept only for the old orphaned page.
+
+export interface RebalancingTrade {
+  id: string;
+  isin: string;
+  recommended_fund: string;
+  asset_subgroup: string;
+  sub_category: string;
+  action: string; // "BUY" | "SELL" | "EXIT"
+  amount_inr: number;
+  reason_code: string;
+  reason_title: string;
+  reason_text: string;
+  execution_status: string;
+}
+
+export interface RebalancingTotals {
+  total_buy_inr: number;
+  total_sell_inr: number;
+  net_cash_flow_inr: number;
+  total_tax_estimate_inr: number;
+  total_stcg_realised: number;
+  total_ltcg_realised: number;
+  funds_to_buy_count: number;
+  funds_to_sell_count: number;
+  funds_to_exit_count: number;
+  funds_held_count: number;
+}
+
+export interface RebalancingSubgroupSummary {
+  asset_subgroup: string;
+  goal_target_inr: number;
+  current_holding_inr: number;
+  suggested_final_holding_inr: number;
+  rebalance_inr: number;
+  total_buy_inr: number;
+  total_sell_inr: number;
+}
+
+export interface RebalancingRunListItem {
+  id: string;
+  portfolio_id: string;
+  source_allocation_run_id: string;
+  status: RebalancingStatus;
+  engine_version: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RebalancingRunDetail extends RebalancingRunListItem {
+  totals: RebalancingTotals | null;
+  subgroup_summaries: RebalancingSubgroupSummary[];
+  trades: RebalancingTrade[];
+  warnings: { code: string; message: string; affected_isins: string[] }[];
+}
+
+/** Latest-first list of the user's rebalancing runs. */
+export async function listRebalancingRuns(): Promise<RebalancingRunListItem[]> {
+  return request<RebalancingRunListItem[]>("/rebalancing/");
+}
+
+/** Full run detail — totals + trades + subgroup roll-ups + warnings. */
+export async function getRebalancingRunDetail(runId: string): Promise<RebalancingRunDetail> {
+  return request<RebalancingRunDetail>(`/rebalancing/${runId}`);
+}
+
+// ── Rebalancing readiness / unlock gate ─────────────────
+// Mirrors the cashflow readiness gate (see saveCashflowInputs). The field list
+// is driven entirely by the backend so the unlock form stays in sync with what
+// the engine actually requires.
+
+export interface RebalancingReadinessField {
+  key: string;
+  label: string;
+  group: string;
+  kind: string; // "date" | "money" | "int" | "percent"
+  unit?: string | null;
+  help?: string | null;
+  optional?: boolean;
+  present: boolean;
+  value?: number | string | null;
+}
+
+export interface RebalancingReadiness {
+  ready: boolean;
+  missing: string[];
+  fields: RebalancingReadinessField[];
+  /** False → user has no MF holdings; the gate shows a "connect portfolio" CTA. */
+  has_holdings: boolean;
+}
+
+export async function getRebalancingReadiness(): Promise<RebalancingReadiness> {
+  return request<RebalancingReadiness>("/rebalancing/readiness");
+}
+
+export interface RebalancingInputValues {
+  date_of_birth?: string;
+}
+
+/**
+ * Persist the rebalancing inputs to their canonical homes (same pattern as
+ * saveCashflowInputs): date_of_birth lives on `users` → PUT /profile/personal-info.
+ * Holdings aren't a form field — the gate links to the connect-portfolio flow.
+ */
+export async function saveRebalancingInputs(v: RebalancingInputValues): Promise<void> {
+  const personal: PersonalInfoPayload = {};
+  if (v.date_of_birth != null) personal.date_of_birth = v.date_of_birth;
+  if (Object.keys(personal).length > 0) await updatePersonalInfo(personal);
+  invalidateUserContextCache();
+}
+
+export interface RebalancingComputeResponse {
+  answer_markdown: string;
+  recommendation_id: string | null;
+  blocking_message: string | null;
+}
+
+/** Run the rebalancing engine directly (no chat). Persists a rebalancing run. */
+export async function runRebalancing(
+  question = "Rebalance my portfolio",
+): Promise<RebalancingComputeResponse> {
+  return request<RebalancingComputeResponse>(
+    "/ai-modules/rebalancing/compute",
+    { method: "POST", body: JSON.stringify({ question }) },
+    true,
+    CHAT_REQUEST_TIMEOUT_MS,
+  );
+}
