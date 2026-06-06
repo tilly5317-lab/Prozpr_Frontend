@@ -26,6 +26,7 @@ import MfAllFunds from "./pages/MfAllFunds";
 import MfFundDetail from "./pages/MfFundDetail";
 import AdvisorMeetings from "./pages/AdvisorMeetings";
 import OTP from "./pages/OTP";
+import CamsUpload from "./pages/CamsUpload";
 import LinkAccounts from "./pages/LinkAccounts";
 import AboutYou from "./pages/AboutYou";
 import Portfolio from "./pages/Portfolio";
@@ -55,6 +56,7 @@ const App = () => (
             <Route path="/portfolio-popup" element={<PortfolioPopup />} />
             <Route path="/voice-onboarding" element={<VoiceOnboarding />} />
             <Route path="/otp" element={<OTP />} />
+            <Route path="/cams-upload" element={<CamsUpload />} />
             <Route path="/link-accounts" element={<LinkAccounts />} />
             <Route path="/onboarding-loading" element={<OnboardingLoading />} />
             <Route path="/about-you" element={<AboutYou />} />
