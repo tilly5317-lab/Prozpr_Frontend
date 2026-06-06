@@ -8,13 +8,17 @@ import {
   getFullProfile,
   getOnboardingProfile,
   updatePersonalInfo,
+  updatePersonalFinance,
   updateInvestmentProfile,
+  updateCurrentProperties,
+  saveOtherAssets,
   updateRiskProfile,
   updateConstraints,
   updateTaxProfile,
   updateReviewPreference,
   RISK_CATEGORIES,
   BackendOfflineError,
+  type CurrentPropertyPayload,
   type FullProfileResponse,
 } from "@/lib/api";
 
@@ -450,6 +454,14 @@ const toNum = (s: string): number | null => {
   const n = Number(cleaned);
   return Number.isNaN(n) ? null : n;
 };
+/* ── Parse a loose date string (e.g. "Mar 2042", "2042-03-01") → ISO yyyy-mm-dd ── */
+const toIsoDate = (s: string): string | null => {
+  const t = s.trim();
+  if (!t) return null;
+  const ms = Date.parse(t);
+  if (Number.isNaN(ms)) return null;
+  return new Date(ms).toISOString().slice(0, 10);
+};
 /* ── Format INR ── */
 const formatINR = (v: number) => {
   if (v >= 100000000) return "₹10 Cr+";
@@ -649,7 +661,6 @@ const CompleteProfile = () => {
   const [riskCapacity, setRiskCapacity] = useState("");
   const [investmentExperience, setInvestmentExperience] = useState("");
   const [investmentHorizon, setInvestmentHorizon] = useState("");
-  const [planningUntilAge, setPlanningUntilAge] = useState("");
   const [showBehavModal, setShowBehavModal] = useState(false);
   const [investmentPref, setInvestmentPref] = useState("");
   const [behavQ1, setBehavQ1] = useState("");
@@ -883,27 +894,82 @@ const CompleteProfile = () => {
   const confirmSection = useCallback(async (idx: number) => {
     try {
       switch (idx) {
-        case 0:
+        case 0: {
+          // 1) Personal info → users + personal_finance_profiles (lists).
+          const sources = [...primaryWealthSource];
+          if (sources.includes("Others") && wealthSourceOtherText.trim()) {
+            sources[sources.indexOf("Others")] = wealthSourceOtherText.trim();
+          }
+          const personalValuesList = values
+            .split(",")
+            .map((v) => v.trim())
+            .filter(Boolean);
+          await updatePersonalInfo({
+            occupation: occupation.trim() || null,
+            wealth_sources: sources.length ? sources : null,
+            personal_values: personalValuesList.length ? personalValuesList : null,
+            family_status: `${earningMembers || "0"} earning, ${dependents || "0"} dependents`,
+          });
+
+          // 2) Household cashflow scalars → personal_finance_profiles.
+          // "Annual expense" is stored as monthly_household_expense (÷12).
+          const annualExpenseNum = toNum(annualExpense);
+          await updatePersonalFinance({
+            annual_income: toNum(annualIncome),
+            financial_assets: toNum(investableAssets),
+            financial_liabilities_excl_mortgage: toNum(liabilities),
+            monthly_household_expense:
+              annualExpenseNum != null ? Math.round(annualExpenseNum / 12) : null,
+            starting_monthly_investment: toNum(monthlyInvestment),
+          });
+
+          // 3) Investment-profile scalars → investment_profiles.
           await updateInvestmentProfile({
-            investable_assets: toNum(investableAssets),
-            total_liabilities: toNum(liabilities),
-            property_value: ownsHome ? toNum(properties[0]?.value) : null,
-            mortgage_amount: ownsHome ? toNum(properties[0]?.mortgage) : null,
-            planned_major_expenses: plannedExpenses.reduce((sum, e) => sum + (toNum(e.amount) ?? 0), 0) || null,
+            planned_major_expenses:
+              plannedExpenses.reduce((sum, e) => sum + (toNum(e.amount) ?? 0), 0) || null,
+            expected_inflows:
+              largeIncomes.reduce((sum, i) => sum + (toNum(i.amount) ?? 0), 0) || null,
             emergency_fund: toNum(emergencyFund),
             emergency_fund_months: emergencyTimeframe || null,
           });
-          {
-            const sources = [...primaryWealthSource];
-            if (sources.includes("Others") && wealthSourceOtherText.trim()) {
-              sources[sources.indexOf("Others")] = wealthSourceOtherText.trim();
-            }
-            await updatePersonalInfo({
-              wealth_sources: sources.length ? sources : null,
-              family_status: `${earningMembers || "0"} earning, ${dependents || "0"} dependents`,
-            });
+
+          // 4) Owned properties → user_current_properties (full replace; [] clears).
+          const propertyRows: CurrentPropertyPayload[] = ownsHome
+            ? properties
+                .map((p, i): CurrentPropertyPayload | null => {
+                  const value = toNum(p.value);
+                  const emi = toNum(p.monthlyRepayment);
+                  const endDate = toIsoDate(p.mortgageEndDate);
+                  // A mortgage row is only valid when EMI + end date are both
+                  // present (backend requires them when has_mortgage is true).
+                  const hasMortgage = (toNum(p.mortgage) ?? 0) > 0 && emi != null && endDate != null;
+                  // Skip fully-empty property rows.
+                  if (value == null && !hasMortgage) return null;
+                  return {
+                    name: properties.length > 1 ? `Property ${i + 1}` : "Primary residence",
+                    property_value: value,
+                    has_mortgage: hasMortgage,
+                    mortgage_emi: hasMortgage ? emi : null,
+                    mortgage_end_date: hasMortgage ? endDate : null,
+                  };
+                })
+                .filter((p): p is CurrentPropertyPayload => p !== null)
+            : [];
+          await updateCurrentProperties(propertyRows);
+
+          // 5) Other assets → other_investments (only when filled, to avoid
+          // wiping the list on a partial edit).
+          if (otherAssetDescription.trim()) {
+            await saveOtherAssets([
+              {
+                asset_name: otherAssetDescription.trim(),
+                asset_type: null,
+                current_value: toNum(otherAssetsValue),
+              },
+            ]);
           }
           break;
+        }
         case 1:
           await updateInvestmentProfile({
             objectives: selectedObjectives.length ? selectedObjectives : null,
@@ -955,6 +1021,7 @@ const CompleteProfile = () => {
     toast.success(`Section ${idx + 1} confirmed ✓`);
   }, [
     occupation, primaryResidence, earningMembers, dependents, values,
+    annualIncome, annualExpense, monthlyInvestment, wealthSourceOtherText, otherAssetDescription,
     primaryWealthSource, investableAssets, liabilities, properties, plannedExpenses, emergencyFund, emergencyTimeframe, otherAssets, otherAssetsValue, ownsHome, expectingLargeIncome, largeIncomes,
     selectedObjectives, goalDetails,
     riskLevelIdx, riskCapacity, investmentExperience, investmentHorizon, horizonNotes, behavQ1, behavQ2, behavQ3, maxDrawdown, comfortAssets,
@@ -1461,17 +1528,6 @@ const CompleteProfile = () => {
                 ))}
               </div>
             </div>
-
-            {/* Planning horizon — how far out should we plan? */}
-            <div>
-              <FieldLabel>Plan until what age?</FieldLabel>
-              <TextInput
-                value={planningUntilAge}
-                onChange={setPlanningUntilAge}
-                placeholder="e.g. 75"
-              />
-            </div>
-
 
             {/* Behavioural Risk Assessment — opens modal */}
             <div>

@@ -1,22 +1,9 @@
 import { useNavigate } from "react-router-dom";
-import { DiscoverScreen } from "@/components/discover/DiscoverScreen";
+import { MfExploreHub } from "@/components/discover/MfExploreHub";
 
 const Discovery = () => {
   const navigate = useNavigate();
-  const goRebalanceExplanation = () => navigate("/rebalance-explanation");
-  return (
-    <DiscoverScreen
-      title="Discover"
-      subtitle="Top-rated funds, curated for you"
-      onBack={() => navigate("/")}
-      showRecommendedPlanCard
-      showPlanReadyPopup
-      onRecommendedPlanClick={goRebalanceExplanation}
-      onStartInvesting={goRebalanceExplanation}
-      onInvestNow={goRebalanceExplanation}
-      primaryCtaLabel="Start Investing"
-    />
-  );
+  return <MfExploreHub onBack={() => navigate("/")} />;
 };
 
 export default Discovery;

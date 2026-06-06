@@ -175,7 +175,7 @@ function DiscoverEntryCard() {
   return (
     <motion.button
       type="button"
-      onClick={() => navigate("/discovery/mf")}
+      onClick={() => navigate("/discovery")}
       className="relative w-full flex items-center gap-3 rounded-[14px] p-[14px] text-left transition-all hover:shadow-sm active:scale-[0.99]"
       style={{
         background: "linear-gradient(135deg, #4A380F 0%, #2D1F05 100%)",
