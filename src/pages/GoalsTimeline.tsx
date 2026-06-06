@@ -23,6 +23,7 @@ import {
   Plane,
   Plus,
   RotateCcw,
+  Settings2,
   Trophy,
   X,
 } from "lucide-react";
@@ -42,6 +43,7 @@ import {
   type GoalResponse,
 } from "@/lib/api";
 import { exportCashflowXls } from "@/lib/export-xls";
+import CashflowGate from "@/components/goals/CashflowGate";
 
 type Priority = "Low" | "Medium" | "High";
 
@@ -1248,6 +1250,8 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   // Transient extra extent revealed while dragging a goal past the bottom row.
   const [revealEndYear, setRevealEndYear] = useState<number | null>(null);
 
+  // Bumped by the Settings button to open the cashflow-inputs editor in CashflowGate.
+  const [editSignal, setEditSignal] = useState(0);
   const [cashflowData, setCashflowData] = useState<CashflowPlanRunDetail | null>(null);
   const [cashflowLoading, setCashflowLoading] = useState(false);
   const [cashflowError, setCashflowError] = useState<string | null>(null);
@@ -1316,8 +1320,20 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   useEffect(() => { fetchCashflow(); }, [fetchCashflow]);
 
   useEffect(() => {
-    if (cashflowData?.annual_cashflow?.[0]) {
-      setMonthlyContrib(Math.round(cashflowData.annual_cashflow[0].monthly_investment));
+    // The "Invest /mo" figure must be a MONTHLY value. The monthly cashflow row
+    // carries the true per-month investment (e.g. ₹10k); the annual row's
+    // `monthly_investment` is actually the FY total (12 months summed), so fall
+    // back to annual ÷ 12 only when monthly rows aren't available.
+    const firstMonth = cashflowData?.monthly_cashflow?.[0];
+    const annualRows = cashflowData?.annual_cashflow;
+    if (firstMonth) {
+      setMonthlyContrib(Math.round(firstMonth.monthly_investment));
+    } else if (annualRows?.length) {
+      // Fallback when monthly rows aren't persisted: the annual row's
+      // `monthly_investment` is an FY TOTAL. Use a FULL fiscal year (index 1 —
+      // index 0 is the partial first FY) and divide by 12 to recover a monthly.
+      const fullFy = annualRows[1] ?? annualRows[0];
+      setMonthlyContrib(Math.round(fullFy.monthly_investment / 12));
     }
   }, [cashflowData]);
 
@@ -1695,6 +1711,17 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
             </button>
           )}
           <div className="ml-auto flex items-center gap-2">
+            {/* Open the cashflow-inputs editor (view + edit the figures the
+                projection runs on). */}
+            <button
+              type="button"
+              onClick={() => setEditSignal((n) => n + 1)}
+              className="shrink-0 inline-flex items-center gap-1 rounded-full border border-[#D4A868]/50 bg-card px-2.5 py-0.5 text-[11px] font-semibold text-[#D4A868] hover:bg-[#D4A868]/10"
+              aria-label="Edit cashflow inputs"
+            >
+              <Settings2 className="h-3 w-3" />
+              Inputs
+            </button>
             {goalsLoading && (
               <span className="text-[10px] text-muted-foreground">Goals…</span>
             )}
@@ -1728,6 +1755,10 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                     setCashflowError(null);
                     computeCashflow()
                       .then((res) => {
+                        if (!res) {
+                          setCashflowError("Complete the required inputs to run goal planning.");
+                          return;
+                        }
                         setCashflowData(res);
                         toast.success("Cashflow projection ready");
                       })
@@ -2455,6 +2486,11 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
       </div>
 
       <BottomNav />
+
+      {/* Locks the goal-planning page (blur + unlock card) until every cashflow
+          input is present, then loads the real projection. The Settings/"Inputs"
+          button bumps editSignal to reopen the form for viewing/editing. */}
+      <CashflowGate onReady={fetchCashflow} editSignal={editSignal} />
     </div>
   );
 };
