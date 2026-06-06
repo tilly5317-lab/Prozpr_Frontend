@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Slider } from "@/components/ui/slider";
 import {
   getFullProfile,
+  getOnboardingProfile,
   updatePersonalInfo,
   updateInvestmentProfile,
   updateRiskProfile,
@@ -787,6 +788,41 @@ const CompleteProfile = () => {
             });
             setAllocations((prev) => ({ ...prev, ...loaded }));
           }
+        }
+
+        // Prefill the household-finance answers captured during onboarding
+        // (DOB, annual income & expense, assets/liabilities, monthly investment).
+        // These live on personal_finance_profiles and aren't part of getFullProfile.
+        try {
+          const op = await getOnboardingProfile();
+          if (!cancelled) {
+            if (op.annual_income != null) {
+              setAnnualIncome(String(Math.round(op.annual_income)));
+            }
+            if (op.monthly_household_expense != null) {
+              setAnnualExpense(String(Math.round(op.monthly_household_expense * 12)));
+            }
+            if (op.starting_monthly_investment != null) {
+              setMonthlyInvestment((cur) => cur || parseNum(String(op.starting_monthly_investment)));
+            }
+            if (op.financial_assets != null) {
+              setInvestableAssets((cur) => cur || parseNum(String(op.financial_assets)));
+            }
+            if (op.financial_liabilities_excl_mortgage != null) {
+              setLiabilities((cur) => cur || parseNum(String(op.financial_liabilities_excl_mortgage)));
+            }
+            if (op.investment_horizon) {
+              setInvestmentHorizon((cur) => cur || op.investment_horizon || "");
+            }
+            if (op.date_of_birth) {
+              const [y, m, d] = op.date_of_birth.split("-");
+              if (y) setDobYear(y);
+              if (m) setDobMonth(String(Number(m)));
+              if (d) setDobDay(String(Number(d)));
+            }
+          }
+        } catch {
+          // No onboarding profile yet — nothing to prefill.
         }
 
         setStatuses(newStatuses);
