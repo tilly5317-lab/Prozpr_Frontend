@@ -25,8 +25,6 @@ import {
   type LinkAccountInfo,
 } from "@/lib/api";
 import ReactMarkdown from "react-markdown";
-import { ChartRenderer } from "@/components/chat/visualization_tools";
-import type { ChartPayload } from "@/components/chat/visualization_tools";
 import remarkGfm from "remark-gfm";
 
 const PENDING_CHAT_BOOTSTRAP_KEY = "asktilly.pendingChatBootstrap.v1";
@@ -64,7 +62,6 @@ interface Message {
   widgetKind?: "emergency-fund";
   /** Backend saved an ideal rebalancing plan — show CTA to open `/execute`. */
   showViewExecutePlan?: boolean;
-  chartPayloads?: ChartPayload[];
 }
 
 const DUMMY_USER_CONTEXT: UserInfo = {
@@ -285,14 +282,22 @@ const MarkdownMessage = ({ text }: { text: string }) => {
           ol: ({ children }) => <ol className="list-decimal list-outside pl-4 mb-2 space-y-0.5">{children}</ol>,
           li: ({ children }) => <li className="text-[12px] leading-relaxed">{children}</li>,
           table: ({ children }) => (
-            <div className="mb-2 overflow-x-auto rounded-xl border border-border/60">
+            <div className="my-2 overflow-x-auto rounded-xl border border-border bg-card shadow-sm">
               <table className="w-full border-collapse text-[11px]">{children}</table>
             </div>
           ),
-          thead: ({ children }) => <thead className="bg-muted/40">{children}</thead>,
-          tr: ({ children }) => <tr className="border-b border-border/50 last:border-0">{children}</tr>,
-          th: ({ children }) => <th className="px-2.5 py-2 text-left font-semibold text-foreground">{children}</th>,
-          td: ({ children }) => <td className="px-2.5 py-2 align-top text-foreground/90">{children}</td>,
+          thead: ({ children }) => (
+            <thead style={{ backgroundColor: "hsla(38, 45%, 54%, 0.14)" }}>{children}</thead>
+          ),
+          tr: ({ children }) => (
+            <tr className="border-b border-border/60 last:border-0 even:bg-muted/30">{children}</tr>
+          ),
+          th: ({ children }) => (
+            <th className="px-3 py-2.5 text-left font-bold uppercase tracking-wide text-foreground">
+              {children}
+            </th>
+          ),
+          td: ({ children }) => <td className="px-3 py-2.5 align-top text-foreground/90">{children}</td>,
           blockquote: ({ children }) => (
             <blockquote className="border-l-2 border-primary/40 pl-3 my-2 text-[12px] text-foreground/80 italic">
               {children}
@@ -695,9 +700,6 @@ const AIChatPanel = ({
         session.messages.map((m) => ({
           role: m.role === "assistant" ? ("ai" as const) : ("user" as const),
           content: m.content,
-          ...(m.chart_payloads
-            ? { chartPayloads: m.chart_payloads as ChartPayload[] }
-            : {}),
         })),
       );
       setChatStartTime(
@@ -808,9 +810,6 @@ const AIChatPanel = ({
             session.messages.map((m) => ({
               role: m.role === "assistant" ? ("ai" as const) : ("user" as const),
               content: m.content,
-              ...(m.chart_payloads
-                ? { chartPayloads: m.chart_payloads as ChartPayload[] }
-                : {}),
             })),
           );
         }
@@ -1071,9 +1070,6 @@ const AIChatPanel = ({
           role: "ai",
           content: resp.assistant_message.content,
           ...(hasSavedPlan ? { showViewExecutePlan: true } : {}),
-          ...(resp.assistant_message.chart_payloads
-            ? { chartPayloads: resp.assistant_message.chart_payloads as ChartPayload[] }
-            : {}),
         },
       ]);
     } catch (err: any) {
@@ -1260,13 +1256,6 @@ const AIChatPanel = ({
                   <MarkdownMessage text={msg.content} />
                 </div>
               </div>
-              {msg.chartPayloads && msg.chartPayloads.length > 0 && (
-                <div className="ml-7 flex flex-col gap-2 max-w-[95%]">
-                  {msg.chartPayloads.map((p, idx) => (
-                    <ChartRenderer key={idx} payload={p} />
-                  ))}
-                </div>
-              )}
               {showBackToInvest && i === 0 && msg.role === "ai" && (
                 <button
                   onClick={() => navigate("/execute")}
