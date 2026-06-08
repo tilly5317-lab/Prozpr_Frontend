@@ -1,174 +1,42 @@
 import { useState } from "react";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronDown, Pencil, X } from "lucide-react";
+import { ChevronDown, X } from "lucide-react";
 import type { PortfolioDetail } from "@/lib/api";
 import { formatInrCompact } from "@/lib/utils";
 
-// Bucket classification mirrors the Recommended Investment Plan page.
-type HoldingBucket = "equity" | "debt" | "hybrid";
+// Bucket vocabulary mirrors backend PortfolioAllocation.asset_class produced
+// by classify_holding() in scheme_classification.py — the canonical 3-bucket
+// model. Asset_class + sub_category flow from the backend; no client-side
+// classification here.
+type HoldingBucket = "equity" | "debt" | "others";
 
-const BUCKET_ORDER: HoldingBucket[] = ["equity", "debt", "hybrid"];
+const BUCKET_ORDER: HoldingBucket[] = ["equity", "debt", "others"];
 
 const BUCKET_LABEL: Record<HoldingBucket, string> = {
   equity: "Equity",
   debt: "Debt",
-  hybrid: "Hybrid & Others",
+  others: "Others",
 };
 
-function classifyHoldingBucket(name: string, instrumentType: string): HoldingBucket {
-  const n = `${name} ${instrumentType}`.toLowerCase();
-  if (/bond|gilt|treasury|debt|liquid|credit/.test(n)) return "debt";
-  if (/gold|silver|commodity|hybrid|balanced|multi.?asset|sectoral|psu bank|energy|pharma|it etf|reit/.test(n)) {
-    return "hybrid";
-  }
-  if (/nifty|sensex|cap|flexi|equity|s&p|nasdaq|growth|value|dividend/.test(n)) return "equity";
-  return "hybrid";
+// Backend sends "Equity" / "Debt" / "Others"; normalize to our keys. We also
+// gracefully accept stale "Cash" / "Other" values (pre-canonical-classifier
+// ingest rows still in the DB) — "Cash" funds collapse into Debt, singular
+// "Other" maps to the canonical plural "others". Unknown / null → "others".
+function bucketKey(assetClass: string | null | undefined): HoldingBucket {
+  const v = (assetClass ?? "").toLowerCase();
+  if (v === "equity") return "equity";
+  if (v === "debt" || v === "cash") return "debt";
+  if (v === "others" || v === "other") return "others";
+  return "others";
 }
 
-// SEBI-aligned mutual fund sub-categories, per bucket.
-const SUB_CATEGORIES: Record<HoldingBucket, string[]> = {
-  equity: [
-    "Large Cap",
-    "Mid Cap",
-    "Small Cap",
-    "Large & Mid Cap",
-    "Multi Cap",
-    "Flexi Cap",
-    "ELSS (Tax Saver)",
-    "Sectoral / Thematic",
-    "Index Fund / ETF",
-    "Dividend Yield",
-    "Value / Contra",
-    "Focused",
-    "International Equity",
-  ],
-  debt: [
-    "Liquid",
-    "Overnight",
-    "Ultra Short Duration",
-    "Low Duration",
-    "Money Market",
-    "Short Duration",
-    "Medium Duration",
-    "Medium to Long Duration",
-    "Long Duration",
-    "Corporate Bond",
-    "Credit Risk",
-    "Banking & PSU",
-    "Gilt",
-    "Gilt with 10Y Constant Duration",
-    "Dynamic Bond",
-    "Floater",
-  ],
-  hybrid: [
-    "Conservative Hybrid",
-    "Balanced Hybrid",
-    "Aggressive Hybrid",
-    "Dynamic Asset Allocation / BAF",
-    "Multi Asset Allocation",
-    "Arbitrage",
-    "Equity Savings",
-  ],
-};
-
-const SUB_DESCRIPTIONS: Record<string, string> = {
-  "Large Cap": "Invests in top 100 companies by market cap as per SEBI.",
-  "Mid Cap": "Invests in companies ranked 101–250 by market cap.",
-  "Small Cap": "Invests in companies ranked 251 and below by market cap.",
-  "Large & Mid Cap": "Minimum 35% each in large-cap and mid-cap stocks.",
-  "Multi Cap": "At least 25% each across large, mid, and small caps.",
-  "Flexi Cap": "Goes anywhere on the cap curve; manager has full discretion.",
-  "ELSS (Tax Saver)": "Equity fund with a 3-year lock-in; eligible for 80C deduction (old regime).",
-  "Sectoral / Thematic": "Focused on one sector (e.g. IT, banking) or a single theme.",
-  "Index Fund / ETF": "Passively tracks an index like Nifty 50 at low cost.",
-  "Dividend Yield": "Invests primarily in high dividend-yield stocks.",
-  "Value / Contra": "Follows a value or contrarian investment style.",
-  "Focused": "Holds a concentrated portfolio of up to 30 stocks.",
-  "International Equity": "Invests in equities listed outside India.",
-  "Liquid": "Invests in debt & money-market instruments up to 91 days.",
-  "Overnight": "Invests in securities with a 1-day maturity.",
-  "Ultra Short Duration": "Portfolio Macaulay duration of 3–6 months.",
-  "Low Duration": "Portfolio Macaulay duration of 6–12 months.",
-  "Money Market": "Money-market instruments up to 1 year.",
-  "Short Duration": "Portfolio Macaulay duration of 1–3 years.",
-  "Medium Duration": "Portfolio Macaulay duration of 3–4 years.",
-  "Medium to Long Duration": "Portfolio Macaulay duration of 4–7 years.",
-  "Long Duration": "Portfolio Macaulay duration greater than 7 years.",
-  "Corporate Bond": "Minimum 80% in AA+ and above rated corporate bonds.",
-  "Credit Risk": "Minimum 65% in AA and below rated corporate bonds.",
-  "Banking & PSU": "Minimum 80% in banking & PSU debt instruments.",
-  "Gilt": "Minimum 80% in government securities across maturities.",
-  "Gilt with 10Y Constant Duration": "G-secs with a constant 10-year duration.",
-  "Dynamic Bond": "Invests across duration based on rate views.",
-  "Floater": "Minimum 65% in floating-rate instruments.",
-  "Conservative Hybrid": "10–25% equity, rest in debt.",
-  "Balanced Hybrid": "40–60% equity, rest in debt.",
-  "Aggressive Hybrid": "65–80% equity, rest in debt.",
-  "Dynamic Asset Allocation / BAF": "Equity/debt mix varies dynamically with valuation.",
-  "Multi Asset Allocation": "At least 10% each across 3+ asset classes.",
-  "Arbitrage": "Captures cash-futures arbitrage; equity-taxed with debt-like risk.",
-  "Equity Savings": "Equity + arbitrage + debt for low-volatility equity exposure.",
-};
-
-// Pill colour per bucket — shades of purple for equity, gold for debt, pale gold/beige for hybrid.
+// Pill colour per bucket — purple for equity, warm tan for debt, gold for others.
 const SUB_TAG_STYLE: Record<HoldingBucket, { bg: string; fg: string; border: string }> = {
   equity: { bg: "#EFEAFC", fg: "#5A3FB6", border: "#DDD2F5" },
   debt: { bg: "#FAEFD6", fg: "#8C6B1E", border: "#EFE0B8" },
-  hybrid: { bg: "#F5EFE3", fg: "#8A7140", border: "#E7DDC8" },
+  others: { bg: "#F5EFE3", fg: "#8A7140", border: "#E7DDC8" },
 };
-
-const UNCAT_STYLE = { bg: "#EFEFEF", fg: "#6b6b6b", border: "#E3E3E3" };
-
-function classifySubCategory(name: string, bucket: HoldingBucket): string | null {
-  const n = name.toLowerCase();
-  if (bucket === "equity") {
-    if (/elss|tax saver/.test(n)) return "ELSS (Tax Saver)";
-    if (/flexi cap/.test(n)) return "Flexi Cap";
-    if (/multi cap/.test(n)) return "Multi Cap";
-    if (/focused/.test(n)) return "Focused";
-    if (/large & mid|large and mid/.test(n)) return "Large & Mid Cap";
-    if (/midcap|mid cap/.test(n)) return "Mid Cap";
-    if (/small ?cap/.test(n)) return "Small Cap";
-    if (/large ?cap/.test(n)) return "Large Cap";
-    if (/dividend/.test(n)) return "Dividend Yield";
-    if (/value|contra/.test(n)) return "Value / Contra";
-    if (/s&p|nasdaq|international|global|world/.test(n)) return "International Equity";
-    if (/psu bank|pharma|energy|it etf|banking|auto|infra|metal|sectoral|thematic/.test(n)) {
-      return "Sectoral / Thematic";
-    }
-    if (/nifty|sensex|next 50|bees|index|etf/.test(n)) return "Index Fund / ETF";
-    return null;
-  }
-  if (bucket === "debt") {
-    if (/overnight/.test(n)) return "Overnight";
-    if (/ultra short/.test(n)) return "Ultra Short Duration";
-    if (/low duration/.test(n)) return "Low Duration";
-    if (/money market/.test(n)) return "Money Market";
-    if (/liquid/.test(n)) return "Liquid";
-    if (/short duration|short term/.test(n)) return "Short Duration";
-    if (/medium to long|med.{0,5}long/.test(n)) return "Medium to Long Duration";
-    if (/medium duration|medium term/.test(n)) return "Medium Duration";
-    if (/long duration|long term/.test(n)) return "Long Duration";
-    if (/credit risk/.test(n)) return "Credit Risk";
-    if (/banking (?:and|&) psu|banking & psu/.test(n)) return "Banking & PSU";
-    if (/gilt.*10|constant duration/.test(n)) return "Gilt with 10Y Constant Duration";
-    if (/gilt|g[- ]sec|government/.test(n)) return "Gilt";
-    if (/dynamic bond/.test(n)) return "Dynamic Bond";
-    if (/floater|floating/.test(n)) return "Floater";
-    if (/corporate bond|bharat bond/.test(n)) return "Corporate Bond";
-    return null;
-  }
-  // hybrid
-  if (/conservative hybrid/.test(n)) return "Conservative Hybrid";
-  if (/aggressive hybrid/.test(n)) return "Aggressive Hybrid";
-  if (/balanced hybrid/.test(n)) return "Balanced Hybrid";
-  if (/balanced advantage|dynamic asset|baf/.test(n)) return "Dynamic Asset Allocation / BAF";
-  if (/multi[- ]?asset/.test(n)) return "Multi Asset Allocation";
-  if (/arbitrage/.test(n)) return "Arbitrage";
-  if (/equity saving/.test(n)) return "Equity Savings";
-  return null;
-}
 
 // Expanded-card tokens — match the "HOLDINGS / RISK PROFILE / HORIZON" meta strip
 const HAIRLINE = "hsl(var(--hairline))";
@@ -203,13 +71,14 @@ function pctColor(n: number | null): string {
   return n >= 0 ? POSITIVE : NEGATIVE;
 }
 
+// Keyed on backend asset_class labels. MF classifier emits Equity / Debt /
+// Others; "Cash" can still show up via SimBanks bank-balance rows (it's the
+// only path that writes a separate Cash bucket).
 const DONUT_COLORS: Record<string, string> = {
   Equity: "#4F46E5",
-  "Fixed Income": "#E8D5B7",
   Debt: "#E8D5B7",
-  "Inflation-Linked": "#C9A84C",
-  Gold: "#C9A84C",
-  "Cash/Other": "#94a3b8",
+  Cash: "#94a3b8",
+  Others: "#C9A84C",
 };
 
 const FALLBACK_PALETTE = ["#4F46E5", "#E8D5B7", "#C9A84C", "#94a3b8", "#6366f1", "#d97706"];
@@ -218,11 +87,11 @@ function getColor(name: string, i: number) {
   return DONUT_COLORS[name] ?? FALLBACK_PALETTE[i % FALLBACK_PALETTE.length];
 }
 
-// Fund-row left accent matches the donut / legend palette by classified bucket.
+// Fund-row left accent matches the donut palette per bucket.
 const HOLDINGS_BAR_BY_BUCKET: Record<HoldingBucket, { bg: string; border?: string }> = {
   equity: { bg: "#4F46E5" },                         // indigo — matches donut "Equity"
   debt: { bg: "#E8D5B7", border: "#D4B896" },        // tan/cream — matches donut "Debt"
-  hybrid: { bg: "#C9A84C" },                         // warm gold — matches donut "Gold"
+  others: { bg: "#C9A84C" },                         // warm gold — matches donut "Others"
 };
 
 function computeReturn(avgCost: number | null, currentPrice: number | null): number | null {
@@ -242,11 +111,9 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
   const [collapsedBuckets, setCollapsedBuckets] = useState<Record<HoldingBucket, boolean>>({
     equity: false,
     debt: false,
-    hybrid: false,
+    others: false,
   });
   const [subFilter, setSubFilter] = useState<string | null>(null);
-  const [subOverrides, setSubOverrides] = useState<Record<string, string>>({});
-  const [editingSubId, setEditingSubId] = useState<string | null>(null);
   const hasAllocations = portfolio && portfolio.allocations.length > 0;
 
   const allocations = hasAllocations
@@ -256,10 +123,9 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
         color: getColor(a.asset_class, i),
       }))
     : [
-        { name: "Equity", value: 48, color: "#4F46E5" },
+        { name: "Equity", value: 56, color: "#4F46E5" },
         { name: "Debt", value: 28, color: "#E8D5B7" },
-        { name: "Gold", value: 16, color: "#C9A84C" },
-        { name: "Cash/Other", value: 8, color: "#94a3b8" },
+        { name: "Others", value: 16, color: "#C9A84C" },
       ];
 
   const centerLabel =
@@ -273,10 +139,10 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
 
   const holdingsRows = portfolio && portfolio.holdings.length > 0
     ? portfolio.holdings.map((h) => {
-        const bucket = classifyHoldingBucket(h.instrument_name, h.instrument_type);
+        const bucket = bucketKey(h.asset_class);
         const colors = HOLDINGS_BAR_BY_BUCKET[bucket];
         const returnPct = computeReturn(h.average_cost, h.current_value);
-        const subCategory = subOverrides[h.id] ?? classifySubCategory(h.instrument_name, bucket);
+        const subCategory = h.sub_category ?? null;
         return {
           id: h.id,
           name: h.instrument_name,
@@ -296,7 +162,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
     : [
         { id: "d1", name: "ICICI Prudential Nifty 50 ETF", sub: "ETF · NIFTYBEES", value: "₹4.8L", pct: "48%", allocationPct: 48, returnPct: 18.2, avgCost: 406000, currentValue: 480000, barBg: HOLDINGS_BAR_BY_BUCKET.equity.bg, barBorder: HOLDINGS_BAR_BY_BUCKET.equity.border, bucket: "equity" as HoldingBucket, subCategory: "Index Fund / ETF" },
         { id: "d2", name: "HDFC Corporate Bond Fund", sub: "Mutual Fund", value: "₹2.8L", pct: "28%", allocationPct: 28, returnPct: 7.1, avgCost: 261000, currentValue: 280000, barBg: HOLDINGS_BAR_BY_BUCKET.debt.bg, barBorder: HOLDINGS_BAR_BY_BUCKET.debt.border, bucket: "debt" as HoldingBucket, subCategory: "Corporate Bond" },
-        { id: "d3", name: "SBI Gold ETF", sub: "ETF · GOLDBEES", value: "₹1.6L", pct: "16%", allocationPct: 16, returnPct: 12.4, avgCost: 142000, currentValue: 160000, barBg: HOLDINGS_BAR_BY_BUCKET.hybrid.bg, barBorder: HOLDINGS_BAR_BY_BUCKET.hybrid.border, bucket: "hybrid" as HoldingBucket, subCategory: null as string | null },
+        { id: "d3", name: "SBI Gold ETF", sub: "ETF · GOLDBEES", value: "₹1.6L", pct: "16%", allocationPct: 16, returnPct: 12.4, avgCost: 142000, currentValue: 160000, barBg: HOLDINGS_BAR_BY_BUCKET.others.bg, barBorder: HOLDINGS_BAR_BY_BUCKET.others.border, bucket: "others" as HoldingBucket, subCategory: "Gold" },
       ];
 
   const filteredRows = subFilter
@@ -539,7 +405,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                                 e.stopPropagation();
                                 setSubFilter((prev) => (prev === row.subCategory ? null : row.subCategory));
                               }}
-                              title={SUB_DESCRIPTIONS[row.subCategory!] ?? row.subCategory!}
+                              title={row.subCategory}
                               className="inline-flex items-center rounded-full px-1.5 py-0.5 hover:opacity-80 transition-opacity"
                               style={{
                                 fontSize: "10px",
@@ -552,25 +418,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                               {row.subCategory}
                             </button>
                           ) : (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setEditingSubId((prev) => (prev === row.id ? null : row.id));
-                              }}
-                              title="Assign a sub-category"
-                              className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 hover:opacity-80 transition-opacity"
-                              style={{
-                                fontSize: "10px",
-                                fontWeight: 500,
-                                backgroundColor: UNCAT_STYLE.bg,
-                                color: UNCAT_STYLE.fg,
-                                border: `1px solid ${UNCAT_STYLE.border}`,
-                              }}
-                            >
-                              Uncategorized
-                              <Pencil className="h-2.5 w-2.5" />
-                            </button>
+                            <span className="text-[10px] text-muted-foreground">Uncategorized</span>
                           )}
                         </div>
                       </div>
@@ -592,54 +440,6 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                         </motion.span>
                       </div>
                     </div>
-
-                    <AnimatePresence initial={false}>
-                      {editingSubId === row.id && (
-                        <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: "auto", opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          transition={{ duration: 0.2, ease: "easeOut" }}
-                          className="overflow-hidden"
-                        >
-                          <div className="ml-3 mb-2 p-2 rounded-lg bg-muted/50">
-                            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">
-                              Assign sub-category
-                            </p>
-                            <div className="flex flex-wrap gap-1">
-                              {SUB_CATEGORIES[row.bucket].map((opt) => (
-                                <button
-                                  key={opt}
-                                  type="button"
-                                  onClick={() => {
-                                    setSubOverrides((prev) => ({ ...prev, [row.id]: opt }));
-                                    setEditingSubId(null);
-                                  }}
-                                  title={SUB_DESCRIPTIONS[opt] ?? opt}
-                                  className="rounded-full px-2 py-0.5 hover:opacity-80 transition-opacity"
-                                  style={{
-                                    fontSize: "10px",
-                                    fontWeight: 500,
-                                    backgroundColor: SUB_TAG_STYLE[row.bucket].bg,
-                                    color: SUB_TAG_STYLE[row.bucket].fg,
-                                    border: `1px solid ${SUB_TAG_STYLE[row.bucket].border}`,
-                                  }}
-                                >
-                                  {opt}
-                                </button>
-                              ))}
-                              <button
-                                type="button"
-                                onClick={() => setEditingSubId(null)}
-                                className="rounded-full px-2 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
 
                     <AnimatePresence initial={false}>
                       {isExpanded && (
