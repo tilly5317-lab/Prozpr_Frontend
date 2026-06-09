@@ -151,6 +151,11 @@ export default function PortfolioFundDetail() {
             )}
             {!loading && data && (
               <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {data.asset_class && (
+                  <span className="inline-flex rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-muted-foreground">
+                    {data.asset_class}
+                  </span>
+                )}
                 <span className="inline-flex rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-muted-foreground">
                   {planLabel}
                 </span>
