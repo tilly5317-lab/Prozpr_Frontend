@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Send, Mic, MicOff, AlertCircle, Loader2, Sparkles, Check, Square, ChevronDown, ChevronUp, Pencil, ArrowRight, Plus, Trash2, MessageSquare, MessageCircle, Menu } from "lucide-react";
+import { X, Send, Mic, MicOff, AlertCircle, Loader2, Sparkles, Check, Square, ChevronDown, ChevronUp, Pencil, ArrowRight, Plus, Trash2, MessageSquare, Menu } from "lucide-react";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -1328,7 +1328,7 @@ const AIChatPanel = ({
               </div>
               {showBackToInvest && i === 0 && msg.role === "ai" && (
                 <button
-                  onClick={() => navigate("/execute")}
+                  onClick={() => navigate("/rebalance-explanation")}
                   className="ml-7 mt-2 self-start flex items-center gap-3 rounded-xl px-4 py-3 transition-opacity hover:opacity-90"
                   style={{ backgroundColor: "hsl(220, 40%, 20%)" }}
                 >
@@ -1347,7 +1347,7 @@ const AIChatPanel = ({
               {msg.showViewExecutePlan ? (
                 <button
                   type="button"
-                  onClick={() => navigate("/execute")}
+                  onClick={() => navigate("/rebalance-explanation")}
                   className="ml-7 mt-2 self-start flex items-center gap-3 rounded-xl px-4 py-3 transition-opacity hover:opacity-90 border border-primary/25 bg-primary/5"
                 >
                   <div className="flex flex-col text-left">
@@ -1419,16 +1419,6 @@ const AIChatPanel = ({
             >
               <Menu className="h-4 w-4" />
             </button>
-            <a
-              href="https://wa.me/"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="Chat on WhatsApp"
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-muted/60 hover:bg-muted transition-colors"
-              style={{ color: "#25D366" }}
-            >
-              <MessageCircle className="h-3.5 w-3.5" strokeWidth={2.2} />
-            </a>
           </div>
         )}
 

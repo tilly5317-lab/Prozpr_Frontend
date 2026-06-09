@@ -2,13 +2,17 @@ import { motion } from "framer-motion";
 import { Gift, ChevronRight, TrendingUp } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import BottomNav from "@/components/BottomNav";
+import BottomNav, { NOTIFICATIONS_CHANGED_EVENT } from "@/components/BottomNav";
 import {
   listNotifications,
   markAllNotificationsAsRead,
   markNotificationAsRead,
   type NotificationInfo,
 } from "@/lib/api";
+
+/** Notify the bottom-nav badge that the unread count may have changed. */
+const notifyNotificationsChanged = () =>
+  window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED_EVENT));
 
 const Notifications = () => {
   const navigate = useNavigate();
@@ -44,6 +48,7 @@ const Notifications = () => {
         // Ignore read errors and still allow navigation.
       }
       setItems((prev) => prev.map((n) => (n.id === item.id ? { ...n, is_read: true } : n)));
+      notifyNotificationsChanged();
     }
     if (item.action_url) {
       navigate(item.action_url);
@@ -56,6 +61,7 @@ const Notifications = () => {
     try {
       await markAllNotificationsAsRead();
       setItems((prev) => prev.map((n) => ({ ...n, is_read: true })));
+      notifyNotificationsChanged();
     } catch {
       // no-op
     }

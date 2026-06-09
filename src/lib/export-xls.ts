@@ -30,7 +30,10 @@ const ANNUAL_HEADERS = [
   "One-off Inflow",
   "One-off Outflow",
   "Corpus Opening",
-  "Monthly Investment",
+  // In the ANNUAL sheet this column is the sum of the FY's monthly investments
+  // (an annual total), so label it as such — calling it "Monthly Investment"
+  // here makes a ₹10k/mo SIP look like ₹1.2L "per month".
+  "Annual Investment",
   "Investment Returns",
   "Goal Payout",
   "Corpus Closing",
