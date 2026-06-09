@@ -76,7 +76,7 @@ const MeetingNotes = () => {
     try {
       await approveMeetingMandate(note.id);
       setNote((prev) => (prev ? { ...prev, is_mandate_approved: true } : prev));
-      navigate("/rebalancing");
+      navigate("/rebalance-explanation");
     } finally {
       setApproving(false);
     }

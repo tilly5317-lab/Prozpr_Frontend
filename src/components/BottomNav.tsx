@@ -1,18 +1,45 @@
 import { Home, Compass, MessageSquare, Target, Bell } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
+import { useEffect, useState } from "react";
+import { listNotifications } from "@/lib/api";
 
 const tabs = [
   { icon: MessageSquare, label: "Chat", path: "/chat" },
   { icon: Home, label: "Portfolio", path: "/portfolio" },
   { icon: Compass, label: "Invest", path: "/rebalance-explanation" },
   { icon: Target, label: "Goals", path: "/goal-planner" },
-  { icon: Bell, label: "Alerts", path: "/notifications", badge: 2 },
+  { icon: Bell, label: "Alerts", path: "/notifications" },
 ];
+
+/** Fired (window event) whenever notifications are read/changed so the badge re-syncs live. */
+export const NOTIFICATIONS_CHANGED_EVENT = "notifications:changed";
 
 const BottomNav = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  // Drive the Alerts badge off the real unread count. Refetch on mount and
+  // whenever the Notifications page signals a change (mark read / mark all read).
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const rows = await listNotifications();
+        if (!cancelled) setUnreadCount(rows.filter((n) => !n.is_read).length);
+      } catch {
+        if (!cancelled) setUnreadCount(0);
+      }
+    };
+    void refresh();
+    const onChanged = () => void refresh();
+    window.addEventListener(NOTIFICATIONS_CHANGED_EVENT, onChanged);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(NOTIFICATIONS_CHANGED_EVENT, onChanged);
+    };
+  }, []);
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 bg-card/80 backdrop-blur-xl border-t border-border/50">
@@ -22,6 +49,8 @@ const BottomNav = () => {
             location.pathname === tab.path ||
             (tab.path === "/rebalance-explanation" &&
               (location.pathname === "/execute" || location.pathname.startsWith("/rebalance")));
+          // Only the Alerts tab carries a badge, and only when there are unread items.
+          const badge = tab.path === "/notifications" ? unreadCount : 0;
           return (
             <button
               key={tab.path}
@@ -35,9 +64,9 @@ const BottomNav = () => {
                   }`}
                   strokeWidth={isActive ? 2.2 : 1.8}
                 />
-                {tab.badge && (
-                  <span className="absolute -top-1 -right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-destructive text-[8px] font-bold text-destructive-foreground">
-                    {tab.badge}
+                {badge > 0 && (
+                  <span className="absolute -top-1 -right-1.5 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-destructive px-0.5 text-[8px] font-bold text-destructive-foreground">
+                    {badge > 9 ? "9+" : badge}
                   </span>
                 )}
               </div>
