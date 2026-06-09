@@ -37,6 +37,9 @@ interface ETF {
   allocation: number;
   amount: number;
   category: string;
+  /** Display bucket. Backend-sourced rows set this from the API asset_class;
+   *  demo/manual rows carry it explicitly. Never re-derived from the fund name. */
+  bucket: Bucket;
   color: string;
   exchange: string;
   houseRec: boolean;
@@ -76,7 +79,7 @@ const BUCKET_ORDER: Bucket[] = ["equity", "debt", "hybrid"];
 const BUCKET_LABEL: Record<Bucket, string> = {
   equity: "Equity",
   debt: "Debt",
-  hybrid: "Hybrid & Others",
+  hybrid: "Others",
 };
 
 // Deep teal · slate blue · warm amber — each bucket gets its own world.
@@ -307,7 +310,7 @@ function deriveBenchmark(etf: ETF): string {
 }
 
 function deriveRisk(etf: ETF): "Low" | "Moderate" | "High" {
-  const bucket = categoryToBucket(etf.category);
+  const bucket = etf.bucket;
   if (bucket === "debt") return "Low";
   if (bucket === "equity") {
     if (/small|midcap|next 50/i.test(etf.name)) return "High";
@@ -358,7 +361,7 @@ function buildReturnSeries(etf: ETF): { label: string; fund: number; benchmark: 
 }
 
 function genericRationale(etf: ETF): string {
-  const bucket = categoryToBucket(etf.category);
+  const bucket = etf.bucket;
   if (bucket === "equity") {
     return `Offers ${etf.category.toLowerCase()} exposure with an expense ratio of ${etf.expenseRatio}. Part of the core-satellite mix recommended for your risk profile.`;
   }
@@ -383,22 +386,15 @@ function rationaleFor(etf: ETF): string {
   return BUILTIN_RATIONALES[etf.name] ?? genericRationale(etf);
 }
 
-function categoryToBucket(category: string): Bucket {
-  const c = category.toLowerCase();
-  if (c.includes("equity") || c.includes("stock")) return "equity";
-  if (c.includes("bond") || c.includes("debt") || c.includes("fixed income") || c.includes("liquid")) return "debt";
-  return "hybrid";
-}
-
 const defaultETFs: ETF[] = [
-  { name: "Nifty 50 ETF (Nippon)", shortName: "Nifty 50", description: "India large-cap, tracks Nifty 50", allocation: 30, amount: 2490000, category: "India Equity", color: CAT_COLORS["India Equity"], exchange: "NSE", houseRec: true, returns1Y: "+14.8%", returns2Y: "+12.6%", returns3Y: "+13.2%", expenseRatio: "0.05%", exitLoad: "Nil", minInvestment: "1 unit (~₹240)" },
-  { name: "Nifty Next 50 ETF (ICICI)", shortName: "Next 50", description: "India mid-large, next 50 companies", allocation: 15, amount: 1245000, category: "India Equity", color: CAT_COLORS["India Equity"], exchange: "NSE", houseRec: true, returns1Y: "+18.2%", returns2Y: "+14.1%", returns3Y: "+15.7%", expenseRatio: "0.08%", exitLoad: "Nil", minInvestment: "1 unit (~₹58)" },
-  { name: "Nifty Midcap 150 ETF (Motilal)", shortName: "Midcap 150", description: "India mid-cap growth exposure", allocation: 10, amount: 830000, category: "India Equity", color: CAT_COLORS["India Equity"], exchange: "NSE", houseRec: true, returns1Y: "+22.4%", returns2Y: "+16.8%", returns3Y: "+18.1%", expenseRatio: "0.12%", exitLoad: "Nil", minInvestment: "1 unit (~₹16)" },
-  { name: "S&P 500 ETF (Mirae)", shortName: "S&P 500", description: "US large-cap equities, customer preference", allocation: 5, amount: 415000, category: "US Equity", color: CAT_COLORS["US Equity"], exchange: "NSE", houseRec: false, customerPref: true, returns1Y: "+26.3%", returns2Y: "+18.4%", returns3Y: "+20.1%", expenseRatio: "0.18%", exitLoad: "Nil", minInvestment: "₹500" },
-  { name: "Bharat Bond ETF (2032)", shortName: "Bharat Bond", description: "AAA-rated PSU bonds, low risk", allocation: 20, amount: 1660000, category: "Bonds", color: CAT_COLORS["Bonds"], exchange: "NSE", houseRec: true, returns1Y: "+7.2%", returns2Y: "+6.8%", returns3Y: "+7.5%", expenseRatio: "0.0005%", exitLoad: "Nil", minInvestment: "1 unit (~₹1,250)" },
-  { name: "Nifty PSU Bank ETF (SBI)", shortName: "PSU Bank", description: "Indian public sector banks", allocation: 8, amount: 664000, category: "Sectoral", color: CAT_COLORS["Sectoral"], exchange: "BSE", houseRec: true, returns1Y: "+16.1%", returns2Y: "+28.4%", returns3Y: "+24.6%", expenseRatio: "0.20%", exitLoad: "Nil", minInvestment: "1 unit (~₹64)" },
-  { name: "Gold ETF (HDFC)", shortName: "Gold", description: "Physical gold, inflation hedge", allocation: 7, amount: 581000, category: "Gold", color: CAT_COLORS["Gold"], exchange: "NSE", houseRec: true, returns1Y: "+12.8%", returns2Y: "+10.2%", returns3Y: "+11.4%", expenseRatio: "0.15%", exitLoad: "Nil", minInvestment: "1 unit (~₹58)" },
-  { name: "Nifty IT ETF (Kotak)", shortName: "IT ETF", description: "Indian IT sector exposure", allocation: 5, amount: 415000, category: "Sectoral", color: CAT_COLORS["Sectoral"], exchange: "NSE", houseRec: true, returns1Y: "+19.6%", returns2Y: "+8.4%", returns3Y: "+12.3%", expenseRatio: "0.20%", exitLoad: "Nil", minInvestment: "1 unit (~₹38)" },
+  { name: "Nifty 50 ETF (Nippon)", bucket: "equity", shortName: "Nifty 50", description: "India large-cap, tracks Nifty 50", allocation: 30, amount: 2490000, category: "India Equity", color: CAT_COLORS["India Equity"], exchange: "NSE", houseRec: true, returns1Y: "+14.8%", returns2Y: "+12.6%", returns3Y: "+13.2%", expenseRatio: "0.05%", exitLoad: "Nil", minInvestment: "1 unit (~₹240)" },
+  { name: "Nifty Next 50 ETF (ICICI)", bucket: "equity", shortName: "Next 50", description: "India mid-large, next 50 companies", allocation: 15, amount: 1245000, category: "India Equity", color: CAT_COLORS["India Equity"], exchange: "NSE", houseRec: true, returns1Y: "+18.2%", returns2Y: "+14.1%", returns3Y: "+15.7%", expenseRatio: "0.08%", exitLoad: "Nil", minInvestment: "1 unit (~₹58)" },
+  { name: "Nifty Midcap 150 ETF (Motilal)", bucket: "equity", shortName: "Midcap 150", description: "India mid-cap growth exposure", allocation: 10, amount: 830000, category: "India Equity", color: CAT_COLORS["India Equity"], exchange: "NSE", houseRec: true, returns1Y: "+22.4%", returns2Y: "+16.8%", returns3Y: "+18.1%", expenseRatio: "0.12%", exitLoad: "Nil", minInvestment: "1 unit (~₹16)" },
+  { name: "S&P 500 ETF (Mirae)", bucket: "equity", shortName: "S&P 500", description: "US large-cap equities, customer preference", allocation: 5, amount: 415000, category: "US Equity", color: CAT_COLORS["US Equity"], exchange: "NSE", houseRec: false, customerPref: true, returns1Y: "+26.3%", returns2Y: "+18.4%", returns3Y: "+20.1%", expenseRatio: "0.18%", exitLoad: "Nil", minInvestment: "₹500" },
+  { name: "Bharat Bond ETF (2032)", bucket: "debt", shortName: "Bharat Bond", description: "AAA-rated PSU bonds, low risk", allocation: 20, amount: 1660000, category: "Bonds", color: CAT_COLORS["Bonds"], exchange: "NSE", houseRec: true, returns1Y: "+7.2%", returns2Y: "+6.8%", returns3Y: "+7.5%", expenseRatio: "0.0005%", exitLoad: "Nil", minInvestment: "1 unit (~₹1,250)" },
+  { name: "Nifty PSU Bank ETF (SBI)", bucket: "equity", shortName: "PSU Bank", description: "Indian public sector banks", allocation: 8, amount: 664000, category: "Sectoral", color: CAT_COLORS["Sectoral"], exchange: "BSE", houseRec: true, returns1Y: "+16.1%", returns2Y: "+28.4%", returns3Y: "+24.6%", expenseRatio: "0.20%", exitLoad: "Nil", minInvestment: "1 unit (~₹64)" },
+  { name: "Gold ETF (HDFC)", bucket: "hybrid", shortName: "Gold", description: "Physical gold, inflation hedge", allocation: 7, amount: 581000, category: "Gold", color: CAT_COLORS["Gold"], exchange: "NSE", houseRec: true, returns1Y: "+12.8%", returns2Y: "+10.2%", returns3Y: "+11.4%", expenseRatio: "0.15%", exitLoad: "Nil", minInvestment: "1 unit (~₹58)" },
+  { name: "Nifty IT ETF (Kotak)", bucket: "equity", shortName: "IT ETF", description: "Indian IT sector exposure", allocation: 5, amount: 415000, category: "Sectoral", color: CAT_COLORS["Sectoral"], exchange: "NSE", houseRec: true, returns1Y: "+19.6%", returns2Y: "+8.4%", returns3Y: "+12.3%", expenseRatio: "0.20%", exitLoad: "Nil", minInvestment: "1 unit (~₹38)" },
 ];
 
 /* ── Helpers ── */
@@ -601,6 +597,7 @@ function idealOutputToETFs(out: GoalAllocationOutput): {
 
   const etfs: ETF[] = items.map((item, i) => {
     const category = item.assetClass === "equity" ? "Equity" : item.assetClass === "debt" ? "Debt" : "Others";
+    const bucket: Bucket = item.assetClass === "debt" ? "debt" : item.assetClass === "equity" ? "equity" : "hybrid";
     return {
       name: item.recommendedFund,
       shortName:
@@ -614,6 +611,7 @@ function idealOutputToETFs(out: GoalAllocationOutput): {
       allocation: floors[i] ?? 0,
       amount: 0,
       category,
+      bucket,
       color: ROW_COLORS[i % ROW_COLORS.length],
       exchange: "—",
       houseRec: true,
@@ -809,7 +807,7 @@ const Execute = () => {
   const groupedBuckets = useMemo(() => {
     const buckets: Record<Bucket, number[]> = { equity: [], debt: [], hybrid: [] };
     etfList.forEach((etf, i) => {
-      buckets[categoryToBucket(etf.category)].push(i);
+      buckets[etf.bucket].push(i);
     });
     return BUCKET_ORDER.filter((b) => buckets[b].length > 0).map((b) => ({
       bucket: b,
@@ -875,6 +873,7 @@ const Execute = () => {
         allocation: 0,
         amount: 0,
         category: fund.category,
+        bucket: fund.bucket,
         color: fund.color,
         exchange: fund.exchange,
         houseRec: false,
@@ -1835,7 +1834,7 @@ const Execute = () => {
                         type="button"
                         onClick={() => {
                           setDetailIdx(null);
-                          setSearchBucket(categoryToBucket(etf.category));
+                          setSearchBucket(etf.bucket);
                           setSearchQuery("");
                         }}
                         className="flex-1 rounded-full border border-border py-2 text-[13px] font-semibold text-foreground"
