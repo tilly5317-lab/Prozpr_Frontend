@@ -1,6 +1,7 @@
 import { type CSSProperties, useCallback, useMemo, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import { ArrowDownLeft, ArrowRight, ArrowUpRight, Check, Loader2, Settings2, Sparkles, X } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
+import { ArrowRight, Check, Loader2, Settings2, Sparkles } from "lucide-react";
 import BottomNav from "@/components/BottomNav";
 import RebalanceGate from "@/components/invest/RebalanceGate";
 import { toast } from "@/hooks/use-toast";
@@ -70,6 +71,7 @@ type DriftRow = {
 
 type UITrade = {
   id: string;
+  isin: string;
   type: "BUY" | "SELL";
   bucket: Bucket;
   amount: string;
@@ -129,6 +131,7 @@ function mapTrade(t: RebalancingTrade): UITrade {
   const type: "BUY" | "SELL" = t.action.toUpperCase() === "BUY" ? "BUY" : "SELL";
   return {
     id: t.id,
+    isin: t.isin,
     type,
     bucket: classifyBucket(t.asset_subgroup),
     amount: fmtINR(t.amount_inr),
@@ -146,12 +149,33 @@ const cardStyle: CSSProperties = {
 };
 
 const RebalanceExplanation = () => {
+  const navigate = useNavigate();
   const [detail, setDetail] = useState<RebalancingRunDetail | null>(null);
   const [dataLoading, setDataLoading] = useState(false);
   const [dataError, setDataError] = useState<string | null>(null);
   const [approving, setApproving] = useState(false);
   const [editSignal, setEditSignal] = useState(0);
-  const [selectedTrade, setSelectedTrade] = useState<UITrade | null>(null);
+
+  // Open the full fund-detail page (same screen as a portfolio holding), passing
+  // the trade's rationale so it can render a "Why this trade" card on top. The
+  // holding-detail endpoint resolves the fund by ISIN, so the trade's ISIN is a
+  // valid :schemeCode route param.
+  const openTrade = useCallback(
+    (trade: UITrade) => {
+      if (!trade.isin) return;
+      navigate(`/portfolio/fund/${encodeURIComponent(trade.isin)}`, {
+        state: {
+          rebalanceTrade: {
+            action: trade.type,
+            amountText: trade.amount,
+            reasonTitle: trade.subtitle,
+            rationale: trade.rationale,
+          },
+        },
+      });
+    },
+    [navigate],
+  );
 
   // Load the latest rebalancing run's real trades + subgroup roll-ups. Called by
   // the gate's onReady once every required input is present.
@@ -362,7 +386,7 @@ const RebalanceExplanation = () => {
                             <button
                               key={trade.id}
                               type="button"
-                              onClick={() => setSelectedTrade(trade)}
+                              onClick={() => openTrade(trade)}
                               className="w-full py-2.5 text-left flex items-center gap-3"
                             >
                               <span
@@ -402,75 +426,6 @@ const RebalanceExplanation = () => {
         )}
       </div>
 
-      <AnimatePresence>
-        {selectedTrade && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-50 bg-black/60 backdrop-blur-[2px]"
-              onClick={() => setSelectedTrade(null)}
-            />
-            <div
-              className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 pointer-events-none"
-              role="dialog"
-              aria-modal="true"
-            >
-              <motion.div
-                initial={{ opacity: 0, y: 12, scale: 0.97 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 8, scale: 0.97 }}
-                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                className="relative w-full max-w-md rounded-2xl text-white overflow-hidden pointer-events-auto"
-                style={{ background: "#1c1c1b", maxHeight: "min(94dvh, 720px)", display: "flex", flexDirection: "column" }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="shrink-0 flex items-center justify-end px-4 pt-2 pb-1">
-                  <button
-                    onClick={() => setSelectedTrade(null)}
-                    className="h-7 w-7 rounded-full flex items-center justify-center text-[#9CA6BF] hover:text-white hover:bg-white/10 transition-colors"
-                    aria-label="Close"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-                <div className="flex-1 min-h-0 overflow-y-auto px-5" style={{ paddingBottom: "1rem" }}>
-                  <div className="flex items-center gap-2">
-                    {selectedTrade.type === "BUY" ? (
-                      <ArrowDownLeft className="h-4 w-4 text-[#3FD998]" />
-                    ) : (
-                      <ArrowUpRight className="h-4 w-4 text-[#FF6559]" />
-                    )}
-                    <p className="text-[10.5px] tracking-[0.12em] uppercase text-[#8E98B0]">{selectedTrade.type} trade details</p>
-                  </div>
-                  <h3 className="mt-1 text-[15px] font-semibold leading-tight text-[#ECF1FF]">{selectedTrade.name}</h3>
-                  <p className="text-[11px] text-[#97A3BE] leading-tight">{selectedTrade.category}</p>
-
-                  <div className="mt-3 rounded-xl border border-[#2a2a28] bg-[#252523] px-3 py-2">
-                    <p className="text-[10px] uppercase tracking-[0.14em] text-[#8E98B0]">Why this trade</p>
-                    <p className="mt-0.5 text-[11.5px] leading-snug text-[#D0D8EC]">{selectedTrade.rationale}</p>
-                  </div>
-
-                  <p className="mt-3 text-[10.5px] uppercase tracking-[0.14em] text-[#7E879C]">Key stats</p>
-                  <div className="mt-1 grid grid-cols-3 gap-x-3 gap-y-1.5">
-                    {[
-                      { label: "Action", value: selectedTrade.type },
-                      { label: "Amount", value: selectedTrade.amount },
-                      { label: "Bucket", value: BUCKET_META[selectedTrade.bucket].label },
-                    ].map((item) => (
-                      <div key={item.label}>
-                        <p className="text-[9.5px] uppercase text-[#7E879C] leading-tight">{item.label}</p>
-                        <p className="text-[12px] font-semibold text-[#ECF1FF] leading-tight">{item.value}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </motion.div>
-            </div>
-          </>
-        )}
-      </AnimatePresence>
       <BottomNav />
     </div>
   );
