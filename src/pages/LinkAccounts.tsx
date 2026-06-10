@@ -26,7 +26,7 @@ function hasMutualFundExposure(linked: LinkAccountInfo[], portfolio: PortfolioDe
   const allocations = portfolio.allocations ?? [];
   const hasMfBuckets = allocations.some(
     (row) =>
-      (row.asset_class === "Debt" || row.asset_class === "Other") &&
+      (row.asset_class === "Debt" || row.asset_class === "Others") &&
       typeof row.amount === "number" &&
       row.amount > 0.01
   );
