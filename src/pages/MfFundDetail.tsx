@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Info } from "lucide-react";
+import { ArrowLeft, GitCompare, Info } from "lucide-react";
 
 import BottomNav from "@/components/BottomNav";
 import {
@@ -94,6 +94,13 @@ export default function MfFundDetail() {
               {loading ? "Loading…" : data?.scheme_name ?? schemeCode}
             </h1>
           </div>
+          <button
+            type="button"
+            onClick={() => navigate(`/discovery/compare?codes=${encodeURIComponent(schemeCode)}`)}
+            className="mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-card px-2.5 py-1 text-[11px] font-semibold text-foreground transition-colors hover:bg-secondary/40"
+          >
+            <GitCompare className="h-3.5 w-3.5" /> Compare
+          </button>
         </div>
       </header>
 
