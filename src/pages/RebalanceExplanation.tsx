@@ -1,12 +1,7 @@
 import { type CSSProperties, useCallback, useMemo, useState } from "react";
-<<<<<<< HEAD
-import { AnimatePresence, motion } from "framer-motion";
-import { ArrowRight, Check, Loader2, Settings2, Sparkles, X } from "lucide-react";
-=======
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ArrowRight, Check, Loader2, Settings2, Sparkles } from "lucide-react";
->>>>>>> 8456f401dd3dc63daecc0d4342fd34ed962d47cb
 import BottomNav from "@/components/BottomNav";
 import RebalanceGate from "@/components/invest/RebalanceGate";
 import TradeFundDetailView from "@/components/fund/TradeFundDetailView";
@@ -72,6 +67,8 @@ type DriftRow = {
   color: string;
   current: number; // %
   target: number; // %
+  currentInr: number; // ₹ held today
+  targetInr: number; // ₹ the plan targets
   amountText: string;
 };
 
@@ -85,7 +82,6 @@ type UITrade = {
   name: string;
   category: string;
   rationale: string;
-  isin: string;
 };
 
 const fmtINR = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
@@ -129,9 +125,29 @@ function buildDriftRows(subs: RebalancingSubgroupSummary[]): DriftRow[] {
       color: BUCKET_META[b].color,
       current: Math.round(currentPct),
       target: Math.round(targetPct),
+      currentInr: agg[b].current,
+      targetInr: agg[b].target,
       amountText,
     };
   });
+}
+
+/** Unsigned compact ₹ for axis ticks (e.g. ₹2L, ₹4.5L, ₹1.2Cr). */
+function axisINR(n: number): string {
+  const a = Math.abs(n);
+  if (a >= 1e7) return `₹${(a / 1e7).toFixed(a >= 1e8 ? 0 : 1)}Cr`;
+  if (a >= 1e5) return `₹${(a / 1e5).toFixed(a >= 1e6 ? 0 : 1)}L`;
+  if (a >= 1e3) return `₹${Math.round(a / 1e3)}K`;
+  return `₹${Math.round(a)}`;
+}
+
+/** Round an axis maximum up to a clean 1 / 2 / 5 × 10ⁿ value. */
+function niceCeil(v: number): number {
+  if (v <= 0) return 1;
+  const pow = Math.pow(10, Math.floor(Math.log10(v)));
+  const n = v / pow;
+  const step = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10;
+  return step * pow;
 }
 
 function mapTrade(t: RebalancingTrade): UITrade {
@@ -151,10 +167,19 @@ function mapTrade(t: RebalancingTrade): UITrade {
 }
 
 const cardStyle: CSSProperties = {
-  background: "linear-gradient(180deg, #1c1c1b 0%, #161615 100%)",
-  border: "1px solid rgba(255,255,255,0.08)",
+  background: "hsl(var(--card))",
+  border: "1px solid hsl(var(--border))",
   borderRadius: 16,
 };
+
+// Drift caption colours — semantic so they track the active light/dark theme.
+const OVERWEIGHT = "hsl(var(--destructive))";
+const UNDERWEIGHT = "hsl(var(--wealth-green))";
+const NEUTRAL = "hsl(var(--muted-foreground))";
+
+// Current vs target bars — Current is soft gold at 50% opacity, Target is solid gold.
+const GOLD = "#D4A868";
+const GOLD_SOFT = "rgba(212, 168, 104, 0.7)";
 
 const RebalanceExplanation = () => {
   const navigate = useNavigate();
@@ -260,7 +285,7 @@ const RebalanceExplanation = () => {
             {/* Open the inputs editor — view/edit the figures the engine runs on
                 and upload the latest CAMS statement, then re-run. */}
             <div className="flex items-center justify-between -mb-1">
-              <span className="text-[11px] uppercase tracking-[0.14em] text-[#7E879C]">Rebalancing plan</span>
+              <span className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">Rebalancing plan</span>
               <button
                 type="button"
                 onClick={() => setEditSignal((n) => n + 1)}
@@ -276,21 +301,21 @@ const RebalanceExplanation = () => {
               className="relative px-4 py-5 overflow-hidden"
               style={{
                 background:
-                  "linear-gradient(135deg, rgba(212,168,104,0.16) 0%, rgba(28,28,27,1) 60%, rgba(28,28,27,1) 100%)",
-                border: "1px solid rgba(212,168,104,0.40)",
+                  "linear-gradient(135deg, rgba(212,168,104,0.22) 0%, hsl(var(--card)) 70%, hsl(var(--card)) 100%)",
+                border: "1px solid rgba(212,168,104,0.45)",
                 borderRadius: 16,
               }}
               initial={{
                 boxShadow:
-                  "0 0 0 1px rgba(212,168,104,0.08), 0 12px 32px -14px rgba(212,168,104,0.35)",
+                  "0 0 0 1px rgba(212,168,104,0.10), 0 12px 32px -14px rgba(212,168,104,0.35)",
               }}
               animate={{
                 boxShadow: [
-                  "0 0 0 1px rgba(212,168,104,0.08), 0 12px 32px -14px rgba(212,168,104,0.35)",
-                  "0 0 0 2px rgba(229,192,121,0.55), 0 0 40px 6px rgba(212,168,104,0.55)",
-                  "0 0 0 1px rgba(212,168,104,0.08), 0 12px 32px -14px rgba(212,168,104,0.35)",
-                  "0 0 0 2px rgba(229,192,121,0.55), 0 0 40px 6px rgba(212,168,104,0.55)",
-                  "0 0 0 1px rgba(212,168,104,0.08), 0 12px 32px -14px rgba(212,168,104,0.35)",
+                  "0 0 0 1px rgba(212,168,104,0.10), 0 12px 32px -14px rgba(212,168,104,0.35)",
+                  "0 0 0 2px rgba(212,168,104,0.55), 0 0 36px 4px rgba(212,168,104,0.40)",
+                  "0 0 0 1px rgba(212,168,104,0.10), 0 12px 32px -14px rgba(212,168,104,0.35)",
+                  "0 0 0 2px rgba(212,168,104,0.55), 0 0 36px 4px rgba(212,168,104,0.40)",
+                  "0 0 0 1px rgba(212,168,104,0.10), 0 12px 32px -14px rgba(212,168,104,0.35)",
                 ],
               }}
               transition={{ duration: 3.2, ease: "easeInOut", times: [0, 0.2, 0.5, 0.75, 1] }}
@@ -303,75 +328,121 @@ const RebalanceExplanation = () => {
               <div className="flex items-center gap-2">
                 <span
                   className="inline-flex h-7 w-7 items-center justify-center rounded-full"
-                  style={{ backgroundColor: "rgba(212,168,104,0.18)", color: "#E5C079" }}
+                  style={{ backgroundColor: "rgba(212,168,104,0.22)", color: "#9A7B2E" }}
                 >
                   <Sparkles className="h-3.5 w-3.5" />
                 </span>
                 <span
                   className="text-[10px] uppercase font-semibold"
-                  style={{ letterSpacing: "1.6px", color: "#E5C079" }}
+                  style={{ letterSpacing: "1.6px", color: "#9A7B2E" }}
                 >
                   Prozpr insight
                 </span>
               </div>
-              <h1 className="mt-3 text-[21px] leading-tight font-semibold tracking-tight text-[#F5EEDC]">
+              <h1 className="mt-3 text-[21px] leading-tight font-semibold tracking-tight text-foreground">
                 Time to fine-tune your mix.
               </h1>
-              <p className="mt-2.5 text-[12.5px] leading-5 text-[#C9CFDF]">
+              <p className="mt-2.5 text-[12.5px] leading-5 text-muted-foreground">
                 Here's how to glide back to your target allocation. Prozpr picked units with the
                 lowest capital gains to limit the tax you pay while rebalancing.
               </p>
             </motion.section>
 
-            {/* Current vs target — real drift from the run's subgroup roll-ups. */}
-            {driftRows.length > 0 && (
-              <section style={cardStyle} className="px-4 py-4">
-                <p className="text-[11px] tracking-[0.16em] uppercase text-[#7E879C]">Current vs target</p>
-                <div className="mt-4 space-y-4">
-                  {driftRows.map((row) => {
-                    const drift = row.current - row.target;
-                    const total = Math.max(row.current, row.target);
-                    const currentWidth = total > 0 ? (row.current / total) * 100 : 0;
-                    return (
-                      <div key={row.key}>
-                        <div className="flex items-center justify-between text-[13px]">
-                          <div className="flex items-center gap-2">
-                            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: row.color }} />
-                            <span className="text-[#E7ECF8]">{row.label}</span>
+            {/* Current vs target — clustered ₹ bars per asset class. The Current
+                and Target bars sit flush (no gap) and share one ₹ x-axis so the
+                lengths are comparable across rows (mirrors a clustered bar chart). */}
+            {driftRows.length > 0 && (() => {
+              const rawMax = Math.max(1, ...driftRows.flatMap((r) => [r.currentInr, r.targetInr]));
+              const axisMax = niceCeil(rawMax);
+              const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * axisMax);
+              return (
+                <section style={cardStyle} className="px-4 py-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-[11px] tracking-[0.16em] uppercase text-muted-foreground">Current vs target</p>
+                    <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+                      <span className="inline-flex items-center gap-1">
+                        <span className="h-2 w-3.5 rounded-sm" style={{ background: GOLD_SOFT }} />
+                        Current
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <span className="h-2 w-3.5 rounded-sm" style={{ background: GOLD }} />
+                        Target
+                      </span>
+                    </div>
+                  </div>
+                  <div className="mt-4 space-y-4">
+                    {driftRows.map((row) => {
+                      const drift = row.current - row.target;
+                      const curWidth = (row.currentInr / axisMax) * 100;
+                      const tgtWidth = (row.targetInr / axisMax) * 100;
+                      return (
+                        <div key={row.key}>
+                          <div className="mb-1.5 flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: row.color }} />
+                              <span className="text-[13px] text-foreground">{row.label}</span>
+                            </div>
+                            <span
+                              className="text-[11px]"
+                              style={{ color: drift > 0 ? OVERWEIGHT : drift < 0 ? UNDERWEIGHT : NEUTRAL }}
+                            >
+                              {row.amountText}
+                            </span>
                           </div>
-                          <span className="font-medium text-[#D2D9E8]">{row.current}% → {row.target}%</span>
+
+                          {/* Current (top) + Target (bottom) — flush, no gap between them.
+                              Current = 50% soft gold, Target = solid gold. */}
+                          <div className="overflow-hidden rounded-[3px] bg-muted">
+                            <div
+                              className="h-3.5"
+                              style={{
+                                width: `${Math.max(curWidth, 0.5)}%`,
+                                background: GOLD_SOFT,
+                              }}
+                              title={`Current · ${axisINR(row.currentInr)}`}
+                            />
+                            <div
+                              className="h-3.5"
+                              style={{
+                                width: `${Math.max(tgtWidth, 0.5)}%`,
+                                background: GOLD,
+                              }}
+                              title={`Target · ${axisINR(row.targetInr)}`}
+                            />
+                          </div>
                         </div>
-                        <div className="mt-2 h-2 w-full rounded-full bg-[#252523]">
-                          <div
-                            className="h-2 rounded-full"
-                            style={{
-                              width: `${currentWidth}%`,
-                              background: row.color,
-                              boxShadow: `0 0 14px ${row.color}55`,
-                            }}
-                          />
-                        </div>
-                        <p
-                          className="mt-1 text-[11px]"
-                          style={{ color: drift > 0 ? "#FF6A5B" : drift < 0 ? "#45CF8C" : "#9DA8BF" }}
-                        >
-                          {row.amountText}
-                        </p>
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-            )}
+                      );
+                    })}
+                  </div>
+
+                  {/* Shared ₹ x-axis */}
+                  <div className="relative mt-2 h-4">
+                    {ticks.map((t, i) => (
+                      <span
+                        key={t}
+                        className="absolute top-0 text-[9px] tabular-nums text-muted-foreground"
+                        style={{
+                          left: `${i * 25}%`,
+                          transform:
+                            i === 0 ? "none" : i === ticks.length - 1 ? "translateX(-100%)" : "translateX(-50%)",
+                        }}
+                      >
+                        {axisINR(t)}
+                      </span>
+                    ))}
+                  </div>
+                </section>
+              );
+            })()}
 
             {/* Proposed trades — the real BUY / SELL actions grouped by bucket. */}
             <section style={cardStyle} className="px-4 py-4">
               <div className="flex items-center justify-between">
-                <p className="text-[10px] tracking-[0.16em] uppercase text-[#7E879C]">Proposed trades</p>
-                <p className="text-[11px] text-[#34D39A]">{taxText}</p>
+                <p className="text-[10px] tracking-[0.16em] uppercase text-muted-foreground">Proposed trades</p>
+                <p className="text-[11px] text-wealth-green">{taxText}</p>
               </div>
               {uiTrades.length === 0 ? (
-                <p className="mt-3 text-[13px] text-[#8E99B1]">
+                <p className="mt-3 text-[13px] text-muted-foreground">
                   No trades needed — your portfolio is already aligned with the plan.
                 </p>
               ) : (
@@ -389,7 +460,7 @@ const RebalanceExplanation = () => {
                             {BUCKET_META[b].label}
                           </p>
                         </div>
-                        <div className="divide-y divide-white/8">
+                        <div className="divide-y divide-border">
                           {bucketTrades.map((trade) => (
                             <button
                               key={trade.id}
@@ -400,17 +471,23 @@ const RebalanceExplanation = () => {
                               <span
                                 className="px-2 py-0.5 rounded-md text-[11px] font-semibold tracking-wide shrink-0"
                                 style={{
-                                  backgroundColor: trade.type === "SELL" ? "#3A1717" : "#113126",
-                                  color: trade.type === "SELL" ? "#FF6559" : "#3FD998",
+                                  backgroundColor:
+                                    trade.type === "SELL"
+                                      ? "hsl(var(--destructive) / 0.12)"
+                                      : "hsl(var(--wealth-green) / 0.12)",
+                                  color:
+                                    trade.type === "SELL"
+                                      ? "hsl(var(--destructive))"
+                                      : "hsl(var(--wealth-green))",
                                 }}
                               >
                                 {trade.type}
                               </span>
                               <div className="min-w-0 flex-1">
-                                <p className="text-[13px] leading-tight font-medium text-[#EAF0FF] truncate">{trade.name}</p>
-                                <p className="text-[10.5px] text-[#8E99B1] truncate">{trade.subtitle}</p>
+                                <p className="text-[13px] leading-tight font-medium text-foreground truncate">{trade.name}</p>
+                                <p className="text-[10.5px] text-muted-foreground truncate">{trade.subtitle}</p>
                               </div>
-                              <p className="text-[14px] leading-none font-semibold text-[#EEF3FF] shrink-0">{trade.amount}</p>
+                              <p className="text-[14px] leading-none font-semibold text-foreground shrink-0">{trade.amount}</p>
                             </button>
                           ))}
                         </div>
@@ -434,59 +511,6 @@ const RebalanceExplanation = () => {
         )}
       </div>
 
-<<<<<<< HEAD
-      <AnimatePresence>
-        {selectedTrade && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-50 bg-black/60 backdrop-blur-[2px]"
-              onClick={() => setSelectedTrade(null)}
-            />
-            <div
-              className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 pointer-events-none"
-              role="dialog"
-              aria-modal="true"
-            >
-              <motion.div
-                initial={{ opacity: 0, y: 12, scale: 0.97 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 8, scale: 0.97 }}
-                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                className="relative w-full max-w-md overflow-hidden rounded-2xl bg-background text-foreground pointer-events-auto"
-                style={{ maxHeight: "min(94dvh, 760px)", display: "flex", flexDirection: "column" }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="shrink-0 flex items-center justify-end border-b border-border/60 px-3 pt-2 pb-1.5">
-                  <button
-                    onClick={() => setSelectedTrade(null)}
-                    className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                    aria-label="Close"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-                <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-3">
-                  <TradeFundDetailView
-                    type={selectedTrade.type}
-                    name={selectedTrade.name}
-                    amount={selectedTrade.amount}
-                    subtitle={selectedTrade.subtitle}
-                    category={selectedTrade.category}
-                    bucketLabel={BUCKET_META[selectedTrade.bucket].label}
-                    rationale={selectedTrade.rationale}
-                    isin={selectedTrade.isin}
-                  />
-                </div>
-              </motion.div>
-            </div>
-          </>
-        )}
-      </AnimatePresence>
-=======
->>>>>>> 8456f401dd3dc63daecc0d4342fd34ed962d47cb
       <BottomNav />
     </div>
   );

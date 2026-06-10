@@ -43,6 +43,24 @@ const PFP_NUMERIC_KEYS = new Set([
   "starting_monthly_investment",
 ]);
 
+// Questions hidden from the form even if the backend still lists them.
+const HIDDEN_FIELD_KEYS = new Set(["assumed_lifespan_years"]);
+
+// The lifespan question is hidden, but the engine still requires a value — fall
+// back to this when there's no saved one so readiness never blocks on it.
+const DEFAULT_ASSUMED_LIFESPAN_YEARS = 85;
+
+/** Show numeric inputs with thousands separators (Indian grouping), e.g. 12,34,567. */
+function formatWithCommas(raw: string): string {
+  if (!raw) return "";
+  const dot = raw.indexOf(".");
+  const intStr = dot >= 0 ? raw.slice(0, dot) : raw;
+  const decStr = dot >= 0 ? raw.slice(dot + 1) : null;
+  const intGrouped = intStr === "" ? "" : Number(intStr).toLocaleString("en-IN");
+  if (decStr === null) return intGrouped;
+  return `${intGrouped === "" ? "0" : intGrouped}.${decStr}`;
+}
+
 function groupFields(fields: CashflowReadinessField[]): [string, CashflowReadinessField[]][] {
   const order: string[] = [];
   const map = new Map<string, CashflowReadinessField[]>();
@@ -87,6 +105,7 @@ const CashflowGate = ({ onReady, editSignal }: CashflowGateProps) => {
     if (!readiness) return;
     const seed: Record<string, string> = {};
     for (const f of readiness.fields) {
+      if (HIDDEN_FIELD_KEYS.has(f.key)) continue;
       seed[f.key] = f.value == null ? "" : String(f.value);
     }
     setValues(seed);
@@ -102,7 +121,10 @@ const CashflowGate = ({ onReady, editSignal }: CashflowGateProps) => {
   }, [editSignal]);
 
   const grouped = useMemo(
-    () => (readiness ? groupFields(readiness.fields) : []),
+    () =>
+      readiness
+        ? groupFields(readiness.fields.filter((f) => !HIDDEN_FIELD_KEYS.has(f.key)))
+        : [],
     [readiness],
   );
 
@@ -117,6 +139,7 @@ const CashflowGate = ({ onReady, editSignal }: CashflowGateProps) => {
     const out: CashflowInputValues = {};
 
     for (const f of readiness.fields) {
+      if (HIDDEN_FIELD_KEYS.has(f.key)) continue;
       const raw = (values[f.key] ?? "").trim();
       if (raw === "") {
         if (!f.optional) nextErrors[f.key] = "Required";
@@ -143,11 +166,19 @@ const CashflowGate = ({ onReady, editSignal }: CashflowGateProps) => {
         }
         out.effective_tax_rate = n / 100;
       } else if (f.kind === "int") {
-        if (f.key === "assumed_lifespan_years") out.assumed_lifespan_years = Math.round(n);
-        else if (f.key === "retirement_age") out.retirement_age = Math.round(n);
+        if (f.key === "retirement_age") out.retirement_age = Math.round(n);
       } else if (PFP_NUMERIC_KEYS.has(f.key)) {
         (out as Record<string, number>)[f.key] = n;
       }
+    }
+
+    // Supply the hidden "assumed lifespan" value (saved one, else a default) so
+    // the engine's readiness check isn't blocked on a question we no longer ask.
+    const lifeField = readiness.fields.find((f) => f.key === "assumed_lifespan_years");
+    if (lifeField) {
+      const saved = lifeField.value != null ? Math.round(Number(lifeField.value)) : NaN;
+      out.assumed_lifespan_years =
+        Number.isFinite(saved) && saved > 0 ? saved : DEFAULT_ASSUMED_LIFESPAN_YEARS;
     }
 
     if (Object.keys(nextErrors).length > 0) {
@@ -207,7 +238,7 @@ const CashflowGate = ({ onReady, editSignal }: CashflowGateProps) => {
   const showLockOverlay = loading || !ready;
 
   const missingCount = readiness
-    ? readiness.fields.filter((f) => !f.optional && !f.present).length
+    ? readiness.fields.filter((f) => !HIDDEN_FIELD_KEYS.has(f.key) && !f.optional && !f.present).length
     : 0;
 
   return (
@@ -314,14 +345,32 @@ const CashflowGate = ({ onReady, editSignal }: CashflowGateProps) => {
                                 </span>
                               )}
                             </label>
-                            <input
-                              type={f.kind === "date" ? "date" : "number"}
-                              inputMode={f.kind === "date" ? undefined : "decimal"}
-                              step={f.kind === "percent" ? "0.5" : f.kind === "int" ? "1" : "any"}
-                              value={values[f.key] ?? ""}
-                              onChange={(e) => setVal(f.key, e.target.value)}
-                              className={`${inputClass} mt-1.5 ${err ? "border-destructive ring-1 ring-destructive" : ""}`}
-                            />
+                            {f.kind === "date" ? (
+                              <input
+                                type="date"
+                                value={values[f.key] ?? ""}
+                                onChange={(e) => setVal(f.key, e.target.value)}
+                                className={`${inputClass} mt-1.5 ${err ? "border-destructive ring-1 ring-destructive" : ""}`}
+                              />
+                            ) : f.kind === "percent" ? (
+                              <input
+                                type="number"
+                                inputMode="decimal"
+                                step="0.5"
+                                value={values[f.key] ?? ""}
+                                onChange={(e) => setVal(f.key, e.target.value)}
+                                className={`${inputClass} mt-1.5 ${err ? "border-destructive ring-1 ring-destructive" : ""}`}
+                              />
+                            ) : (
+                              // Money / count fields — text input so we can show thousands separators.
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                value={formatWithCommas(values[f.key] ?? "")}
+                                onChange={(e) => setVal(f.key, e.target.value.replace(/[^\d.]/g, ""))}
+                                className={`${inputClass} mt-1.5 ${err ? "border-destructive ring-1 ring-destructive" : ""}`}
+                              />
+                            )}
                             {f.help && !err && (
                               <p className="mt-1 text-[10.5px] leading-snug text-muted-foreground/80">{f.help}</p>
                             )}
