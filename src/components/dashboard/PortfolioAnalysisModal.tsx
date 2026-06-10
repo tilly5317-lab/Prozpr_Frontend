@@ -17,7 +17,6 @@ import {
 } from "recharts";
 import { Download, Info, X } from "lucide-react";
 import type { PortfolioDetail } from "@/lib/api";
-import { formatInrCompact, formatInrPaisa } from "@/lib/utils";
 
 type AnalysisTab = "returns" | "nav" | "waterfall";
 type AnalysisRange = "1M" | "3M" | "YTD" | "1Y" | "3Y" | "All";
@@ -29,7 +28,7 @@ const TABS: { id: AnalysisTab; label: string }[] = [
 ];
 
 // Catalog of benchmarks the user can layer onto the Returns chart.
-// `multiplier` is applied to the portfolio MWR to synthesize a plausible benchmark return.
+// `multiplier` is applied to the portfolio TWR to synthesize a plausible benchmark return.
 type BenchmarkOption = {
   id: string;
   shortName: string;
@@ -119,8 +118,24 @@ function synthNavCurve(
   return out;
 }
 
+// Portfolio-analysis figures are all shown to a single decimal place.
 function fmtPct(n: number): string {
-  return `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
+  return `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
+}
+
+/** Full ₹ amount with Indian grouping, to one decimal. */
+function fmtInr1(n: number): string {
+  return `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}`;
+}
+
+/** Compact ₹ (Cr / L / k), to one decimal. Caller adds any +/- sign. */
+function fmtInrCompact1(n: number): string {
+  const sign = n < 0 ? "-" : "";
+  const a = Math.abs(n);
+  if (a >= 1e7) return `${sign}₹${(a / 1e7).toFixed(1)}Cr`;
+  if (a >= 1e5) return `${sign}₹${(a / 1e5).toFixed(1)}L`;
+  if (a >= 1e3) return `${sign}₹${(a / 1e3).toFixed(1)}k`;
+  return `${sign}₹${a.toFixed(1)}`;
 }
 
 const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -218,9 +233,7 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
     return stored === "returns" || stored === "nav" || stored === "waterfall" ? stored : "returns";
   });
   const [range, setRange] = useState<AnalysisRange>("1M");
-  const [selectedBenchmarkIds, setSelectedBenchmarkIds] = useState<string[]>(["nifty50"]);
-  const [benchmarkPickerOpen, setBenchmarkPickerOpen] = useState(false);
-  const [infoOpen, setInfoOpen] = useState<"mwr" | null>(null);
+  const [infoOpen, setInfoOpen] = useState<"twr" | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -237,18 +250,21 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  // Compute MWR from the simple gain (API doesn't return it yet).
+  // Time-weighted return: the portfolio's compounded holding-period return,
+  // independent of the size/timing of contributions (unlike MWR). The API
+  // doesn't return it yet, so approximate it from the simple holding-period
+  // gain — with no contribution-drag factor applied.
   const simpleGain = portfolio.total_gain_percentage ?? 0;
-  const fullMwr = Math.round(simpleGain * 0.94 * 100) / 100;
-  const scaledMwr = Math.round(fullMwr * rangeScaleFactor(range) * 100) / 100;
+  const fullTwr = Math.round(simpleGain * 100) / 100;
+  const scaledTwr = Math.round(fullTwr * rangeScaleFactor(range) * 100) / 100;
 
-  // Benchmarks the user has chosen to overlay (always at least one).
-  const activeBenchmarks = BENCHMARKS.filter((b) => selectedBenchmarkIds.includes(b.id));
-  const primaryBenchmark = activeBenchmarks[0] ?? BENCHMARKS[0];
+  // Single fixed benchmark — Nifty 50 (the add/compare picker was removed).
+  const primaryBenchmark = BENCHMARKS.find((b) => b.id === "nifty50") ?? BENCHMARKS[0];
+  const activeBenchmarks = [primaryBenchmark];
   const benchPctById = (() => {
     const out: Record<string, number> = {};
     for (const b of BENCHMARKS) {
-      out[b.id] = Math.round(scaledMwr * b.multiplier * 100) / 100;
+      out[b.id] = Math.round(scaledTwr * b.multiplier * 100) / 100;
     }
     return out;
   })();
@@ -262,20 +278,20 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
 
   const returnsSeries = useMemo(() => {
     const n = pointsForRange(range);
-    const mwr = synthCurve(0, scaledMwr, n, 11);
+    const twr = synthCurve(0, scaledTwr, n, 11);
     const benchCurves: Record<string, number[]> = {};
     for (const b of activeBenchmarks) {
-      const target = Math.round(scaledMwr * b.multiplier * 100) / 100;
+      const target = Math.round(scaledTwr * b.multiplier * 100) / 100;
       benchCurves[b.id] = synthCurve(0, target, n, b.seed);
     }
-    return mwr.map((m, i) => {
-      const point: Record<string, number> = { i, mwr: m };
+    return twr.map((m, i) => {
+      const point: Record<string, number> = { i, twr: m };
       for (const b of activeBenchmarks) {
         point[`bench_${b.id}`] = benchCurves[b.id][i];
       }
       return point;
     });
-  }, [range, scaledMwr, activeBenchmarks]);
+  }, [range, scaledTwr, activeBenchmarks]);
 
 
   // NAV Changes data
@@ -351,7 +367,7 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
     if (tab === "returns") {
       const rows: (string | number)[][] = [
         ["Metric", `${range}`, "Full period"],
-        ["MWR %", scaledMwr, fullMwr],
+        ["TWR %", scaledTwr, fullTwr],
         ...activeBenchmarks.map((b) => [`${b.fullName} %`, benchPctById[b.id], ""]),
       ];
       downloadFile(`portfolio-returns-${ts}.csv`, "text/csv", toCsv(rows));
@@ -363,7 +379,7 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
         ["Start value", startNav],
         ["End value", currentNav],
         ["Change (₹)", navAbsChange],
-        ["Change (%)", Number(navPctChange.toFixed(2))],
+        ["Change (%)", Number(navPctChange.toFixed(1))],
       ];
       downloadFile(`portfolio-value-${ts}.csv`, "text/csv", toCsv(rows));
       return;
@@ -499,13 +515,13 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                           >
                             <div className="flex items-center gap-1 mb-0.5">
                               <p className="text-[9px] uppercase tracking-wide text-muted-foreground">
-                                MWR
+                                TWR
                               </p>
                               <button
                                 type="button"
-                                onClick={() => setInfoOpen((o) => (o === "mwr" ? null : "mwr"))}
+                                onClick={() => setInfoOpen((o) => (o === "twr" ? null : "twr"))}
                                 className="text-muted-foreground hover:text-foreground"
-                                aria-label="About MWR"
+                                aria-label="About TWR"
                               >
                                 <Info className="h-3 w-3" />
                               </button>
@@ -513,11 +529,11 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                             <p
                               className="text-base font-semibold leading-tight"
                               style={{
-                                color: scaledMwr >= 0 ? POSITIVE : NEGATIVE,
+                                color: scaledTwr >= 0 ? POSITIVE : NEGATIVE,
                                 fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
                               }}
                             >
-                              {fmtPct(scaledMwr)}
+                              {fmtPct(scaledTwr)}
                             </p>
                             <p className="text-[9px] text-muted-foreground mt-0.5">{range}</p>
                           </div>
@@ -547,8 +563,9 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                             style={{ backgroundColor: "hsl(var(--muted) / 0.6)" }}
                           >
                             <p className="text-[11.5px] text-foreground leading-relaxed">
-                              <strong>MWR</strong> reflects the actual return you experienced,
-                              factoring in the timing and size of your contributions.
+                              <strong>TWR</strong> measures the portfolio's compounded
+                              performance over time, stripping out the effect of when and how
+                              much you contributed — so it isolates investment performance.
                             </p>
                           </div>
                         )}
@@ -601,8 +618,8 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                               />
                               <Line
                                 type="monotone"
-                                dataKey="mwr"
-                                name="MWR"
+                                dataKey="twr"
+                                name="TWR"
                                 stroke={USER_LINE}
                                 strokeWidth={2}
                                 dot={false}
@@ -631,7 +648,7 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                               className="inline-block h-0.5 w-4"
                               style={{ backgroundColor: USER_LINE }}
                             />
-                            MWR
+                            TWR
                           </span>
                           {activeBenchmarks.map((b) => (
                             <span key={b.id} className="inline-flex items-center gap-1.5">
@@ -642,67 +659,6 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                               {b.shortName}
                             </span>
                           ))}
-                        </div>
-
-                        {/* Add / manage benchmarks */}
-                        <div className="mt-3">
-                          <button
-                            type="button"
-                            onClick={() => setBenchmarkPickerOpen((o) => !o)}
-                            className="inline-flex items-center gap-1 rounded-full bg-muted/70 px-2.5 py-1 text-[10.5px] font-semibold text-muted-foreground hover:text-foreground transition-colors"
-                          >
-                            <span>{benchmarkPickerOpen ? "Hide benchmarks" : "+ Add benchmark"}</span>
-                            <span className="text-[9px] text-muted-foreground/70">
-                              {activeBenchmarks.length} selected
-                            </span>
-                          </button>
-                          {benchmarkPickerOpen && (
-                            <div
-                              className="mt-2 rounded-xl px-2.5 py-2"
-                              style={{ border: `1px solid ${HAIRLINE}`, backgroundColor: "hsl(var(--muted) / 0.4)" }}
-                            >
-                              <div className="flex flex-wrap gap-1.5">
-                                {BENCHMARKS.map((b) => {
-                                  const active = selectedBenchmarkIds.includes(b.id);
-                                  const isLastSelected = active && selectedBenchmarkIds.length === 1;
-                                  return (
-                                    <button
-                                      key={b.id}
-                                      type="button"
-                                      onClick={() => {
-                                        setSelectedBenchmarkIds((prev) => {
-                                          if (prev.includes(b.id)) {
-                                            // Don't allow removing the last one.
-                                            return prev.length > 1 ? prev.filter((x) => x !== b.id) : prev;
-                                          }
-                                          return [...prev, b.id];
-                                        });
-                                      }}
-                                      disabled={isLastSelected}
-                                      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10.5px] font-semibold transition-colors ${
-                                        active
-                                          ? "bg-foreground text-background"
-                                          : "bg-card text-muted-foreground hover:text-foreground"
-                                      } ${isLastSelected ? "cursor-not-allowed opacity-70" : ""}`}
-                                      style={{
-                                        border: active ? "none" : `1px solid ${HAIRLINE}`,
-                                      }}
-                                      title={isLastSelected ? "Keep at least one benchmark" : b.fullName}
-                                    >
-                                      <span
-                                        className="h-1.5 w-1.5 rounded-full"
-                                        style={{ backgroundColor: b.color }}
-                                      />
-                                      {b.shortName}
-                                      <span className="ml-1 text-[9.5px] font-normal opacity-75 tabular-nums">
-                                        {fmtPct(benchPctById[b.id])}
-                                      </span>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
                         </div>
                       </div>
                     )}
@@ -721,7 +677,7 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                             className="text-2xl font-bold text-foreground leading-tight tracking-tight"
                             style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
                           >
-                            {formatInrPaisa(currentNav)}
+                            {fmtInr1(currentNav)}
                           </p>
                           <div className="mt-1 flex items-center gap-2 text-[11.5px]">
                             <span
@@ -729,7 +685,7 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                               style={{ color: navAbsChange >= 0 ? POSITIVE : NEGATIVE }}
                             >
                               {navAbsChange >= 0 ? "+" : "-"}
-                              {formatInrCompact(Math.abs(navAbsChange))}
+                              {fmtInrCompact1(Math.abs(navAbsChange))}
                             </span>
                             <span
                               className="font-semibold"
@@ -774,7 +730,7 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                                 orientation="right"
                                 width={36}
                                 tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
-                                tickFormatter={(v) => formatInrCompact(v)}
+                                tickFormatter={(v) => fmtInrCompact1(v)}
                                 axisLine={false}
                                 tickLine={false}
                               />
@@ -787,7 +743,7 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                                   color: "hsl(var(--foreground))",
                                 }}
                                 labelStyle={{ color: "hsl(var(--foreground))", fontWeight: 600 }}
-                                formatter={(v: number) => [formatInrPaisa(v), "Value"]}
+                                formatter={(v: number) => [fmtInr1(v), "Value"]}
                                 labelFormatter={(label) =>
                                   formatDateTick(range, dateForIndex(range, Number(label), seriesPoints, today))
                                 }
@@ -819,11 +775,11 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                           style={{ border: `1px solid ${HAIRLINE}` }}
                         >
                           {[
-                            { k: "Start value", v: formatInrPaisa(startNav) },
-                            { k: "End value", v: formatInrPaisa(currentNav) },
+                            { k: "Start value", v: fmtInr1(startNav) },
+                            { k: "End value", v: fmtInr1(currentNav) },
                             {
                               k: "Change",
-                              v: `${navAbsChange >= 0 ? "+" : "-"}${formatInrCompact(Math.abs(navAbsChange))}`,
+                              v: `${navAbsChange >= 0 ? "+" : "-"}${fmtInrCompact1(Math.abs(navAbsChange))}`,
                               color: navAbsChange >= 0 ? POSITIVE : NEGATIVE,
                             },
                             {
@@ -890,7 +846,7 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                             className="font-semibold text-foreground"
                             style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
                           >
-                            {formatInrCompact(currentNav)}
+                            {fmtInrCompact1(currentNav)}
                           </span>{" "}
                           — each bar shows one source of value.
                         </p>
@@ -913,7 +869,7 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                               />
                               <YAxis
                                 tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
-                                tickFormatter={(v) => formatInrCompact(v)}
+                                tickFormatter={(v) => fmtInrCompact1(v)}
                                 axisLine={false}
                                 tickLine={false}
                                 width={52}
@@ -937,7 +893,7 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                                       }}
                                     >
                                       <div style={{ fontWeight: 600, marginBottom: 2 }}>{String(label)}</div>
-                                      <div>{formatInrPaisa(Math.abs(point.display ?? 0))}</div>
+                                      <div>{fmtInr1(Math.abs(point.display ?? 0))}</div>
                                     </div>
                                   );
                                 }}
@@ -1007,10 +963,10 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                                   }}
                                 >
                                   {w.kind === "negative"
-                                    ? `-${formatInrCompact(Math.abs(w.value))}`
+                                    ? `-${fmtInrCompact1(Math.abs(w.value))}`
                                     : w.kind === "total"
-                                      ? formatInrCompact(w.running)
-                                      : `${w.value > 0 ? "+" : ""}${formatInrCompact(Math.abs(w.value))}`}
+                                      ? fmtInrCompact1(w.running)
+                                      : `${w.value > 0 ? "+" : ""}${fmtInrCompact1(Math.abs(w.value))}`}
                                 </span>
                               </div>
                             );

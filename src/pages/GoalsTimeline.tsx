@@ -20,6 +20,7 @@ import {
   Home,
   Landmark,
   Loader2,
+  PiggyBank,
   Plane,
   Plus,
   RotateCcw,
@@ -385,14 +386,16 @@ interface AddGoalSheetProps {
   maxYear: number;
   editingGoal: TimelineGoal | null;
   saving: boolean;
+  /** Year the user is projected to retire — used to prefill the Retirement goal. */
+  retirementYear: number;
   onClose: () => void;
   onSubmit: (goal: Omit<TimelineGoal, "id">, editingId?: string) => void | Promise<void>;
 }
 
 // Quick-pick goal categories shown as the first step of the add-goal sheet.
-// "Retirement" is intentionally omitted — the planner models retirement from the
-// user's profile (age & target corpus), and the save handler rejects it.
+// "Retirement" prefills its target year from the user's profile retirement age.
 const GOAL_CATEGORIES: { id: string; label: string; icon: LucideIcon }[] = [
+  { id: "retirement", label: "Retirement", icon: PiggyBank },
   { id: "house", label: "Buy property", icon: Home },
   { id: "education", label: "Education", icon: GraduationCap },
   { id: "marriage", label: "Marriage", icon: Heart },
@@ -407,6 +410,7 @@ function AddGoalSheet({
   maxYear,
   editingGoal,
   saving,
+  retirementYear,
   onClose,
   onSubmit,
 }: AddGoalSheetProps) {
@@ -418,6 +422,7 @@ function AddGoalSheet({
   const [propertyValue, setPropertyValue] = useState("");
   const [fundedByLoan, setFundedByLoan] = useState(false);
   const [loanPct, setLoanPct] = useState("");
+  const [loanTermYears, setLoanTermYears] = useState("");
   const [year, setYear] = useState<number>(initialYear ?? currentYear + 5);
   const [inflation, setInflation] = useState<string>(String(INFLATION_DEFAULT));
   const [priority, setPriority] = useState<Priority>("Medium");
@@ -440,6 +445,7 @@ function AddGoalSheet({
       );
       setFundedByLoan(false);
       setLoanPct("");
+      setLoanTermYears("");
       setYear(editingGoal.year);
       setInflation(String(editingGoal.inflationRate));
       setPriority(editingGoal.priority);
@@ -452,6 +458,7 @@ function AddGoalSheet({
     setPropertyValue("");
     setFundedByLoan(false);
     setLoanPct("");
+    setLoanTermYears("");
     setYear(initialYear ?? currentYear + 5);
     setInflation(String(INFLATION_DEFAULT));
     setPriority("Medium");
@@ -555,7 +562,13 @@ function AddGoalSheet({
                         <button
                           key={c.id}
                           type="button"
-                          onClick={() => setCategory(c.id)}
+                          onClick={() => {
+                            setCategory(c.id);
+                            // Prefill the retirement goal's target year from the profile.
+                            if (c.id === "retirement") {
+                              setYear(Math.min(maxYear, Math.max(currentYear, retirementYear)));
+                            }
+                          }}
                           className={`flex items-center gap-2 rounded-xl px-3 py-2 text-left transition-colors ${
                             active
                               ? "border-foreground/30 bg-muted/60 text-foreground"
@@ -712,6 +725,23 @@ function AddGoalSheet({
                             style={{ border: "1px solid hsl(var(--border))" }}
                           />
                         </div>
+                        <div>
+                          <label
+                            htmlFor="timeline-goal-loan-term"
+                            className="text-[10px] uppercase tracking-wide text-muted-foreground"
+                          >
+                            Expected loan term (years)
+                          </label>
+                          <input
+                            id="timeline-goal-loan-term"
+                            value={loanTermYears}
+                            onChange={(e) => setLoanTermYears(e.target.value.replace(/[^\d]/g, ""))}
+                            inputMode="numeric"
+                            placeholder="20"
+                            className="mt-1 w-full rounded-lg bg-card px-3 py-2 text-[13px] tabular-nums text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-foreground/30"
+                            style={{ border: "1px solid hsl(var(--border))" }}
+                          />
+                        </div>
                         {totalValue > 0 && loanPctNum > 0 && (
                           <p className="text-[10.5px] text-muted-foreground">
                             Loan ≈{" "}
@@ -848,12 +878,16 @@ function AddGoalSheet({
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                        Cost at {year}
+                        {fundedByLoan && loanAmount > 0 ? "Self-funded cost at" : "Cost at"} {year}
                       </p>
                       <p className="mt-0.5 text-[11px] text-muted-foreground/80">
                         {amountKind === "future"
-                          ? "Entered as the future-dated amount"
-                          : `Today's cost compounded at ${infl || 0}% for ${yearsAway} yr`}
+                          ? fundedByLoan && loanAmount > 0
+                            ? "Entered as the future-dated self-funded amount (down payment only, not the total cost)"
+                            : "Entered as the future-dated amount"
+                          : fundedByLoan && loanAmount > 0
+                            ? `Today's self-funded cost — down payment only, not the total — compounded at ${infl || 0}% for ${yearsAway} yr`
+                            : `Today's cost compounded at ${infl || 0}% for ${yearsAway} yr`}
                       </p>
                     </div>
                     <span
@@ -1459,13 +1493,6 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
 
   const handleGoalSubmit = useCallback(
     async (incoming: Omit<TimelineGoal, "id">, editingId?: string) => {
-      if (incoming.name.trim().toLowerCase() === "retirement") {
-        toast.error(
-          "Retirement is modeled from your profile (age & target corpus), not as a separate goal.",
-        );
-        return;
-      }
-
       const payload = {
         name: incoming.name.trim(),
         target_amount: Math.round(incoming.presentValue),
@@ -2481,6 +2508,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
         maxYear={capYear}
         editingGoal={editGoal}
         saving={goalSaving}
+        retirementYear={retirementYear}
         onClose={closeGoalSheet}
         onSubmit={handleGoalSubmit}
       />

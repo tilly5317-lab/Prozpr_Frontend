@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Send, Mic, MicOff, AlertCircle, Loader2, Sparkles, Check, Square, ChevronDown, ChevronUp, Pencil, ArrowRight, Plus, Trash2, MessageSquare, Menu } from "lucide-react";
+import { X, Send, Mic, MicOff, AlertCircle, Loader2, Sparkles, Check, Square, ChevronDown, ChevronUp, Pencil, ArrowRight, Plus, Trash2, MessageSquare, Menu, ThumbsUp, ThumbsDown } from "lucide-react";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { formatInrMillions } from "@/lib/utils";
@@ -786,6 +786,17 @@ const AIChatPanel = ({
   demoExpenseRef.current = demoExpense;
   demoEmergencyMonthsRef.current = demoEmergencyMonths;
 
+  /* ── Per-response thumbs up/down feedback (keyed by message index) ── */
+  const [feedback, setFeedback] = useState<Record<number, "up" | "down">>({});
+  const setMsgFeedback = useCallback((i: number, v: "up" | "down") => {
+    setFeedback((prev) => {
+      const next = { ...prev };
+      if (next[i] === v) delete next[i]; // tap again to undo
+      else next[i] = v;
+      return next;
+    });
+  }, []);
+
   /* ── Kudos dismissal ── */
   const [dismissedKudos, setDismissedKudos] = useState<Set<number>>(new Set());
 
@@ -806,6 +817,7 @@ const AIChatPanel = ({
       const session = await createChatSession("New conversation");
       sessionIdRef.current = session.id;
       setMessages([]);
+      setFeedback({});
       setChatStartTime(formatTimestamp());
       setShowFirstUseHint(true);
       setOnboardingActive(false);
@@ -819,6 +831,7 @@ const AIChatPanel = ({
     if (dummyMessages) {
       const dummy = DUMMY_SESSIONS.find((s) => s.id === sessionId);
       sessionIdRef.current = sessionId;
+      setFeedback({});
       setMessages(dummyMessages.map((m) => ({ ...m })));
       setChatStartTime(
         new Date(dummy?.created_at ?? Date.now()).toLocaleString("en-IN", {
@@ -833,6 +846,7 @@ const AIChatPanel = ({
     try {
       const session = await getChatSession(sessionId);
       sessionIdRef.current = session.id;
+      setFeedback({});
       setMessages(
         session.messages.map((m) => ({
           role: m.role === "assistant" ? ("ai" as const) : ("user" as const),
@@ -1394,6 +1408,35 @@ const AIChatPanel = ({
                 >
                   <MarkdownMessage text={msg.content} />
                 </div>
+              </div>
+              {/* Per-response feedback — lets people flag a good/poor answer. */}
+              <div className="ml-7 -mt-0.5 flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setMsgFeedback(i, "up")}
+                  aria-label="Good response"
+                  aria-pressed={feedback[i] === "up"}
+                  className={`rounded-full p-1 transition-colors ${
+                    feedback[i] === "up"
+                      ? "text-wealth-green"
+                      : "text-muted-foreground/50 hover:text-foreground"
+                  }`}
+                >
+                  <ThumbsUp className="h-3.5 w-3.5" fill={feedback[i] === "up" ? "currentColor" : "none"} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMsgFeedback(i, "down")}
+                  aria-label="Poor response"
+                  aria-pressed={feedback[i] === "down"}
+                  className={`rounded-full p-1 transition-colors ${
+                    feedback[i] === "down"
+                      ? "text-destructive"
+                      : "text-muted-foreground/50 hover:text-foreground"
+                  }`}
+                >
+                  <ThumbsDown className="h-3.5 w-3.5" fill={feedback[i] === "down" ? "currentColor" : "none"} />
+                </button>
               </div>
               {showBackToInvest && i === 0 && msg.role === "ai" && (
                 <button

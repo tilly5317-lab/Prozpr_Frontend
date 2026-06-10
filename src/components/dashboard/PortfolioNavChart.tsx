@@ -18,17 +18,14 @@ import {
 } from "@/lib/api";
 import { formatInrCompact, formatInrPaisa } from "@/lib/utils";
 
-const HORIZONS: PortfolioNavHorizon[] = ["1M", "1Y", "3Y", "MAX"];
+const HORIZONS: PortfolioNavHorizon[] = ["1M", "3M", "1Y", "3Y", "MAX"];
 
-function formatXLabel(iso: string, horizon: PortfolioNavHorizon): string {
+// X-axis labels always read as "mmm-yy" (e.g. Jun-26).
+function formatXLabel(iso: string): string {
   const d = new Date(iso);
-  if (horizon === "1M") {
-    return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
-  }
-  if (horizon === "1Y") {
-    return d.toLocaleDateString("en-IN", { month: "short" });
-  }
-  return d.toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
+  const mon = d.toLocaleDateString("en-IN", { month: "short" });
+  const yy = String(d.getFullYear()).slice(-2);
+  return `${mon}-${yy}`;
 }
 
 function formatTooltipDate(iso: string): string {
@@ -88,12 +85,8 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
   // One-time net-worth-history backfill job (null = not checked / no job yet).
   const [job, setJob] = useState<NetworthJobStatus | null>(null);
   const [starting, setStarting] = useState(false);
-<<<<<<< HEAD
-  // Guards the automatic one-time build so it fires at most once per mount.
-=======
   // Guards the auto-build so we kick it off at most once per mount (and never
   // auto-retry a failed build — that stays on the explicit "Try again" button).
->>>>>>> 8456f401dd3dc63daecc0d4342fd34ed962d47cb
   const autoStartedRef = useRef(false);
 
   useEffect(() => {
@@ -121,22 +114,15 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
   const hasPoints = !!points && points.length > 0;
   const jobActive = job?.status === "pending" || job?.status === "running";
 
-  // When there's no series yet, check whether a build job is already in flight
-  // (e.g. the user reloaded mid-build) so we resume showing progress — and if no
-  // job has ever run, kick the one-time build off automatically (no click needed).
+  // When there's no series yet, fetch the build-job status (e.g. the user
+  // reloaded mid-build) so we can resume showing progress. The actual auto-build
+  // is kicked off by the effect below, which runs after `startBuild` is defined.
   useEffect(() => {
     if (loading || hasPoints || errored) return;
     let cancelled = false;
     getNetworthHistoryStatus()
       .then((s) => {
-        if (cancelled) return;
-        setJob(s);
-        // Auto-build the first time we find no history and no job in flight.
-        // Failures are left to the manual "Try again" so we never auto-retry.
-        if (!s.has_history && s.status === "none" && !autoStartedRef.current) {
-          autoStartedRef.current = true;
-          void startBuild();
-        }
+        if (!cancelled) setJob(s);
       })
       .catch(() => {
         /* leave job null — the loading state still shows */
@@ -144,7 +130,7 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
     return () => {
       cancelled = true;
     };
-  }, [loading, hasPoints, errored, startBuild]);
+  }, [loading, hasPoints, errored]);
 
   // Poll while a build is pending/running; reload the chart once it succeeds.
   useEffect(() => {
@@ -191,8 +177,6 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
       setStarting(false);
     }
   }, []);
-<<<<<<< HEAD
-=======
 
   // Auto-build on first view: once we've confirmed there's no series and no job
   // has ever run (status "none"), kick off the backfill ourselves so the chart
@@ -206,13 +190,13 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
       void startBuild();
     }
   }, [loading, hasPoints, errored, job, starting, startBuild]);
->>>>>>> 8456f401dd3dc63daecc0d4342fd34ed962d47cb
 
   const chartData = useMemo(() => {
     if (points && points.length) {
-      return points.map((p) => ({
+      return points.map((p, i) => ({
         ...p,
-        x: formatXLabel(p.recorded_date, horizon),
+        x: formatXLabel(p.recorded_date),
+        idx: i,
       }));
     }
     if (fallbackValues && fallbackValues.length) {
@@ -227,14 +211,45 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
           total_value: v * 100000,
           total_invested: v * 100000,
           gain_percentage: 0,
-          x: formatXLabel(iso, horizon),
+          x: formatXLabel(iso),
+          idx: i,
         };
       });
     }
     return [];
   }, [points, horizon, fallbackValues]);
 
-  const tickCount = horizon === "1M" ? 4 : horizon === "1Y" ? 5 : 6;
+  const tickCount = horizon === "1M" || horizon === "3M" ? 4 : horizon === "1Y" ? 5 : 6;
+
+  // Evenly-spaced X ticks by data index (numeric axis), so spacing stays uniform
+  // regardless of how many points or repeated month labels there are.
+  const xTicks = useMemo(() => {
+    const n = chartData.length;
+    if (n <= 1) return [0];
+    const count = Math.min(tickCount, n);
+    const idxs = Array.from({ length: count }, (_, i) => Math.round((i * (n - 1)) / (count - 1)));
+    return Array.from(new Set(idxs));
+  }, [chartData, tickCount]);
+
+  // Evenly-spaced Y ticks across a padded [min, max] so the gridlines are uniform.
+  const yTicks = useMemo(() => {
+    if (!chartData.length) return undefined;
+    const vals = chartData.map((d) => d.total_value);
+    let lo = Math.min(...vals);
+    let hi = Math.max(...vals);
+    if (!Number.isFinite(lo) || !Number.isFinite(hi)) return undefined;
+    if (lo === hi) {
+      const pad = Math.abs(lo) * 0.05 || 1;
+      lo -= pad;
+      hi += pad;
+    } else {
+      const pad = (hi - lo) * 0.06;
+      lo -= pad;
+      hi += pad;
+    }
+    const steps = 4; // → 5 evenly-spaced ticks
+    return Array.from({ length: steps + 1 }, (_, i) => lo + ((hi - lo) * i) / steps);
+  }, [chartData]);
   const positiveGain = chartData.length
     ? chartData[chartData.length - 1].gain_percentage >= 0
     : true;
@@ -328,7 +343,7 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart
               data={chartData}
-              margin={{ top: 6, right: 6, left: 0, bottom: 0 }}
+              margin={{ top: 6, right: 24, left: 0, bottom: 0 }}
             >
               <defs>
                 <linearGradient id="navGrad" x1="0" y1="0" x2="0" y2="1">
@@ -342,16 +357,21 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
                 vertical={false}
               />
               <XAxis
-                dataKey="x"
+                dataKey="idx"
+                type="number"
+                domain={[0, Math.max(0, chartData.length - 1)]}
+                ticks={xTicks}
+                interval={0}
+                tickFormatter={(i) => chartData[Number(i)]?.x ?? ""}
                 tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }}
                 axisLine={false}
                 tickLine={false}
-                interval="preserveStartEnd"
-                minTickGap={20}
-                tickCount={tickCount}
+                tickMargin={6}
               />
               <YAxis
-                domain={["dataMin", "dataMax"]}
+                domain={yTicks ? [yTicks[0], yTicks[yTicks.length - 1]] : ["dataMin", "dataMax"]}
+                ticks={yTicks}
+                interval={0}
                 tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }}
                 axisLine={false}
                 tickLine={false}
