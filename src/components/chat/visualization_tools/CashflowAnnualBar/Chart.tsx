@@ -9,7 +9,8 @@ import {
   Legend,
   CartesianGrid,
 } from "recharts";
-import { formatInrIndian, exportCashflowXls } from "@/lib/export-xls";
+import { exportCashflowXls } from "@/lib/export-xls";
+import { formatInrMillions } from "@/lib/utils";
 import type { CashflowAnnualBar } from "../types";
 
 interface Props {
@@ -30,8 +31,8 @@ export function CashflowAnnualBar({ payload }: Props) {
   );
 
   const tickFormatter = (v: number) => {
-    if (v >= 1e7) return `${(v / 1e7).toFixed(1)}Cr`;
-    if (v >= 1e5) return `${(v / 1e5).toFixed(0)}L`;
+    if (v >= 1e9) return `${(v / 1e9).toFixed(1)}B`;
+    if (v >= 1e6) return `${(v / 1e6).toFixed(1)}M`;
     if (v >= 1e3) return `${(v / 1e3).toFixed(0)}k`;
     return String(v);
   };
@@ -76,7 +77,7 @@ export function CashflowAnnualBar({ payload }: Props) {
               width={44}
             />
             <Tooltip
-              formatter={(value: number, name: string) => [formatInrIndian(value), name]}
+              formatter={(value: number, name: string) => [formatInrMillions(value), name]}
               contentStyle={{
                 borderRadius: 8,
                 border: "1px solid hsl(var(--border))",

@@ -1,5 +1,5 @@
 import type { BuySellLedgerPayload } from "./types";
-import { formatInrCompact } from "@/lib/utils";
+import { formatInrMillions } from "@/lib/utils";
 
 export function BuySellLedger({ payload }: { payload: BuySellLedgerPayload }) {
   return (
@@ -34,10 +34,10 @@ export function BuySellLedger({ payload }: { payload: BuySellLedgerPayload }) {
                   <div className="text-[10px] text-muted-foreground">{row.sub_category}</div>
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums font-semibold text-[hsl(160_50%_28%)]">
-                  {row.buy_inr > 0 ? formatInrCompact(row.buy_inr) : "—"}
+                  {row.buy_inr > 0 ? formatInrMillions(row.buy_inr) : "—"}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums font-semibold text-destructive">
-                  {row.sell_inr > 0 ? formatInrCompact(row.sell_inr) : "—"}
+                  {row.sell_inr > 0 ? formatInrMillions(row.sell_inr) : "—"}
                 </td>
               </tr>
             ))}

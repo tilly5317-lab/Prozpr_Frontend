@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Send, Mic, MicOff, AlertCircle, Loader2, Sparkles, Check, Square, ChevronDown, ChevronUp, Pencil, ArrowRight, Plus, Trash2, MessageSquare, Menu } from "lucide-react";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { formatInrMillions } from "@/lib/utils";
 import {
   createChatSession,
   sendChatMessage,
@@ -79,7 +80,7 @@ const DUMMY_USER_CONTEXT: UserInfo = {
 const GOAL_DEMO_CHECKPOINT_LABELS = ["Goals", "Corpus", "Deadline", "Inflation", "Review", "Summary"] as const;
 
 function formatDemoINR(n: number): string {
-  return `₹${Math.round(Math.max(0, n)).toLocaleString("en-IN")}`;
+  return `₹${Math.round(Math.max(0, n)).toLocaleString("en-US")}`;
 }
 
 function splitGoalItems(text: string): string[] {
@@ -905,8 +906,7 @@ const AIChatPanel = ({
     if (!p || p.total_value <= 0) {
       return "Your profile is set up. Add holdings or sync to see portfolio-level insights.";
     }
-    const fmt = (n: number) =>
-      n >= 100000 ? `₹${(n / 100000).toFixed(1)}L` : `₹${Math.round(n).toLocaleString("en-IN")}`;
+    const fmt = (n: number) => formatInrMillions(n);
     if (!p.allocations.length) {
       return `Your portfolio is valued at ${fmt(p.total_value)}. Add allocation details for richer guidance.`;
     }

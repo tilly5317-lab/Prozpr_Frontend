@@ -9,7 +9,8 @@ import {
   formatDate,
   formatINRCompact,
   formatINRPaisa,
-  formatPct,
+  formatNav1,
+  formatPct1,
   formatUnits,
   NavChart,
   navPointsFromApi,
@@ -196,7 +197,7 @@ export default function PortfolioFundDetail() {
                     className="mt-0.5 text-[18px] font-semibold tabular-nums text-foreground"
                     style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
                   >
-                    ₹{last.toFixed(4)}
+                    ₹{formatNav1(last)}
                   </p>
                 </div>
                 <div className="text-right">
@@ -205,7 +206,7 @@ export default function PortfolioFundDetail() {
                     className="text-[13px] font-semibold tabular-nums"
                     style={{ color: isUp ? "hsl(160 50% 38%)" : "hsl(0 84% 50%)" }}
                   >
-                    {formatPct(rangeReturn)}
+                    {formatPct1(rangeReturn)}
                   </p>
                 </div>
               </div>
@@ -237,7 +238,7 @@ export default function PortfolioFundDetail() {
                                 : "hsl(0 84% 50%)",
                         }}
                       >
-                        {formatPct(value)}
+                        {formatPct1(value)}
                       </p>
                     </div>
                   );
@@ -285,12 +286,12 @@ export default function PortfolioFundDetail() {
                   <StatBlock
                     label="Unrealised gain"
                     value={`${unrealisedGain >= 0 ? "+" : "−"}${formatINRPaisa(Math.abs(unrealisedGain))}`}
-                    hint={formatPct(unrealisedPct)}
+                    hint={formatPct1(unrealisedPct)}
                     valueColor={unrealisedGain >= 0 ? "hsl(160 50% 38%)" : "hsl(0 84% 50%)"}
                   />
                   <StatBlock
                     label="Avg cost / unit"
-                    value={avgCostPerUnit != null ? `₹${avgCostPerUnit.toFixed(4)}` : "—"}
+                    value={avgCostPerUnit != null ? `₹${formatNav1(avgCostPerUnit)}` : "—"}
                   />
                 </div>
               )}
@@ -332,7 +333,7 @@ export default function PortfolioFundDetail() {
                           {formatINRCompact(Math.abs(t.signed_amount))}
                         </span>
                         <span className="col-span-2 text-right text-muted-foreground">
-                          ₹{t.nav.toFixed(2)}
+                          ₹{formatNav1(t.nav)}
                         </span>
                       </li>
                     ))}
