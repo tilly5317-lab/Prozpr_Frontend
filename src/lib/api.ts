@@ -706,6 +706,16 @@ export async function deleteChatSession(sessionId: string): Promise<void> {
   await request<void>(`/chat/sessions/${sessionId}`, { method: "DELETE" });
 }
 
+export async function renameChatSession(
+  sessionId: string,
+  title: string,
+): Promise<ChatSessionInfo> {
+  return request<ChatSessionInfo>(`/chat/sessions/${sessionId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ title }),
+  });
+}
+
 // ── Shared constants ────────────────────────────────────
 
 export const RISK_CATEGORIES = [
