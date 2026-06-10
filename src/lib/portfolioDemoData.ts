@@ -22,7 +22,7 @@ export const demoSelfPortfolio: PortfolioDetail = {
   allocations: [
     { id: "a1", asset_class: "Equity", allocation_percentage: 58, amount: 14_21_000, performance_percentage: 18.2 },
     { id: "a2", asset_class: "Debt", allocation_percentage: 32, amount: 7_84_000, performance_percentage: 7.1 },
-    { id: "a3", asset_class: "Gold", allocation_percentage: 10, amount: 2_45_000, performance_percentage: 12.4 },
+    { id: "a3", asset_class: "Others", allocation_percentage: 10, amount: 2_45_000, performance_percentage: 12.4 },
   ],
   holdings: [
     {
@@ -35,6 +35,8 @@ export const demoSelfPortfolio: PortfolioDetail = {
       current_price: null,
       current_value: 6_20_000,
       allocation_percentage: 25.3,
+      asset_class: "Equity",
+      sub_category: "Flexi Cap Fund",
     },
     {
       id: "h2",
@@ -46,6 +48,8 @@ export const demoSelfPortfolio: PortfolioDetail = {
       current_price: null,
       current_value: 4_10_000,
       allocation_percentage: 16.7,
+      asset_class: "Debt",
+      sub_category: "Corporate Bond Fund",
     },
     {
       id: "h3",
@@ -57,6 +61,8 @@ export const demoSelfPortfolio: PortfolioDetail = {
       current_price: null,
       current_value: 2_45_000,
       allocation_percentage: 10.0,
+      asset_class: "Others",
+      sub_category: "Gold ETF",
     },
     {
       id: "h4",
@@ -68,6 +74,8 @@ export const demoSelfPortfolio: PortfolioDetail = {
       current_price: null,
       current_value: 6_10_000,
       allocation_percentage: 24.9,
+      asset_class: "Equity",
+      sub_category: "Large Cap Index Linked (Index/ETF)",
     },
     {
       id: "h5",
@@ -79,6 +87,8 @@ export const demoSelfPortfolio: PortfolioDetail = {
       current_price: null,
       current_value: 5_65_000,
       allocation_percentage: 23.1,
+      asset_class: "Debt",
+      sub_category: "Liquid Fund",
     },
   ],
 };
@@ -202,7 +212,7 @@ export function cloneDemoCumulativePortfolio(): CumulativePortfolioResponse {
     combined_allocations: [
       { asset_class: "Equity", total_amount: Math.round(total_value * 0.56), allocation_percentage: 56 },
       { asset_class: "Debt", total_amount: Math.round(total_value * 0.34), allocation_percentage: 34 },
-      { asset_class: "Gold", total_amount: Math.round(total_value * 0.1), allocation_percentage: 10 },
+      { asset_class: "Others", total_amount: Math.round(total_value * 0.1), allocation_percentage: 10 },
     ],
   };
 }
