@@ -340,6 +340,30 @@ export async function getOnboardingProfile(): Promise<OnboardingProfileResponse>
   return request<OnboardingProfileResponse>("/onboarding/profile");
 }
 
+/** Non-financial-asset holdings (gold, unlisted shares, etc.) — other_investments. */
+export interface OtherAssetPayload {
+  asset_name: string;
+  asset_type?: string | null;
+  current_value?: number | null;
+}
+
+export interface OtherAssetResponse {
+  id: string;
+  asset_name: string;
+  asset_type: string | null;
+  current_value: number | null;
+}
+
+/** Full-replace write of the user's "other assets" list. */
+export async function saveOtherAssets(
+  assets: OtherAssetPayload[],
+): Promise<OtherAssetResponse[]> {
+  return request<OtherAssetResponse[]>("/onboarding/other-assets", {
+    method: "POST",
+    body: JSON.stringify({ assets }),
+  });
+}
+
 export async function completeOnboarding() {
   return request("/onboarding/complete", {
     method: "POST",
@@ -703,6 +727,9 @@ export interface PersonalInfoPayload {
   personal_values?: string[] | null;
   address?: string | null;
   currency?: string | null;
+  /** Stored on `users`; required by the cashflow / goal-planning engine. */
+  date_of_birth?: string | null;
+  assumed_lifespan_years?: number | null;
 }
 
 export interface PersonalInfoResponse {
@@ -712,6 +739,34 @@ export interface PersonalInfoResponse {
   personal_values: string[] | null;
   address: string | null;
   currency: string;
+  date_of_birth?: string | null;
+  assumed_lifespan_years?: number | null;
+}
+
+/** Canonical household-finance scalars stored on `personal_finance_profiles`. */
+export interface PersonalFinancePayload {
+  annual_income?: number | null;
+  /** Blended post-deduction rate as a fraction (e.g. 0.22), NOT a percentage. */
+  effective_tax_rate?: number | null;
+  financial_assets?: number | null;
+  financial_liabilities_excl_mortgage?: number | null;
+  monthly_household_expense?: number | null;
+  starting_monthly_investment?: number | null;
+  selected_goals?: string[] | null;
+  custom_goals?: string[] | null;
+  investment_horizon?: string | null;
+  wealth_sources?: string[] | null;
+  personal_values?: string[] | null;
+}
+
+export interface PersonalFinanceResponse extends PersonalFinancePayload {
+  user_id: string;
+  selected_goals: string[];
+  custom_goals: string[];
+  investment_horizon: string | null;
+  wealth_sources: string[];
+  personal_values: string[];
+  updated_at: string | null;
 }
 
 export interface InvestmentProfilePayload {
@@ -832,6 +887,17 @@ export async function updatePersonalInfo(p: PersonalInfoPayload): Promise<Person
   });
 }
 
+export async function getPersonalFinance(): Promise<PersonalFinanceResponse> {
+  return request<PersonalFinanceResponse>("/profile/personal-finance");
+}
+
+export async function updatePersonalFinance(p: PersonalFinancePayload): Promise<PersonalFinanceResponse> {
+  return request<PersonalFinanceResponse>("/profile/personal-finance", {
+    method: "PUT",
+    body: JSON.stringify(p),
+  });
+}
+
 export async function getInvestmentProfile(): Promise<InvestmentProfileResponse> {
   return request<InvestmentProfileResponse>("/profile/investment");
 }
@@ -840,6 +906,32 @@ export async function updateInvestmentProfile(p: InvestmentProfilePayload): Prom
   return request<InvestmentProfileResponse>("/profile/investment", {
     method: "PUT",
     body: JSON.stringify(p),
+  });
+}
+
+// ── Owned properties (user_current_properties) ─────────────────────────────
+export interface CurrentPropertyPayload {
+  name: string;
+  property_value?: number | null;
+  has_mortgage: boolean;
+  mortgage_emi?: number | null;
+  mortgage_end_date?: string | null; // ISO yyyy-mm-dd
+}
+
+export interface CurrentPropertyResponse extends CurrentPropertyPayload {
+  id: number;
+}
+
+export async function getCurrentProperties(): Promise<CurrentPropertyResponse[]> {
+  return request<CurrentPropertyResponse[]>("/profile/current-properties");
+}
+
+export async function updateCurrentProperties(
+  properties: CurrentPropertyPayload[],
+): Promise<CurrentPropertyResponse[]> {
+  return request<CurrentPropertyResponse[]>("/profile/current-properties", {
+    method: "PUT",
+    body: JSON.stringify({ properties }),
   });
 }
 
@@ -1540,22 +1632,117 @@ export interface CashflowPlanRunDetail {
   monthly_cashflow: MonthlyCashflowRow[] | null;
 }
 
-export async function getCashflowLatest(): Promise<CashflowPlanRunDetail> {
-  return request<CashflowPlanRunDetail>(
-    "/cashflow/latest",
-    undefined,
-    true,
-    CHAT_REQUEST_TIMEOUT_MS,
-  );
+/**
+ * True when the error is the engine refusing to run because the user hasn't
+ * supplied the required cashflow inputs yet. The backend returns a 422 whose
+ * `detail` is `{message, missing[]}`, which `request()` stringifies into the
+ * Error message — so we parse it back. Callers treat this as "no plan yet"
+ * (the CashflowGate handles asking the user), never as a hard error.
+ */
+export function isCashflowInputsMissingError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  try {
+    const d = JSON.parse(err.message) as { missing?: unknown };
+    return d != null && typeof d === "object" && Array.isArray(d.missing);
+  } catch {
+    return false;
+  }
 }
 
-export async function computeCashflow(): Promise<CashflowPlanRunDetail> {
-  return request<CashflowPlanRunDetail>(
-    "/cashflow/compute",
-    { method: "POST" },
-    true,
-    CHAT_REQUEST_TIMEOUT_MS,
-  );
+export async function getCashflowLatest(): Promise<CashflowPlanRunDetail | null> {
+  try {
+    return await request<CashflowPlanRunDetail>(
+      "/cashflow/latest",
+      undefined,
+      true,
+      CHAT_REQUEST_TIMEOUT_MS,
+    );
+  } catch (err) {
+    if (isCashflowInputsMissingError(err)) return null;
+    throw err;
+  }
+}
+
+export async function computeCashflow(): Promise<CashflowPlanRunDetail | null> {
+  try {
+    return await request<CashflowPlanRunDetail>(
+      "/cashflow/compute",
+      { method: "POST" },
+      true,
+      CHAT_REQUEST_TIMEOUT_MS,
+    );
+  } catch (err) {
+    if (isCashflowInputsMissingError(err)) return null;
+    throw err;
+  }
+}
+
+// ── Cashflow readiness (goal-planning gate) ───────────────
+/** One required/optional input the cashflow engine needs from the user. */
+export interface CashflowReadinessField {
+  key: string;
+  label: string;
+  group: string;
+  kind: "money" | "int" | "percent" | "date";
+  unit: string | null;
+  help: string | null;
+  optional: boolean;
+  present: boolean;
+  /** Current stored value. `percent` is already scaled (e.g. 22 for 0.22). */
+  value: number | string | null;
+}
+
+export interface CashflowReadiness {
+  ready: boolean;
+  missing: string[];
+  fields: CashflowReadinessField[];
+}
+
+/** Which inputs the goal-planning / cashflow engine still needs from the user. */
+export async function getCashflowReadiness(): Promise<CashflowReadiness> {
+  return request<CashflowReadiness>("/cashflow/readiness");
+}
+
+/** Values the cashflow unlock form collects, keyed by readiness field key. */
+export interface CashflowInputValues {
+  date_of_birth?: string;
+  assumed_lifespan_years?: number;
+  retirement_age?: number;
+  annual_income?: number;
+  monthly_household_expense?: number;
+  /** Fraction (0-1). The form collects a percentage and divides before calling. */
+  effective_tax_rate?: number;
+  starting_monthly_investment?: number;
+  financial_assets?: number;
+  financial_liabilities_excl_mortgage?: number;
+}
+
+/**
+ * Persist the cashflow inputs to their canonical homes, using the dedicated
+ * (exclude_unset) profile endpoints so we never wipe untouched fields:
+ *  - PFP scalars + tax → PUT /profile/personal-finance
+ *  - date_of_birth + assumed_lifespan_years (on `users`) → PUT /profile/personal-info
+ *  - retirement_age → PUT /profile/investment
+ */
+export async function saveCashflowInputs(v: CashflowInputValues): Promise<void> {
+  const finance: PersonalFinancePayload = {};
+  if (v.annual_income != null) finance.annual_income = v.annual_income;
+  if (v.monthly_household_expense != null) finance.monthly_household_expense = v.monthly_household_expense;
+  if (v.effective_tax_rate != null) finance.effective_tax_rate = v.effective_tax_rate;
+  if (v.starting_monthly_investment != null) finance.starting_monthly_investment = v.starting_monthly_investment;
+  if (v.financial_assets != null) finance.financial_assets = v.financial_assets;
+  if (v.financial_liabilities_excl_mortgage != null)
+    finance.financial_liabilities_excl_mortgage = v.financial_liabilities_excl_mortgage;
+  if (Object.keys(finance).length > 0) await updatePersonalFinance(finance);
+
+  const personal: PersonalInfoPayload = {};
+  if (v.date_of_birth != null) personal.date_of_birth = v.date_of_birth;
+  if (v.assumed_lifespan_years != null) personal.assumed_lifespan_years = v.assumed_lifespan_years;
+  if (Object.keys(personal).length > 0) await updatePersonalInfo(personal);
+
+  if (v.retirement_age != null) await updateInvestmentProfile({ retirement_age: v.retirement_age });
+
+  invalidateUserContextCache();
 }
 
 // ── Discovery API ─────────────────────────────────────
@@ -1886,4 +2073,137 @@ export async function updateRebalancingStatus(
     method: "PUT",
     body: JSON.stringify({ status }),
   });
+}
+
+// ── Rebalancing run detail (normalized) ─────────────────
+// The /rebalancing endpoints return the normalized rebalancing_* family — a run
+// with totals + subgroup roll-ups + the BUY/SELL/EXIT trades. These typed
+// helpers back the /invest page; the legacy `recommendation_data` shape above is
+// kept only for the old orphaned page.
+
+export interface RebalancingTrade {
+  id: string;
+  isin: string;
+  recommended_fund: string;
+  asset_subgroup: string;
+  sub_category: string;
+  action: string; // "BUY" | "SELL" | "EXIT"
+  amount_inr: number;
+  reason_code: string;
+  reason_title: string;
+  reason_text: string;
+  execution_status: string;
+}
+
+export interface RebalancingTotals {
+  total_buy_inr: number;
+  total_sell_inr: number;
+  net_cash_flow_inr: number;
+  total_tax_estimate_inr: number;
+  total_stcg_realised: number;
+  total_ltcg_realised: number;
+  funds_to_buy_count: number;
+  funds_to_sell_count: number;
+  funds_to_exit_count: number;
+  funds_held_count: number;
+}
+
+export interface RebalancingSubgroupSummary {
+  asset_subgroup: string;
+  goal_target_inr: number;
+  current_holding_inr: number;
+  suggested_final_holding_inr: number;
+  rebalance_inr: number;
+  total_buy_inr: number;
+  total_sell_inr: number;
+}
+
+export interface RebalancingRunListItem {
+  id: string;
+  portfolio_id: string;
+  source_allocation_run_id: string;
+  status: RebalancingStatus;
+  engine_version: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RebalancingRunDetail extends RebalancingRunListItem {
+  totals: RebalancingTotals | null;
+  subgroup_summaries: RebalancingSubgroupSummary[];
+  trades: RebalancingTrade[];
+  warnings: { code: string; message: string; affected_isins: string[] }[];
+}
+
+/** Latest-first list of the user's rebalancing runs. */
+export async function listRebalancingRuns(): Promise<RebalancingRunListItem[]> {
+  return request<RebalancingRunListItem[]>("/rebalancing/");
+}
+
+/** Full run detail — totals + trades + subgroup roll-ups + warnings. */
+export async function getRebalancingRunDetail(runId: string): Promise<RebalancingRunDetail> {
+  return request<RebalancingRunDetail>(`/rebalancing/${runId}`);
+}
+
+// ── Rebalancing readiness / unlock gate ─────────────────
+// Mirrors the cashflow readiness gate (see saveCashflowInputs). The field list
+// is driven entirely by the backend so the unlock form stays in sync with what
+// the engine actually requires.
+
+export interface RebalancingReadinessField {
+  key: string;
+  label: string;
+  group: string;
+  kind: string; // "date" | "money" | "int" | "percent"
+  unit?: string | null;
+  help?: string | null;
+  optional?: boolean;
+  present: boolean;
+  value?: number | string | null;
+}
+
+export interface RebalancingReadiness {
+  ready: boolean;
+  missing: string[];
+  fields: RebalancingReadinessField[];
+  /** False → user has no MF holdings; the gate shows a "connect portfolio" CTA. */
+  has_holdings: boolean;
+}
+
+export async function getRebalancingReadiness(): Promise<RebalancingReadiness> {
+  return request<RebalancingReadiness>("/rebalancing/readiness");
+}
+
+export interface RebalancingInputValues {
+  date_of_birth?: string;
+}
+
+/**
+ * Persist the rebalancing inputs to their canonical homes (same pattern as
+ * saveCashflowInputs): date_of_birth lives on `users` → PUT /profile/personal-info.
+ * Holdings aren't a form field — the gate links to the connect-portfolio flow.
+ */
+export async function saveRebalancingInputs(v: RebalancingInputValues): Promise<void> {
+  const personal: PersonalInfoPayload = {};
+  if (v.date_of_birth != null) personal.date_of_birth = v.date_of_birth;
+  if (Object.keys(personal).length > 0) await updatePersonalInfo(personal);
+  invalidateUserContextCache();
+}
+
+export interface RebalancingComputeResponse {
+  answer_markdown: string;
+  recommendation_id: string | null;
+  blocking_message: string | null;
+}
+
+/** Run the rebalancing engine directly (no chat). Persists a rebalancing run. */
+export async function runRebalancing(
+  question = "Rebalance my portfolio",
+): Promise<RebalancingComputeResponse> {
+  return request<RebalancingComputeResponse>(
+    "/ai-modules/rebalancing/compute",
+    { method: "POST", body: JSON.stringify({ question }) },
+    true,
+    CHAT_REQUEST_TIMEOUT_MS,
+  );
 }
