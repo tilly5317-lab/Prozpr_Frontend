@@ -4,6 +4,8 @@ import { motion } from "framer-motion";
 import {
   ArrowRight,
   CheckCircle2,
+  Eye,
+  EyeOff,
   FileText,
   Loader2,
   Shield,
@@ -30,6 +32,7 @@ const CamsUpload = () => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState<CamsPdfImportResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -165,16 +168,27 @@ const CamsUpload = () => {
               <label htmlFor="cas-password" className="text-[11px] font-medium text-muted-foreground">
                 Statement password
               </label>
-              <input
-                id="cas-password"
-                type="password"
-                autoComplete="off"
-                placeholder="The password you set while generating the statement"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={uploading}
-                className="mt-1 w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground outline-none placeholder:text-muted-foreground/50 disabled:opacity-60 focus:border-primary"
-              />
+              <div className="relative mt-1">
+                <input
+                  id="cas-password"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="off"
+                  placeholder="The password you set while generating the statement"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={uploading}
+                  className="w-full rounded-xl border border-border bg-card px-4 py-3 pr-11 text-sm text-foreground outline-none placeholder:text-muted-foreground/50 disabled:opacity-60 focus:border-primary"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  disabled={uploading}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  className="absolute inset-y-0 right-0 flex items-center px-3 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-60"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
               <p className="mt-1 text-[10px] text-muted-foreground/80">
                 This is only used to open the PDF on our server — it is never stored.
               </p>

@@ -88,7 +88,12 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
   // One-time net-worth-history backfill job (null = not checked / no job yet).
   const [job, setJob] = useState<NetworthJobStatus | null>(null);
   const [starting, setStarting] = useState(false);
+<<<<<<< HEAD
   // Guards the automatic one-time build so it fires at most once per mount.
+=======
+  // Guards the auto-build so we kick it off at most once per mount (and never
+  // auto-retry a failed build — that stays on the explicit "Try again" button).
+>>>>>>> 8456f401dd3dc63daecc0d4342fd34ed962d47cb
   const autoStartedRef = useRef(false);
 
   useEffect(() => {
@@ -186,6 +191,22 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
       setStarting(false);
     }
   }, []);
+<<<<<<< HEAD
+=======
+
+  // Auto-build on first view: once we've confirmed there's no series and no job
+  // has ever run (status "none"), kick off the backfill ourselves so the chart
+  // populates without the user tapping the button. Runs at most once per mount;
+  // a "failed" job is left for the explicit "Try again" button.
+  useEffect(() => {
+    if (loading || hasPoints || errored) return;
+    if (autoStartedRef.current || starting) return;
+    if (job && job.status === "none" && !job.has_history) {
+      autoStartedRef.current = true;
+      void startBuild();
+    }
+  }, [loading, hasPoints, errored, job, starting, startBuild]);
+>>>>>>> 8456f401dd3dc63daecc0d4342fd34ed962d47cb
 
   const chartData = useMemo(() => {
     if (points && points.length) {

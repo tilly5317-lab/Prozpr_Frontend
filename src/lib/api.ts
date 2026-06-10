@@ -706,6 +706,16 @@ export async function deleteChatSession(sessionId: string): Promise<void> {
   await request<void>(`/chat/sessions/${sessionId}`, { method: "DELETE" });
 }
 
+export async function renameChatSession(
+  sessionId: string,
+  title: string,
+): Promise<ChatSessionInfo> {
+  return request<ChatSessionInfo>(`/chat/sessions/${sessionId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ title }),
+  });
+}
+
 // ── Shared constants ────────────────────────────────────
 
 export const RISK_CATEGORIES = [
@@ -1061,7 +1071,7 @@ export interface PortfolioDetail {
   created_at: string;
   updated_at: string;
   allocations: { id: string; asset_class: string; allocation_percentage: number; amount: number; performance_percentage: number | null }[];
-  holdings: { id: string; instrument_name: string; instrument_type: string; ticker_symbol: string | null; quantity: number | null; average_cost: number | null; current_price: number | null; current_value: number; allocation_percentage: number | null }[];
+  holdings: { id: string; instrument_name: string; instrument_type: string; ticker_symbol: string | null; quantity: number | null; average_cost: number | null; current_price: number | null; current_value: number; allocation_percentage: number | null; asset_class: string | null; sub_category: string | null }[];
 }
 
 /** Primary portfolio for the logged-in user (from DB). */
@@ -1114,6 +1124,8 @@ export interface MfHoldingDetailResponse {
   amc_name: string | null;
   category: string | null;
   sub_category: string | null;
+  asset_class: string | null;
+  asset_subgroup: string | null;
   isin: string | null;
   plan_type: string | null;
   option_type: string | null;

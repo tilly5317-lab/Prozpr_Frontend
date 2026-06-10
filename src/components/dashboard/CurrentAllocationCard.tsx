@@ -6,31 +6,23 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import type { PortfolioDetail } from "@/lib/api";
 import { formatInrCompact } from "@/lib/utils";
 
-// Bucket classification mirrors the Recommended Investment Plan page.
-type HoldingBucket = "equity" | "debt" | "hybrid";
+// Holdings group by the backend's asset_class (Equity / Debt / Others) — produced by
+// scheme_classification.py and returned per holding by GET /portfolio/. The frontend
+// never re-derives this; it only displays what the API sends.
+type HoldingBucket = "Equity" | "Debt" | "Others";
 
 const EQUITY_COLOR = "#3B6FA8";
 const DEBT_COLOR = "#A8872F";
 const GOLD_COLOR = "#E0B84A";
 const CASH_COLOR = "#F1DA9B";
 
-const BUCKET_ORDER: HoldingBucket[] = ["equity", "debt", "hybrid"];
+const BUCKET_ORDER: HoldingBucket[] = ["Equity", "Debt", "Others"];
 
 const BUCKET_LABEL: Record<HoldingBucket, string> = {
-  equity: "Equity",
-  debt: "Debt",
-  hybrid: "Hybrid & Others",
+  Equity: "Equity",
+  Debt: "Debt",
+  Others: "Others",
 };
-
-function classifyHoldingBucket(name: string, instrumentType: string): HoldingBucket {
-  const n = `${name} ${instrumentType}`.toLowerCase();
-  if (/bond|gilt|treasury|debt|liquid|credit/.test(n)) return "debt";
-  if (/gold|silver|commodity|hybrid|balanced|multi.?asset|sectoral|psu bank|energy|pharma|it etf|reit/.test(n)) {
-    return "hybrid";
-  }
-  if (/nifty|sensex|cap|flexi|equity|s&p|nasdaq|growth|value|dividend/.test(n)) return "equity";
-  return "hybrid";
-}
 
 /** Strip folio suffix and plan/option tails for a short scheme title in the holdings list. */
 function plainFundDisplayName(raw: string): string {
@@ -89,6 +81,7 @@ const DONUT_COLORS: Record<string, string> = {
   Debt: DEBT_COLOR,
   "Inflation-Linked": GOLD_COLOR,
   Gold: GOLD_COLOR,
+  Others: GOLD_COLOR,
   Cash: CASH_COLOR,
   Other: CASH_COLOR,
   "Cash/Other": CASH_COLOR,
@@ -108,9 +101,9 @@ function getColor(name: string, i: number) {
 }
 
 const HOLDINGS_BAR_BY_BUCKET: Record<HoldingBucket, { bg: string; border?: string }> = {
-  equity: { bg: EQUITY_COLOR },
-  debt: { bg: DEBT_COLOR, border: "#8E7228" },
-  hybrid: { bg: GOLD_COLOR },
+  Equity: { bg: EQUITY_COLOR },
+  Debt: { bg: DEBT_COLOR, border: "#8E7228" },
+  Others: { bg: GOLD_COLOR },
 };
 
 /**
@@ -158,8 +151,8 @@ function allocationBucketToClassifiedRow(a: PortfolioDetail["allocations"][numbe
   schemeCode: string | null;
 } {
   const id = `alloc-${a.id}`;
-  const bucket = classifyHoldingBucket(a.asset_class, "portfolio allocation");
-  const colors = HOLDINGS_BAR_BY_BUCKET[bucket];
+  const bucket = (a.asset_class ?? "Others") as HoldingBucket;
+  const colors = HOLDINGS_BAR_BY_BUCKET[bucket] ?? HOLDINGS_BAR_BY_BUCKET.Others;
   const perf = a.performance_percentage;
   const returnPct = perf != null && Number.isFinite(perf) ? perf : null;
   return {
@@ -189,9 +182,9 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
   const [holdingsOpen, setHoldingsOpen] = useState(false);
   const [expandedHolding, setExpandedHolding] = useState<string | null>(null);
   const [collapsedBuckets, setCollapsedBuckets] = useState<Record<HoldingBucket, boolean>>({
-    equity: false,
-    debt: false,
-    hybrid: false,
+    Equity: false,
+    Debt: false,
+    Others: false,
   });
   const hasAllocations = portfolio && portfolio.allocations.length > 0;
   /** Placeholder funds only when there is no real allocation or holding data. */
@@ -221,8 +214,8 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
     ? []
     : portfolio.holdings.length > 0
       ? portfolio.holdings.map((h) => {
-          const bucket = classifyHoldingBucket(h.instrument_name, h.instrument_type);
-          const colors = HOLDINGS_BAR_BY_BUCKET[bucket];
+          const bucket = (h.asset_class ?? "Others") as HoldingBucket;
+          const colors = HOLDINGS_BAR_BY_BUCKET[bucket] ?? HOLDINGS_BAR_BY_BUCKET.Others;
           const investedTotal = costBasis(h.quantity, h.average_cost);
           const returnPct = holdingGainPercent(h.quantity, h.average_cost, h.current_value);
           return {
@@ -255,9 +248,9 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                 avgCost: 406000,
                 investedTotal: 406000,
                 currentValue: 480000,
-                barBg: HOLDINGS_BAR_BY_BUCKET.equity.bg,
-                barBorder: HOLDINGS_BAR_BY_BUCKET.equity.border,
-                bucket: "equity" as HoldingBucket,
+                barBg: HOLDINGS_BAR_BY_BUCKET.Equity.bg,
+                barBorder: HOLDINGS_BAR_BY_BUCKET.Equity.border,
+                bucket: "Equity" as HoldingBucket,
                 schemeCode: null,
               },
               {
@@ -270,9 +263,9 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                 avgCost: 261000,
                 investedTotal: 261000,
                 currentValue: 280000,
-                barBg: HOLDINGS_BAR_BY_BUCKET.debt.bg,
-                barBorder: HOLDINGS_BAR_BY_BUCKET.debt.border,
-                bucket: "debt" as HoldingBucket,
+                barBg: HOLDINGS_BAR_BY_BUCKET.Debt.bg,
+                barBorder: HOLDINGS_BAR_BY_BUCKET.Debt.border,
+                bucket: "Debt" as HoldingBucket,
                 schemeCode: null,
               },
               {
@@ -285,9 +278,9 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                 avgCost: 142000,
                 investedTotal: 142000,
                 currentValue: 160000,
-                barBg: HOLDINGS_BAR_BY_BUCKET.hybrid.bg,
-                barBorder: HOLDINGS_BAR_BY_BUCKET.hybrid.border,
-                bucket: "hybrid" as HoldingBucket,
+                barBg: HOLDINGS_BAR_BY_BUCKET.Others.bg,
+                barBorder: HOLDINGS_BAR_BY_BUCKET.Others.border,
+                bucket: "Others" as HoldingBucket,
                 schemeCode: null,
               },
             ]
