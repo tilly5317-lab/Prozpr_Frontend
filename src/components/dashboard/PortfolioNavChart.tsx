@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -88,6 +88,8 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
   // One-time net-worth-history backfill job (null = not checked / no job yet).
   const [job, setJob] = useState<NetworthJobStatus | null>(null);
   const [starting, setStarting] = useState(false);
+  // Guards the automatic one-time build so it fires at most once per mount.
+  const autoStartedRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -115,21 +117,29 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
   const jobActive = job?.status === "pending" || job?.status === "running";
 
   // When there's no series yet, check whether a build job is already in flight
-  // (e.g. the user reloaded mid-build) so we resume showing progress.
+  // (e.g. the user reloaded mid-build) so we resume showing progress — and if no
+  // job has ever run, kick the one-time build off automatically (no click needed).
   useEffect(() => {
     if (loading || hasPoints || errored) return;
     let cancelled = false;
     getNetworthHistoryStatus()
       .then((s) => {
-        if (!cancelled) setJob(s);
+        if (cancelled) return;
+        setJob(s);
+        // Auto-build the first time we find no history and no job in flight.
+        // Failures are left to the manual "Try again" so we never auto-retry.
+        if (!s.has_history && s.status === "none" && !autoStartedRef.current) {
+          autoStartedRef.current = true;
+          void startBuild();
+        }
       })
       .catch(() => {
-        /* leave job null — the CTA still shows */
+        /* leave job null — the loading state still shows */
       });
     return () => {
       cancelled = true;
     };
-  }, [loading, hasPoints, errored]);
+  }, [loading, hasPoints, errored, startBuild]);
 
   // Poll while a build is pending/running; reload the chart once it succeeds.
   useEffect(() => {
@@ -154,7 +164,7 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
     };
   }, [jobActive, job]);
 
-  const startBuild = async () => {
+  const startBuild = useCallback(async () => {
     setStarting(true);
     try {
       const s = await buildNetworthHistory();
@@ -175,7 +185,7 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
     } finally {
       setStarting(false);
     }
-  };
+  }, []);
 
   const chartData = useMemo(() => {
     if (points && points.length) {
@@ -270,21 +280,25 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
                   <p className="text-[10px] text-muted-foreground">{job.message}</p>
                 )}
               </>
-            ) : (
+            ) : errored ? (
               <>
-                <p className="text-[11px] text-muted-foreground">
-                  {errored
-                    ? "Could not load chart."
-                    : "Build your real net-worth history from your statement."}
-                </p>
+                <p className="text-[11px] text-muted-foreground">Could not load chart.</p>
                 <button
                   type="button"
-                  onClick={startBuild}
-                  disabled={starting}
-                  className="rounded-full bg-accent/15 px-3 py-1.5 text-[11px] font-semibold text-accent transition-colors hover:bg-accent/25 disabled:opacity-50"
+                  onClick={() => setReloadKey((k) => k + 1)}
+                  className="rounded-full bg-accent/15 px-3 py-1.5 text-[11px] font-semibold text-accent transition-colors hover:bg-accent/25"
                 >
-                  {starting ? "Starting…" : "Fetch Net Worth History"}
+                  Try again
                 </button>
+              </>
+            ) : (
+              // No history yet and no job failed — the build auto-starts, so show
+              // a calculating state instead of a manual fetch button.
+              <>
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-muted border-t-foreground" />
+                <p className="text-[11px] text-muted-foreground">
+                  Preparing your net worth history…
+                </p>
               </>
             )}
           </div>

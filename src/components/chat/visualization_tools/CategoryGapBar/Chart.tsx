@@ -9,7 +9,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import type { CategoryGapBarPayload } from "./types";
-import { formatInrCompact } from "@/lib/utils";
+import { formatInrMillions } from "@/lib/utils";
 
 // Series colors: Current = muted (where you are), Target = wealth-navy (where
 // you should be), Plan = wealth-blue (the recommendation, the action).
@@ -56,7 +56,7 @@ export function CategoryGapBar({ payload }: { payload: CategoryGapBarPayload }) 
             <XAxis
               type="number"
               tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
-              tickFormatter={(v: number) => formatInrCompact(v)}
+              tickFormatter={(v: number) => formatInrMillions(v)}
               axisLine={false}
               tickLine={false}
             />
@@ -70,7 +70,7 @@ export function CategoryGapBar({ payload }: { payload: CategoryGapBarPayload }) 
             />
             <Tooltip
               cursor={{ fill: "rgba(0,0,0,0.04)" }}
-              formatter={(value: number, name) => [formatInrCompact(value), name]}
+              formatter={(value: number, name) => [formatInrMillions(value), name]}
               contentStyle={{ fontSize: "11px", borderRadius: "6px" }}
             />
             <Legend

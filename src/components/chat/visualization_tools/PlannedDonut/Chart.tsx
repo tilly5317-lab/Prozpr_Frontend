@@ -1,6 +1,6 @@
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import type { PlannedDonutPayload } from "./types";
-import { formatInrCompact } from "@/lib/utils";
+import { formatInrMillions } from "@/lib/utils";
 
 // Tinted-blue rotation for sub-categories — keeps the editorial-wealth feel
 // while offering enough distinct hues for ~6-8 categories.
@@ -54,7 +54,7 @@ export function PlannedDonut({ payload }: { payload: PlannedDonutPayload }) {
               </Pie>
               <Tooltip
                 formatter={(value: number, _name, item) => [
-                  `${formatInrCompact(value)} (${item.payload.percentage.toFixed(1)}%)`,
+                  `${formatInrMillions(value)} (${item.payload.percentage.toFixed(1)}%)`,
                   item.payload.name,
                 ]}
                 contentStyle={{ fontSize: "11px", borderRadius: "6px" }}
@@ -66,7 +66,7 @@ export function PlannedDonut({ payload }: { payload: PlannedDonutPayload }) {
               Total
             </span>
             <span className="text-base font-bold text-foreground tabular-nums">
-              {formatInrCompact(total)}
+              {formatInrMillions(total)}
             </span>
           </div>
         </div>
