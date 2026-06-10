@@ -1376,14 +1376,21 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
     // back to annual ÷ 12 only when monthly rows aren't available.
     const firstMonth = cashflowData?.monthly_cashflow?.[0];
     const annualRows = cashflowData?.annual_cashflow;
+    let next: number | null = null;
     if (firstMonth) {
-      setMonthlyContrib(Math.round(firstMonth.monthly_investment));
+      next = firstMonth.monthly_investment;
     } else if (annualRows?.length) {
       // Fallback when monthly rows aren't persisted: the annual row's
       // `monthly_investment` is an FY TOTAL. Use a FULL fiscal year (index 1 —
       // index 0 is the partial first FY) and divide by 12 to recover a monthly.
       const fullFy = annualRows[1] ?? annualRows[0];
-      setMonthlyContrib(Math.round(fullFy.monthly_investment / 12));
+      next = fullFy ? fullFy.monthly_investment / 12 : null;
+    }
+    // Only adopt a clean, in-range number — never feed NaN/undefined to the
+    // slider (a range input with value=NaN crashes the page). Otherwise keep
+    // the current default.
+    if (next != null && Number.isFinite(next)) {
+      setMonthlyContrib(Math.min(MONTHLY_MAX, Math.max(0, Math.round(next))));
     }
   }, [cashflowData]);
 
@@ -1914,8 +1921,15 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
             min={0}
             max={MONTHLY_MAX}
             step={5000}
-            value={monthlyContrib}
-            onChange={(e) => setMonthlyContrib(Number(e.target.value))}
+            value={
+              Number.isFinite(monthlyContrib)
+                ? Math.min(MONTHLY_MAX, Math.max(0, monthlyContrib))
+                : MONTHLY_CONTRIBUTION
+            }
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              if (Number.isFinite(v)) setMonthlyContrib(v);
+            }}
             className="flex-1 min-w-0"
             style={{ accentColor: "#D4A868", transform: "scaleY(0.9)" }}
             aria-label="Monthly investment amount"
