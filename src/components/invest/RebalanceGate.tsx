@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useNavigate } from "react-router-dom";
 import { Lock, Loader2, ShieldCheck, AlertCircle, Upload, CheckCircle2 } from "lucide-react";
 import {
   getRebalancingReadiness,
@@ -10,6 +9,7 @@ import {
   type RebalancingReadinessField,
   type RebalancingInputValues,
 } from "@/lib/api";
+import CamsUploadModal from "@/components/onboarding/CamsUploadModal";
 import { toast } from "@/hooks/use-toast";
 
 /**
@@ -50,10 +50,10 @@ function groupFields(fields: RebalancingReadinessField[]): [string, RebalancingR
 }
 
 const RebalanceGate = ({ onReady, editSignal }: RebalanceGateProps) => {
-  const navigate = useNavigate();
   const [readiness, setReadiness] = useState<RebalancingReadiness | null>(null);
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
+  const [camsOpen, setCamsOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [values, setValues] = useState<Record<string, string>>({});
@@ -184,6 +184,52 @@ const RebalanceGate = ({ onReady, editSignal }: RebalanceGateProps) => {
       setGenerating(false);
     }
   }, [validateAndBuild, load]);
+
+  // Open the CAMS popup. Close the inputs form first so the popup isn't hidden
+  // behind it (and so the typed-but-unsaved values aren't visually stranded).
+  const openCams = useCallback(() => {
+    setFormOpen(false);
+    setCamsOpen(true);
+  }, []);
+
+  // After a CAMS statement is ingested the backend has refreshed the
+  // transactions + fund-holding tables. Re-check readiness and regenerate the
+  // rebalancing plan against the new holdings — all automatic, no extra taps.
+  const handleCamsUploaded = useCallback(async () => {
+    setCamsOpen(false);
+    try {
+      const res = await getRebalancingReadiness();
+      setReadiness(res);
+      if (!res.ready) {
+        // Holdings are in now, but a typed input (e.g. date of birth) is still
+        // missing — the lock card will prompt for it.
+        toast({
+          title: "Holdings updated",
+          description: "A few inputs are still needed to generate your plan.",
+        });
+        return;
+      }
+      setGenerating(true);
+      toast({ title: "Holdings updated", description: "Regenerating your rebalancing plan…" });
+      const result = await runRebalancing();
+      if (result.blocking_message) {
+        toast({
+          title: "Couldn't regenerate the plan",
+          description: result.blocking_message,
+          variant: "destructive",
+        });
+      }
+      await load();
+    } catch {
+      toast({
+        title: "Couldn't refresh your plan",
+        description: "Your statement was imported, but regenerating failed. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setGenerating(false);
+    }
+  }, [load]);
 
   const ready = !!readiness?.ready;
   const showLockOverlay = loading || generating || !ready;
@@ -329,16 +375,17 @@ const RebalanceGate = ({ onReady, editSignal }: RebalanceGateProps) => {
                         <AlertCircle className="h-3.5 w-3.5" /> No mutual-fund holdings found
                       </p>
                       <p className="mt-1 text-[10.5px] leading-snug text-muted-foreground/80">
-                        Rebalancing plans trades against your real holdings. Upload your
-                        latest CAMS statement, then come back to generate your plan.
+                        Rebalancing plans trades against your real holdings. Add your
+                        latest CAMS statement (with its password) — we&apos;ll extract your
+                        transactions &amp; holdings and generate your plan automatically.
                       </p>
                       <button
                         type="button"
-                        onClick={() => navigate("/cams-upload")}
+                        onClick={openCams}
                         className="mt-3 inline-flex min-h-[42px] w-full items-center justify-center gap-2 rounded-xl border border-input bg-background text-sm font-semibold text-foreground transition-colors hover:bg-muted"
                       >
                         <Upload className="h-4 w-4" />
-                        Upload your CAMS statement
+                        Add CAMS &amp; extract holdings
                       </button>
                     </div>
                   ) : (
@@ -348,11 +395,11 @@ const RebalanceGate = ({ onReady, editSignal }: RebalanceGateProps) => {
                       </span>
                       <button
                         type="button"
-                        onClick={() => navigate("/cams-upload")}
+                        onClick={openCams}
                         className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#D4A868] hover:underline"
                       >
                         <Upload className="h-3.5 w-3.5" />
-                        Upload latest CAMS
+                        Update CAMS
                       </button>
                     </div>
                   )}
@@ -380,6 +427,15 @@ const RebalanceGate = ({ onReady, editSignal }: RebalanceGateProps) => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Inline CAMS upload — same flow as /cams-upload (file + password →
+          extract transactions & holdings), shown as a popup card. On success we
+          refresh holdings and regenerate the rebalancing plan automatically. */}
+      <CamsUploadModal
+        open={camsOpen}
+        onClose={() => setCamsOpen(false)}
+        onUploaded={() => void handleCamsUploaded()}
+      />
     </>
   );
 };

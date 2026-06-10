@@ -62,13 +62,13 @@ const PRIORITIES: Priority[] = ["Low", "Medium", "High"];
 
 // Timeline-extent assumptions. The visible timeline ends at the later of the
 // last goal year and the retirement year (age 60 by default); dragging a goal
-// past the bottom can reveal future rows up to the lifespan cap (age 100).
+// past the bottom can reveal future rows up to MAX_HORIZON_YEARS from today.
 const DEFAULT_RETIREMENT_AGE = 60;
-const LIFESPAN_CAP_AGE = 100;
-// Mirrors the backend cashflow engine's horizon cap (compute_horizon_years
-// cap=80 FY-years from today) so the timeline never extends past where the
-// engine produces corpus-closing bars.
-const ENGINE_HORIZON_CAP_YEARS = 80;
+// Hard ceiling for the draggable timeline: currentYear + this many years
+// (e.g. 2026 → 2126, 2027 → 2127). Mirrors the backend cashflow engine's
+// horizon cap (compute_horizon_years cap=100 FY-years from today) so every
+// draggable year still produces corpus-closing bars.
+const MAX_HORIZON_YEARS = 100;
 // Used only when we have no DOB to anchor the user's age.
 const FALLBACK_CURRENT_AGE = 30;
 // Always show at least this many years even if retirement is in the past.
@@ -76,6 +76,22 @@ const MIN_HORIZON_YEARS = 5;
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, v));
+}
+
+/**
+ * Viewport-relative Y for a framer-motion drag event.
+ *
+ * framer-motion's `PanInfo.point` is page-relative (event.pageY — it includes
+ * scroll offset), but our drop hit-test reads `getBoundingClientRect()` and the
+ * auto-scroll loop compares against `window.innerHeight` — both viewport-
+ * relative. Mixing the two breaks the moment the page scrolls (i.e. exactly
+ * when dragging a goal far past retirement). Always read the native event's
+ * `clientY` so every coordinate stays in viewport space.
+ */
+function dragClientY(e: MouseEvent | TouchEvent | PointerEvent): number {
+  if ("clientY" in e) return e.clientY;
+  const t = e.changedTouches?.[0] ?? e.touches?.[0];
+  return t ? t.clientY : 0;
 }
 
 /** Birth year parsed from an ISO date string (YYYY-MM-DD); null if unparseable. */
@@ -1545,12 +1561,13 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   // (not just visible ones) so toggling a priority filter never shrinks it.
   const effectiveBirthYear = birthYear ?? currentYear - FALLBACK_CURRENT_AGE;
   const retirementYear = effectiveBirthYear + retirementAge;
-  // Cap at the lifespan age (100) but never past the cashflow engine's horizon
-  // (80 FY-years from today), so every draggable year still gets corpus bars.
-  const capYear = Math.min(
-    effectiveBirthYear + LIFESPAN_CAP_AGE,
-    currentYear + ENGINE_HORIZON_CAP_YEARS,
-  );
+  // Draggable ceiling: 100 calendar years from today (2026 → 2126, 2027 → 2127).
+  // The backend cashflow engine's horizon cap matches (100 FY-years), so every
+  // draggable year still produces corpus-closing bars.
+  const capYear = currentYear + MAX_HORIZON_YEARS;
+  // Lowest year a goal may occupy: never in the past. yearToTargetDate() anchors
+  // goals at July 1, so once we're past July the current year is no longer valid.
+  const minGoalYear = new Date().getMonth() > 5 ? currentYear + 1 : currentYear;
   const lastGoalYear = useMemo(
     () => goals.reduce((m, g) => Math.max(m, g.year), currentYear),
     [goals, currentYear],
@@ -2289,20 +2306,27 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                               dragMomentum={false}
                               dragElastic={0.25}
                               dragSnapToOrigin
-                              onDragStart={(_, info) => {
+                              onDragStart={(e) => {
                                 setDraggingGoalId(g.id);
                                 setDropTargetYear(g.year);
-                                startAutoScroll(info.point.y);
+                                startAutoScroll(dragClientY(e));
                               }}
-                              onDrag={(_, info) => {
-                                dragPointerYRef.current = info.point.y;
-                                const yr = findYearAtClientY(info.point.y);
+                              onDrag={(e) => {
+                                const y = dragClientY(e);
+                                dragPointerYRef.current = y;
+                                const yr = findYearAtClientY(y);
                                 if (yr != null) setDropTargetYear(yr);
                               }}
-                              onDragEnd={(_, info) => {
+                              onDragEnd={(e) => {
                                 stopAutoScroll();
-                                const yr = findYearAtClientY(info.point.y);
-                                if (yr != null && yr !== g.year) moveGoalToYear(g.id, yr);
+                                const yr = findYearAtClientY(dragClientY(e));
+                                if (yr != null) {
+                                  // Clamp to the valid window: never into the past
+                                  // (minGoalYear), never past the currentYear + 100
+                                  // ceiling (capYear).
+                                  const target = clamp(yr, minGoalYear, capYear);
+                                  if (target !== g.year) moveGoalToYear(g.id, target);
+                                }
                                 setDraggingGoalId(null);
                                 setDropTargetYear(null);
                                 setRevealEndYear(null);

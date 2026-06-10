@@ -1,6 +1,12 @@
 import { type CSSProperties, useCallback, useMemo, useState } from "react";
+<<<<<<< HEAD
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowRight, Check, Loader2, Settings2, Sparkles, X } from "lucide-react";
+=======
+import { useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
+import { ArrowRight, Check, Loader2, Settings2, Sparkles } from "lucide-react";
+>>>>>>> 8456f401dd3dc63daecc0d4342fd34ed962d47cb
 import BottomNav from "@/components/BottomNav";
 import RebalanceGate from "@/components/invest/RebalanceGate";
 import TradeFundDetailView from "@/components/fund/TradeFundDetailView";
@@ -71,6 +77,7 @@ type DriftRow = {
 
 type UITrade = {
   id: string;
+  isin: string;
   type: "BUY" | "SELL";
   bucket: Bucket;
   amount: string;
@@ -131,6 +138,7 @@ function mapTrade(t: RebalancingTrade): UITrade {
   const type: "BUY" | "SELL" = t.action.toUpperCase() === "BUY" ? "BUY" : "SELL";
   return {
     id: t.id,
+    isin: t.isin,
     type,
     bucket: classifyBucket(t.asset_subgroup),
     amount: fmtINR(t.amount_inr),
@@ -149,12 +157,33 @@ const cardStyle: CSSProperties = {
 };
 
 const RebalanceExplanation = () => {
+  const navigate = useNavigate();
   const [detail, setDetail] = useState<RebalancingRunDetail | null>(null);
   const [dataLoading, setDataLoading] = useState(false);
   const [dataError, setDataError] = useState<string | null>(null);
   const [approving, setApproving] = useState(false);
   const [editSignal, setEditSignal] = useState(0);
-  const [selectedTrade, setSelectedTrade] = useState<UITrade | null>(null);
+
+  // Open the full fund-detail page (same screen as a portfolio holding), passing
+  // the trade's rationale so it can render a "Why this trade" card on top. The
+  // holding-detail endpoint resolves the fund by ISIN, so the trade's ISIN is a
+  // valid :schemeCode route param.
+  const openTrade = useCallback(
+    (trade: UITrade) => {
+      if (!trade.isin) return;
+      navigate(`/portfolio/fund/${encodeURIComponent(trade.isin)}`, {
+        state: {
+          rebalanceTrade: {
+            action: trade.type,
+            amountText: trade.amount,
+            reasonTitle: trade.subtitle,
+            rationale: trade.rationale,
+          },
+        },
+      });
+    },
+    [navigate],
+  );
 
   // Load the latest rebalancing run's real trades + subgroup roll-ups. Called by
   // the gate's onReady once every required input is present.
@@ -365,7 +394,7 @@ const RebalanceExplanation = () => {
                             <button
                               key={trade.id}
                               type="button"
-                              onClick={() => setSelectedTrade(trade)}
+                              onClick={() => openTrade(trade)}
                               className="w-full py-2.5 text-left flex items-center gap-3"
                             >
                               <span
@@ -405,6 +434,7 @@ const RebalanceExplanation = () => {
         )}
       </div>
 
+<<<<<<< HEAD
       <AnimatePresence>
         {selectedTrade && (
           <>
@@ -455,6 +485,8 @@ const RebalanceExplanation = () => {
           </>
         )}
       </AnimatePresence>
+=======
+>>>>>>> 8456f401dd3dc63daecc0d4342fd34ed962d47cb
       <BottomNav />
     </div>
   );

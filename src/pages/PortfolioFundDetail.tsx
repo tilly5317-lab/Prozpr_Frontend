@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { parseISO } from "date-fns";
-import { ArrowLeft, Receipt, Wallet } from "lucide-react";
+import { ArrowLeft, Receipt, Sparkles, Wallet } from "lucide-react";
 
 import BottomNav from "@/components/BottomNav";
 import {
@@ -43,9 +43,25 @@ function parseNavDate(d: string): Date {
   }
 }
 
+/**
+ * Optional rebalancing context passed via navigation state when this page is
+ * opened from a proposed trade on the rebalancing screen. When present, a
+ * "Why this trade" card is shown above the usual fund-detail sections — the page
+ * is otherwise identical to the standard fund-detail view.
+ */
+interface RebalanceTradeContext {
+  action: "BUY" | "SELL";
+  amountText: string;
+  reasonTitle?: string;
+  rationale?: string;
+}
+
 export default function PortfolioFundDetail() {
   const { schemeCode: schemeCodeParam } = useParams<{ schemeCode: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  const rebalanceTrade =
+    (location.state as { rebalanceTrade?: RebalanceTradeContext } | null)?.rebalanceTrade ?? null;
   const schemeCode = schemeCodeParam ? decodeURIComponent(schemeCodeParam) : "";
 
   const [range, setRange] = useState<NavRange>("1Y");
@@ -152,6 +168,11 @@ export default function PortfolioFundDetail() {
             )}
             {!loading && data && (
               <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {data.asset_class && (
+                  <span className="inline-flex rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-muted-foreground">
+                    {data.asset_class}
+                  </span>
+                )}
                 <span className="inline-flex rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-muted-foreground">
                   {planLabel}
                 </span>
@@ -168,6 +189,39 @@ export default function PortfolioFundDetail() {
       </header>
 
       <main className="space-y-3 px-4 pt-3">
+        {rebalanceTrade && (
+          <section className="rounded-2xl border border-[#D4A868]/40 bg-[#D4A868]/[0.06] p-4">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-3.5 w-3.5 text-[#D4A868]" />
+              <p className="text-[10.5px] uppercase tracking-[0.14em] text-[#D4A868]">
+                Why this trade
+              </p>
+              <span
+                className="ml-1 rounded-md px-2 py-0.5 text-[10.5px] font-semibold tracking-wide"
+                style={{
+                  backgroundColor: rebalanceTrade.action === "SELL" ? "#3A1717" : "#113126",
+                  color: rebalanceTrade.action === "SELL" ? "#FF6559" : "#3FD998",
+                }}
+              >
+                {rebalanceTrade.action}
+              </span>
+              <span className="ml-auto text-[13px] font-semibold tabular-nums text-foreground">
+                {rebalanceTrade.amountText}
+              </span>
+            </div>
+            {rebalanceTrade.reasonTitle && (
+              <p className="mt-2 text-[13px] font-medium leading-tight text-foreground">
+                {rebalanceTrade.reasonTitle}
+              </p>
+            )}
+            {rebalanceTrade.rationale && (
+              <p className="mt-1 text-[12px] leading-snug text-muted-foreground">
+                {rebalanceTrade.rationale}
+              </p>
+            )}
+          </section>
+        )}
+
         {loading && (
           <div className="space-y-3 animate-pulse">
             <div className="h-16 rounded-2xl bg-muted" />
