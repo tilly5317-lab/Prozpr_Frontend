@@ -435,6 +435,9 @@ const RebalanceGate = ({ onReady, editSignal }: RebalanceGateProps) => {
         open={camsOpen}
         onClose={() => setCamsOpen(false)}
         onUploaded={() => void handleCamsUploaded()}
+        // Rebalancing inputs: a fresh statement fully replaces old CAMS data so the plan
+        // is recomputed from the latest holdings/transactions, not merged with stale ones.
+        replaceExisting
       />
     </>
   );

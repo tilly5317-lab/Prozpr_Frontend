@@ -526,13 +526,20 @@ export interface CamsPdfImportResponse {
  * statement was generated — usually the investor's PAN in capitals). The backend parses
  * it, stores the holdings/transactions, and refreshes the primary portfolio.
  */
-export async function uploadCamsStatement(file: File, password: string): Promise<CamsPdfImportResponse> {
+export async function uploadCamsStatement(
+  file: File,
+  password: string,
+  replaceExisting = false,
+): Promise<CamsPdfImportResponse> {
   if (Date.now() < backendOfflineUntil) {
     throw new BackendOfflineError();
   }
   const form = new FormData();
   form.append("file", file);
   form.append("password", password);
+  // When true the backend wipes all prior CAMS-derived data (transactions, holdings,
+  // allocations, net-worth history) and recomputes from this statement alone.
+  form.append("replace_existing", replaceExisting ? "true" : "false");
 
   // NB: do not set Content-Type — the browser must add the multipart boundary itself.
   const headers: Record<string, string> = {};
