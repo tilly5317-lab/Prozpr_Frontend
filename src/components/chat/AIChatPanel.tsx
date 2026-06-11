@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Send, Mic, MicOff, AlertCircle, Loader2, Sparkles, Check, Square, ChevronDown, ChevronUp, Pencil, ArrowRight, Plus, Trash2, MessageSquare, MessageCircle, Menu } from "lucide-react";
+import { X, Send, Mic, MicOff, AlertCircle, Loader2, Sparkles, Check, Square, ChevronDown, ChevronUp, Pencil, ArrowRight, Plus, Trash2, MessageSquare, Menu } from "lucide-react";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -11,6 +11,7 @@ import {
   getChatSession,
   listChatSessions,
   deleteChatSession,
+  renameChatSession,
   getMe,
   getFullProfile,
   getMyPortfolio,
@@ -564,6 +565,11 @@ const SessionHistoryPanel = ({
   const [sessions, setSessions] = useState<ChatSessionInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const [savingId, setSavingId] = useState<string | null>(null);
+  // Set when the user presses Escape so the input's blur handler skips saving.
+  const cancelEditRef = useRef(false);
 
   useEffect(() => {
     if (!open) return;
@@ -582,6 +588,32 @@ const SessionHistoryPanel = ({
       setSessions((prev) => prev.filter((s) => s.id !== id));
     } catch { /* ignore */ }
     setDeletingId(null);
+  };
+
+  const startRename = (e: React.MouseEvent, s: ChatSessionInfo) => {
+    e.stopPropagation();
+    cancelEditRef.current = false;
+    setEditingId(s.id);
+    setEditValue(s.title || "");
+  };
+
+  const saveRename = async (id: string) => {
+    const title = editValue.trim();
+    const current = sessions.find((x) => x.id === id);
+    if (!title || title === (current?.title ?? "")) {
+      setEditingId(null);
+      return;
+    }
+    setSavingId(id);
+    try {
+      const updated = await renameChatSession(id, title);
+      setSessions((prev) => prev.map((x) => (x.id === id ? { ...x, title: updated.title } : x)));
+    } catch {
+      /* keep the previous title on failure */
+    } finally {
+      setSavingId(null);
+      setEditingId(null);
+    }
   };
 
   return (
@@ -624,36 +656,73 @@ const SessionHistoryPanel = ({
                 </div>
               ) : (
                 <div className="py-1">
-                  {(sessions.length > 0 ? sessions : DUMMY_SESSIONS).map((s) => (
-                    <button
-                      key={s.id}
-                      onClick={() => { onSelectSession(s.id); onClose(); }}
-                      className={`group flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-muted/50 ${
-                        s.id === activeSessionId ? "bg-primary/8 border-l-2 border-primary" : ""
-                      }`}
-                    >
-                      <MessageSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium text-foreground truncate">
-                          {s.title || "Untitled"}
-                        </p>
-                        <p className="text-[10px] text-muted-foreground/70 mt-0.5">
-                          {formatSessionDate(s.updated_at)}
-                        </p>
-                      </div>
-                      <button
-                        onClick={(e) => handleDelete(e, s.id)}
-                        disabled={deletingId === s.id}
-                        className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-destructive/10 transition-all"
+                  {(sessions.length > 0 ? sessions : DUMMY_SESSIONS).map((s) => {
+                    const isEditing = editingId === s.id;
+                    return (
+                      <div
+                        key={s.id}
+                        className={`group flex w-full items-center gap-3 px-4 py-2.5 transition-colors ${
+                          isEditing ? "" : "hover:bg-muted/50"
+                        } ${s.id === activeSessionId ? "bg-primary/8 border-l-2 border-primary" : ""}`}
                       >
-                        {deletingId === s.id ? (
-                          <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                        <MessageSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
+                        {isEditing ? (
+                          <input
+                            autoFocus
+                            value={editValue}
+                            disabled={savingId === s.id}
+                            maxLength={255}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") { e.preventDefault(); void saveRename(s.id); }
+                              else if (e.key === "Escape") { cancelEditRef.current = true; setEditingId(null); }
+                            }}
+                            onBlur={() => {
+                              if (cancelEditRef.current) { cancelEditRef.current = false; return; }
+                              void saveRename(s.id);
+                            }}
+                            className="flex-1 min-w-0 rounded border border-border bg-background px-1.5 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                          />
                         ) : (
-                          <Trash2 className="h-3 w-3 text-muted-foreground/60 hover:text-destructive" />
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => { onSelectSession(s.id); onClose(); }}
+                              className="flex-1 min-w-0 text-left"
+                            >
+                              <p className="text-xs font-medium text-foreground truncate">
+                                {s.title || "Untitled"}
+                              </p>
+                              <p className="text-[10px] text-muted-foreground/70 mt-0.5">
+                                {formatSessionDate(s.updated_at)}
+                              </p>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => startRename(e, s)}
+                              className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-muted transition-all"
+                              aria-label="Rename chat"
+                            >
+                              <Pencil className="h-3 w-3 text-muted-foreground/60 hover:text-foreground" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => handleDelete(e, s.id)}
+                              disabled={deletingId === s.id}
+                              className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-destructive/10 transition-all"
+                              aria-label="Delete chat"
+                            >
+                              {deletingId === s.id ? (
+                                <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                              ) : (
+                                <Trash2 className="h-3 w-3 text-muted-foreground/60 hover:text-destructive" />
+                              )}
+                            </button>
+                          </>
                         )}
-                      </button>
-                    </button>
-                  ))}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -1328,7 +1397,7 @@ const AIChatPanel = ({
               </div>
               {showBackToInvest && i === 0 && msg.role === "ai" && (
                 <button
-                  onClick={() => navigate("/execute")}
+                  onClick={() => navigate("/rebalance-explanation")}
                   className="ml-7 mt-2 self-start flex items-center gap-3 rounded-xl px-4 py-3 transition-opacity hover:opacity-90"
                   style={{ backgroundColor: "hsl(220, 40%, 20%)" }}
                 >
@@ -1347,7 +1416,7 @@ const AIChatPanel = ({
               {msg.showViewExecutePlan ? (
                 <button
                   type="button"
-                  onClick={() => navigate("/execute")}
+                  onClick={() => navigate("/rebalance-explanation")}
                   className="ml-7 mt-2 self-start flex items-center gap-3 rounded-xl px-4 py-3 transition-opacity hover:opacity-90 border border-primary/25 bg-primary/5"
                 >
                   <div className="flex flex-col text-left">
@@ -1419,16 +1488,6 @@ const AIChatPanel = ({
             >
               <Menu className="h-4 w-4" />
             </button>
-            <a
-              href="https://wa.me/"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="Chat on WhatsApp"
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-muted/60 hover:bg-muted transition-colors"
-              style={{ color: "#25D366" }}
-            >
-              <MessageCircle className="h-3.5 w-3.5" strokeWidth={2.2} />
-            </a>
           </div>
         )}
 

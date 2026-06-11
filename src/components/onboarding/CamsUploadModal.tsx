@@ -15,11 +15,17 @@ interface CamsUploadModalProps {
   onClose: () => void;
   /** Called after a successful ingest (portfolio + linked accounts changed). */
   onUploaded?: (result: CamsPdfImportResponse) => void;
+  /**
+   * When true, the new statement REPLACES all prior CAMS data (transactions, holdings,
+   * allocations, net-worth history are wiped and recomputed from this upload alone).
+   * Used by the rebalancing inputs flow. Defaults to an incremental merge.
+   */
+  replaceExisting?: boolean;
 }
 
 const MAX_PDF_BYTES = 20 * 1024 * 1024;
 
-const CamsUploadModal = ({ open, onClose, onUploaded }: CamsUploadModalProps) => {
+const CamsUploadModal = ({ open, onClose, onUploaded, replaceExisting = false }: CamsUploadModalProps) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [password, setPassword] = useState("");
@@ -70,7 +76,7 @@ const CamsUploadModal = ({ open, onClose, onUploaded }: CamsUploadModalProps) =>
     setUploading(true);
     setError(null);
     try {
-      const res = await uploadCamsStatement(file, password.trim());
+      const res = await uploadCamsStatement(file, password.trim(), replaceExisting);
       setResult(res);
       if (res.status === "FAILED") {
         toast({
