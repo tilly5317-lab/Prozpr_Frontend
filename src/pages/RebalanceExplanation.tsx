@@ -7,10 +7,12 @@ import RebalanceGate from "@/components/invest/RebalanceGate";
 import TradeFundDetailView from "@/components/fund/TradeFundDetailView";
 import { toast } from "@/hooks/use-toast";
 import {
+  getMyPortfolio,
   getRebalancingRunDetail,
   listRebalancingRuns,
   runRebalancing,
   updateRebalancingStatus,
+  type PortfolioDetail,
   type RebalancingRunDetail,
   type RebalancingSubgroupSummary,
   type RebalancingTrade,
@@ -162,8 +164,66 @@ function mapTrade(t: RebalancingTrade): UITrade {
     name: t.recommended_fund,
     category: t.sub_category || t.asset_subgroup,
     rationale: t.reason_text,
-    isin: t.isin,
   };
+}
+
+/** Total invested (cost basis): per-unit avg × qty, else avg treated as aggregate. */
+function costBasisOf(quantity: number | null, averageCost: number | null): number | null {
+  if (averageCost == null || averageCost <= 0) return null;
+  if (quantity != null && quantity > 0) return quantity * averageCost;
+  if (quantity == null) return averageCost;
+  return null;
+}
+
+/** Normalise a fund name for matching trades against holdings. */
+function normalizeFundName(raw: string): string {
+  return (raw || "")
+    .toLowerCase()
+    .replace(/\s*·\s*folio.*$/i, "")
+    .replace(/\s*[-–]\s*(direct|regular)\s+plan\b.*$/i, "")
+    .replace(/\s+growth(?:\s+option)?$/i, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/** One "kept" holding (not being sold) shown with its performance. */
+interface KeptFund {
+  id: string;
+  name: string;
+  subtitle: string | null;
+  value: number;
+  gainPct: number | null;
+  tone: "well" | "neutral";
+}
+
+/** Holdings the plan is NOT selling, tagged performing-well / neutral. */
+function buildKeptFunds(portfolio: PortfolioDetail | null, trades: UITrade[]): KeptFund[] {
+  if (!portfolio || portfolio.holdings.length === 0) return [];
+  const soldIsins = new Set(
+    trades.filter((t) => t.type === "SELL" && t.isin).map((t) => t.isin.toLowerCase()),
+  );
+  const soldNames = new Set(
+    trades.filter((t) => t.type === "SELL").map((t) => normalizeFundName(t.name)),
+  );
+  return portfolio.holdings
+    .filter((h) => {
+      const isinMatch = h.ticker_symbol && soldIsins.has(h.ticker_symbol.toLowerCase());
+      const nameMatch = soldNames.has(normalizeFundName(h.instrument_name));
+      return !isinMatch && !nameMatch;
+    })
+    .map((h) => {
+      const basis = costBasisOf(h.quantity, h.average_cost);
+      const gainPct = basis != null && basis > 0 ? ((h.current_value - basis) / basis) * 100 : null;
+      return {
+        id: h.id,
+        name: normalizeFundName(h.instrument_name) ? h.instrument_name.replace(/\s*·\s*Folio.*$/i, "").trim() : h.instrument_name,
+        subtitle: h.sub_category ?? h.asset_class ?? null,
+        value: h.current_value,
+        gainPct,
+        tone: gainPct != null && gainPct >= 8 ? ("well" as const) : ("neutral" as const),
+      };
+    })
+    .sort((a, b) => (b.gainPct ?? -Infinity) - (a.gainPct ?? -Infinity));
 }
 
 const cardStyle: CSSProperties = {
@@ -178,12 +238,14 @@ const UNDERWEIGHT = "hsl(var(--wealth-green))";
 const NEUTRAL = "hsl(var(--muted-foreground))";
 
 // Current vs target bars — Current is soft gold at 50% opacity, Target is solid gold.
-const GOLD = "#D4A868";
-const GOLD_SOFT = "rgba(212, 168, 104, 0.7)";
+// Current vs target bars: Current is a very light gold tint, Target is a strong deep gold.
+const GOLD = "#A8761F"; // Target — very strong
+const GOLD_SOFT = "rgba(212, 168, 104, 0.22)"; // Current — very light
 
 const RebalanceExplanation = () => {
   const navigate = useNavigate();
   const [detail, setDetail] = useState<RebalancingRunDetail | null>(null);
+  const [portfolio, setPortfolio] = useState<PortfolioDetail | null>(null);
   const [dataLoading, setDataLoading] = useState(false);
   const [dataError, setDataError] = useState<string | null>(null);
   const [approving, setApproving] = useState(false);
@@ -228,6 +290,8 @@ const RebalanceExplanation = () => {
       }
       if (run) {
         setDetail(await getRebalancingRunDetail(run.id));
+        // Best-effort: load holdings so we can show the funds we're keeping.
+        getMyPortfolio().then(setPortfolio).catch(() => { /* section just hides */ });
       } else {
         setDataError("No rebalancing plan is available yet.");
       }
@@ -240,6 +304,7 @@ const RebalanceExplanation = () => {
 
   const driftRows = useMemo(() => buildDriftRows(detail?.subgroup_summaries ?? []), [detail]);
   const uiTrades = useMemo(() => (detail?.trades ?? []).map(mapTrade), [detail]);
+  const keptFunds = useMemo(() => buildKeptFunds(portfolio, uiTrades), [portfolio, uiTrades]);
   const taxText = useMemo(() => {
     const tax = detail?.totals?.total_tax_estimate_inr ?? 0;
     return tax > 0 ? `Tax impact · ${fmtINR(tax)} est.` : "Tax impact · ₹0";
@@ -391,7 +456,7 @@ const RebalanceExplanation = () => {
                           </div>
 
                           {/* Current (top) + Target (bottom) — flush, no gap between them.
-                              Current = 50% soft gold, Target = solid gold. */}
+                              Current = very light gold, Target = strong deep gold. */}
                           <div className="overflow-hidden rounded-[3px] bg-muted">
                             <div
                               className="h-3.5"
@@ -496,6 +561,62 @@ const RebalanceExplanation = () => {
                 </div>
               )}
             </section>
+
+            {/* Funds you're keeping — everything in the portfolio NOT being sold,
+                tagged performing-well / neutral, with the same fund details. */}
+            {keptFunds.length > 0 && (
+              <section style={cardStyle} className="px-4 py-4">
+                <p className="text-[10px] tracking-[0.16em] uppercase text-muted-foreground">
+                  Funds you're keeping
+                </p>
+                <p className="mt-1 text-[11.5px] leading-snug text-muted-foreground">
+                  Performing well or neutral — staying in your portfolio, not part of these trades.
+                </p>
+                <div className="mt-3 divide-y divide-border">
+                  {keptFunds.map((f) => (
+                    <div key={f.id} className="flex items-center gap-3 py-2.5">
+                      <span
+                        className="px-2 py-0.5 rounded-md text-[10px] font-semibold tracking-wide shrink-0"
+                        style={{
+                          backgroundColor:
+                            f.tone === "well"
+                              ? "hsl(var(--wealth-green) / 0.12)"
+                              : "hsl(var(--muted-foreground) / 0.12)",
+                          color:
+                            f.tone === "well"
+                              ? "hsl(var(--wealth-green))"
+                              : "hsl(var(--muted-foreground))",
+                        }}
+                      >
+                        {f.tone === "well" ? "Performing well" : "Neutral"}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[13px] leading-tight font-medium text-foreground truncate">{f.name}</p>
+                        {f.subtitle && (
+                          <p className="text-[10.5px] text-muted-foreground truncate">{f.subtitle}</p>
+                        )}
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p
+                          className="text-[13px] leading-none font-semibold tabular-nums"
+                          style={{
+                            color:
+                              f.gainPct == null
+                                ? "hsl(var(--muted-foreground))"
+                                : f.gainPct >= 0
+                                  ? "hsl(var(--wealth-green))"
+                                  : "hsl(var(--destructive))",
+                          }}
+                        >
+                          {f.gainPct == null ? "—" : `${f.gainPct >= 0 ? "+" : ""}${f.gainPct.toFixed(1)}%`}
+                        </p>
+                        <p className="mt-1 text-[10px] text-muted-foreground tabular-nums">{axisINR(f.value)}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
 
             <button
               type="button"

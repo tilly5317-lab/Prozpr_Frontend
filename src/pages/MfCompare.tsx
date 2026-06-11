@@ -634,21 +634,18 @@ function FundPicker({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[60] flex items-end justify-center bg-foreground/30 backdrop-blur-sm"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-foreground/30 p-4 backdrop-blur-sm"
           onClick={onClose}
         >
           <motion.div
-            initial={{ y: "100%" }}
-            animate={{ y: 0 }}
-            exit={{ y: "100%" }}
-            transition={{ type: "spring", damping: 30, stiffness: 300 }}
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.96 }}
+            transition={{ duration: 0.18, ease: "easeOut" }}
             onClick={(e) => e.stopPropagation()}
-            className="flex max-h-[82vh] w-full max-w-md flex-col rounded-t-2xl bg-card shadow-xl"
+            className="flex max-h-[82vh] w-full max-w-md flex-col rounded-2xl bg-card shadow-xl"
           >
             <div className="px-5 pt-4">
-              <div className="mb-3 flex justify-center">
-                <div className="h-1.5 w-10 rounded-full bg-border" />
-              </div>
               <div className="mb-3 flex items-center justify-between">
                 <h3 className="text-base font-bold text-foreground">Add a fund</h3>
                 <button
