@@ -68,6 +68,14 @@ function formatPct(n: number | null): string {
   return `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
 }
 
+/** Compact INR with a single decimal place (e.g. ₹4.8L, ₹1.2Cr). */
+function formatInr1(n: number): string {
+  if (n >= 10000000) return `₹${(n / 10000000).toFixed(1)}Cr`;
+  if (n >= 100000) return `₹${(n / 100000).toFixed(1)}L`;
+  if (n >= 1000) return `₹${(n / 1000).toFixed(1)}k`;
+  return `₹${n.toFixed(1)}`;
+}
+
 function pctColor(n: number | null): string {
   if (n === null) return "#1a1a1a";
   return n >= 0 ? POSITIVE : NEGATIVE;
@@ -157,6 +165,8 @@ function allocationBucketToClassifiedRow(a: PortfolioDetail["allocations"][numbe
   bucket: HoldingBucket;
   /** AMFI scheme code or ISIN — opens fund detail when set. */
   schemeCode: string | null;
+  /** Fund sub-category (e.g. "Large Cap", "Corporate Bond"); aggregated rows have none. */
+  subCategory: string | null;
 } {
   const id = `alloc-${a.id}`;
   const bucket = (a.asset_class ?? "Others") as HoldingBucket;
@@ -166,7 +176,7 @@ function allocationBucketToClassifiedRow(a: PortfolioDetail["allocations"][numbe
   return {
     id,
     name: `${a.asset_class} (aggregated)`,
-    value: formatInrCompact(a.amount),
+    value: formatInr1(a.amount),
     pct: `${Math.round(a.allocation_percentage * 10) / 10}%`,
     allocationPct: a.allocation_percentage,
     returnPct,
@@ -177,6 +187,7 @@ function allocationBucketToClassifiedRow(a: PortfolioDetail["allocations"][numbe
     barBorder: colors.border,
     bucket,
     schemeCode: null,
+    subCategory: null,
   };
 }
 
@@ -240,7 +251,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
           return {
             id: h.id,
             name: h.instrument_name,
-            value: formatInrCompact(h.current_value),
+            value: formatInr1(h.current_value),
             pct: h.allocation_percentage != null ? `${h.allocation_percentage}%` : (null as string | null),
             allocationPct: h.allocation_percentage ?? 0,
             returnPct,
@@ -251,6 +262,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
             barBorder: colors.border,
             bucket,
             schemeCode: h.ticker_symbol ?? null,
+            subCategory: h.sub_category ?? null,
           };
         })
       : portfolio.allocations.length > 0
@@ -271,6 +283,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                 barBorder: HOLDINGS_BAR_BY_BUCKET.Equity.border,
                 bucket: "Equity" as HoldingBucket,
                 schemeCode: null,
+                subCategory: "Large Cap",
               },
               {
                 id: "d2",
@@ -286,6 +299,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                 barBorder: HOLDINGS_BAR_BY_BUCKET.Debt.border,
                 bucket: "Debt" as HoldingBucket,
                 schemeCode: null,
+                subCategory: "Corporate Bond",
               },
               {
                 id: "d3",
@@ -301,6 +315,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                 barBorder: HOLDINGS_BAR_BY_BUCKET.Others.border,
                 bucket: "Others" as HoldingBucket,
                 schemeCode: null,
+                subCategory: "Gold",
               },
             ]
           : [];
@@ -331,6 +346,18 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
   const selected = selectedSlice ? allocations.find((a) => a.name === selectedSlice) ?? null : null;
   const selectedGroup = selected ? groupedHoldings.find((g) => g.bucket === selected.bucket) : undefined;
   const selectedAmount = selected ? selected.amount ?? selectedGroup?.totalValue : undefined;
+
+  // Roll the tapped bucket's holdings up to fund sub-categories (e.g. "Large Cap",
+  // "Corporate Bond") so the slice detail shows categories, not individual funds.
+  const selectedSubGroups = selectedGroup
+    ? Object.values(
+        selectedGroup.items.reduce<Record<string, { name: string; value: number }>>((acc, row) => {
+          const key = row.subCategory?.trim() || "Other";
+          (acc[key] ??= { name: key, value: 0 }).value += row.currentValue;
+          return acc;
+        }, {}),
+      ).sort((a, b) => b.value - a.value)
+    : [];
 
   return (
     <div onClick={() => setSelectedSlice(null)}>
@@ -378,6 +405,18 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
               </Pie>
             </PieChart>
           </ResponsiveContainer>
+          {/* Center hole hit-area — tapping the middle clears the selected slice
+              and returns to the full legend (same as clicking outside the donut). */}
+          <button
+            type="button"
+            aria-label="Show all allocations"
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedSlice(null);
+            }}
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full"
+            style={{ width: 64, height: 64 }}
+          />
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <span className="text-sm font-bold text-foreground">{centerLabel}</span>
           </div>
@@ -406,25 +445,26 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                 className="mt-1 text-lg font-bold text-foreground leading-tight"
                 style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
               >
-                {selectedAmount != null ? formatInrCompact(selectedAmount) : "—"}
+                {selectedAmount != null ? formatInr1(selectedAmount) : "—"}
               </p>
-              {selectedGroup && selectedGroup.items.length > 0 ? (
+              {selectedSubGroups.length > 0 ? (
                 <div className="mt-1.5 space-y-1">
-                  {selectedGroup.items.map((row) => (
-                    <div key={row.id} className="flex items-start justify-between gap-2">
+                  {selectedSubGroups.map((sg) => (
+                    <div key={sg.name} className="flex items-start justify-between gap-2">
                       <span className="flex-1 min-w-0 text-[10px] text-muted-foreground leading-tight break-words">
-                        {row.name}
+                        {sg.name}
                       </span>
-                      <span className="text-[10px] font-medium text-foreground shrink-0">{row.value}</span>
+                      <span className="text-[10px] font-medium text-foreground shrink-0">
+                        {formatInr1(sg.value)}
+                      </span>
                     </div>
                   ))}
                 </div>
               ) : (
                 <p className="mt-1.5 text-[10px] text-muted-foreground leading-snug">
-                  No individual holdings recorded in this bucket.
+                  No sub-categories recorded in this bucket.
                 </p>
               )}
-              <p className="mt-1.5 text-[9px] italic text-muted-foreground/70">Tap anywhere to go back</p>
             </div>
           ) : (
             allocations.map((item) => (
@@ -518,7 +558,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                             className="text-xs font-semibold text-foreground"
                             style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
                           >
-                            {formatInrCompact(group.totalValue)}
+                            {formatInr1(group.totalValue)}
                           </p>
                           <p className="text-[10px] font-medium text-muted-foreground">
                             {group.totalPct.toFixed(0)}%
@@ -565,7 +605,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                   : gainAmount >= 0 ? POSITIVE : NEGATIVE;
                 const gainText = gainAmount === null
                   ? "—"
-                  : `${gainAmount >= 0 ? "+" : "-"}${formatInrCompact(Math.abs(gainAmount))}`;
+                  : `${gainAmount >= 0 ? "+" : "-"}${formatInr1(Math.abs(gainAmount))}`;
 
                 return (
                   <div key={row.id}>
@@ -670,13 +710,13 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                                 <p className={LABEL_CLASS}>Invested</p>
                                 <p className={VALUE_CLASS}>
                                   {row.investedTotal != null && row.investedTotal > 0
-                                    ? formatInrCompact(row.investedTotal)
+                                    ? formatInr1(row.investedTotal)
                                     : "—"}
                                 </p>
                               </div>
                               <div>
                                 <p className={LABEL_CLASS}>Current value</p>
-                                <p className={VALUE_CLASS}>{formatInrCompact(row.currentValue)}</p>
+                                <p className={VALUE_CLASS}>{formatInr1(row.currentValue)}</p>
                               </div>
                               <div>
                                 <p className={LABEL_CLASS}>Gain / Loss</p>

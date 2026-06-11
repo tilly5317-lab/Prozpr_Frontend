@@ -43,13 +43,6 @@ const PFP_NUMERIC_KEYS = new Set([
   "starting_monthly_investment",
 ]);
 
-// Questions hidden from the form even if the backend still lists them.
-const HIDDEN_FIELD_KEYS = new Set(["assumed_lifespan_years"]);
-
-// The lifespan question is hidden, but the engine still requires a value — fall
-// back to this when there's no saved one so readiness never blocks on it.
-const DEFAULT_ASSUMED_LIFESPAN_YEARS = 85;
-
 /** Show numeric inputs with thousands separators (Indian grouping), e.g. 12,34,567. */
 function formatWithCommas(raw: string): string {
   if (!raw) return "";
@@ -105,7 +98,6 @@ const CashflowGate = ({ onReady, editSignal }: CashflowGateProps) => {
     if (!readiness) return;
     const seed: Record<string, string> = {};
     for (const f of readiness.fields) {
-      if (HIDDEN_FIELD_KEYS.has(f.key)) continue;
       seed[f.key] = f.value == null ? "" : String(f.value);
     }
     setValues(seed);
@@ -122,9 +114,7 @@ const CashflowGate = ({ onReady, editSignal }: CashflowGateProps) => {
 
   const grouped = useMemo(
     () =>
-      readiness
-        ? groupFields(readiness.fields.filter((f) => !HIDDEN_FIELD_KEYS.has(f.key)))
-        : [],
+      readiness ? groupFields(readiness.fields) : [],
     [readiness],
   );
 
@@ -139,7 +129,6 @@ const CashflowGate = ({ onReady, editSignal }: CashflowGateProps) => {
     const out: CashflowInputValues = {};
 
     for (const f of readiness.fields) {
-      if (HIDDEN_FIELD_KEYS.has(f.key)) continue;
       const raw = (values[f.key] ?? "").trim();
       if (raw === "") {
         if (!f.optional) nextErrors[f.key] = "Required";
@@ -166,19 +155,11 @@ const CashflowGate = ({ onReady, editSignal }: CashflowGateProps) => {
         }
         out.effective_tax_rate = n / 100;
       } else if (f.kind === "int") {
-        if (f.key === "retirement_age") out.retirement_age = Math.round(n);
+        if (f.key === "assumed_lifespan_years") out.assumed_lifespan_years = Math.round(n);
+        else if (f.key === "retirement_age") out.retirement_age = Math.round(n);
       } else if (PFP_NUMERIC_KEYS.has(f.key)) {
         (out as Record<string, number>)[f.key] = n;
       }
-    }
-
-    // Supply the hidden "assumed lifespan" value (saved one, else a default) so
-    // the engine's readiness check isn't blocked on a question we no longer ask.
-    const lifeField = readiness.fields.find((f) => f.key === "assumed_lifespan_years");
-    if (lifeField) {
-      const saved = lifeField.value != null ? Math.round(Number(lifeField.value)) : NaN;
-      out.assumed_lifespan_years =
-        Number.isFinite(saved) && saved > 0 ? saved : DEFAULT_ASSUMED_LIFESPAN_YEARS;
     }
 
     if (Object.keys(nextErrors).length > 0) {
@@ -238,7 +219,7 @@ const CashflowGate = ({ onReady, editSignal }: CashflowGateProps) => {
   const showLockOverlay = loading || !ready;
 
   const missingCount = readiness
-    ? readiness.fields.filter((f) => !HIDDEN_FIELD_KEYS.has(f.key) && !f.optional && !f.present).length
+    ? readiness.fields.filter((f) => !f.optional && !f.present).length
     : 0;
 
   return (

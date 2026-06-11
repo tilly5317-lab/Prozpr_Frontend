@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Area,
   AreaChart,
-  CartesianGrid,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -16,14 +15,19 @@ import {
   type PortfolioNavHistoryPoint,
   type PortfolioNavHorizon,
 } from "@/lib/api";
-import { formatInrCompact, formatInrPaisa } from "@/lib/utils";
+import { formatInrPaisa } from "@/lib/utils";
 
 const HORIZONS: PortfolioNavHorizon[] = ["1M", "3M", "1Y", "3Y", "MAX"];
 
-// X-axis labels always read as "mmm-yy" (e.g. Jun-26).
-function formatXLabel(iso: string): string {
+// X-axis label format depends on horizon: short windows (1M / 3M) read as
+// "dd-mmm" (e.g. 05-Jun); longer windows read as "mmm-yy" (e.g. Jun-26).
+function formatXLabel(iso: string, horizon: PortfolioNavHorizon): string {
   const d = new Date(iso);
   const mon = d.toLocaleDateString("en-IN", { month: "short" });
+  if (horizon === "1M" || horizon === "3M") {
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${dd}-${mon}`;
+  }
   const yy = String(d.getFullYear()).slice(-2);
   return `${mon}-${yy}`;
 }
@@ -195,7 +199,7 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
     if (points && points.length) {
       return points.map((p, i) => ({
         ...p,
-        x: formatXLabel(p.recorded_date),
+        x: formatXLabel(p.recorded_date, horizon),
         idx: i,
       }));
     }
@@ -211,7 +215,7 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
           total_value: v * 100000,
           total_invested: v * 100000,
           gain_percentage: 0,
-          x: formatXLabel(iso),
+          x: formatXLabel(iso, horizon),
           idx: i,
         };
       });
@@ -219,7 +223,7 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
     return [];
   }, [points, horizon, fallbackValues]);
 
-  const tickCount = horizon === "1M" || horizon === "3M" ? 4 : horizon === "1Y" ? 5 : 6;
+  const tickCount = 5;
 
   // Evenly-spaced X ticks by data index (numeric axis), so spacing stays uniform
   // regardless of how many points or repeated month labels there are.
@@ -327,6 +331,13 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
                   Try again
                 </button>
               </>
+            ) : job?.has_history ? (
+              // History exists overall, but this horizon's window has no points
+              // (e.g. nothing recorded in the last 3 months). Show an explicit
+              // empty state rather than spinning on the build flow forever.
+              <p className="text-[11px] text-muted-foreground">
+                No data for this period yet.
+              </p>
             ) : (
               // No history yet and no job failed — the build auto-starts, so show
               // a calculating state instead of a manual fetch button.
@@ -351,11 +362,6 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
                   <stop offset="100%" stopColor={strokeColor} stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid
-                stroke="hsl(var(--border))"
-                strokeOpacity={0.35}
-                vertical={false}
-              />
               <XAxis
                 dataKey="idx"
                 type="number"
@@ -376,7 +382,13 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
                 axisLine={false}
                 tickLine={false}
                 width={42}
-                tickFormatter={(v) => formatInrCompact(Number(v))}
+                tickFormatter={(v) => {
+                  const n = Number(v);
+                  if (n >= 10000000) return `₹${(n / 10000000).toFixed(1)}Cr`;
+                  if (n >= 100000) return `₹${(n / 100000).toFixed(1)}L`;
+                  if (n >= 1000) return `₹${(n / 1000).toFixed(1)}k`;
+                  return `₹${n.toFixed(1)}`;
+                }}
               />
               <Tooltip content={<ChartTooltip />} cursor={{ stroke: "hsl(var(--border))" }} />
               <Area

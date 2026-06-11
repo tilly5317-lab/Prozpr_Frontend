@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, MessageCircle, PenLine, ChevronDown, Plus, X, Info, AlertTriangle, Lock } from "lucide-react";
+import { ArrowLeft, ChevronDown, Plus, X, Info, AlertTriangle, Lock } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Slider } from "@/components/ui/slider";
@@ -1075,10 +1075,6 @@ const CompleteProfile = () => {
     setOtherAssets((prev) => prev.map((a, idx) => (idx === i ? { ...a, [field]: value } : a)));
   };
 
-  const handleProzprMode = () => {
-    navigate("/chat?from=complete-profile");
-  };
-
   const renderSection = (idx: number) => {
     switch (idx) {
       /* ── Section 0: Your financial picture ── */
@@ -1701,21 +1697,6 @@ const CompleteProfile = () => {
         </div>
       </div>
 
-      {/* Mode toggle */}
-      <div className="px-5 pb-4 flex gap-2">
-        <button
-          onClick={handleProzprMode}
-          className="relative flex-[3] inline-flex flex-col items-center justify-center gap-1 rounded-xl bg-accent text-accent-foreground py-2.5 text-xs font-medium transition-all hover:opacity-90 active:scale-[0.97]"
-        >
-          <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full bg-accent text-accent-foreground px-2 py-0.5 text-[9px] font-semibold leading-none whitespace-nowrap shadow-sm">Recommended</span>
-          <span className="flex items-center gap-1.5"><MessageCircle className="h-3.5 w-3.5 shrink-0" />Guide me (Chat with Tilly)</span>
-        </button>
-        <button
-          className="flex-[2] flex items-center justify-center gap-2 rounded-xl border border-border bg-card text-muted-foreground py-2.5 text-xs font-medium hover:border-accent/40 transition-all active:scale-[0.97]"
-        >
-          <PenLine className="h-3.5 w-3.5" /> I'll fill it in myself
-        </button>
-      </div>
 
       {/* Accordion sections */}
       <div className="px-5 space-y-2">

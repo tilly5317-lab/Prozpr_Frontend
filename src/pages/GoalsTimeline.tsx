@@ -1916,24 +1916,24 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
               </span>
             </p>
           </div>
-          <input
-            type="range"
-            min={0}
-            max={MONTHLY_MAX}
-            step={5000}
-            value={
-              Number.isFinite(monthlyContrib)
-                ? Math.min(MONTHLY_MAX, Math.max(0, monthlyContrib))
-                : MONTHLY_CONTRIBUTION
-            }
-            onChange={(e) => {
-              const v = Number(e.target.value);
-              if (Number.isFinite(v)) setMonthlyContrib(v);
-            }}
-            className="flex-1 min-w-0"
-            style={{ accentColor: "#D4A868", transform: "scaleY(0.9)" }}
-            aria-label="Monthly investment amount"
-          />
+          <div className="flex-1 min-w-0 flex items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1.5 focus-within:ring-1 focus-within:ring-[#D4A868]">
+            <span className="text-[12px] text-muted-foreground shrink-0">₹</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={Number.isFinite(monthlyContrib) ? monthlyContrib.toLocaleString("en-IN") : ""}
+              onChange={(e) => {
+                const digits = e.target.value.replace(/[^\d]/g, "");
+                const v = digits === "" ? 0 : Number(digits);
+                if (Number.isFinite(v)) setMonthlyContrib(Math.min(MONTHLY_MAX, Math.max(0, v)));
+              }}
+              className="w-full min-w-0 bg-transparent text-[12px] font-semibold tabular-nums text-foreground outline-none"
+              style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
+              placeholder="0"
+              aria-label="Monthly investment amount"
+            />
+            <span className="text-[9.5px] text-muted-foreground shrink-0">/mo</span>
+          </div>
           <button
             type="button"
             onClick={() => setMonthlyContrib(MONTHLY_CONTRIBUTION)}
