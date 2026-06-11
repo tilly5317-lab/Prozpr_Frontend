@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -88,6 +88,9 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
   // One-time net-worth-history backfill job (null = not checked / no job yet).
   const [job, setJob] = useState<NetworthJobStatus | null>(null);
   const [starting, setStarting] = useState(false);
+  // Guards the auto-build so we kick it off at most once per mount (and never
+  // auto-retry a failed build — that stays on the explicit "Try again" button).
+  const autoStartedRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -154,7 +157,7 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
     };
   }, [jobActive, job]);
 
-  const startBuild = async () => {
+  const startBuild = useCallback(async () => {
     setStarting(true);
     try {
       const s = await buildNetworthHistory();
@@ -175,7 +178,20 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
     } finally {
       setStarting(false);
     }
-  };
+  }, []);
+
+  // Auto-build on first view: once we've confirmed there's no series and no job
+  // has ever run (status "none"), kick off the backfill ourselves so the chart
+  // populates without the user tapping the button. Runs at most once per mount;
+  // a "failed" job is left for the explicit "Try again" button.
+  useEffect(() => {
+    if (loading || hasPoints || errored) return;
+    if (autoStartedRef.current || starting) return;
+    if (job && job.status === "none" && !job.has_history) {
+      autoStartedRef.current = true;
+      void startBuild();
+    }
+  }, [loading, hasPoints, errored, job, starting, startBuild]);
 
   const chartData = useMemo(() => {
     if (points && points.length) {
