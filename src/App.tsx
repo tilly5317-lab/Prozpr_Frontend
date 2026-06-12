@@ -7,6 +7,7 @@ import { AuthProvider } from "@/context/AuthContext";
 import { FamilyProvider } from "@/context/FamilyContext";
 import { ThemeProvider } from "@/context/ThemeContext";
 import BetaBanner from "@/components/BetaBanner";
+import ReportIssueFab from "@/components/ReportIssueFab";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import Notifications from "./pages/Notifications";
@@ -52,6 +53,7 @@ const App = () => (
         <Sonner />
         <BrowserRouter>
           <BetaBanner />
+          <ReportIssueFab />
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/portfolio" element={<Portfolio />} />
