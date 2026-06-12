@@ -2,11 +2,12 @@ import { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   User, Pencil, Check, FileText, ChevronRight, ChevronDown,
-  MessageSquareText, Calculator, BarChart3, Users, Briefcase, AlertCircle, LogOut,
+  MessageSquareText, Calculator, BarChart3, Users, Briefcase, AlertCircle, LogOut, Bug,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import BottomNav from "@/components/BottomNav";
+import ReportIssueDialog from "@/components/ReportIssueDialog";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/context/AuthContext";
 import {
@@ -373,6 +374,22 @@ const Profile = () => {
           </button>
         </div>
       ))}
+
+      {/* Report an Issue */}
+      <div className="px-5 mb-1.5">
+        <ReportIssueDialog>
+          <button className="wealth-card !p-2.5 w-full text-left flex items-center gap-2.5 active:scale-[0.98] transition-transform">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-secondary">
+              <Bug className="h-3 w-3 text-muted-foreground" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-xs font-semibold text-foreground">Report an Issue</h3>
+              <p className="text-[10px] text-muted-foreground">Something broken or off? Tell us</p>
+            </div>
+            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          </button>
+        </ReportIssueDialog>
+      </div>
 
       {/* Coming Soon items */}
       {([
