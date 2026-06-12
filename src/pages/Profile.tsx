@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   User, Pencil, Check, FileText, ChevronRight, ChevronDown,
-  MessageSquareText, Calculator, BarChart3, Users, Briefcase, AlertCircle, LogOut,
+  MessageSquareText, Calculator, BarChart3, Users, Briefcase, AlertCircle, LogOut, UploadCloud,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -351,6 +351,7 @@ const Profile = () => {
       {([
         { icon: FileText, title: "Investment Policy Statement", sub: "Investment guidelines", route: "/profile/ips", showDot: false },
         { icon: User, title: "Tell Us More About You", sub: "Goals, risk tolerance & mandates", route: "/profile/complete", showDot: true },
+        { icon: UploadCloud, title: "Update Holdings", sub: "Upload your latest CAMS / KFintech statement", route: "/cams-upload?from=profile", showDot: false },
       ] as const).map((item) => (
         <div key={item.title} className="px-5 mb-1.5">
           <button

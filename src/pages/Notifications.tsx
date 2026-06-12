@@ -1,11 +1,10 @@
 import { motion } from "framer-motion";
 import { Gift, ChevronRight, TrendingUp } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import BottomNav, { NOTIFICATIONS_CHANGED_EVENT } from "@/components/BottomNav";
 import {
   listNotifications,
-  markAllNotificationsAsRead,
   markNotificationAsRead,
   type NotificationInfo,
 } from "@/lib/api";
@@ -33,8 +32,6 @@ const Notifications = () => {
     load();
   }, []);
 
-  const unreadCount = useMemo(() => items.filter((n) => !n.is_read).length, [items]);
-
   const getIcon = (type: string) => {
     const t = (type || "").toLowerCase();
     return t.includes("rebalance") || t.includes("portfolio") ? TrendingUp : Gift;
@@ -57,29 +54,10 @@ const Notifications = () => {
     navigate("/profile/complete");
   };
 
-  const handleMarkAll = async () => {
-    try {
-      await markAllNotificationsAsRead();
-      setItems((prev) => prev.map((n) => ({ ...n, is_read: true })));
-      notifyNotificationsChanged();
-    } catch {
-      // no-op
-    }
-  };
-
   return (
     <div className="mobile-container bg-background pb-20 min-h-screen">
-      <div className="px-5 pt-10 pb-3 flex items-center justify-between gap-3">
+      <div className="px-5 pt-10 pb-3">
         <h1 className="text-lg font-semibold text-foreground">Notifications</h1>
-        {unreadCount > 0 ? (
-          <button
-            type="button"
-            onClick={handleMarkAll}
-            className="text-[11px] font-medium text-accent hover:opacity-80 transition-opacity"
-          >
-            Mark all read
-          </button>
-        ) : null}
       </div>
 
       <div className="px-5">
