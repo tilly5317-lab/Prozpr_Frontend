@@ -42,6 +42,66 @@ function classify(gainPct: number): TierKey {
   return "out-of-form";
 }
 
+/* ── Portfolio health score ─────────────────────────────────────────────
+   Transparent 0–100 composite of three checks:
+   - Performance (50%): value-weighted tier quality (in-form 100 … out-of-form 10)
+   - Concentration (25%): penalises a single position dominating the portfolio
+   - Diversification (25%): rewards holding a reasonable number of funds       */
+
+const TIER_QUALITY: Record<TierKey, number> = {
+  "in-form": 100,
+  "on-track": 75,
+  "off-track": 40,
+  "out-of-form": 10,
+};
+
+interface HealthComponent {
+  label: string;
+  score: number; // 0–100
+  note: string;
+}
+
+interface HealthScore {
+  score: number; // 0–100
+  band: { label: string; color: string };
+  components: HealthComponent[];
+}
+
+function healthBand(score: number): { label: string; color: string } {
+  if (score >= 75) return { label: "Strong", color: "#0f8a5f" };
+  if (score >= 55) return { label: "Good", color: "#3B8F6E" };
+  if (score >= 35) return { label: "Needs work", color: "#B07E22" };
+  return { label: "At risk", color: "#C24C3A" };
+}
+
+function computeHealth(items: FormItem[]): HealthScore | null {
+  const total = items.reduce((s, it) => s + it.value, 0);
+  if (items.length === 0 || total <= 0) return null;
+
+  // Performance — value-weighted average of tier quality.
+  const perf = Math.round(
+    items.reduce((s, it) => s + TIER_QUALITY[classify(it.gainPct)] * it.value, 0) / total,
+  );
+
+  // Concentration — full marks while the largest position ≤ 20%, zero at ≥ 60%.
+  const maxW = Math.max(...items.map((it) => it.value / total)) * 100;
+  const conc = Math.round(Math.min(100, Math.max(0, ((60 - maxW) / 40) * 100)));
+
+  // Diversification — full marks at 8+ funds.
+  const div = Math.round(Math.min(100, (items.length / 8) * 100));
+
+  const score = Math.round(perf * 0.5 + conc * 0.25 + div * 0.25);
+  return {
+    score,
+    band: healthBand(score),
+    components: [
+      { label: "Performance", score: perf, note: "Value-weighted form of your funds" },
+      { label: "Concentration", score: conc, note: `Largest position is ${maxW.toFixed(0)}% of portfolio` },
+      { label: "Diversification", score: div, note: `${items.length} fund${items.length === 1 ? "" : "s"} held` },
+    ],
+  };
+}
+
 /** Total invested (cost basis): per-unit avg × qty, else avg treated as aggregate. */
 function costBasis(quantity: number | null, averageCost: number | null): number | null {
   if (averageCost == null || averageCost <= 0) return null;
@@ -125,6 +185,7 @@ const Invest = () => {
 
   const doingWell = grouped["in-form"].length + grouped["on-track"].length;
   const needsAttention = grouped["off-track"].length + grouped["out-of-form"].length;
+  const health = useMemo(() => computeHealth(items), [items]);
 
   return (
     <div className="mobile-container bg-background min-h-screen pb-24">
@@ -142,6 +203,62 @@ const Invest = () => {
         </div>
       ) : (
         <div className="px-5 pt-2">
+          {/* Portfolio health — overall 0–100 rating with its three components */}
+          {health && (
+            <div className="mb-3 rounded-2xl border border-border bg-card p-4">
+              <div className="flex items-center gap-4">
+                {/* Score ring */}
+                <div className="relative h-20 w-20 shrink-0">
+                  <svg viewBox="0 0 80 80" className="h-20 w-20 -rotate-90">
+                    <circle cx="40" cy="40" r="34" fill="none" stroke="hsl(var(--muted))" strokeWidth="7" />
+                    <circle
+                      cx="40"
+                      cy="40"
+                      r="34"
+                      fill="none"
+                      stroke={health.band.color}
+                      strokeWidth="7"
+                      strokeLinecap="round"
+                      strokeDasharray={`${(health.score / 100) * 2 * Math.PI * 34} ${2 * Math.PI * 34}`}
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <span className="text-xl font-bold leading-none text-foreground">{health.score}</span>
+                    <span className="text-[9px] text-muted-foreground">/ 100</span>
+                  </div>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Portfolio health</p>
+                  <p className="text-base font-bold" style={{ color: health.band.color }}>
+                    {health.band.label}
+                  </p>
+                  <p className="mt-0.5 text-[10.5px] leading-snug text-muted-foreground">
+                    Blends fund form, concentration and diversification. Indicative, not advice.
+                  </p>
+                </div>
+              </div>
+
+              {/* Component bars */}
+              <div className="mt-3 space-y-2">
+                {health.components.map((c) => (
+                  <div key={c.label}>
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-[11px] font-medium text-foreground">{c.label}</span>
+                      <span className="text-[10px] tabular-nums text-muted-foreground">{c.score}/100</span>
+                    </div>
+                    <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-full rounded-full"
+                        style={{ width: `${c.score}%`, backgroundColor: healthBand(c.score).color }}
+                      />
+                    </div>
+                    <p className="mt-0.5 text-[9.5px] text-muted-foreground/80">{c.note}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Snapshot strip */}
           <div className="flex gap-2.5">
             <div className="flex-1 rounded-xl border border-border bg-card px-3 py-2.5">

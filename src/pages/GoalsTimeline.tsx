@@ -38,6 +38,7 @@ import {
   removeGoal,
   getCashflowLatest,
   computeCashflow,
+  saveCashflowInputs,
   getOnboardingProfile,
   getInvestmentProfile,
   type CashflowPlanRunDetail,
@@ -428,6 +429,24 @@ function AddGoalSheet({
   const [priority, setPriority] = useState<Priority>("Medium");
   const [amountKind, setAmountKind] = useState<"present" | "future">("present");
 
+  /** Parse "1.2 Cr" / "85 L" / "1,20,00,000" style entries into rupees. */
+  const parsePropertyAmount = (s: string): number => {
+    const t = s.trim().toLowerCase().replace(/[,\s₹]/g, "");
+    const cr = t.match(/^([\d.]+)cr$/);
+    if (cr) return Math.round(parseFloat(cr[1]) * 1e7);
+    const l = t.match(/^([\d.]+)l$/);
+    if (l) return Math.round(parseFloat(l[1]) * 1e5);
+    const n = parseFloat(t.replace(/[^\d.]/g, ""));
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  /** Compact property display: 1.20 Cr / 85.00 L; small values keep commas. */
+  const formatPropertyAmount = (n: number): string => {
+    if (n >= 1e7) return `${(n / 1e7).toFixed(2)} Cr`;
+    if (n >= 1e5) return `${(n / 1e5).toFixed(2)} L`;
+    return n > 0 ? Math.round(n).toLocaleString("en-IN") : "";
+  };
+
   useEffect(() => {
     if (!open) return;
     if (editingGoal) {
@@ -440,7 +459,7 @@ function AddGoalSheet({
       setAmount(Math.round(editingGoal.presentValue).toLocaleString("en-IN"));
       setPropertyValue(
         isPropertyGoalName(editingGoal.name)
-          ? Math.round(editingGoal.presentValue).toLocaleString("en-IN")
+          ? formatPropertyAmount(editingGoal.presentValue)
           : "",
       );
       setFundedByLoan(false);
@@ -484,7 +503,7 @@ function AddGoalSheet({
   const showHouseDetails = isHouse || (isCustom && isPropertyGoalName(customName));
 
   const yearsAway = Math.max(0, year - currentYear);
-  const propertyVal = Number(propertyValue.replace(/[^\d.]/g, "")) || 0;
+  const propertyVal = parsePropertyAmount(propertyValue);
   const baseAmount = Number(amount.replace(/[^\d.]/g, "")) || 0;
   // Total value the goal targets — property value for property goals, else cost.
   const totalValue = showHouseDetails ? propertyVal : baseAmount;
@@ -608,15 +627,20 @@ function AddGoalSheet({
                     <input
                       id="timeline-goal-property-value"
                       value={propertyValue}
-                      onChange={(e) => {
-                        const digits = e.target.value.replace(/[^\d]/g, "");
-                        setPropertyValue(digits ? Number(digits).toLocaleString("en-IN") : "");
+                      onChange={(e) => setPropertyValue(e.target.value)}
+                      onBlur={() => {
+                        const n = parsePropertyAmount(propertyValue);
+                        setPropertyValue(formatPropertyAmount(n));
                       }}
-                      inputMode="numeric"
-                      placeholder="1,50,00,000"
+                      placeholder="e.g. 1.20 Cr"
                       className="mt-1 w-full rounded-lg bg-muted/40 px-3 py-2 text-[13px] tabular-nums text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-foreground/30"
                       style={{ border: "1px solid hsl(var(--border))" }}
                     />
+                    {propertyVal > 0 && (
+                      <p className="mt-1 text-[10px] text-muted-foreground tabular-nums">
+                        = ₹{Math.round(propertyVal).toLocaleString("en-IN")}
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -878,15 +902,15 @@ function AddGoalSheet({
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                        {fundedByLoan && loanAmount > 0 ? "Self-funded cost at" : "Cost at"} {year}
+                        {fundedByLoan && loanAmount > 0 ? "Down payment at" : "Cost at"} {year}
                       </p>
                       <p className="mt-0.5 text-[11px] text-muted-foreground/80">
                         {amountKind === "future"
                           ? fundedByLoan && loanAmount > 0
-                            ? "Entered as the future-dated self-funded amount (down payment only, not the total cost)"
+                            ? `Future-dated down payment only — the remaining ${formatINR(loanAmount)} is covered by your mortgage`
                             : "Entered as the future-dated amount"
                           : fundedByLoan && loanAmount > 0
-                            ? `Today's self-funded cost — down payment only, not the total — compounded at ${infl || 0}% for ${yearsAway} yr`
+                            ? `Today's down payment compounded at ${infl || 0}% for ${yearsAway} yr — the remaining ${formatINR(loanAmount)} is covered by your mortgage`
                             : `Today's cost compounded at ${infl || 0}% for ${yearsAway} yr`}
                       </p>
                     </div>
@@ -1289,6 +1313,10 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   );
   const [hoveredYear, setHoveredYear] = useState<number | null>(null);
   const [monthlyContrib, setMonthlyContrib] = useState<number>(MONTHLY_CONTRIBUTION);
+  // SIP the engine's current plan actually uses (null until a plan run loads).
+  // When the typed amount differs, an "Apply to plan" action re-runs the engine.
+  const [planSip, setPlanSip] = useState<number | null>(null);
+  const [applyingSip, setApplyingSip] = useState(false);
   const [expandedGoals, setExpandedGoals] = useState<Set<string>>(new Set());
   const [draggingGoalId, setDraggingGoalId] = useState<string | null>(null);
   const [dropTargetYear, setDropTargetYear] = useState<number | null>(null);
@@ -1390,9 +1418,30 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
     // slider (a range input with value=NaN crashes the page). Otherwise keep
     // the current default.
     if (next != null && Number.isFinite(next)) {
-      setMonthlyContrib(Math.min(MONTHLY_MAX, Math.max(0, Math.round(next))));
+      const sip = Math.min(MONTHLY_MAX, Math.max(0, Math.round(next)));
+      setMonthlyContrib(sip);
+      setPlanSip(sip);
     }
   }, [cashflowData]);
+
+  // Persist the typed SIP and re-run the engine so the whole cashflow
+  // (corpus bars, annual rows, goal funding) reflects the new amount.
+  const applySipToPlan = useCallback(async () => {
+    if (!Number.isFinite(monthlyContrib)) return;
+    setApplyingSip(true);
+    setCashflowError(null);
+    try {
+      await saveCashflowInputs({ starting_monthly_investment: monthlyContrib });
+      await computeCashflow();
+      await fetchCashflow();
+      toast.success("Plan updated with the new SIP");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Couldn't update the plan";
+      toast.error(msg);
+    } finally {
+      setApplyingSip(false);
+    }
+  }, [monthlyContrib, fetchCashflow]);
 
   const toggleGoalExpanded = (id: string) => {
     setExpandedGoals((prev) => {
@@ -1847,6 +1896,76 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
             No goals in your account yet. Use + to add one.
           </p>
         )}
+        {/* Monthly investment (SIP what-if). Line mode previews instantly on the
+            gold spine; in both modes "Apply to plan" re-runs the engine so the
+            corpus bars / cashflow reflect the new SIP. */}
+        <div
+          className="sticky z-30 -mx-5 bg-background px-5 pb-1 pt-1"
+          style={{ top: "60px" }}
+        >
+          <div className="rounded-xl border border-border bg-card px-3 py-1.5 flex items-center gap-3">
+          <div className="shrink-0 leading-tight">
+            <p className="text-[9.5px] uppercase tracking-wide text-muted-foreground">
+              Invest /mo
+            </p>
+            <p
+              className="text-[12px] font-semibold tabular-nums text-foreground"
+              style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
+            >
+              {formatINRCompact(monthlyContrib)}
+              <span className="ml-1 text-[9.5px] font-medium text-muted-foreground">
+                · {formatINRCompact(monthlyContrib * 12)}/yr
+              </span>
+            </p>
+          </div>
+          <div className="flex-1 min-w-0 flex items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1.5 focus-within:ring-1 focus-within:ring-[#D4A868]">
+            <span className="text-[12px] text-muted-foreground shrink-0">₹</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={Number.isFinite(monthlyContrib) ? monthlyContrib.toLocaleString("en-IN") : ""}
+              onChange={(e) => {
+                const digits = e.target.value.replace(/[^\d]/g, "");
+                const v = digits === "" ? 0 : Number(digits);
+                if (Number.isFinite(v)) setMonthlyContrib(Math.min(MONTHLY_MAX, Math.max(0, v)));
+              }}
+              className="w-full min-w-0 bg-transparent text-[12px] font-semibold tabular-nums text-foreground outline-none"
+              style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
+              placeholder="0"
+              aria-label="Monthly investment amount"
+            />
+            <span className="text-[9.5px] text-muted-foreground shrink-0">/mo</span>
+          </div>
+          {/* Apply the typed SIP to the actual plan — saves the input and re-runs
+              the engine so the whole cashflow reflects it. Shown only when the
+              amount differs from the plan's current SIP. */}
+          {planSip != null && monthlyContrib !== planSip && (
+            <button
+              type="button"
+              onClick={() => void applySipToPlan()}
+              disabled={applyingSip}
+              className="shrink-0 inline-flex items-center gap-1 rounded-full px-2.5 h-6 text-[10px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+              style={{ backgroundColor: "#D4A868" }}
+              title="Save this SIP and recompute your cashflow plan"
+            >
+              {applyingSip ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+              {applyingSip ? "Updating…" : "Apply to plan"}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setMonthlyContrib(planSip ?? MONTHLY_CONTRIBUTION)}
+            disabled={monthlyContrib === (planSip ?? MONTHLY_CONTRIBUTION)}
+            className="shrink-0 inline-flex items-center justify-center rounded-full bg-muted/50 h-6 w-6 text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            style={{ border: "1px solid hsl(var(--border))" }}
+            aria-label="Reset monthly investment to your plan's SIP"
+            title="Reset to plan SIP"
+          >
+            <RotateCcw className="h-3 w-3" />
+          </button>
+          </div>
+        </div>
+
         {/* Priority filter — toggle which goals feed the projection */}
         <div className="flex items-center gap-2 px-1">
           <span className="text-[10px] uppercase tracking-wide text-muted-foreground shrink-0">
@@ -1895,70 +2014,16 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
           </p>
         )}
 
-        {/* Monthly investment — line mode only (tornado uses engine corpus_closing) */}
-        {!isTornado && (
-        <div
-          className="sticky z-30 -mx-5 bg-background px-5 pb-1 pt-1"
-          style={{ top: "60px" }}
-        >
-          <div className="rounded-xl border border-border bg-card px-3 py-1.5 flex items-center gap-3">
-          <div className="shrink-0 leading-tight">
-            <p className="text-[9.5px] uppercase tracking-wide text-muted-foreground">
-              Invest /mo
-            </p>
-            <p
-              className="text-[12px] font-semibold tabular-nums text-foreground"
-              style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
-            >
-              {formatINRCompact(monthlyContrib)}
-              <span className="ml-1 text-[9.5px] font-medium text-muted-foreground">
-                · {formatINRCompact(monthlyContrib * 12)}/yr
-              </span>
-            </p>
-          </div>
-          <div className="flex-1 min-w-0 flex items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1.5 focus-within:ring-1 focus-within:ring-[#D4A868]">
-            <span className="text-[12px] text-muted-foreground shrink-0">₹</span>
-            <input
-              type="text"
-              inputMode="numeric"
-              value={Number.isFinite(monthlyContrib) ? monthlyContrib.toLocaleString("en-IN") : ""}
-              onChange={(e) => {
-                const digits = e.target.value.replace(/[^\d]/g, "");
-                const v = digits === "" ? 0 : Number(digits);
-                if (Number.isFinite(v)) setMonthlyContrib(Math.min(MONTHLY_MAX, Math.max(0, v)));
-              }}
-              className="w-full min-w-0 bg-transparent text-[12px] font-semibold tabular-nums text-foreground outline-none"
-              style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
-              placeholder="0"
-              aria-label="Monthly investment amount"
-            />
-            <span className="text-[9.5px] text-muted-foreground shrink-0">/mo</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setMonthlyContrib(MONTHLY_CONTRIBUTION)}
-            disabled={monthlyContrib === MONTHLY_CONTRIBUTION}
-            className="shrink-0 inline-flex items-center justify-center rounded-full bg-muted/50 h-6 w-6 text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            style={{ border: "1px solid hsl(var(--border))" }}
-            aria-label="Reset monthly investment to default"
-            title="Reset to default"
-          >
-            <RotateCcw className="h-3 w-3" />
-          </button>
-          </div>
-        </div>
-        )}
-
         {/* Chart axis legend — explains what the bars mean */}
         {isTornado && (
           <div className="flex items-center justify-between px-1 pt-2 pb-1 text-[10px] text-muted-foreground">
             <div className="flex items-center gap-1.5">
               <span className="inline-block h-2 w-3 rounded-sm" style={{ backgroundColor: "rgb(239,68,68)" }} />
-              <span>Negative NAV</span>
+              <span>Negative</span>
             </div>
             <span className="font-semibold tracking-wide text-foreground/80">Portfolio Value</span>
             <div className="flex items-center gap-1.5">
-              <span>Positive NAV</span>
+              <span>Positive</span>
               <span className="inline-block h-2 w-3 rounded-sm" style={{ backgroundColor: "rgb(16,185,129)" }} />
             </div>
           </div>
@@ -2501,7 +2566,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
 
         <p className="px-1 text-[9.5px] leading-snug text-muted-foreground/70">
           {isTornado
-            ? "Each bar = total portfolio NAV at the end of that year. Green = positive NAV (you still have money). Red = negative NAV (goals have outpaced what you've saved). Wider = larger amount."
+            ? "Each bar = total net worth at the end of that year. Green = positive net worth (you still have money). Red = negative net worth (goals have outpaced what you've saved). Wider = larger amount."
             : "Gold spine = projected NAV (today's portfolio, ₹2L/mo, 9% p.a.). Red ticks = goal-draw years."}
           <span className="ml-1 text-muted-foreground/60">
             Directional guide, not a forecast.

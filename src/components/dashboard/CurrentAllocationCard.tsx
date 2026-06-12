@@ -4,7 +4,6 @@ import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { PortfolioDetail } from "@/lib/api";
-import { formatInrCompact } from "@/lib/utils";
 
 // Holdings group by the backend's asset_class (Equity / Debt / Others) — produced by
 // scheme_classification.py and returned per holding by GET /portfolio/. The frontend
@@ -238,7 +237,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
       ];
 
   const centerLabel =
-    portfolio && portfolio.total_value > 0 ? formatInrCompact(portfolio.total_value) : "₹—";
+    portfolio && portfolio.total_value > 0 ? formatInr1(portfolio.total_value) : "₹—";
 
   const holdingsRows = !portfolio
     ? []

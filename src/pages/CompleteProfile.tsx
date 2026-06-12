@@ -1,6 +1,6 @@
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo, useEffect, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, ChevronDown, Plus, X, Info, AlertTriangle, Lock } from "lucide-react";
+import { ArrowLeft, Check, ChevronLeft, ChevronRight, Plus, X, Info, AlertTriangle, Lock, Wallet, Target, TrendingUp, Landmark } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Slider } from "@/components/ui/slider";
@@ -97,9 +97,12 @@ const STATUS_LABELS: Record<SectionStatus, string> = {
 
 const STATUS_COLORS: Record<SectionStatus, string> = {
   not_started: "bg-muted text-muted-foreground",
-  auto_filled: "bg-[hsl(210_50%_94%)] text-[hsl(210_60%_38%)]",
-  in_progress: "bg-[hsl(38_80%_93%)] text-[hsl(38_80%_38%)]",
-  confirmed: "bg-[hsl(160_30%_93%)] text-[hsl(160_50%_38%)]",
+  auto_filled:
+    "bg-[hsl(222_47%_14%/0.08)] text-[hsl(222_47%_24%)] dark:bg-[hsl(220_30%_70%/0.18)] dark:text-[hsl(220_30%_80%)]",
+  in_progress:
+    "bg-[hsl(38_80%_93%)] text-[hsl(38_80%_38%)] dark:bg-[hsl(38_70%_50%/0.18)] dark:text-[hsl(38_80%_70%)]",
+  confirmed:
+    "bg-[hsl(160_30%_93%)] text-[hsl(160_50%_38%)] dark:bg-[hsl(160_45%_45%/0.18)] dark:text-[hsl(160_45%_65%)]",
 };
 
 const SECTION_TITLES = [
@@ -109,12 +112,21 @@ const SECTION_TITLES = [
   "Tax details",
 ];
 
+/** Card meta for the section list — icon, one-line description, time estimate. */
+const SECTION_META: { Icon: typeof Wallet; description: string; estimate: string }[] = [
+  { Icon: Wallet, description: "Income, expenses, assets, property and what's coming up", estimate: "~4 min" },
+  { Icon: Target, description: "Set your goals and complete your cashflow inputs in Goal planning", estimate: "~3 min" },
+  { Icon: TrendingUp, description: "Your horizon and how you behave when markets move", estimate: "~2 min" },
+  { Icon: Landmark, description: "Your tax slab and regime, for tax-efficient advice", estimate: "~1 min" },
+];
+
 const MARGINAL_TAX_RATE_OPTIONS: { value: string; label: string; slab: string }[] = [
   { value: "0", label: "0%", slab: "Income up to ₹3,00,000" },
   { value: "5", label: "5%", slab: "₹3,00,001 – ₹7,00,000" },
   { value: "10", label: "10%", slab: "₹7,00,001 – ₹10,00,000" },
   { value: "15", label: "15%", slab: "₹10,00,001 – ₹12,00,000" },
   { value: "20", label: "20%", slab: "₹12,00,001 – ₹15,00,000" },
+  { value: "25", label: "25%", slab: "₹20,00,001 – ₹24,00,000 (new regime)" },
   { value: "30", label: "30%", slab: "Above ₹15,00,000" },
 ];
 
@@ -194,17 +206,48 @@ const FieldLabel = ({ children }: { children: React.ReactNode }) => (
   <label className="block text-[11px] uppercase tracking-wide text-muted-foreground mb-1">{children}</label>
 );
 
-const TextInput = ({ value, onChange, placeholder, prefix }: { value: string; onChange: (v: string) => void; placeholder?: string; prefix?: string }) => (
+/** Live Indian comma-grouping for plain numeric entry (12,34,567). Leaves
+    free-form entries like "1.2 Cr" untouched so shorthand still works. */
+const formatMoneyInput = (raw: string): string => {
+  const noCommas = raw.replace(/,/g, "");
+  if (!/^\d+(\.\d*)?$/.test(noCommas)) return raw;
+  const [int, dec] = noCommas.split(".");
+  const grouped = int === "" ? "" : Number(int).toLocaleString("en-IN");
+  return dec !== undefined ? `${grouped}.${dec}` : grouped;
+};
+
+const TextInput = ({ value, onChange, placeholder, prefix, onFocus, onBlur }: { value: string; onChange: (v: string) => void; placeholder?: string; prefix?: string; onFocus?: () => void; onBlur?: () => void }) => (
   <div className="relative">
     {prefix && <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">{prefix}</span>}
     <input
+      inputMode={prefix === "₹" ? "numeric" : undefined}
       value={value}
-      onChange={(e) => onChange(e.target.value)}
+      onChange={(e) => onChange(prefix === "₹" ? formatMoneyInput(e.target.value) : e.target.value)}
+      onFocus={onFocus}
+      onBlur={onBlur}
       placeholder={placeholder}
       className={`w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-accent transition-colors placeholder:text-[12px] ${prefix ? "pl-7" : ""}`}
     />
   </div>
 );
+
+/** Standardised asset types suggested while typing in "Other assets" — keeps
+    entries consistent (e.g. everyone investing in unlisted picks the same label). */
+const OTHER_ASSET_SUGGESTIONS = [
+  "Unlisted Shares",
+  "Physical Gold",
+  "Digital Gold",
+  "Jewellery",
+  "ULIPs",
+  "PMS",
+  "AIF",
+  "ESOPs (unvested)",
+  "Private Equity",
+  "REITs / Real Estate Funds",
+  "Fixed Deposits",
+  "Crypto",
+  "Art & Collectibles",
+];
 
 const Chip = ({ label, active, onClick, disabled }: { label: string; active: boolean; onClick: () => void; disabled?: boolean }) => (
   <button
@@ -509,107 +552,13 @@ const IncomeExpenseSlider = ({ label, range, onChange }: {
 };
 
 /* ── Behavioural Risk Modal (step-by-step) ── */
-const BehaviouralRiskModal = ({
-  open, onClose, q1, setQ1, q2, setQ2, q3, setQ3,
-}: {
-  open: boolean; onClose: () => void;
-  q1: string; setQ1: (v: string) => void;
-  q2: string; setQ2: (v: string) => void;
-  q3: string; setQ3: (v: string) => void;
-}) => {
-  const [step, setStep] = useState(0);
-
-  const questions = [
-    { label: "How would you describe your investment experience?", options: BEHAV_Q1_OPTIONS, value: q1, setter: setQ1 },
-    { label: "How would you describe your investment focus?", options: BEHAV_Q2_OPTIONS, value: q2, setter: setQ2 },
-    { label: "If in the current year the value of your investments declines by ~20%, what would you do?", options: BEHAV_Q3_OPTIONS, value: q3, setter: setQ3 },
-  ];
-
-  const totalQuestions = questions.length;
-  const current = questions[step];
-  const isLast = step === totalQuestions - 1;
-
-  const handleSelect = (option: string) => {
-    current.setter(option);
-    if (!isLast) {
-      setTimeout(() => setStep((s) => s + 1), 300);
-    }
-  };
-
-  if (!open) return null;
-
-  const OptionCard = ({ label, selected, onClick }: { label: string; selected: boolean; onClick: () => void }) => (
-    <button
-      onClick={onClick}
-      className={`w-full text-left rounded-xl px-4 py-3 text-xs font-medium border transition-all ${
-        selected ? "bg-accent text-accent-foreground border-accent" : "bg-card text-foreground border-border hover:border-accent/40"
-      }`}
-    >
-      {label}
-    </button>
-  );
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative w-full max-w-md max-h-[85vh] bg-background rounded-2xl overflow-hidden flex flex-col mx-4">
-        <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-border">
-          <div>
-            <h3 className="text-sm font-semibold text-foreground">Behavioural Risk Assessment</h3>
-            <p className="text-[10px] text-muted-foreground mt-0.5">Question {step + 1} of {totalQuestions}</p>
-          </div>
-          <button onClick={onClose} className="flex h-7 w-7 items-center justify-center rounded-full bg-muted hover:bg-muted/80">
-            <X className="h-3.5 w-3.5 text-foreground" />
-          </button>
-        </div>
-        <div className="px-5 pt-3 pb-1">
-          <div className="h-1 w-full rounded-full bg-muted overflow-hidden">
-            <div className="h-full rounded-full bg-accent transition-all duration-300" style={{ width: `${((step + 1) / totalQuestions) * 100}%` }} />
-          </div>
-        </div>
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
-          <p className="text-xs font-semibold text-foreground">{current.label}</p>
-          <div className="space-y-1.5">
-            {current.options.map((o) => (
-              <OptionCard key={o} label={o} selected={current.value === o} onClick={() => handleSelect(o)} />
-            ))}
-          </div>
-        </div>
-        <div className="px-5 py-4 border-t border-border flex items-center justify-between">
-          <button
-            onClick={() => setStep((s) => Math.max(0, s - 1))}
-            disabled={step === 0}
-            className={`rounded-lg px-3 py-2 text-xs font-medium transition-all ${step === 0 ? "text-muted-foreground/40 cursor-not-allowed" : "text-foreground hover:bg-muted"}`}
-          >
-            ← Back
-          </button>
-          {isLast ? (
-            <button
-              onClick={onClose}
-              disabled={!current.value}
-              className={`rounded-xl px-5 py-2 text-xs font-semibold transition-all ${current.value ? "bg-foreground text-background hover:opacity-90" : "bg-muted text-muted-foreground cursor-not-allowed"}`}
-            >
-              Done
-            </button>
-          ) : (
-            <button
-              onClick={() => setStep((s) => Math.min(totalQuestions - 1, s + 1))}
-              disabled={!current.value}
-              className={`rounded-lg px-3 py-2 text-xs font-medium transition-all ${current.value ? "text-foreground hover:bg-muted" : "text-muted-foreground/40 cursor-not-allowed"}`}
-            >
-              Next →
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
-
 
 const CompleteProfile = () => {
   const navigate = useNavigate();
-  const [openSection, setOpenSection] = useState(0);
+  // -1 = section-card carousel; otherwise the open section, stepping through
+  // its question groups one at a time via groupIndex.
+  const [openSection, setOpenSection] = useState(-1);
+  const [groupIndex, setGroupIndex] = useState(0);
   const [statuses, setStatuses] = useState<SectionStatus[]>(() => {
     const s: SectionStatus[] = Array(4).fill("not_started");
     s[0] = "auto_filled";
@@ -635,12 +584,12 @@ const CompleteProfile = () => {
   const [investableAssets, setInvestableAssets] = useState("");
   const [monthlyInvestment, setMonthlyInvestment] = useState("");
   const [liabilities, setLiabilities] = useState("");
-  const [otherAssets, setOtherAssets] = useState<OtherAsset[]>([]);
+  const [otherAssets, setOtherAssets] = useState<OtherAsset[]>([{ name: "", value: "" }]);
+  // Which "Other assets" row's name input is focused — drives the suggestion dropdown.
+  const [assetSuggestFor, setAssetSuggestFor] = useState<number | null>(null);
   const [ownsHome, setOwnsHome] = useState(false);
   const [properties, setProperties] = useState<Property[]>([{ value: "", mortgage: "", monthlyRepayment: "", yearPurchased: "", mortgageEndDate: "", lastPaymentDate: "" }]);
   const [plannedExpenses, setPlannedExpenses] = useState<PlannedExpense[]>([{ description: "", year: "", amount: "", addAsGoal: false }]);
-  const [otherAssetsValue, setOtherAssetsValue] = useState("");
-  const [otherAssetDescription, setOtherAssetDescription] = useState("");
   const [expectingLargeIncome, setExpectingLargeIncome] = useState(false);
   const [largeIncomes, setLargeIncomes] = useState<LargeIncome[]>([
     { description: "", year: "", amount: "", currency: "INR" },
@@ -661,7 +610,6 @@ const CompleteProfile = () => {
   const [riskCapacity, setRiskCapacity] = useState("");
   const [investmentExperience, setInvestmentExperience] = useState("");
   const [investmentHorizon, setInvestmentHorizon] = useState("");
-  const [showBehavModal, setShowBehavModal] = useState(false);
   const [investmentPref, setInvestmentPref] = useState("");
   const [behavQ1, setBehavQ1] = useState("");
   const [behavQ2, setBehavQ2] = useState("");
@@ -808,10 +756,10 @@ const CompleteProfile = () => {
           const op = await getOnboardingProfile();
           if (!cancelled) {
             if (op.annual_income != null) {
-              setAnnualIncome(String(Math.round(op.annual_income)));
+              setAnnualIncome(parseNum(String(Math.round(op.annual_income))));
             }
             if (op.monthly_household_expense != null) {
-              setAnnualExpense(String(Math.round(op.monthly_household_expense * 12)));
+              setAnnualExpense(parseNum(String(Math.round(op.monthly_household_expense * 12))));
             }
             if (op.starting_monthly_investment != null) {
               setMonthlyInvestment((cur) => cur || parseNum(String(op.starting_monthly_investment)));
@@ -837,8 +785,6 @@ const CompleteProfile = () => {
         }
 
         setStatuses(newStatuses);
-        const firstIncomplete = newStatuses.findIndex((s) => s !== "confirmed");
-        if (firstIncomplete >= 0) setOpenSection(firstIncomplete);
       } catch {
         // first-time user
       } finally {
@@ -959,14 +905,17 @@ const CompleteProfile = () => {
 
           // 5) Other assets → other_investments (only when filled, to avoid
           // wiping the list on a partial edit).
-          if (otherAssetDescription.trim()) {
-            await saveOtherAssets([
-              {
-                asset_name: otherAssetDescription.trim(),
-                asset_type: null,
-                current_value: toNum(otherAssetsValue),
-              },
-            ]);
+          {
+            const filledAssets = otherAssets.filter((a) => a.name.trim());
+            if (filledAssets.length > 0) {
+              await saveOtherAssets(
+                filledAssets.map((a) => ({
+                  asset_name: a.name.trim(),
+                  asset_type: null,
+                  current_value: toNum(a.value),
+                })),
+              );
+            }
           }
           break;
         }
@@ -1012,17 +961,18 @@ const CompleteProfile = () => {
       return;
     }
 
-    setStatuses((prev) => {
-      const next = [...prev];
-      next[idx] = "confirmed";
-      return next;
-    });
-    if (idx < SECTION_TITLES.length - 1) setOpenSection(idx + 1);
+    const nextStatuses = [...statuses];
+    nextStatuses[idx] = "confirmed";
+    setStatuses(nextStatuses);
+    // Back to the section cards — the next card to tackle is visible there.
+    setOpenSection(-1);
+    setGroupIndex(0);
     toast.success(`Section ${idx + 1} confirmed ✓`);
   }, [
+    statuses,
     occupation, primaryResidence, earningMembers, dependents, values,
-    annualIncome, annualExpense, monthlyInvestment, wealthSourceOtherText, otherAssetDescription,
-    primaryWealthSource, investableAssets, liabilities, properties, plannedExpenses, emergencyFund, emergencyTimeframe, otherAssets, otherAssetsValue, ownsHome, expectingLargeIncome, largeIncomes,
+    annualIncome, annualExpense, monthlyInvestment, wealthSourceOtherText,
+    primaryWealthSource, investableAssets, liabilities, properties, plannedExpenses, emergencyFund, emergencyTimeframe, otherAssets, ownsHome, expectingLargeIncome, largeIncomes,
     selectedObjectives, goalDetails,
     riskLevelIdx, riskCapacity, investmentExperience, investmentHorizon, horizonNotes, behavQ1, behavQ2, behavQ3, maxDrawdown, comfortAssets,
     permittedAssets, allocations, prohibited, leverage, derivatives, diversificationNotes,
@@ -1039,8 +989,15 @@ const CompleteProfile = () => {
     });
   }, []);
 
-  const toggleSection = (idx: number) => {
-    setOpenSection(openSection === idx ? -1 : idx);
+  const openSectionCard = (idx: number) => {
+    // "What are you trying to achieve?" lives in Goal planning — send the user
+    // there to set goals and complete the cashflow inputs in one place.
+    if (idx === 1) {
+      navigate("/goal-planner");
+      return;
+    }
+    setOpenSection(idx);
+    setGroupIndex(0);
     markInProgress(idx);
   };
 
@@ -1075,15 +1032,16 @@ const CompleteProfile = () => {
     setOtherAssets((prev) => prev.map((a, idx) => (idx === i ? { ...a, [field]: value } : a)));
   };
 
-  const renderSection = (idx: number) => {
+  // Each section's questions are split into small groups, shown one at a time.
+  const sectionGroups = (idx: number): { label: string; body: ReactNode }[] => {
     switch (idx) {
       /* ── Section 0: Your financial picture ── */
       case 0:
-        return (
+        return [
+          { label: "Family situation", body: (
            <div className="space-y-3">
-            {/* Family situation — no heading */}
             <div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-3">
                 <div>
                   <label className="text-[10px] text-muted-foreground">Earning members</label>
                   <input
@@ -1108,40 +1066,24 @@ const CompleteProfile = () => {
                 </div>
               </div>
             </div>
-
-            {/* Income & Expenses */}
+           </div>
+          ) },
+          { label: "Income & expenses", body: (
+           <div className="space-y-3">
             <div>
               <FieldLabel>Annual income</FieldLabel>
               <p className="text-[10px] text-muted-foreground -mt-0.5 mb-1">Includes salary and regular income (e.g. rental income)</p>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">₹</span>
-                <input
-                  type="number"
-                  min={0}
-                  value={annualIncome}
-                  onChange={(e) => setAnnualIncome(e.target.value)}
-                  placeholder="e.g. 5000000"
-                  className="w-full rounded-lg border border-border bg-card pl-7 pr-3 py-2 text-sm text-foreground outline-none focus:border-accent transition-colors placeholder:text-[12px]"
-                />
-              </div>
+              <TextInput value={annualIncome} onChange={setAnnualIncome} prefix="₹" placeholder="e.g. 50,00,000" />
             </div>
             <div>
               <FieldLabel>Annual expense</FieldLabel>
               <p className="text-[10px] text-muted-foreground -mt-0.5 mb-1">Excludes all debt obligations (e.g. loans)</p>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">₹</span>
-                <input
-                  type="number"
-                  min={0}
-                  value={annualExpense}
-                  onChange={(e) => setAnnualExpense(e.target.value)}
-                  placeholder="e.g. 3000000"
-                  className="w-full rounded-lg border border-border bg-card pl-7 pr-3 py-2 text-sm text-foreground outline-none focus:border-accent transition-colors placeholder:text-[12px]"
-                />
-              </div>
+              <TextInput value={annualExpense} onChange={setAnnualExpense} prefix="₹" placeholder="e.g. 30,00,000" />
             </div>
-
-            {/* What makes up your primary income? — multi-select */}
+           </div>
+          ) },
+          { label: "Income sources", body: (
+           <div className="space-y-3">
             <div>
               <FieldLabel>What makes up your primary income?</FieldLabel>
               <div className="flex flex-wrap gap-1.5">
@@ -1164,6 +1106,10 @@ const CompleteProfile = () => {
                 </div>
               )}
             </div>
+           </div>
+          ) },
+          { label: "Assets & liabilities", body: (
+           <div className="space-y-3">
             <div>
               <FieldLabel>Cash and financial assets</FieldLabel>
               <p className="text-[10px] text-muted-foreground -mt-0.5 mb-1">Cash, mutual funds, stocks, ETFs, bonds and similar holdings.</p>
@@ -1176,20 +1122,66 @@ const CompleteProfile = () => {
             </div>
             <div>
               <FieldLabel>Other assets</FieldLabel>
-              <p className="text-[10px] text-muted-foreground -mt-0.5 mb-1">Includes unlisted shares, gold and other assets. Excludes your home.</p>
-              <div className="grid grid-cols-2 gap-2">
-                <div><label className="text-[10px] text-muted-foreground">Asset (description)</label><TextInput value={otherAssetDescription} onChange={setOtherAssetDescription} placeholder="e.g. Gold, Unlisted shares" /></div>
-                <div><label className="text-[10px] text-muted-foreground">Amount</label><TextInput value={otherAssetsValue} onChange={setOtherAssetsValue} prefix="₹" placeholder="e.g. 10,00,000" /></div>
-              </div>
+              <p className="text-[10px] text-muted-foreground -mt-0.5 mb-1">Includes unlisted shares, gold and other assets. Excludes home / properties.</p>
+              {otherAssets.map((asset, idx) => {
+                const query = asset.name.trim().toLowerCase();
+                const matches = OTHER_ASSET_SUGGESTIONS.filter(
+                  (s) => s.toLowerCase() !== query && (query === "" || s.toLowerCase().includes(query)),
+                );
+                const showSuggestions = assetSuggestFor === idx && matches.length > 0;
+                return (
+                  <div key={idx} className="mb-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="relative">
+                        <label className="text-[10px] text-muted-foreground">Asset (description)</label>
+                        <TextInput
+                          value={asset.name}
+                          onChange={(v) => updateOtherAsset(idx, "name", v)}
+                          onFocus={() => setAssetSuggestFor(idx)}
+                          onBlur={() => setAssetSuggestFor((cur) => (cur === idx ? null : cur))}
+                          placeholder="e.g. Unlisted Shares"
+                        />
+                        {showSuggestions && (
+                          <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-40 overflow-y-auto rounded-lg border border-border bg-card shadow-md">
+                            {matches.map((s) => (
+                              <button
+                                key={s}
+                                type="button"
+                                // mousedown (not click) so the input's blur doesn't close the list first
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  updateOtherAsset(idx, "name", s);
+                                  setAssetSuggestFor(null);
+                                }}
+                                className="block w-full px-3 py-2 text-left text-xs text-foreground hover:bg-muted/60 transition-colors"
+                              >
+                                {s}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div><label className="text-[10px] text-muted-foreground">Amount</label><TextInput value={asset.value} onChange={(v) => updateOtherAsset(idx, "value", v)} prefix="₹" placeholder="e.g. 10,00,000" /></div>
+                    </div>
+                    {otherAssets.length > 1 && (
+                      <button onClick={() => removeOtherAsset(idx)} className="mt-1 text-[10px] text-destructive hover:underline">Remove</button>
+                    )}
+                  </div>
+                );
+              })}
+              <button onClick={addOtherAsset} className="flex items-center gap-1 text-xs text-accent hover:underline mt-1">
+                <Plus className="h-3 w-3" /> Add another asset
+              </button>
             </div>
             <div>
               <FieldLabel>Liabilities / debts</FieldLabel>
               <p className="text-[10px] text-muted-foreground -mt-0.5 mb-1">Excludes mortgage repayment</p>
               <TextInput value={liabilities} onChange={setLiabilities} prefix="₹" placeholder="e.g. 5,00,000" />
             </div>
-
-
-            {/* Property */}
+           </div>
+          ) },
+          { label: "Property", body: (
+           <div className="space-y-3">
             <div>
               <FieldLabel>Do you own a home?</FieldLabel>
               <Toggle value={ownsHome} onChange={setOwnsHome} labelA="No" labelB="Yes" />
@@ -1210,20 +1202,14 @@ const CompleteProfile = () => {
                         <div><label className="text-[10px] text-muted-foreground">Property value</label><TextInput value={prop.value} onChange={(v) => updateProp("value", v)} prefix="₹" placeholder="e.g. 1.20 Cr" /></div>
                         <div><label className="text-[10px] text-muted-foreground">Total outstanding mortgage</label><TextInput value={prop.mortgage} onChange={(v) => updateProp("mortgage", v)} prefix="₹" placeholder="e.g. 45,00,000" /></div>
                         <div><label className="text-[10px] text-muted-foreground">Current monthly repayment</label><TextInput value={prop.monthlyRepayment} onChange={(v) => updateProp("monthlyRepayment", v)} prefix="₹" placeholder="e.g. 35,000" /></div>
-                        {prop.mortgage.trim() !== "" && (
-                          <>
-                            <div><label className="text-[10px] text-muted-foreground">Mortgage end date</label><TextInput value={prop.mortgageEndDate} onChange={(v) => updateProp("mortgageEndDate", v)} placeholder="e.g. Mar 2042" /></div>
-                            <div>
-                              <label className="text-[10px] text-muted-foreground">Last payment date</label>
-                              <TextInput
-                                value={prop.lastPaymentDate}
-                                onChange={(v) => updateProp("lastPaymentDate", v)}
-                                placeholder="e.g. 17 Apr 2026"
-                              />
-                              <p className="mt-0.5 text-[9.5px] text-muted-foreground">Most recent EMI we should trace forward from.</p>
-                            </div>
-                          </>
-                        )}
+                        <div>
+                          <label className="text-[10px] text-muted-foreground">Year repayment finishes</label>
+                          <TextInput
+                            value={prop.mortgageEndDate}
+                            onChange={(v) => updateProp("mortgageEndDate", v.replace(/[^\d]/g, "").slice(0, 4))}
+                            placeholder="e.g. 2042"
+                          />
+                        </div>
                       </div>
                     );
                   })}
@@ -1233,8 +1219,10 @@ const CompleteProfile = () => {
                 </div>
               )}
             </div>
-
-            {/* Planned large expenses */}
+           </div>
+          ) },
+          { label: "Planned large expenses", body: (
+           <div className="space-y-3">
             <div>
               <FieldLabel>Planned large expenses</FieldLabel>
               {plannedExpenses.map((expense, idx) => (
@@ -1274,8 +1262,10 @@ const CompleteProfile = () => {
                 <Plus className="h-3 w-3" /> Add another expense
               </button>
             </div>
-
-            {/* Expected large income */}
+           </div>
+          ) },
+          { label: "Expected large income", body: (
+           <div className="space-y-3">
             <div>
               <FieldLabel>Expected large income</FieldLabel>
               <p className="text-[10px] text-muted-foreground -mt-0.5 mb-1">e.g. bonus, inheritance, property sale</p>
@@ -1339,14 +1329,14 @@ const CompleteProfile = () => {
                 <Plus className="h-3 w-3" /> Add another income
               </button>
             </div>
-
-
-          </div>
-        );
+           </div>
+          ) },
+        ];
 
       /* ── Section 1: What are you trying to achieve? ── */
       case 1:
-        return (
+        return [
+          { label: "Select your goals", body: (
           <div className="space-y-4">
             <PrefilledBanner />
             <div>
@@ -1420,8 +1410,13 @@ const CompleteProfile = () => {
                 </div>
               )}
             </div>
-
-            {/* Per-goal detail cards */}
+          </div>
+          ) },
+          { label: "Goal details", body: (
+          <div className="space-y-4">
+            {selectedObjectives.length === 0 && (
+              <p className="text-[11px] text-muted-foreground">No goals selected yet — go back a step to pick some.</p>
+            )}
             {selectedObjectives.map((obj) => {
               const detail = getOrCreateGoalDetail(obj);
               return (
@@ -1508,13 +1503,14 @@ const CompleteProfile = () => {
                 </motion.div>
               );
             })}
-
           </div>
-        );
+          ) },
+        ];
 
       /* ── Section 2: Your investment preference and focus ── */
       case 2:
-        return (
+        return [
+          { label: "Investment horizon", body: (
           <div className="space-y-4">
             <div>
               <FieldLabel>Investment horizon</FieldLabel>
@@ -1524,30 +1520,43 @@ const CompleteProfile = () => {
                 ))}
               </div>
             </div>
-
-            {/* Behavioural Risk Assessment — opens modal */}
-            <div>
-              <button
-                onClick={() => setShowBehavModal(true)}
-                className="w-full rounded-xl border border-border bg-card px-4 py-3 text-left hover:border-accent/40 transition-all"
-              >
-                <p className="text-xs font-semibold text-foreground">Behavioural Risk Assessment</p>
-                <p className="text-[10px] text-muted-foreground mt-0.5">3 quick questions to understand your behaviour</p>
-                {behavQ1 && behavQ2 && behavQ3 && (
-                  <span className="inline-flex items-center gap-1 mt-1.5 text-[10px] font-medium text-[hsl(160_50%_38%)]">✓ Completed</span>
-                )}
-              </button>
-            </div>
-
-
           </div>
-        );
+          ) },
+          { label: "Behavioural risk", body: (
+          <div className="space-y-5">
+            {([
+              { label: "How would you describe your investment experience?", options: BEHAV_Q1_OPTIONS, value: behavQ1, setter: setBehavQ1 },
+              { label: "How would you describe your investment focus?", options: BEHAV_Q2_OPTIONS, value: behavQ2, setter: setBehavQ2 },
+              { label: "If in the current year the value of your investments declines by ~20%, what would you do?", options: BEHAV_Q3_OPTIONS, value: behavQ3, setter: setBehavQ3 },
+            ] as const).map((q) => (
+              <div key={q.label}>
+                <p className="text-xs font-semibold text-foreground mb-2">{q.label}</p>
+                <div className="space-y-1.5">
+                  {q.options.map((o) => (
+                    <button
+                      key={o}
+                      onClick={() => q.setter(o)}
+                      className={`w-full text-left rounded-xl px-4 py-3 text-xs font-medium border transition-all ${
+                        q.value === o
+                          ? "bg-accent text-accent-foreground border-accent"
+                          : "bg-card text-foreground border-border hover:border-accent/40"
+                      }`}
+                    >
+                      {o}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+          ) },
+        ];
 
       /* ── Section 3: Tax details (India) ── */
       case 3:
-        return (
+        return [
+          { label: "Marginal tax rate", body: (
           <div className="space-y-4">
-            {/* Marginal tax rate */}
             <div>
               <div className="flex items-center gap-1 mb-1">
                 <label className="block text-[11px] uppercase tracking-wide text-muted-foreground">
@@ -1585,8 +1594,10 @@ const CompleteProfile = () => {
                 ))}
               </select>
             </div>
-
-            {/* Tax regime */}
+          </div>
+          ) },
+          { label: "Tax regime", body: (
+          <div className="space-y-4">
             <div>
               <FieldLabel>Which tax regime do you follow?</FieldLabel>
               <div className="space-y-2">
@@ -1655,10 +1666,11 @@ const CompleteProfile = () => {
               )}
             </div>
           </div>
-        );
+          ) },
+        ];
 
       default:
-        return null;
+        return [];
     }
   };
 
@@ -1682,62 +1694,189 @@ const CompleteProfile = () => {
         </button>
         <div>
           <h1 className="text-lg font-semibold text-foreground">Complete Your Investment Profile</h1>
-          <p className="text-[11px] text-muted-foreground">Takes 10–15 minutes · We've pre-filled what we already know</p>
+          {openSection === -1 && (
+            <p className="text-[11px] text-muted-foreground">Takes 10–15 minutes · We've pre-filled what we already know</p>
+          )}
         </div>
       </div>
 
-      {/* Progress */}
-      <div className="px-5 pt-3 pb-2">
-        <div className="flex items-center justify-between mb-1">
-          <span className="text-[11px] text-muted-foreground font-medium">Section {Math.min(openSection + 1, SECTION_TITLES.length)} of {SECTION_TITLES.length}</span>
-          <span className="text-[11px] text-muted-foreground">{confirmedCount}/{SECTION_TITLES.length} confirmed</span>
-        </div>
-        <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-          <motion.div className="h-full rounded-full bg-accent" initial={{ width: 0 }} animate={{ width: `${progressPercent}%` }} transition={{ duration: 0.5 }} />
-        </div>
-      </div>
+      {openSection === -1 ? (
+        <>
+          {/* Overall progress */}
+          <div className="px-5 pt-3 pb-2">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[11px] text-muted-foreground font-medium">Your profile</span>
+              <span className="text-[11px] text-muted-foreground">{confirmedCount}/{SECTION_TITLES.length} confirmed</span>
+            </div>
+            <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+              <motion.div className="h-full rounded-full" style={{ backgroundColor: "hsl(var(--wealth-navy))" }} initial={{ width: 0 }} animate={{ width: `${progressPercent}%` }} transition={{ duration: 0.5 }} />
+            </div>
+          </div>
 
+          {/* Section cards — stacked vertically, tap one to open it */}
+          <div className="px-5 pt-2 pb-3 flex flex-col gap-3.5">
+            {SECTION_TITLES.map((title, idx) => {
+              const status = statuses[idx];
+              const groups = sectionGroups(idx);
+              const meta = SECTION_META[idx];
+              const isConfirmed = status === "confirmed";
+              return (
+                <motion.button
+                  key={idx}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: idx * 0.06, duration: 0.25 }}
+                  onClick={() => openSectionCard(idx)}
+                  className="relative w-full overflow-hidden rounded-2xl border bg-card p-5 text-left shadow-sm hover:shadow-md active:scale-[0.99] transition-all"
+                  style={{ borderColor: isConfirmed ? "hsl(var(--wealth-navy) / 0.35)" : "hsl(var(--border))" }}
+                >
+                  <div className="flex items-start gap-4">
+                    {/* Icon tile */}
+                    <span
+                      className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-xl"
+                      style={{
+                        backgroundColor: isConfirmed ? "hsl(var(--wealth-navy))" : "hsl(var(--wealth-navy) / 0.08)",
+                        color: isConfirmed ? "hsl(var(--primary-foreground))" : "hsl(var(--wealth-navy))",
+                      }}
+                    >
+                      <meta.Icon className="h-5 w-5" strokeWidth={1.8} />
+                      {isConfirmed && (
+                        <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-wealth-green text-white">
+                          <Check className="h-2.5 w-2.5" />
+                        </span>
+                      )}
+                    </span>
 
-      {/* Accordion sections */}
-      <div className="px-5 space-y-2">
-        {SECTION_TITLES.map((title, idx) => {
-          const isOpen = openSection === idx;
-          const status = statuses[idx];
-          return (
-            <motion.div key={idx} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.04 }} className="rounded-xl border border-border bg-card overflow-hidden shadow-sm">
-              <button onClick={() => toggleSection(idx)} className="w-full flex items-center gap-3 px-4 py-3 text-left">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-muted-foreground">{idx + 1}</span>
-                <span className="flex-1 text-sm font-medium text-foreground">{title}</span>
-                <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${STATUS_COLORS[status]}`}>{STATUS_LABELS[status]}</span>
-                <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`} />
-              </button>
-              <AnimatePresence>
-                {isOpen && (
-                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.25 }} className="overflow-hidden">
-                    <div className="px-4 pb-4 pt-1">
-                      {renderSection(idx)}
-                      <button onClick={() => confirmSection(idx)} className="w-full mt-4 rounded-xl bg-accent text-accent-foreground py-2.5 text-xs font-semibold hover:opacity-90 transition-opacity">
-                        Confirm & continue →
-                      </button>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-[15px] font-semibold text-foreground leading-snug">{title}</p>
+                        <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                      </div>
+                      <p className="mt-1 text-[11.5px] leading-snug text-muted-foreground">{meta.description}</p>
+                      <div className="mt-2.5 flex items-center gap-2">
+                        <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${STATUS_COLORS[status]}`}>{STATUS_LABELS[status]}</span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {idx === 1
+                            ? `Opens Goal planning · ${meta.estimate}`
+                            : `${groups.length} quick ${groups.length === 1 ? "step" : "steps"} · ${meta.estimate}`}
+                        </span>
+                      </div>
                     </div>
-                  </motion.div>
-                )}
+                  </div>
+
+                  {/* Completion strip along the bottom */}
+                  <div className="absolute inset-x-0 bottom-0 h-[3px] bg-muted/60">
+                    <div
+                      className="h-full transition-all duration-500"
+                      style={{
+                        width: isConfirmed ? "100%" : status === "in_progress" ? "35%" : "0%",
+                        backgroundColor: "hsl(var(--wealth-navy))",
+                      }}
+                    />
+                  </div>
+                </motion.button>
+              );
+            })}
+          </div>
+        </>
+      ) : (
+        (() => {
+          const groups = sectionGroups(openSection);
+          const total = groups.length;
+          const gi = Math.min(groupIndex, total - 1);
+          const group = groups[gi];
+          const isLastGroup = gi >= total - 1;
+          const SIcon = SECTION_META[openSection].Icon;
+          return (
+            <div className="px-5 pb-32">
+              {/* Section identity */}
+              <div className="pt-3 pb-3 flex items-center gap-3">
+                <button
+                  onClick={() => { setOpenSection(-1); setGroupIndex(0); }}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted hover:bg-muted/80 transition-colors"
+                  aria-label="Back to sections"
+                >
+                  <ChevronLeft className="h-4 w-4 text-foreground" />
+                </button>
+                <span
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
+                  style={{ backgroundColor: "hsl(var(--wealth-navy) / 0.08)", color: "hsl(var(--wealth-navy))" }}
+                >
+                  <SIcon className="h-[18px] w-[18px]" strokeWidth={1.8} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[13px] font-semibold text-foreground leading-tight truncate">
+                    {SECTION_TITLES[openSection]}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">
+                    Step {gi + 1} of {total} · {SECTION_META[openSection].estimate}
+                  </p>
+                </div>
+              </div>
+
+              {/* Segmented step progress — one pill per question group */}
+              <div className="flex gap-1.5 pb-4">
+                {groups.map((_, i) => (
+                  <div key={i} className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+                    <motion.div
+                      className="h-full rounded-full"
+                      style={{ backgroundColor: "hsl(var(--wealth-navy))" }}
+                      initial={false}
+                      animate={{ width: i <= gi ? "100%" : "0%" }}
+                      transition={{ duration: 0.25 }}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {/* Current question group */}
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={`${openSection}-${gi}`}
+                  initial={{ opacity: 0, x: 32 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -32 }}
+                  transition={{ duration: 0.22, ease: "easeOut" }}
+                >
+                  <h2 className="mb-4 text-lg font-semibold text-foreground leading-snug">{group.label}</h2>
+                  <div className="rounded-2xl border border-border bg-card shadow-sm p-5">
+                    {group.body}
+                  </div>
+                </motion.div>
               </AnimatePresence>
-            </motion.div>
+
+              {/* Fixed step nav */}
+              <div className="fixed bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-t border-border px-5 py-4">
+                <div className="max-w-md mx-auto flex items-center gap-3">
+                  {gi > 0 && (
+                    <button
+                      onClick={() => setGroupIndex((i) => Math.max(0, i - 1))}
+                      className="flex items-center justify-center gap-1 rounded-xl border border-border bg-card px-5 py-3 text-sm font-semibold text-foreground transition-all active:scale-[0.98]"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      Back
+                    </button>
+                  )}
+                  <button
+                    onClick={() => (isLastGroup ? confirmSection(openSection) : setGroupIndex((i) => i + 1))}
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-xl py-3 text-sm font-semibold text-primary-foreground hover:opacity-90 transition-all active:scale-[0.98]"
+                    style={{ backgroundColor: "hsl(var(--wealth-navy))" }}
+                  >
+                    {isLastGroup ? "Confirm & continue" : "Next"}
+                    {isLastGroup ? <Check className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                  </button>
+                </div>
+                <p className="mt-1.5 text-center text-[10px] text-muted-foreground">
+                  Your answers are saved when you confirm this section
+                </p>
+              </div>
+            </div>
           );
-        })}
-      </div>
+        })()
+      )}
 
-      {/* Behavioural Risk Modal */}
-      <BehaviouralRiskModal
-        open={showBehavModal}
-        onClose={() => setShowBehavModal(false)}
-        q1={behavQ1} setQ1={setBehavQ1}
-        q2={behavQ2} setQ2={setBehavQ2}
-        q3={behavQ3} setQ3={setBehavQ3}
-      />
-
-      {/* Bottom CTA */}
+      {/* Bottom CTA — only on the section-card list (the step view has its own nav) */}
+      {openSection === -1 && (
       <div className="fixed bottom-0 left-0 right-0 z-50 bg-background/90 backdrop-blur-sm border-t border-border px-5 py-4">
         <div className="max-w-md mx-auto">
           <button
@@ -1746,13 +1885,15 @@ const CompleteProfile = () => {
               toast.success("Generating your Investment Policy Statement…");
               navigate("/profile/ips");
             }}
-            className={`w-full rounded-xl py-3 text-sm font-semibold transition-all ${allConfirmed ? "bg-accent text-accent-foreground hover:opacity-90" : "bg-muted text-muted-foreground cursor-not-allowed"}`}
+            style={allConfirmed ? { backgroundColor: "hsl(var(--wealth-navy))" } : undefined}
+            className={`w-full rounded-xl py-3 text-sm font-semibold transition-all ${allConfirmed ? "text-primary-foreground hover:opacity-90" : "bg-muted text-muted-foreground cursor-not-allowed"}`}
           >
             Generate My Investment Policy Statement →
           </button>
           <p className="text-[10px] text-center text-muted-foreground mt-1.5">Your answers are saved automatically</p>
         </div>
       </div>
+      )}
     </div>
   );
 };
