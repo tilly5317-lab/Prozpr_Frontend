@@ -43,6 +43,17 @@ const PFP_NUMERIC_KEYS = new Set([
   "starting_monthly_investment",
 ]);
 
+/** Show numeric inputs with thousands separators (Indian grouping), e.g. 12,34,567. */
+function formatWithCommas(raw: string): string {
+  if (!raw) return "";
+  const dot = raw.indexOf(".");
+  const intStr = dot >= 0 ? raw.slice(0, dot) : raw;
+  const decStr = dot >= 0 ? raw.slice(dot + 1) : null;
+  const intGrouped = intStr === "" ? "" : Number(intStr).toLocaleString("en-IN");
+  if (decStr === null) return intGrouped;
+  return `${intGrouped === "" ? "0" : intGrouped}.${decStr}`;
+}
+
 function groupFields(fields: CashflowReadinessField[]): [string, CashflowReadinessField[]][] {
   const order: string[] = [];
   const map = new Map<string, CashflowReadinessField[]>();
@@ -102,7 +113,8 @@ const CashflowGate = ({ onReady, editSignal }: CashflowGateProps) => {
   }, [editSignal]);
 
   const grouped = useMemo(
-    () => (readiness ? groupFields(readiness.fields) : []),
+    () =>
+      readiness ? groupFields(readiness.fields) : [],
     [readiness],
   );
 
@@ -314,14 +326,32 @@ const CashflowGate = ({ onReady, editSignal }: CashflowGateProps) => {
                                 </span>
                               )}
                             </label>
-                            <input
-                              type={f.kind === "date" ? "date" : "number"}
-                              inputMode={f.kind === "date" ? undefined : "decimal"}
-                              step={f.kind === "percent" ? "0.5" : f.kind === "int" ? "1" : "any"}
-                              value={values[f.key] ?? ""}
-                              onChange={(e) => setVal(f.key, e.target.value)}
-                              className={`${inputClass} mt-1.5 ${err ? "border-destructive ring-1 ring-destructive" : ""}`}
-                            />
+                            {f.kind === "date" ? (
+                              <input
+                                type="date"
+                                value={values[f.key] ?? ""}
+                                onChange={(e) => setVal(f.key, e.target.value)}
+                                className={`${inputClass} mt-1.5 ${err ? "border-destructive ring-1 ring-destructive" : ""}`}
+                              />
+                            ) : f.kind === "percent" ? (
+                              <input
+                                type="number"
+                                inputMode="decimal"
+                                step="0.5"
+                                value={values[f.key] ?? ""}
+                                onChange={(e) => setVal(f.key, e.target.value)}
+                                className={`${inputClass} mt-1.5 ${err ? "border-destructive ring-1 ring-destructive" : ""}`}
+                              />
+                            ) : (
+                              // Money / count fields — text input so we can show thousands separators.
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                value={formatWithCommas(values[f.key] ?? "")}
+                                onChange={(e) => setVal(f.key, e.target.value.replace(/[^\d.]/g, ""))}
+                                className={`${inputClass} mt-1.5 ${err ? "border-destructive ring-1 ring-destructive" : ""}`}
+                              />
+                            )}
                             {f.help && !err && (
                               <p className="mt-1 text-[10.5px] leading-snug text-muted-foreground/80">{f.help}</p>
                             )}
