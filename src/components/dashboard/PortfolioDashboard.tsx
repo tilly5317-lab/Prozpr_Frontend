@@ -1,6 +1,6 @@
 import { useState, useEffect, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { TrendingUp, TrendingDown, Compass, ArrowRight } from "lucide-react";
+import { TrendingUp, TrendingDown, Compass, ArrowRight, Wallet, Target, Activity, Landmark, Check } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import BottomNav from "@/components/BottomNav";
 import NetWorthSparkline from "./NetWorthSparkline";
@@ -236,6 +236,148 @@ function DiscoverEntryCard() {
       </div>
       <ArrowRight className="h-4 w-4 shrink-0" style={{ color: "rgba(245, 238, 220, 0.7)" }} />
     </motion.button>
+  );
+}
+
+/**
+ * Quick-unlock circles — a lightweight alternative to the full onboarding.
+ * Each shares one profile category and unlocks a specific Prozpr capability.
+ * Deep-links into the matching Complete-Profile section (?section=N).
+ */
+function ProfileUnlockCircles({ profile }: { profile: FullProfileResponse | null }) {
+  const navigate = useNavigate();
+
+  const items = [
+    {
+      section: 0,
+      Icon: Wallet,
+      title: "Your money map",
+      unlocks: "Supercharge rebalancing",
+      flash: true,
+      ring: "#3B6FA8",
+      done: false,
+    },
+    {
+      section: 3,
+      Icon: Landmark,
+      title: "Tax details",
+      unlocks: "Unlock smarter funds",
+      flash: true,
+      ring: "#A8872F",
+      done: false,
+    },
+    {
+      section: 2,
+      Icon: Activity,
+      title: "Risk behaviour",
+      unlocks: "Tune your portfolio",
+      flash: true,
+      ring: "#7A52C8",
+      done: false,
+    },
+    {
+      section: 1,
+      Icon: Target,
+      title: "Goal planning",
+      unlocks: "Chart your future",
+      flash: true,
+      ring: "#2E9C7E",
+      done: false,
+    },
+  ];
+
+  const remaining = items.filter((i) => !i.done).length;
+
+  return (
+    <div className="rounded-[14px] border border-border bg-card p-4" style={{ boxShadow: "0 1px 2px rgba(0,0,0,0.04)" }}>
+      <div className="mb-3 flex items-center justify-between">
+        <div>
+          <p className="text-[10px] uppercase tracking-[1.5px] text-muted-foreground" style={{ fontWeight: 500 }}>
+            Unlock more
+          </p>
+          <p className="mt-0.5 text-[13px] font-semibold text-foreground">
+            Share a little, unlock a lot
+          </p>
+        </div>
+        {remaining > 0 ? (
+          <motion.span
+            className="shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-semibold text-white"
+            style={{
+              backgroundImage: "linear-gradient(100deg, #D4A868, #C2487A, #7A52C8, #D4A868)",
+              backgroundSize: "300% 100%",
+              boxShadow: "0 0 12px rgba(212,168,104,0.45)",
+            }}
+            animate={{ backgroundPosition: ["0% 50%", "100% 50%"], scale: [1, 1.06, 1] }}
+            transition={{
+              backgroundPosition: { duration: 3, repeat: Infinity, ease: "linear" },
+              scale: { duration: 1.4, repeat: Infinity, ease: "easeInOut" },
+            }}
+          >
+            ✨ {remaining === 1 ? "1 step to full plan" : `${remaining} unlocks left`}
+          </motion.span>
+        ) : (
+          <span className="shrink-0 rounded-full bg-wealth-green/10 px-2.5 py-0.5 text-[10px] font-semibold text-wealth-green">
+            🎉 All unlocked
+          </span>
+        )}
+      </div>
+
+      <div className="flex justify-between gap-1">
+        {items.map(({ section, Icon, title, unlocks, ring, done, flash }) => (
+          <motion.button
+            key={section}
+            type="button"
+            onClick={() => navigate(section === 1 ? "/goal-planner" : `/profile/complete?section=${section}`)}
+            whileTap={{ scale: 0.95 }}
+            className="flex w-[23%] flex-col items-center gap-1.5 text-center"
+          >
+            <span className="relative flex h-[58px] w-[58px] items-center justify-center rounded-full">
+              {/* Gradient/animated ring */}
+              <span
+                className="absolute inset-0 rounded-full"
+                style={{
+                  background: done
+                    ? `conic-gradient(${ring} 0deg 360deg)`
+                    : `conic-gradient(${ring} 0deg 250deg, ${ring}22 250deg 360deg)`,
+                  padding: 2,
+                  WebkitMask: "radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px))",
+                  mask: "radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px))",
+                }}
+              />
+              <span
+                className="flex h-[50px] w-[50px] items-center justify-center rounded-full"
+                style={{ backgroundColor: done ? ring : `${ring}14`, color: done ? "#fff" : ring }}
+              >
+                <Icon className="h-5 w-5" strokeWidth={1.9} />
+              </span>
+              {done && (
+                <span
+                  className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full border-2 border-card"
+                  style={{ backgroundColor: "hsl(var(--wealth-green))" }}
+                >
+                  <Check className="h-2.5 w-2.5 text-white" />
+                </span>
+              )}
+            </span>
+            <span className="text-[10px] font-semibold leading-tight text-foreground">{title}</span>
+            {!done && (
+              flash ? (
+                <motion.span
+                  className="text-[8.5px] italic font-semibold leading-tight"
+                  style={{ color: ring }}
+                  animate={{ opacity: [1, 0, 1] }}
+                  transition={{ duration: 7, repeat: Infinity, ease: "easeInOut" }}
+                >
+                  {unlocks}
+                </motion.span>
+              ) : (
+                <span className="text-[8.5px] leading-tight text-muted-foreground">{unlocks}</span>
+              )
+            )}
+          </motion.button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -505,6 +647,7 @@ const PortfolioDashboard = () => {
                 useNavChart
               />
               <DiscoverEntryCard />
+              <ProfileUnlockCircles profile={selfProfile} />
               <AdvisorMeetingsSlot />
             </div>
           )}
