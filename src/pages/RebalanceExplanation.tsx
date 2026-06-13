@@ -15,11 +15,10 @@ import {
   type RebalancingTrade,
 } from "@/lib/api";
 
-/* ── Buckets — the drift section groups the engine's asset_subgroups into the
-   same three asset classes the allocation engine commits to: equity / debt /
-   others (gold & commodities roll into "others"). Mirrors the backend's
-   SUBGROUP_TO_ASSET_CLASS map (asset_allocation_pydantic/tables.py) so the split
-   matches what the engine actually produced. ── */
+/* ── Buckets — the drift section groups the engine's asset_subgroups into three
+   asset classes (Equity / Debt / Others). The asset_class is computed by the
+   backend (scheme_classification.asset_class_for_subgroup) and shipped on each
+   subgroup_summary / trade, so there is no client-side classification. ── */
 type Bucket = "equity" | "debt" | "others";
 
 const BUCKET_ORDER: Bucket[] = ["equity", "debt", "others"];
@@ -29,34 +28,11 @@ const BUCKET_META: Record<Bucket, { label: string; color: string }> = {
   others: { label: "Others", color: "#E0B84A" },
 };
 
-// Canonical asset_subgroup → asset class, kept in sync with the backend.
-const SUBGROUP_TO_BUCKET: Record<string, Bucket> = {
-  low_beta_equities: "equity",
-  medium_beta_equities: "equity",
-  high_beta_equities: "equity",
-  value_equities: "equity",
-  dividend_equities: "equity",
-  sector_equities: "equity",
-  us_equities: "equity",
-  multi_asset: "equity",
-  short_debt: "debt",
-  arbitrage: "debt",
-  arbitrage_plus_income: "debt",
-  gold_commodities: "others",
-  silver_commodities: "others",
-  china_equities: "others",
-  others_fofs: "others",
-  others: "others",
-};
-
-function classifyBucket(name: string): Bucket {
-  const key = (name || "").trim().toLowerCase().replace(/\s+/g, "_");
-  const mapped = SUBGROUP_TO_BUCKET[key];
-  if (mapped) return mapped;
-  // Fallback heuristic for any subgroup not in the map (note: "equit" matches
-  // both "equity" and "equities").
-  if (key.includes("equit") || key.includes("cap") || key.includes("flexi") || key.includes("nifty") || key.includes("index") || key.includes("elss")) return "equity";
-  if (key.includes("debt") || key.includes("bond") || key.includes("arbitrage") || key.includes("liquid") || key.includes("gilt") || key.includes("duration") || key.includes("money")) return "debt";
+// Normalize the backend's canonical asset_class ("Equity" / "Debt" / "Others")
+// to our internal lowercase Bucket key. Unknown / null → "others".
+function toBucket(assetClass: string | null | undefined): Bucket {
+  const v = (assetClass ?? "").toLowerCase();
+  if (v === "equity" || v === "debt" || v === "others") return v;
   return "others";
 }
 
@@ -100,7 +76,7 @@ function buildDriftRows(subs: RebalancingSubgroupSummary[]): DriftRow[] {
     others: { current: 0, target: 0 },
   };
   for (const s of subs) {
-    const b = classifyBucket(s.asset_subgroup);
+    const b = toBucket(s.asset_class);
     agg[b].current += s.current_holding_inr || 0;
     agg[b].target += s.goal_target_inr || 0;
   }
@@ -133,7 +109,7 @@ function mapTrade(t: RebalancingTrade): UITrade {
     id: t.id,
     isin: t.isin,
     type,
-    bucket: classifyBucket(t.asset_subgroup),
+    bucket: toBucket(t.asset_class),
     amount: fmtINR(t.amount_inr),
     subtitle: t.reason_title || (type === "BUY" ? "Buy" : "Sell"),
     name: t.recommended_fund,

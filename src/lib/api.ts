@@ -2103,6 +2103,7 @@ export interface RebalancingTrade {
   isin: string;
   recommended_fund: string;
   asset_subgroup: string;
+  asset_class: string; // backend-derived "Equity" | "Debt" | "Others"
   sub_category: string;
   action: string; // "BUY" | "SELL" | "EXIT"
   amount_inr: number;
@@ -2127,6 +2128,7 @@ export interface RebalancingTotals {
 
 export interface RebalancingSubgroupSummary {
   asset_subgroup: string;
+  asset_class: string; // backend-derived "Equity" | "Debt" | "Others"
   goal_target_inr: number;
   current_holding_inr: number;
   suggested_final_holding_inr: number;
