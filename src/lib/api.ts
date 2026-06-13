@@ -769,6 +769,7 @@ export interface PersonalFinancePayload {
   financial_liabilities_excl_mortgage?: number | null;
   monthly_household_expense?: number | null;
   starting_monthly_investment?: number | null;
+  current_portfolio_corpus?: number | null;
   selected_goals?: string[] | null;
   custom_goals?: string[] | null;
   investment_horizon?: string | null;
@@ -1412,7 +1413,7 @@ export async function updatePortfolioHistory(
   });
 }
 
-export type PortfolioNavHorizon = "1M" | "1Y" | "3Y" | "MAX";
+export type PortfolioNavHorizon = "1M" | "3M" | "1Y" | "3Y" | "MAX";
 
 export interface PortfolioNavHistoryPoint {
   recorded_date: string;
@@ -1508,6 +1509,7 @@ export interface GoalCreatePayload {
   priority?: string;
   inflation_rate?: number;
   notes?: string;
+  monthly_contribution?: number;
 }
 
 export async function createGoal(payload: GoalCreatePayload): Promise<GoalResponse> {
@@ -1524,6 +1526,7 @@ export interface GoalUpdatePayload {
   priority?: string;
   inflation_rate?: number;
   notes?: string;
+  monthly_contribution?: number;
 }
 
 export async function updateGoal(goalId: string, payload: GoalUpdatePayload): Promise<GoalResponse> {
@@ -1730,6 +1733,7 @@ export interface CashflowInputValues {
   /** Fraction (0-1). The form collects a percentage and divides before calling. */
   effective_tax_rate?: number;
   starting_monthly_investment?: number;
+  current_portfolio_corpus?: number;
   financial_assets?: number;
   financial_liabilities_excl_mortgage?: number;
 }
@@ -1747,6 +1751,7 @@ export async function saveCashflowInputs(v: CashflowInputValues): Promise<void> 
   if (v.monthly_household_expense != null) finance.monthly_household_expense = v.monthly_household_expense;
   if (v.effective_tax_rate != null) finance.effective_tax_rate = v.effective_tax_rate;
   if (v.starting_monthly_investment != null) finance.starting_monthly_investment = v.starting_monthly_investment;
+  if (v.current_portfolio_corpus != null) finance.current_portfolio_corpus = v.current_portfolio_corpus;
   if (v.financial_assets != null) finance.financial_assets = v.financial_assets;
   if (v.financial_liabilities_excl_mortgage != null)
     finance.financial_liabilities_excl_mortgage = v.financial_liabilities_excl_mortgage;
@@ -2103,6 +2108,7 @@ export interface RebalancingTrade {
   isin: string;
   recommended_fund: string;
   asset_subgroup: string;
+  asset_class: string; // backend-derived "Equity" | "Debt" | "Others"
   sub_category: string;
   action: string; // "BUY" | "SELL" | "EXIT"
   amount_inr: number;
@@ -2127,6 +2133,7 @@ export interface RebalancingTotals {
 
 export interface RebalancingSubgroupSummary {
   asset_subgroup: string;
+  asset_class: string; // backend-derived "Equity" | "Debt" | "Others"
   goal_target_inr: number;
   current_holding_inr: number;
   suggested_final_holding_inr: number;

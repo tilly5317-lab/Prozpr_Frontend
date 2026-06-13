@@ -17,19 +17,17 @@ import {
 } from "recharts";
 import { Download, Info, X } from "lucide-react";
 import type { PortfolioDetail } from "@/lib/api";
-import { formatInrCompact, formatInrPaisa } from "@/lib/utils";
 
-type AnalysisTab = "returns" | "nav" | "waterfall";
+type AnalysisTab = "returns" | "waterfall";
 type AnalysisRange = "1M" | "3M" | "YTD" | "1Y" | "3Y" | "All";
 
 const TABS: { id: AnalysisTab; label: string }[] = [
   { id: "returns", label: "Returns" },
-  { id: "nav", label: "Portfolio Value" },
   { id: "waterfall", label: "Value Build-Up" },
 ];
 
 // Catalog of benchmarks the user can layer onto the Returns chart.
-// `multiplier` is applied to the portfolio MWR to synthesize a plausible benchmark return.
+// `multiplier` is applied to the portfolio TWR to synthesize a plausible benchmark return.
 type BenchmarkOption = {
   id: string;
   shortName: string;
@@ -91,36 +89,24 @@ function synthCurve(start: number, end: number, n: number, seed: number): number
   return out;
 }
 
-function synthNavCurve(
-  startValue: number,
-  endValue: number,
-  n: number,
-  mode: "default" | "growth" = "default",
-): number[] {
-  const out: number[] = [];
-  const span = Math.max(Math.abs(endValue - startValue), endValue * 0.08);
-  const wobbleScale = mode === "growth" ? 0.35 : 1;
-  for (let i = 0; i < n; i++) {
-    const t = i / (n - 1);
-    // Growth mode eases in (slow start, faster finish) so the multi-year arc feels compounding.
-    const progress = mode === "growth" ? Math.pow(t, 1.45) : t;
-    const base = startValue + (endValue - startValue) * progress;
-    const wobble =
-      (Math.sin(i * 0.55) * (span * 0.32) +
-        Math.cos(i * 1.15) * (span * 0.22) +
-        Math.sin(i * 2.1) * (span * 0.1)) * wobbleScale;
-    // Growth mode keeps the broad swing positive (a mid-period bump) instead of dipping below start.
-    const swing =
-      mode === "growth"
-        ? Math.sin(t * Math.PI) * (span * 0.08)
-        : Math.sin((t * Math.PI) + 0.6) * (span * 0.18);
-    out.push(Math.round(base + wobble + swing));
-  }
-  return out;
+// Portfolio-analysis figures are all shown to a single decimal place.
+function fmtPct(n: number): string {
+  return `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
 }
 
-function fmtPct(n: number): string {
-  return `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
+/** Full ₹ amount with Indian grouping, to one decimal. */
+function fmtInr1(n: number): string {
+  return `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}`;
+}
+
+/** Compact ₹ (Cr / L / k), to one decimal. Caller adds any +/- sign. */
+function fmtInrCompact1(n: number): string {
+  const sign = n < 0 ? "-" : "";
+  const a = Math.abs(n);
+  if (a >= 1e7) return `${sign}₹${(a / 1e7).toFixed(1)}Cr`;
+  if (a >= 1e5) return `${sign}₹${(a / 1e5).toFixed(1)}L`;
+  if (a >= 1e3) return `${sign}₹${(a / 1e3).toFixed(1)}k`;
+  return `${sign}₹${a.toFixed(1)}`;
 }
 
 const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -215,12 +201,10 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
   const [tab, setTab] = useState<AnalysisTab>(() => {
     if (typeof window === "undefined") return "returns";
     const stored = window.sessionStorage.getItem(STORAGE_KEY) as AnalysisTab | null;
-    return stored === "returns" || stored === "nav" || stored === "waterfall" ? stored : "returns";
+    return stored === "returns" || stored === "waterfall" ? stored : "returns";
   });
   const [range, setRange] = useState<AnalysisRange>("1M");
-  const [selectedBenchmarkIds, setSelectedBenchmarkIds] = useState<string[]>(["nifty50"]);
-  const [benchmarkPickerOpen, setBenchmarkPickerOpen] = useState(false);
-  const [infoOpen, setInfoOpen] = useState<"mwr" | null>(null);
+  const [infoOpen, setInfoOpen] = useState<"twr" | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -237,18 +221,21 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  // Compute MWR from the simple gain (API doesn't return it yet).
+  // Time-weighted return: the portfolio's compounded holding-period return,
+  // independent of the size/timing of contributions (unlike MWR). The API
+  // doesn't return it yet, so approximate it from the simple holding-period
+  // gain — with no contribution-drag factor applied.
   const simpleGain = portfolio.total_gain_percentage ?? 0;
-  const fullMwr = Math.round(simpleGain * 0.94 * 100) / 100;
-  const scaledMwr = Math.round(fullMwr * rangeScaleFactor(range) * 100) / 100;
+  const fullTwr = Math.round(simpleGain * 100) / 100;
+  const scaledTwr = Math.round(fullTwr * rangeScaleFactor(range) * 100) / 100;
 
-  // Benchmarks the user has chosen to overlay (always at least one).
-  const activeBenchmarks = BENCHMARKS.filter((b) => selectedBenchmarkIds.includes(b.id));
-  const primaryBenchmark = activeBenchmarks[0] ?? BENCHMARKS[0];
+  // Single fixed benchmark — Nifty 50 (the add/compare picker was removed).
+  const primaryBenchmark = BENCHMARKS.find((b) => b.id === "nifty50") ?? BENCHMARKS[0];
+  const activeBenchmarks = [primaryBenchmark];
   const benchPctById = (() => {
     const out: Record<string, number> = {};
     for (const b of BENCHMARKS) {
-      out[b.id] = Math.round(scaledMwr * b.multiplier * 100) / 100;
+      out[b.id] = Math.round(scaledTwr * b.multiplier * 100) / 100;
     }
     return out;
   })();
@@ -262,36 +249,23 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
 
   const returnsSeries = useMemo(() => {
     const n = pointsForRange(range);
-    const mwr = synthCurve(0, scaledMwr, n, 11);
+    const twr = synthCurve(0, scaledTwr, n, 11);
     const benchCurves: Record<string, number[]> = {};
     for (const b of activeBenchmarks) {
-      const target = Math.round(scaledMwr * b.multiplier * 100) / 100;
+      const target = Math.round(scaledTwr * b.multiplier * 100) / 100;
       benchCurves[b.id] = synthCurve(0, target, n, b.seed);
     }
-    return mwr.map((m, i) => {
-      const point: Record<string, number> = { i, mwr: m };
+    return twr.map((m, i) => {
+      const point: Record<string, number> = { i, twr: m };
       for (const b of activeBenchmarks) {
         point[`bench_${b.id}`] = benchCurves[b.id][i];
       }
       return point;
     });
-  }, [range, scaledMwr, activeBenchmarks]);
+  }, [range, scaledTwr, activeBenchmarks]);
 
 
-  // NAV Changes data
   const currentNav = portfolio.total_value;
-  // For "All", anchor the start much lower so the multi-year arc clearly grows from less to more.
-  const startNav =
-    range === "All"
-      ? Math.round(currentNav * 0.3)
-      : Math.round(currentNav * (1 - rangeScaleFactor(range) * (simpleGain / 100)));
-  const navAbsChange = currentNav - startNav;
-  const navPctChange = startNav > 0 ? ((currentNav - startNav) / startNav) * 100 : 0;
-  const navSeries = useMemo(() => {
-    const n = pointsForRange(range);
-    const vals = synthNavCurve(startNav, currentNav, n, range === "All" ? "growth" : "default");
-    return vals.map((v, i) => ({ i, nav: v }));
-  }, [range, startNav, currentNav]);
 
   // Waterfall breakdown — synthesized from total_invested + total_value.
   const invested = portfolio.total_invested;
@@ -316,7 +290,7 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
       { label: "+ Capital Gains", value: capitalGains, kind: "positive" },
       { label: "+ Dividends", value: estDividends, kind: "positive" },
       { label: "− Fees", value: -estFees, kind: "negative" },
-      { label: "= Current NAV", value: currentNav, kind: "total" },
+      { label: "= Current Corpus", value: currentNav, kind: "total" },
     ];
     let running = 0;
     return items.map((it) => {
@@ -351,21 +325,10 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
     if (tab === "returns") {
       const rows: (string | number)[][] = [
         ["Metric", `${range}`, "Full period"],
-        ["MWR %", scaledMwr, fullMwr],
+        ["TWR %", scaledTwr, fullTwr],
         ...activeBenchmarks.map((b) => [`${b.fullName} %`, benchPctById[b.id], ""]),
       ];
       downloadFile(`portfolio-returns-${ts}.csv`, "text/csv", toCsv(rows));
-      return;
-    }
-    if (tab === "nav") {
-      const rows: (string | number)[][] = [
-        ["Period", range],
-        ["Start value", startNav],
-        ["End value", currentNav],
-        ["Change (₹)", navAbsChange],
-        ["Change (%)", Number(navPctChange.toFixed(2))],
-      ];
-      downloadFile(`portfolio-value-${ts}.csv`, "text/csv", toCsv(rows));
       return;
     }
     const rows: (string | number)[][] = [["Line item", "Value (₹)"]];
@@ -499,13 +462,13 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                           >
                             <div className="flex items-center gap-1 mb-0.5">
                               <p className="text-[9px] uppercase tracking-wide text-muted-foreground">
-                                MWR
+                                TWR
                               </p>
                               <button
                                 type="button"
-                                onClick={() => setInfoOpen((o) => (o === "mwr" ? null : "mwr"))}
+                                onClick={() => setInfoOpen((o) => (o === "twr" ? null : "twr"))}
                                 className="text-muted-foreground hover:text-foreground"
-                                aria-label="About MWR"
+                                aria-label="About TWR"
                               >
                                 <Info className="h-3 w-3" />
                               </button>
@@ -513,11 +476,11 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                             <p
                               className="text-base font-semibold leading-tight"
                               style={{
-                                color: scaledMwr >= 0 ? POSITIVE : NEGATIVE,
+                                color: scaledTwr >= 0 ? POSITIVE : NEGATIVE,
                                 fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
                               }}
                             >
-                              {fmtPct(scaledMwr)}
+                              {fmtPct(scaledTwr)}
                             </p>
                             <p className="text-[9px] text-muted-foreground mt-0.5">{range}</p>
                           </div>
@@ -547,8 +510,9 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                             style={{ backgroundColor: "hsl(var(--muted) / 0.6)" }}
                           >
                             <p className="text-[11.5px] text-foreground leading-relaxed">
-                              <strong>MWR</strong> reflects the actual return you experienced,
-                              factoring in the timing and size of your contributions.
+                              <strong>TWR</strong> measures the portfolio's compounded
+                              performance over time, stripping out the effect of when and how
+                              much you contributed — so it isolates investment performance.
                             </p>
                           </div>
                         )}
@@ -601,8 +565,8 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                               />
                               <Line
                                 type="monotone"
-                                dataKey="mwr"
-                                name="MWR"
+                                dataKey="twr"
+                                name="TWR"
                                 stroke={USER_LINE}
                                 strokeWidth={2}
                                 dot={false}
@@ -631,7 +595,7 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                               className="inline-block h-0.5 w-4"
                               style={{ backgroundColor: USER_LINE }}
                             />
-                            MWR
+                            TWR
                           </span>
                           {activeBenchmarks.map((b) => (
                             <span key={b.id} className="inline-flex items-center gap-1.5">
@@ -642,241 +606,6 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                               {b.shortName}
                             </span>
                           ))}
-                        </div>
-
-                        {/* Add / manage benchmarks */}
-                        <div className="mt-3">
-                          <button
-                            type="button"
-                            onClick={() => setBenchmarkPickerOpen((o) => !o)}
-                            className="inline-flex items-center gap-1 rounded-full bg-muted/70 px-2.5 py-1 text-[10.5px] font-semibold text-muted-foreground hover:text-foreground transition-colors"
-                          >
-                            <span>{benchmarkPickerOpen ? "Hide benchmarks" : "+ Add benchmark"}</span>
-                            <span className="text-[9px] text-muted-foreground/70">
-                              {activeBenchmarks.length} selected
-                            </span>
-                          </button>
-                          {benchmarkPickerOpen && (
-                            <div
-                              className="mt-2 rounded-xl px-2.5 py-2"
-                              style={{ border: `1px solid ${HAIRLINE}`, backgroundColor: "hsl(var(--muted) / 0.4)" }}
-                            >
-                              <div className="flex flex-wrap gap-1.5">
-                                {BENCHMARKS.map((b) => {
-                                  const active = selectedBenchmarkIds.includes(b.id);
-                                  const isLastSelected = active && selectedBenchmarkIds.length === 1;
-                                  return (
-                                    <button
-                                      key={b.id}
-                                      type="button"
-                                      onClick={() => {
-                                        setSelectedBenchmarkIds((prev) => {
-                                          if (prev.includes(b.id)) {
-                                            // Don't allow removing the last one.
-                                            return prev.length > 1 ? prev.filter((x) => x !== b.id) : prev;
-                                          }
-                                          return [...prev, b.id];
-                                        });
-                                      }}
-                                      disabled={isLastSelected}
-                                      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10.5px] font-semibold transition-colors ${
-                                        active
-                                          ? "bg-foreground text-background"
-                                          : "bg-card text-muted-foreground hover:text-foreground"
-                                      } ${isLastSelected ? "cursor-not-allowed opacity-70" : ""}`}
-                                      style={{
-                                        border: active ? "none" : `1px solid ${HAIRLINE}`,
-                                      }}
-                                      title={isLastSelected ? "Keep at least one benchmark" : b.fullName}
-                                    >
-                                      <span
-                                        className="h-1.5 w-1.5 rounded-full"
-                                        style={{ backgroundColor: b.color }}
-                                      />
-                                      {b.shortName}
-                                      <span className="ml-1 text-[9.5px] font-normal opacity-75 tabular-nums">
-                                        {fmtPct(benchPctById[b.id])}
-                                      </span>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* — Portfolio Value tab — */}
-                    {tab === "nav" && (
-                      <div>
-                        <div
-                          className="rounded-xl p-3"
-                          style={{ border: `1px solid ${HAIRLINE}` }}
-                        >
-                          <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">
-                            Current value
-                          </p>
-                          <p
-                            className="text-2xl font-bold text-foreground leading-tight tracking-tight"
-                            style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
-                          >
-                            {formatInrPaisa(currentNav)}
-                          </p>
-                          <div className="mt-1 flex items-center gap-2 text-[11.5px]">
-                            <span
-                              className="font-semibold"
-                              style={{ color: navAbsChange >= 0 ? POSITIVE : NEGATIVE }}
-                            >
-                              {navAbsChange >= 0 ? "+" : "-"}
-                              {formatInrCompact(Math.abs(navAbsChange))}
-                            </span>
-                            <span
-                              className="font-semibold"
-                              style={{ color: navPctChange >= 0 ? POSITIVE : NEGATIVE }}
-                            >
-                              {fmtPct(navPctChange)}
-                            </span>
-                            <span className="text-muted-foreground">over {range}</span>
-                          </div>
-                        </div>
-
-                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground mt-4 mb-1.5">
-                          Portfolio value over {range}
-                        </p>
-                        <div className="h-[180px] w-full">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart
-                              data={navSeries}
-                              margin={{ top: 22, right: 12, left: 12, bottom: 18 }}
-                            >
-                              <defs>
-                                <linearGradient id="navFill" x1="0" y1="0" x2="0" y2="1">
-                                  <stop offset="0%" stopColor={USER_LINE} stopOpacity={0.22} />
-                                  <stop offset="100%" stopColor={USER_LINE} stopOpacity={0} />
-                                </linearGradient>
-                              </defs>
-                              <CartesianGrid stroke={HAIRLINE} vertical={false} />
-                              <XAxis
-                                dataKey="i"
-                                type="number"
-                                domain={[0, seriesPoints - 1]}
-                                ticks={dateTicks}
-                                tickFormatter={formatXTick}
-                                tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }}
-                                axisLine={false}
-                                tickLine={false}
-                                tickMargin={6}
-                                height={20}
-                                interval={0}
-                              />
-                              <YAxis
-                                orientation="right"
-                                width={36}
-                                tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
-                                tickFormatter={(v) => formatInrCompact(v)}
-                                axisLine={false}
-                                tickLine={false}
-                              />
-                              <Tooltip
-                                contentStyle={{
-                                  fontSize: 11,
-                                  borderRadius: 8,
-                                  border: `1px solid ${HAIRLINE}`,
-                                  backgroundColor: "hsl(var(--card))",
-                                  color: "hsl(var(--foreground))",
-                                }}
-                                labelStyle={{ color: "hsl(var(--foreground))", fontWeight: 600 }}
-                                formatter={(v: number) => [formatInrPaisa(v), "Value"]}
-                                labelFormatter={(label) =>
-                                  formatDateTick(range, dateForIndex(range, Number(label), seriesPoints, today))
-                                }
-                              />
-                              <Area
-                                type="monotone"
-                                dataKey="nav"
-                                stroke={USER_LINE}
-                                strokeWidth={2}
-                                fill="url(#navFill)"
-                                dot={false}
-                                activeDot={{
-                                  r: 3,
-                                  fill: USER_LINE,
-                                  stroke: "hsl(var(--card))",
-                                  strokeWidth: 2,
-                                }}
-                                isAnimationActive={false}
-                              />
-                            </AreaChart>
-                          </ResponsiveContainer>
-                        </div>
-
-                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground mt-4 mb-1.5">
-                          Period summary
-                        </p>
-                        <div
-                          className="rounded-xl overflow-hidden"
-                          style={{ border: `1px solid ${HAIRLINE}` }}
-                        >
-                          {[
-                            { k: "Start value", v: formatInrPaisa(startNav) },
-                            { k: "End value", v: formatInrPaisa(currentNav) },
-                            {
-                              k: "Change",
-                              v: `${navAbsChange >= 0 ? "+" : "-"}${formatInrCompact(Math.abs(navAbsChange))}`,
-                              color: navAbsChange >= 0 ? POSITIVE : NEGATIVE,
-                            },
-                            {
-                              k: "Change %",
-                              v: fmtPct(navPctChange),
-                              color: navPctChange >= 0 ? POSITIVE : NEGATIVE,
-                            },
-                          ].map((row, idx, arr) => (
-                            <div
-                              key={row.k}
-                              className="flex items-center justify-between px-3 py-2"
-                              style={{
-                                borderBottom:
-                                  idx < arr.length - 1 ? `1px solid ${HAIRLINE}` : undefined,
-                              }}
-                            >
-                              <span className="text-[11px] text-muted-foreground">{row.k}</span>
-                              <span
-                                className="text-[12px] font-semibold"
-                                style={{
-                                  color: row.color ?? "hsl(var(--foreground))",
-                                  fontFamily:
-                                    "ui-monospace, SFMono-Regular, Menlo, monospace",
-                                }}
-                              >
-                                {row.v}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-
-                        <div
-                          className="mt-3 flex items-start gap-2 rounded-lg px-2.5 py-2"
-                          style={{
-                            backgroundColor: "hsl(var(--muted) / 0.5)",
-                            border: `1px solid ${HAIRLINE}`,
-                          }}
-                        >
-                          <span
-                            className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold"
-                            style={{
-                              backgroundColor: "hsl(var(--muted-foreground) / 0.18)",
-                              color: "hsl(var(--muted-foreground))",
-                            }}
-                            aria-hidden="true"
-                          >
-                            !
-                          </span>
-                          <p className="text-[10.5px] leading-snug text-muted-foreground">
-                            <span className="font-semibold text-foreground/80">Note · </span>
-                            Dividend distributions are reflected only to the extent they
-                            can be traced through your linked bank accounts.
-                          </p>
                         </div>
                       </div>
                     )}
@@ -890,7 +619,7 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                             className="font-semibold text-foreground"
                             style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
                           >
-                            {formatInrCompact(currentNav)}
+                            {fmtInrCompact1(currentNav)}
                           </span>{" "}
                           — each bar shows one source of value.
                         </p>
@@ -913,7 +642,7 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                               />
                               <YAxis
                                 tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
-                                tickFormatter={(v) => formatInrCompact(v)}
+                                tickFormatter={(v) => fmtInrCompact1(v)}
                                 axisLine={false}
                                 tickLine={false}
                                 width={52}
@@ -937,7 +666,7 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                                       }}
                                     >
                                       <div style={{ fontWeight: 600, marginBottom: 2 }}>{String(label)}</div>
-                                      <div>{formatInrPaisa(Math.abs(point.display ?? 0))}</div>
+                                      <div>{fmtInr1(Math.abs(point.display ?? 0))}</div>
                                     </div>
                                   );
                                 }}
@@ -1007,10 +736,10 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                                   }}
                                 >
                                   {w.kind === "negative"
-                                    ? `-${formatInrCompact(Math.abs(w.value))}`
+                                    ? `-${fmtInrCompact1(Math.abs(w.value))}`
                                     : w.kind === "total"
-                                      ? formatInrCompact(w.running)
-                                      : `${w.value > 0 ? "+" : ""}${formatInrCompact(Math.abs(w.value))}`}
+                                      ? fmtInrCompact1(w.running)
+                                      : `${w.value > 0 ? "+" : ""}${fmtInrCompact1(Math.abs(w.value))}`}
                                 </span>
                               </div>
                             );

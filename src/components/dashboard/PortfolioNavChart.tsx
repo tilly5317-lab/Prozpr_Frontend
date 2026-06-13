@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Area,
   AreaChart,
-  CartesianGrid,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -16,19 +15,21 @@ import {
   type PortfolioNavHistoryPoint,
   type PortfolioNavHorizon,
 } from "@/lib/api";
-import { formatInrCompact, formatInrPaisa } from "@/lib/utils";
+import { formatInrPaisa } from "@/lib/utils";
 
-const HORIZONS: PortfolioNavHorizon[] = ["1M", "1Y", "3Y", "MAX"];
+const HORIZONS: PortfolioNavHorizon[] = ["1M", "3M", "1Y", "3Y", "MAX"];
 
+// X-axis label format depends on horizon: short windows (1M / 3M) read as
+// "dd-mmm" (e.g. 05-Jun); longer windows read as "mmm-yy" (e.g. Jun-26).
 function formatXLabel(iso: string, horizon: PortfolioNavHorizon): string {
   const d = new Date(iso);
-  if (horizon === "1M") {
-    return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+  const mon = d.toLocaleDateString("en-IN", { month: "short" });
+  if (horizon === "1M" || horizon === "3M") {
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${dd}-${mon}`;
   }
-  if (horizon === "1Y") {
-    return d.toLocaleDateString("en-IN", { month: "short" });
-  }
-  return d.toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
+  const yy = String(d.getFullYear()).slice(-2);
+  return `${mon}-${yy}`;
 }
 
 function formatTooltipDate(iso: string): string {
@@ -117,8 +118,9 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
   const hasPoints = !!points && points.length > 0;
   const jobActive = job?.status === "pending" || job?.status === "running";
 
-  // When there's no series yet, check whether a build job is already in flight
-  // (e.g. the user reloaded mid-build) so we resume showing progress.
+  // When there's no series yet, fetch the build-job status (e.g. the user
+  // reloaded mid-build) so we can resume showing progress. The actual auto-build
+  // is kicked off by the effect below, which runs after `startBuild` is defined.
   useEffect(() => {
     if (loading || hasPoints || errored) return;
     let cancelled = false;
@@ -127,7 +129,7 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
         if (!cancelled) setJob(s);
       })
       .catch(() => {
-        /* leave job null — the CTA still shows */
+        /* leave job null — the loading state still shows */
       });
     return () => {
       cancelled = true;
@@ -195,9 +197,10 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
 
   const chartData = useMemo(() => {
     if (points && points.length) {
-      return points.map((p) => ({
+      return points.map((p, i) => ({
         ...p,
         x: formatXLabel(p.recorded_date, horizon),
+        idx: i,
       }));
     }
     if (fallbackValues && fallbackValues.length) {
@@ -213,13 +216,44 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
           total_invested: v * 100000,
           gain_percentage: 0,
           x: formatXLabel(iso, horizon),
+          idx: i,
         };
       });
     }
     return [];
   }, [points, horizon, fallbackValues]);
 
-  const tickCount = horizon === "1M" ? 4 : horizon === "1Y" ? 5 : 6;
+  const tickCount = 5;
+
+  // Evenly-spaced X ticks by data index (numeric axis), so spacing stays uniform
+  // regardless of how many points or repeated month labels there are.
+  const xTicks = useMemo(() => {
+    const n = chartData.length;
+    if (n <= 1) return [0];
+    const count = Math.min(tickCount, n);
+    const idxs = Array.from({ length: count }, (_, i) => Math.round((i * (n - 1)) / (count - 1)));
+    return Array.from(new Set(idxs));
+  }, [chartData, tickCount]);
+
+  // Evenly-spaced Y ticks across a padded [min, max] so the gridlines are uniform.
+  const yTicks = useMemo(() => {
+    if (!chartData.length) return undefined;
+    const vals = chartData.map((d) => d.total_value);
+    let lo = Math.min(...vals);
+    let hi = Math.max(...vals);
+    if (!Number.isFinite(lo) || !Number.isFinite(hi)) return undefined;
+    if (lo === hi) {
+      const pad = Math.abs(lo) * 0.05 || 1;
+      lo -= pad;
+      hi += pad;
+    } else {
+      const pad = (hi - lo) * 0.06;
+      lo -= pad;
+      hi += pad;
+    }
+    const steps = 4; // → 5 evenly-spaced ticks
+    return Array.from({ length: steps + 1 }, (_, i) => lo + ((hi - lo) * i) / steps);
+  }, [chartData]);
   const positiveGain = chartData.length
     ? chartData[chartData.length - 1].gain_percentage >= 0
     : true;
@@ -286,21 +320,32 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
                   <p className="text-[10px] text-muted-foreground">{job.message}</p>
                 )}
               </>
-            ) : (
+            ) : errored ? (
               <>
-                <p className="text-[11px] text-muted-foreground">
-                  {errored
-                    ? "Could not load chart."
-                    : "Build your real net-worth history from your statement."}
-                </p>
+                <p className="text-[11px] text-muted-foreground">Could not load chart.</p>
                 <button
                   type="button"
-                  onClick={startBuild}
-                  disabled={starting}
-                  className="rounded-full bg-accent/15 px-3 py-1.5 text-[11px] font-semibold text-accent transition-colors hover:bg-accent/25 disabled:opacity-50"
+                  onClick={() => setReloadKey((k) => k + 1)}
+                  className="rounded-full bg-accent/15 px-3 py-1.5 text-[11px] font-semibold text-accent transition-colors hover:bg-accent/25"
                 >
-                  {starting ? "Starting…" : "Fetch Net Worth History"}
+                  Try again
                 </button>
+              </>
+            ) : job?.has_history ? (
+              // History exists overall, but this horizon's window has no points
+              // (e.g. nothing recorded in the last 3 months). Show an explicit
+              // empty state rather than spinning on the build flow forever.
+              <p className="text-[11px] text-muted-foreground">
+                No data for this period yet.
+              </p>
+            ) : (
+              // No history yet and no job failed — the build auto-starts, so show
+              // a calculating state instead of a manual fetch button.
+              <>
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-muted border-t-foreground" />
+                <p className="text-[11px] text-muted-foreground">
+                  Preparing your net worth history…
+                </p>
               </>
             )}
           </div>
@@ -309,7 +354,7 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart
               data={chartData}
-              margin={{ top: 6, right: 6, left: 0, bottom: 0 }}
+              margin={{ top: 6, right: 24, left: 0, bottom: 0 }}
             >
               <defs>
                 <linearGradient id="navGrad" x1="0" y1="0" x2="0" y2="1">
@@ -317,27 +362,33 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
                   <stop offset="100%" stopColor={strokeColor} stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid
-                stroke="hsl(var(--border))"
-                strokeOpacity={0.35}
-                vertical={false}
-              />
               <XAxis
-                dataKey="x"
+                dataKey="idx"
+                type="number"
+                domain={[0, Math.max(0, chartData.length - 1)]}
+                ticks={xTicks}
+                interval={0}
+                tickFormatter={(i) => chartData[Number(i)]?.x ?? ""}
                 tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }}
                 axisLine={false}
                 tickLine={false}
-                interval="preserveStartEnd"
-                minTickGap={20}
-                tickCount={tickCount}
+                tickMargin={6}
               />
               <YAxis
-                domain={["dataMin", "dataMax"]}
+                domain={yTicks ? [yTicks[0], yTicks[yTicks.length - 1]] : ["dataMin", "dataMax"]}
+                ticks={yTicks}
+                interval={0}
                 tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }}
                 axisLine={false}
                 tickLine={false}
                 width={42}
-                tickFormatter={(v) => formatInrCompact(Number(v))}
+                tickFormatter={(v) => {
+                  const n = Number(v);
+                  if (n >= 10000000) return `₹${(n / 10000000).toFixed(1)}Cr`;
+                  if (n >= 100000) return `₹${(n / 100000).toFixed(1)}L`;
+                  if (n >= 1000) return `₹${(n / 1000).toFixed(1)}k`;
+                  return `₹${n.toFixed(1)}`;
+                }}
               />
               <Tooltip content={<ChartTooltip />} cursor={{ stroke: "hsl(var(--border))" }} />
               <Area

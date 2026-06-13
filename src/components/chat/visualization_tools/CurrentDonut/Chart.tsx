@@ -1,6 +1,6 @@
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import type { CurrentDonutPayload } from "./types";
-import { formatInrCompact } from "@/lib/utils";
+import { formatInrMillions } from "@/lib/utils";
 
 // Asset-class palette mirrors the spec: Equity = wealth-blue, Debt = wealth-navy,
 // Real Estate = wealth-green, Cash = wealth-amber. Falls back to a wealth-tinted
@@ -63,7 +63,7 @@ export function CurrentDonut({ payload }: { payload: CurrentDonutPayload }) {
               </Pie>
               <Tooltip
                 formatter={(value: number, _name, item) => [
-                  `${formatInrCompact(value)} (${item.payload.percentage.toFixed(1)}%)`,
+                  `${formatInrMillions(value)} (${item.payload.percentage.toFixed(1)}%)`,
                   item.payload.name,
                 ]}
                 contentStyle={{ fontSize: "11px", borderRadius: "6px" }}
@@ -75,7 +75,7 @@ export function CurrentDonut({ payload }: { payload: CurrentDonutPayload }) {
               Total
             </span>
             <span className="text-base font-bold text-foreground tabular-nums">
-              {formatInrCompact(payload.total_value)}
+              {formatInrMillions(payload.total_value)}
             </span>
           </div>
         </div>

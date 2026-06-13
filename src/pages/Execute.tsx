@@ -677,11 +677,43 @@ function portfolioToDonutData(p: PortfolioDetail): { label: string; value: numbe
   return raw.map((x) => ({ ...x, value: (x.value / sum) * 100 }));
 }
 
+// Target (ideal) asset-class split — read straight from the backend-computed
+// breakdown on the recommended plan. Canonical Equity / Debt / Others vocab,
+// same colours as the current-allocation donut. No client-side classification.
+function planAllocationToDonutData(
+  alloc: {
+    rows?: Array<{ asset_class: string; weight_pct: number }>;
+    equity_pct?: number;
+    debt_pct?: number;
+    others_pct?: number;
+  },
+): { label: string; value: number; color: string }[] | null {
+  const fromRows = (alloc.rows ?? [])
+    .filter((r) => (r.weight_pct ?? 0) > 0)
+    .map((r, i) => ({
+      label: r.asset_class,
+      value: r.weight_pct,
+      color: resolveAllocationColor(r.asset_class, i),
+    }));
+  if (fromRows.length) return fromRows;
+  // Fallback to the flat equity / debt / others percentages.
+  const flat = [
+    { label: "Equity", value: alloc.equity_pct ?? 0 },
+    { label: "Debt", value: alloc.debt_pct ?? 0 },
+    { label: "Others", value: alloc.others_pct ?? 0 },
+  ].filter((x) => x.value > 0);
+  if (!flat.length) return null;
+  return flat.map((x, i) => ({ ...x, color: resolveAllocationColor(x.label, i) }));
+}
+
 /* ── Page ── */
 const Execute = () => {
   const navigate = useNavigate();
   const [useAiPlan, setUseAiPlan] = useState(false);
   const [idealPlanOutput, setIdealPlanOutput] = useState<GoalAllocationOutput | null>(null);
+  const [aiTargetDonut, setAiTargetDonut] = useState<
+    { label: string; value: number; color: string }[] | null
+  >(null);
   const [aiHouseRec, setAiHouseRec] = useState<number[]>([]);
   const [recommendedPlanMeta, setRecommendedPlanMeta] = useState<{
     effectiveAt: string;
@@ -760,17 +792,29 @@ const Execute = () => {
       try {
         const rec = await getRecommendedPlan();
         if (cancelled) return;
-        const out = rec.snapshot?.allocation?.goal_allocation_output;
+        const alloc = rec.snapshot?.allocation;
+        const out = alloc?.goal_allocation_output;
         const built = out ? idealOutputToETFs(out) : null;
-        if (out && built?.houseRecs.length) {
-          setIdealPlanOutput(out);
+
+        // Target asset-class donut — straight from the backend-computed split
+        // (allocation.rows[]), independent of the fund-level idealOutputToETFs
+        // path. This is what keeps the current-vs-target asset-class split
+        // correct even when per-fund mappings aren't present.
+        const targetDonut = alloc ? planAllocationToDonutData(alloc) : null;
+        if (targetDonut?.length) {
+          setAiTargetDonut(targetDonut);
           setUseAiPlan(true);
-          setAiHouseRec(built.houseRecs);
-          setAllocations([...built.houseRecs]);
           setRecommendedPlanMeta({
             effectiveAt: rec.snapshot!.effective_at,
             rebalancingId: rec.latest_rebalancing_id,
           });
+        }
+
+        // Fund-level slider list — only when the backend supplied fund mappings.
+        if (out && built?.houseRecs.length) {
+          setIdealPlanOutput(out);
+          setAiHouseRec(built.houseRecs);
+          setAllocations([...built.houseRecs]);
           if (typeof out.grand_total === "number" && out.grand_total > 0) {
             const recAmt = Math.round(out.grand_total);
             setRecommendedTotal(recAmt);
@@ -984,8 +1028,12 @@ const Execute = () => {
     if (portfolioDb && portfolioDb.allocations.length > 0 && !useAiPlan) {
       return portfolioToDonutData(portfolioDb);
     }
+    // Target side: the backend-computed asset-class split, not the fund sliders.
+    if (useAiPlan && aiTargetDonut) {
+      return aiTargetDonut;
+    }
     return donutFromSliders;
-  }, [useAiPlan, portfolioDb, donutFromSliders]);
+  }, [useAiPlan, portfolioDb, donutFromSliders, aiTargetDonut]);
 
   const donutCenterLabel =
     portfolioDb && portfolioDb.total_value > 0
