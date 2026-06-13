@@ -8,7 +8,7 @@ import {
   Cell,
 } from "recharts";
 import type { ConcentrationRiskPayload } from "./types";
-import { formatInrCompact } from "@/lib/utils";
+import { formatInrMillions } from "@/lib/utils";
 
 const SEVERITY_PILL: Record<
   "ok" | "watch" | "act",
@@ -112,7 +112,7 @@ export function ConcentrationRisk({ payload }: { payload: ConcentrationRiskPaylo
 
       {payload.rest_count > 0 ? (
         <p className="text-[11px] text-muted-foreground mt-2 tabular-nums">
-          {`Top ${payload.top_n} = ${(100 - payload.rest_percentage).toFixed(0)}% · ${formatInrCompact(
+          {`Top ${payload.top_n} = ${(100 - payload.rest_percentage).toFixed(0)}% · ${formatInrMillions(
             payload.top_holdings.reduce((sum, h) => sum + h.value, 0)
           )}`}
         </p>

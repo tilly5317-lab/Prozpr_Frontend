@@ -117,8 +117,20 @@ export function formatPct(n: number | null): string {
   return `${sign}${n.toFixed(2)}%`;
 }
 
+/** Percentage with a single decimal, e.g. +12.3% / −4.5%. */
+export function formatPct1(n: number | null): string {
+  if (n == null) return "—";
+  const sign = n >= 0 ? "+" : "";
+  return `${sign}${n.toFixed(1)}%`;
+}
+
 export function formatNav(n: number): string {
   return n.toFixed(4);
+}
+
+/** NAV / per-unit value with a single decimal, e.g. 123.1. */
+export function formatNav1(n: number): string {
+  return n.toFixed(1);
 }
 
 export function pctReturnForRange(

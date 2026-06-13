@@ -34,6 +34,10 @@ const CARD = "bg-card rounded-[14px] p-[14px]" as const;
 const CARD_BORDER = { border: "1px solid hsl(var(--border))" } as const;
 const SECTION_LABEL = { fontSize: 10, fontWeight: 500, textTransform: "uppercase" as const, letterSpacing: "1.5px", color: "hsl(var(--muted-foreground))" };
 
+/** ₹ with Indian grouping, no decimals — used by the Total Portfolio headline. */
+const fmtInr0 = (n: number) =>
+  `₹${Math.round(n).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+
 function cumulativeToPortfolioDetail(c: CumulativePortfolioResponse): PortfolioDetail {
   return {
     id: "cumulative-family",
@@ -77,7 +81,7 @@ function PortfolioMainPanel({
 }) {
   const [analysisOpen, setAnalysisOpen] = useState(false);
 
-  // Headline pill shows the simple total return; MWR breakdown lives in the Portfolio Analysis modal.
+  // Headline pill shows the simple total return; TWR breakdown lives in the Portfolio Analysis modal.
   const activeGain = portfolio.total_gain_percentage;
   const stop = (e: React.MouseEvent) => e.stopPropagation();
 
@@ -88,7 +92,7 @@ function PortfolioMainPanel({
         <p className="mb-3" style={SECTION_LABEL}>Total Portfolio</p>
 
         <div className="flex items-center gap-2.5">
-          <p className="text-2xl font-bold text-foreground tracking-tight">{formatInrPaisa(portfolio.total_value)}</p>
+          <p className="text-2xl font-bold text-foreground tracking-tight">{fmtInr0(portfolio.total_value)}</p>
           {activeGain != null && (
             <span
               className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
@@ -103,12 +107,12 @@ function PortfolioMainPanel({
                 <TrendingDown className="h-2.5 w-2.5" />
               )}
               {activeGain >= 0 ? "+" : ""}
-              {activeGain}%
+              {activeGain.toFixed(2)}%
             </span>
           )}
         </div>
 
-        <p className="text-[10px] text-muted-foreground/80 mt-1 mb-3">Invested {formatInrPaisa(portfolio.total_invested)}</p>
+        <p className="text-[10px] text-muted-foreground/80 mt-1 mb-3">Invested {fmtInr0(portfolio.total_invested)}</p>
 
         {useNavChart ? (
           <PortfolioNavChart fallbackValues={sparkline} />

@@ -4,7 +4,6 @@ import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { PortfolioDetail } from "@/lib/api";
-import { formatInrCompact } from "@/lib/utils";
 
 // Holdings group by the backend's asset_class (Equity / Debt / Others) — produced by
 // scheme_classification.py and returned per holding by GET /portfolio/. The frontend
@@ -68,6 +67,14 @@ function formatPct(n: number | null): string {
   return `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
 }
 
+/** Compact INR with a single decimal place (e.g. ₹4.8L, ₹1.2Cr). */
+function formatInr1(n: number): string {
+  if (n >= 10000000) return `₹${(n / 10000000).toFixed(1)}Cr`;
+  if (n >= 100000) return `₹${(n / 100000).toFixed(1)}L`;
+  if (n >= 1000) return `₹${(n / 1000).toFixed(1)}k`;
+  return `₹${n.toFixed(1)}`;
+}
+
 function pctColor(n: number | null): string {
   if (n === null) return "#1a1a1a";
   return n >= 0 ? POSITIVE : NEGATIVE;
@@ -98,6 +105,14 @@ function getColor(name: string, i: number) {
   if (normalized.includes("gold") || normalized.includes("inflation")) return GOLD_COLOR;
   if (normalized.includes("cash") || normalized.includes("other") || normalized.includes("hybrid")) return CASH_COLOR;
   return FALLBACK_PALETTE[i % FALLBACK_PALETTE.length];
+}
+
+/** Map a donut slice's asset-class name to one of the three holding buckets. */
+function normalizeBucket(name: string): HoldingBucket {
+  const n = name.trim().toLowerCase();
+  if (n.includes("equity")) return "Equity";
+  if (n.includes("debt") || n.includes("fixed income")) return "Debt";
+  return "Others";
 }
 
 const HOLDINGS_BAR_BY_BUCKET: Record<HoldingBucket, { bg: string; border?: string }> = {
@@ -149,6 +164,8 @@ function allocationBucketToClassifiedRow(a: PortfolioDetail["allocations"][numbe
   bucket: HoldingBucket;
   /** AMFI scheme code or ISIN — opens fund detail when set. */
   schemeCode: string | null;
+  /** Fund sub-category (e.g. "Large Cap", "Corporate Bond"); aggregated rows have none. */
+  subCategory: string | null;
 } {
   const id = `alloc-${a.id}`;
   const bucket = (a.asset_class ?? "Others") as HoldingBucket;
@@ -158,7 +175,7 @@ function allocationBucketToClassifiedRow(a: PortfolioDetail["allocations"][numbe
   return {
     id,
     name: `${a.asset_class} (aggregated)`,
-    value: formatInrCompact(a.amount),
+    value: formatInr1(a.amount),
     pct: `${Math.round(a.allocation_percentage * 10) / 10}%`,
     allocationPct: a.allocation_percentage,
     returnPct,
@@ -169,6 +186,7 @@ function allocationBucketToClassifiedRow(a: PortfolioDetail["allocations"][numbe
     barBorder: colors.border,
     bucket,
     schemeCode: null,
+    subCategory: null,
   };
 }
 
@@ -181,6 +199,9 @@ interface CurrentAllocationCardProps {
 const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: CurrentAllocationCardProps) => {
   const [holdingsOpen, setHoldingsOpen] = useState(false);
   const [expandedHolding, setExpandedHolding] = useState<string | null>(null);
+  // Donut slice the user tapped — swaps the right-hand legend for that bucket's
+  // detail. Cleared (back to the legend) on any click outside the donut.
+  const [selectedSlice, setSelectedSlice] = useState<string | null>(null);
   const [collapsedBuckets, setCollapsedBuckets] = useState<Record<HoldingBucket, boolean>>({
     Equity: false,
     Debt: false,
@@ -194,21 +215,29 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
     portfolio.allocations.length === 0 &&
     portfolio.total_value <= 0;
 
-  const allocations = hasAllocations
+  const allocations: {
+    name: string;
+    value: number;
+    color: string;
+    amount?: number;
+    bucket: HoldingBucket;
+  }[] = hasAllocations
     ? portfolio!.allocations.map((a, i) => ({
         name: a.asset_class,
         value: Math.round(a.allocation_percentage * 10) / 10,
         color: getColor(a.asset_class, i),
+        amount: a.amount,
+        bucket: normalizeBucket(a.asset_class),
       }))
     : [
-        { name: "Equity", value: 48, color: EQUITY_COLOR },
-        { name: "Debt", value: 28, color: DEBT_COLOR },
-        { name: "Gold", value: 16, color: GOLD_COLOR },
-        { name: "Cash/Other", value: 8, color: CASH_COLOR },
+        { name: "Equity", value: 48, color: EQUITY_COLOR, bucket: "Equity" },
+        { name: "Debt", value: 28, color: DEBT_COLOR, bucket: "Debt" },
+        { name: "Gold", value: 16, color: GOLD_COLOR, bucket: "Others" },
+        { name: "Cash/Other", value: 8, color: CASH_COLOR, bucket: "Others" },
       ];
 
   const centerLabel =
-    portfolio && portfolio.total_value > 0 ? formatInrCompact(portfolio.total_value) : "₹—";
+    portfolio && portfolio.total_value > 0 ? formatInr1(portfolio.total_value) : "₹—";
 
   const holdingsRows = !portfolio
     ? []
@@ -221,7 +250,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
           return {
             id: h.id,
             name: h.instrument_name,
-            value: formatInrCompact(h.current_value),
+            value: formatInr1(h.current_value),
             pct: h.allocation_percentage != null ? `${h.allocation_percentage}%` : (null as string | null),
             allocationPct: h.allocation_percentage ?? 0,
             returnPct,
@@ -232,6 +261,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
             barBorder: colors.border,
             bucket,
             schemeCode: h.ticker_symbol ?? null,
+            subCategory: h.sub_category ?? null,
           };
         })
       : portfolio.allocations.length > 0
@@ -252,6 +282,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                 barBorder: HOLDINGS_BAR_BY_BUCKET.Equity.border,
                 bucket: "Equity" as HoldingBucket,
                 schemeCode: null,
+                subCategory: "Large Cap",
               },
               {
                 id: "d2",
@@ -267,6 +298,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                 barBorder: HOLDINGS_BAR_BY_BUCKET.Debt.border,
                 bucket: "Debt" as HoldingBucket,
                 schemeCode: null,
+                subCategory: "Corporate Bond",
               },
               {
                 id: "d3",
@@ -282,6 +314,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                 barBorder: HOLDINGS_BAR_BY_BUCKET.Others.border,
                 bucket: "Others" as HoldingBucket,
                 schemeCode: null,
+                subCategory: "Gold",
               },
             ]
           : [];
@@ -308,8 +341,25 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
     return { bucket, items, totalValue, totalPct };
   }).filter((g) => g.items.length > 0);
 
+  // Detail shown on the right when a donut slice is selected.
+  const selected = selectedSlice ? allocations.find((a) => a.name === selectedSlice) ?? null : null;
+  const selectedGroup = selected ? groupedHoldings.find((g) => g.bucket === selected.bucket) : undefined;
+  const selectedAmount = selected ? selected.amount ?? selectedGroup?.totalValue : undefined;
+
+  // Roll the tapped bucket's holdings up to fund sub-categories (e.g. "Large Cap",
+  // "Corporate Bond") so the slice detail shows categories, not individual funds.
+  const selectedSubGroups = selectedGroup
+    ? Object.values(
+        selectedGroup.items.reduce<Record<string, { name: string; value: number }>>((acc, row) => {
+          const key = row.subCategory?.trim() || "Other";
+          (acc[key] ??= { name: key, value: 0 }).value += row.currentValue;
+          return acc;
+        }, {}),
+      ).sort((a, b) => b.value - a.value)
+    : [];
+
   return (
-    <div>
+    <div onClick={() => setSelectedSlice(null)}>
       <p
         className="text-[10px] uppercase tracking-[1.5px] mb-3 text-muted-foreground"
         style={{ fontWeight: 500 }}
@@ -322,8 +372,12 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
         )}
       </p>
 
-      <div className="flex items-center gap-4">
-        <div className="relative h-28 w-28 shrink-0">
+      <div className="flex items-start gap-4">
+        <div
+          className="relative h-28 w-28 shrink-0"
+          style={{ cursor: "pointer" }}
+          onClick={(e) => e.stopPropagation()}
+        >
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
@@ -335,34 +389,99 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                 paddingAngle={3}
                 dataKey="value"
                 strokeWidth={0}
+                onClick={(_, index) => {
+                  const name = allocations[index]?.name;
+                  if (name) setSelectedSlice((cur) => (cur === name ? null : name));
+                }}
               >
                 {allocations.map((entry) => (
-                  <Cell key={entry.name} fill={entry.color} />
+                  <Cell
+                    key={entry.name}
+                    fill={entry.color}
+                    fillOpacity={selectedSlice && entry.name !== selectedSlice ? 0.3 : 1}
+                  />
                 ))}
               </Pie>
             </PieChart>
           </ResponsiveContainer>
-          <div className="absolute inset-0 flex items-center justify-center">
+          {/* Center hole hit-area — tapping the middle clears the selected slice
+              and returns to the full legend (same as clicking outside the donut). */}
+          <button
+            type="button"
+            aria-label="Show all allocations"
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedSlice(null);
+            }}
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full"
+            style={{ width: 64, height: 64 }}
+          />
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <span className="text-sm font-bold text-foreground">{centerLabel}</span>
           </div>
         </div>
 
-        <div className="flex flex-col gap-2 flex-1">
-          {allocations.map((item) => (
-            <div key={item.name} className="flex items-center justify-between">
+        <div className="flex flex-col gap-2 flex-1 min-w-0">
+          {selected ? (
+            // Detail for the tapped slice — replaces the legend until you click away.
+            <div className="min-w-0">
               <div className="flex items-center gap-1.5">
                 <span
                   className="h-2.5 w-2.5 rounded-full shrink-0"
                   style={{
-                    backgroundColor: item.color,
-                    border: item.color === CASH_COLOR ? "1px solid #DCCB96" : undefined,
+                    backgroundColor: selected.color,
+                    border: selected.color === CASH_COLOR ? "1px solid #DCCB96" : undefined,
                   }}
                 />
-                <span className="text-[10px] text-muted-foreground leading-tight">{item.name}</span>
+                <span className="text-[11px] font-semibold text-foreground leading-tight truncate">
+                  {selected.name}
+                </span>
+                <span className="ml-auto text-[11px] font-semibold text-foreground shrink-0">
+                  {selected.value}%
+                </span>
               </div>
-              <span className="text-xs font-semibold text-foreground">{item.value}%</span>
+              <p
+                className="mt-1 text-lg font-bold text-foreground leading-tight"
+                style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
+              >
+                {selectedAmount != null ? formatInr1(selectedAmount) : "—"}
+              </p>
+              {selectedSubGroups.length > 0 ? (
+                <div className="mt-1.5 space-y-1">
+                  {selectedSubGroups.map((sg) => (
+                    <div key={sg.name} className="flex items-start justify-between gap-2">
+                      <span className="flex-1 min-w-0 text-[10px] text-muted-foreground leading-tight break-words">
+                        {sg.name}
+                      </span>
+                      <span className="text-[10px] font-medium text-foreground shrink-0">
+                        {formatInr1(sg.value)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-1.5 text-[10px] text-muted-foreground leading-snug">
+                  No sub-categories recorded in this bucket.
+                </p>
+              )}
             </div>
-          ))}
+          ) : (
+            allocations.map((item) => (
+              <div key={item.name} className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className="h-2.5 w-2.5 rounded-full shrink-0"
+                    style={{
+                      backgroundColor: item.color,
+                      border: item.color === CASH_COLOR ? "1px solid #DCCB96" : undefined,
+                    }}
+                  />
+                  <span className="text-[10px] text-muted-foreground leading-tight">{item.name}</span>
+                </div>
+                <span className="text-xs font-semibold text-foreground">{item.value}%</span>
+              </div>
+            ))
+          )}
         </div>
       </div>
 
@@ -438,7 +557,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                             className="text-xs font-semibold text-foreground"
                             style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
                           >
-                            {formatInrCompact(group.totalValue)}
+                            {formatInr1(group.totalValue)}
                           </p>
                           <p className="text-[10px] font-medium text-muted-foreground">
                             {group.totalPct.toFixed(0)}%
@@ -485,7 +604,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                   : gainAmount >= 0 ? POSITIVE : NEGATIVE;
                 const gainText = gainAmount === null
                   ? "—"
-                  : `${gainAmount >= 0 ? "+" : "-"}${formatInrCompact(Math.abs(gainAmount))}`;
+                  : `${gainAmount >= 0 ? "+" : "-"}${formatInr1(Math.abs(gainAmount))}`;
 
                 return (
                   <div key={row.id}>
@@ -590,13 +709,13 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                                 <p className={LABEL_CLASS}>Invested</p>
                                 <p className={VALUE_CLASS}>
                                   {row.investedTotal != null && row.investedTotal > 0
-                                    ? formatInrCompact(row.investedTotal)
+                                    ? formatInr1(row.investedTotal)
                                     : "—"}
                                 </p>
                               </div>
                               <div>
                                 <p className={LABEL_CLASS}>Current value</p>
-                                <p className={VALUE_CLASS}>{formatInrCompact(row.currentValue)}</p>
+                                <p className={VALUE_CLASS}>{formatInr1(row.currentValue)}</p>
                               </div>
                               <div>
                                 <p className={LABEL_CLASS}>Gain / Loss</p>

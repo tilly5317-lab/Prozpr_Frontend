@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Target, Loader2, MessageCircle, Sparkles, Home, GraduationCap, Plane, BriefcaseBusiness, Heart, Car, Landmark, Trophy, Info, ChevronDown, CalendarClock, RotateCcw } from "lucide-react";
+import { Plus, Target, Loader2, MessageCircle, Sparkles, Home, GraduationCap, Plane, BriefcaseBusiness, Heart, Car, Landmark, Trophy, Info, CalendarClock, RotateCcw, Pencil } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import confetti from "canvas-confetti";
 import { useNavigate } from "react-router-dom";
@@ -13,6 +13,9 @@ import {
   updateGoal,
   removeGoal,
   getCashflowLatest,
+  updatePersonalFinance,
+  getPersonalFinance,
+  computeCashflow,
   type GoalResponse,
   type CashflowPlanRunDetail,
   type AnnualCashflowRow,
@@ -66,6 +69,14 @@ const formatCompact = (v: number): string => {
   if (v >= 10000000) return `₹${(v / 10000000).toFixed(1)}Cr`;
   if (v >= 100000) return `₹${(v / 100000).toFixed(0)}L`;
   return `₹${v.toLocaleString("en-IN")}`;
+};
+
+/** ISO date (yyyy-mm-dd) → "Mon YYYY" for projection horizon labels. */
+const fmtFyDate = (iso: string | null | undefined): string => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${months[d.getMonth()]} ${d.getFullYear()}`;
 };
 
 const formatMonthOffset = (months: number): string => {
@@ -187,40 +198,6 @@ function buildLocalGoal(input: {
   };
 }
 
-const DEMO_GOALS: Goal[] = [
-  buildLocalGoal({
-    id: "demo-home",
-    name: "Home down payment",
-    targetAmount: 1_50_00_000,
-    targetDate: "Dec 2030",
-    priority: "High",
-    currentValue: 42_00_000,
-    investedAmount: 38_50_000,
-    monthlyContribution: 75_000,
-  }),
-  buildLocalGoal({
-    id: "demo-education",
-    name: "Aarav's education fund",
-    targetAmount: 90_00_000,
-    targetDate: "Jun 2034",
-    priority: "Medium",
-    currentValue: 12_00_000,
-    investedAmount: 11_50_000,
-    monthlyContribution: 35_000,
-  }),
-  buildLocalGoal({
-    id: "demo-retirement",
-    name: "Early retirement",
-    targetAmount: 8_00_00_000,
-    targetDate: "Mar 2045",
-    priority: "Medium",
-    currentValue: 1_20_00_000,
-    investedAmount: 1_05_00_000,
-    monthlyContribution: 1_25_000,
-  }),
-];
-
-const DEMO_PORTFOLIO_TOTAL = 2_85_50_000;
 
 export interface GoalGamificationMetrics {
   displayCurrent: number;
@@ -717,6 +694,90 @@ const GoalCard = ({ goal, onAchieve, achieved, showAchieve }: GoalCardProps) => 
   );
 };
 
+/**
+ * Inline editor for the monthly SIP shown on the projection. Writes to the single
+ * canonical cashflow input (`starting_monthly_investment`) and recomputes the
+ * projection, so editing it here is reflected everywhere (single source of truth).
+ */
+function SipEditor({ currentMonthly, onSaved }: { currentMonthly: number; onSaved: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const begin = () => {
+    setDraft(currentMonthly > 0 ? String(Math.round(currentMonthly)) : "");
+    setOpen(true);
+  };
+
+  const save = async () => {
+    const parsed = parseMoneyInput(draft.trim() === "" ? "0" : draft);
+    if (parsed.ok === false) {
+      toast({ title: "Monthly SIP", description: parsed.message, variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    try {
+      await updatePersonalFinance({ starting_monthly_investment: parsed.value });
+      await computeCashflow();
+      toast({ title: "SIP updated", description: `Monthly investment set to ${formatINR(parsed.value)}.` });
+      setOpen(false);
+      onSaved();
+    } catch {
+      toast({ title: "Couldn't update SIP", description: "Please try again.", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={begin}
+        className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-card px-2.5 py-1 text-[11px] font-semibold text-foreground shadow-sm transition-colors hover:bg-muted/60"
+        aria-label="Edit monthly SIP"
+      >
+        <span className="tabular-nums">{currentMonthly > 0 ? `SIP ${formatINR(currentMonthly)}/mo` : "Set SIP"}</span>
+        <Pencil className="h-3 w-3 text-muted-foreground" />
+      </button>
+    );
+  }
+  return (
+    <div className="inline-flex shrink-0 items-center gap-1.5">
+      <span className="text-[11px] text-muted-foreground">₹</span>
+      <input
+        autoFocus
+        type="number"
+        inputMode="decimal"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") void save();
+          if (e.key === "Escape") setOpen(false);
+        }}
+        placeholder="0"
+        className="w-24 rounded-lg border border-input bg-background px-2 py-1 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      />
+      <button
+        type="button"
+        disabled={saving}
+        onClick={() => void save()}
+        className="inline-flex items-center rounded-lg bg-primary px-2 py-1 text-[11px] font-semibold text-primary-foreground disabled:opacity-60"
+      >
+        {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save"}
+      </button>
+      <button
+        type="button"
+        disabled={saving}
+        onClick={() => setOpen(false)}
+        className="text-[11px] text-muted-foreground hover:text-foreground"
+      >
+        Cancel
+      </button>
+    </div>
+  );
+}
+
 /* ── Main ── */
 function mapGoalResponse(g: GoalResponse): Goal {
   const targetDate = g.target_date
@@ -736,25 +797,23 @@ function mapGoalResponse(g: GoalResponse): Goal {
 
 const GoalPlanner = () => {
   const navigate = useNavigate();
-  const [goals, setGoals] = useState<Goal[]>(DEMO_GOALS);
+  const [goals, setGoals] = useState<Goal[]>([]);
   const [goalsLoading, setGoalsLoading] = useState(true);
   const [addGoalSaving, setAddGoalSaving] = useState(false);
   const [fundFlowInfoOpen, setFundFlowInfoOpen] = useState(false);
-  const [investmentsExpanded, setInvestmentsExpanded] = useState(false);
-  const [investMultiplier, setInvestMultiplier] = useState(1.0); // 0.5x – 2.0x
-  const userPortfolioTotal = DEMO_PORTFOLIO_TOTAL;
 
   const [cashflowData, setCashflowData] = useState<CashflowPlanRunDetail | null>(null);
   const [cashflowLoading, setCashflowLoading] = useState(false);
+  // The single canonical monthly SIP (`starting_monthly_investment`) — the SAME
+  // value the cashflow inputs form edits, so the goal-page SIP stays in sync.
+  const [sipMonthly, setSipMonthly] = useState<number | null>(null);
 
   const fetchGoals = useCallback(async () => {
     try {
       const res = await listGoals();
-      if (res.length > 0) {
-        setGoals(res.map(mapGoalResponse));
-      }
+      setGoals(res.map(mapGoalResponse));
     } catch {
-      // Fall back to demo goals on failure
+      // Leave the list empty on failure — never show fabricated demo goals.
     } finally {
       setGoalsLoading(false);
     }
@@ -772,10 +831,20 @@ const GoalPlanner = () => {
     }
   }, []);
 
+  const fetchSip = useCallback(async () => {
+    try {
+      const pf = await getPersonalFinance();
+      setSipMonthly(pf.starting_monthly_investment ?? null);
+    } catch {
+      // SIP not set yet — the editor shows "Set SIP".
+    }
+  }, []);
+
   useEffect(() => {
     fetchGoals();
     fetchCashflow();
-  }, [fetchGoals, fetchCashflow]);
+    fetchSip();
+  }, [fetchGoals, fetchCashflow, fetchSip]);
   const [holdingsGoal, setHoldingsGoal] = useState<Goal | null>(null);
 
   const [addGoalOpen, setAddGoalOpen] = useState(false);
@@ -814,6 +883,9 @@ const GoalPlanner = () => {
     [goals],
   );
 
+  // Current progress is measured against the engine's real net financial assets
+  // (corpus_today from the fund-flow summary), not a hardcoded portfolio total.
+  const userPortfolioTotal = cashflowData?.fund_flow_summary?.corpus_today ?? 0;
   const gamification = useMemo(
     () => computeGoalGamification(goals, userPortfolioTotal),
     [goals, userPortfolioTotal],
@@ -945,6 +1017,7 @@ const GoalPlanner = () => {
       target_amount: Math.round(finalTarget),
       target_date: targetDateStr,
       priority: editPriority.toUpperCase(),
+      monthly_contribution: monthlyParsed.value,
     }).then(() => fetchCashflow()).catch(() => {});
   }, [editGoal, editName, editTarget, editMonth, editYear, editSavings, editCurrent, editMonthly, editPriority, editAmountKind, editInflation, editIsMortgageGoal, editDownPaymentPct, fetchCashflow]);
 
@@ -1029,6 +1102,7 @@ const GoalPlanner = () => {
         target_amount: Math.round(finalTarget),
         target_date: targetDateStr,
         priority: addPriority.toUpperCase(),
+        monthly_contribution: monthlyParsed.value,
       });
       setGoals((prev) => [...prev, mapGoalResponse(res)]);
       resetAddGoalForm();
@@ -1145,77 +1219,94 @@ const GoalPlanner = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.32, delay: 0.08, ease: "easeOut" }}
         >
-          <div className="border-b border-border px-4 py-3">
-            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-              Goals projection
-            </p>
-            <p className="mt-0.5 text-[11px] text-muted-foreground">
-              Through Mar 2051 · {formatINR(2_27_500)}/mo · 9% post-tax assumption
-            </p>
-          </div>
-
           {(() => {
-            const BEGIN = 1_50_00_000;
-            const BASE_INVESTMENTS = 10_74_74_878;
-            const BASE_ROI = 24_44_98_818;
-            const ONE_OFF_IN = 1_20_00_000;
-            const ONE_OFF_OUT = -1_00_00_000;
-            const GOALS_OUT = -57_78_00_000;
-            const projInvestments = Math.round(BASE_INVESTMENTS * investMultiplier);
-            const projROI = Math.round(BASE_ROI * investMultiplier);
-            const projClosing = BEGIN + projInvestments + projROI + ONE_OFF_IN + ONE_OFF_OUT + GOALS_OUT;
-            const investmentsBoosted = investMultiplier !== 1.0;
+            const ff = cashflowData?.fund_flow_summary ?? null;
+            const h = cashflowData?.headline ?? null;
+            // Until the engine has produced a real projection, show a placeholder
+            // instead of fabricated numbers. (Page is gated until inputs exist.)
+            if (!ff) {
+              return (
+                <div className="px-4 py-3">
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                    Goals projection
+                  </p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    {cashflowLoading
+                      ? "Loading your projection…"
+                      : "Complete your cashflow inputs to see your projection."}
+                  </p>
+                </div>
+              );
+            }
+            const horizonBits = [
+              h?.last_fy_end_date ? `Through ${fmtFyDate(h.last_fy_end_date)}` : null,
+              h?.years_to_last_goal ? `${h.years_to_last_goal} yrs` : null,
+            ].filter(Boolean);
             const rows = [
-              { label: "Beginning financial assets", value: BEGIN, kind: "neutral" as const, oneOff: false, expandable: false },
-              { label: "+ Investments", value: projInvestments, kind: "positive" as const, oneOff: false, expandable: true },
-              { label: "+ Return on investments", value: projROI, kind: "positive" as const, oneOff: false, expandable: false },
-              { label: "+ One-off income", value: ONE_OFF_IN, kind: "positive" as const, oneOff: true, expandable: false },
-              { label: "− One-off expense", value: ONE_OFF_OUT, kind: "negative" as const, oneOff: true, expandable: false },
-              { label: "− Goals", value: GOALS_OUT, kind: "negative" as const, oneOff: false, expandable: false },
+              { label: "Beginning financial assets", value: ff.corpus_opening, kind: "neutral" as const, oneOff: false },
+              { label: "+ Investments", value: ff.total_investments, kind: "positive" as const, oneOff: false },
+              { label: "+ Return on investments", value: ff.total_roi, kind: "positive" as const, oneOff: false },
+              ...(ff.total_one_off_in
+                ? [{ label: "+ One-off income", value: ff.total_one_off_in, kind: "positive" as const, oneOff: true }]
+                : []),
+              ...(ff.total_one_off_out
+                ? [{ label: "− One-off expense", value: -Math.abs(ff.total_one_off_out), kind: "negative" as const, oneOff: true }]
+                : []),
+              { label: "− Goals", value: -Math.abs(ff.total_goals_paid), kind: "negative" as const, oneOff: false },
             ];
+            const closing = ff.corpus_closing;
             return (
-              <ul className="divide-y divide-border/60">
-                {rows.map((row, idx, arr) => {
-                  const nextIsOneOff = arr[idx + 1]?.oneOff === true;
-                  return (
-                    <Fragment key={row.label}>
-                      <li
-                        className={`flex items-center justify-between px-4 py-2 ${
-                          row.expandable ? "cursor-pointer hover:bg-muted/30 transition-colors" : ""
-                        }`}
-                        onClick={row.expandable ? () => setInvestmentsExpanded((o) => !o) : undefined}
-                      >
-                        <span className="inline-flex items-center gap-1 text-xs text-foreground/85">
-                          {row.label}
-                          {row.oneOff && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setFundFlowInfoOpen((o) => !o);
-                              }}
-                              aria-label="About one-off income and expense"
-                              className="text-muted-foreground hover:text-foreground"
-                            >
-                              <Info className="h-3 w-3" />
-                            </button>
-                          )}
-                          {row.expandable && (
-                            <motion.span
-                              animate={{ rotate: investmentsExpanded ? 180 : 0 }}
-                              transition={{ duration: 0.2, ease: "easeOut" }}
-                              className="inline-flex text-muted-foreground"
-                            >
-                              <ChevronDown className="h-3 w-3" />
-                            </motion.span>
-                          )}
-                        </span>
-                        <span className="inline-flex items-center gap-1.5">
-                          {row.expandable && investmentsBoosted && (
-                            <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">
-                              Sim
-                            </span>
-                          )}
+              <>
+                <div className="border-b border-border px-4 py-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                      Goals projection
+                    </p>
+                    <SipEditor
+                      currentMonthly={sipMonthly ?? 0}
+                      onSaved={() => {
+                        fetchCashflow();
+                        fetchSip();
+                      }}
+                    />
+                  </div>
+                  {horizonBits.length > 0 && (
+                    <p className="mt-1 text-[11px] text-muted-foreground">{horizonBits.join(" · ")}</p>
+                  )}
+                  {h && (
+                    <p
+                      className={`mt-1 text-[11px] font-semibold ${
+                        (h.total_shortfall_fv ?? 0) > 0
+                          ? "text-destructive"
+                          : "text-emerald-700 dark:text-emerald-400"
+                      }`}
+                    >
+                      {(h.total_shortfall_fv ?? 0) > 0
+                        ? `Shortfall of ${formatINR(h.total_shortfall_fv)} across your goals`
+                        : "On track — your plan funds every goal"}
+                    </p>
+                  )}
+                </div>
+
+                <ul className="divide-y divide-border/60">
+                  {rows.map((row, idx, arr) => {
+                    const nextIsOneOff = arr[idx + 1]?.oneOff === true;
+                    return (
+                      <Fragment key={row.label}>
+                        <li className="flex items-center justify-between px-4 py-2">
+                          <span className="inline-flex items-center gap-1 text-xs text-foreground/85">
+                            {row.label}
+                            {row.oneOff && (
+                              <button
+                                type="button"
+                                onClick={() => setFundFlowInfoOpen((o) => !o)}
+                                aria-label="About one-off income and expense"
+                                className="text-muted-foreground hover:text-foreground"
+                              >
+                                <Info className="h-3 w-3" />
+                              </button>
+                            )}
+                          </span>
                           <span
                             className={`text-xs font-semibold tabular-nums ${
                               row.kind === "positive"
@@ -1228,108 +1319,83 @@ const GoalPlanner = () => {
                             {row.value < 0 ? "−" : ""}
                             {formatINR(Math.abs(row.value))}
                           </span>
-                        </span>
-                      </li>
-                      {/* Investments slider panel — soft amber to signal sandbox/simulation */}
-                      {row.expandable && investmentsExpanded && (
-                        <li
-                          className="space-y-3 px-4 py-3"
-                          style={{
-                            backgroundColor: "rgba(212,168,104,0.10)",
-                            borderTop: "1px solid rgba(212,168,104,0.25)",
-                            borderBottom: "1px solid rgba(212,168,104,0.25)",
-                          }}
-                        >
-                          <p className="flex items-center gap-1.5 text-[9.5px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300">
-                            <Sparkles className="h-3 w-3" style={{ color: "#D4A868" }} />
-                            Sandbox · adjust to simulate
-                          </p>
-                          <div>
-                            <div className="mb-1.5 flex items-center justify-between">
-                              <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                                Investment level
-                              </span>
-                              <span className="text-[11px] font-semibold tabular-nums text-foreground">
-                                {investMultiplier.toFixed(1)}x
-                              </span>
-                            </div>
-                            <Slider
-                              value={[investMultiplier]}
-                              onValueChange={(v) => setInvestMultiplier(v[0])}
-                              min={0.5}
-                              max={2}
-                              step={0.1}
-                            />
-                          </div>
-                          {investmentsBoosted && (
-                            <button
-                              type="button"
-                              onClick={() => setInvestMultiplier(1.0)}
-                              className="text-[11px] font-medium text-amber-700 hover:text-amber-800 dark:text-amber-300 dark:hover:text-amber-200"
-                            >
-                              Reset to baseline
-                            </button>
-                          )}
                         </li>
-                      )}
-                      {/* One-off definition */}
-                      {row.oneOff && !nextIsOneOff && fundFlowInfoOpen && (
-                        <li className="bg-muted/40 px-4 py-2.5">
-                          <p className="text-[11px] leading-relaxed text-foreground">
-                            <strong>One-off income</strong> and <strong>one-off expense</strong> are amounts
-                            expected within the next year — bonuses, inheritance, a major purchase or trip —
-                            not part of your regular monthly cash flow.
-                          </p>
-                        </li>
-                      )}
-                    </Fragment>
-                  );
-                })}
-                <li
-                  className="flex items-center justify-between px-4 py-2.5"
-                  style={{
-                    backgroundColor: investmentsBoosted
-                      ? "hsl(var(--muted) / 0.4)"
-                      : "hsl(var(--muted) / 0.4)",
-                  }}
-                >
-                  <span className="text-xs font-semibold text-foreground">Closing financial assets · Mar 2051</span>
-                  <span
-                    className={`text-sm font-bold tabular-nums ${
-                      projClosing >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-destructive"
-                    }`}
+                        {row.oneOff && !nextIsOneOff && fundFlowInfoOpen && (
+                          <li className="bg-muted/40 px-4 py-2.5">
+                            <p className="text-[11px] leading-relaxed text-foreground">
+                              <strong>One-off income</strong> and <strong>one-off expense</strong> are amounts
+                              expected within the next year — bonuses, inheritance, a major purchase or trip —
+                              not part of your regular monthly cash flow.
+                            </p>
+                          </li>
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                  <li
+                    className="flex items-center justify-between px-4 py-2.5"
+                    style={{ backgroundColor: "hsl(var(--muted) / 0.4)" }}
                   >
-                    {projClosing < 0 ? "−" : ""}
-                    {formatINR(Math.abs(projClosing))}
-                  </span>
-                </li>
-              </ul>
+                    <span className="text-xs font-semibold text-foreground">
+                      Closing financial assets{h?.last_fy_end_date ? ` · ${fmtFyDate(h.last_fy_end_date)}` : ""}
+                    </span>
+                    <span
+                      className={`text-sm font-bold tabular-nums ${
+                        closing >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-destructive"
+                      }`}
+                    >
+                      {closing < 0 ? "−" : ""}
+                      {formatINR(Math.abs(closing))}
+                    </span>
+                  </li>
+                </ul>
+
+                <div className="border-t border-border px-4 py-3">
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                    Goal funding status
+                  </p>
+                  <div className="mt-2 grid grid-cols-[1fr_auto] gap-y-1.5 text-xs">
+                    <span className="text-muted-foreground">Net financial assets</span>
+                    <span className="text-right font-semibold tabular-nums text-foreground">
+                      {formatINR(ff.corpus_today)}
+                    </span>
+                    <span className="text-muted-foreground">Goals today (PV)</span>
+                    <span className="text-right font-semibold tabular-nums text-foreground">
+                      {formatINR(ff.total_corpus_required_today)}
+                    </span>
+                    <span className="text-muted-foreground">
+                      {ff.surplus_or_shortfall_today >= 0 ? "Present surplus" : "Present gap"}
+                    </span>
+                    <span
+                      className={`text-right font-semibold tabular-nums ${
+                        ff.surplus_or_shortfall_today >= 0
+                          ? "text-emerald-700 dark:text-emerald-400"
+                          : "text-destructive"
+                      }`}
+                    >
+                      {ff.surplus_or_shortfall_today < 0 ? "−" : ""}
+                      {formatINR(Math.abs(ff.surplus_or_shortfall_today))}
+                    </span>
+                    {h && (
+                      <>
+                        <span className="text-muted-foreground">Future gap</span>
+                        <span
+                          className={`text-right font-semibold tabular-nums ${
+                            (h.total_shortfall_fv ?? 0) > 0
+                              ? "text-destructive"
+                              : "text-emerald-700 dark:text-emerald-400"
+                          }`}
+                        >
+                          {(h.total_shortfall_fv ?? 0) > 0 ? "−" : ""}
+                          {formatINR(Math.abs(h.total_shortfall_fv ?? 0))}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </>
             );
           })()}
-
-          <div className="border-t border-border px-4 py-3">
-            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-              Goal funding status
-            </p>
-            <div className="mt-2 grid grid-cols-[1fr_auto] gap-y-1.5 text-xs">
-              <span className="text-muted-foreground">Net financial assets</span>
-              <span className="text-right font-semibold tabular-nums text-foreground">
-                {formatINR(1_50_00_000)}
-              </span>
-              <span className="text-muted-foreground">Goals today (PV)</span>
-              <span className="text-right font-semibold tabular-nums text-foreground">
-                {formatINR(3_30_67_257)}
-              </span>
-              <span className="text-muted-foreground">Present gap</span>
-              <span className="text-right font-semibold tabular-nums text-destructive">
-                −{formatINR(1_80_67_257)}
-              </span>
-              <span className="text-muted-foreground">Future gap</span>
-              <span className="text-right font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
-                {formatINR(0)}
-              </span>
-            </div>
-          </div>
         </motion.section>
 
         {/* Annual Cashflow Chart */}
@@ -1414,7 +1480,7 @@ const GoalPlanner = () => {
                 ))}
               </ul>
               <p className="mt-3 text-[10.5px] italic leading-relaxed text-muted-foreground/80">
-                * Target shown in today&apos;s money (present value). Actual rupees needed at the goal date will be higher to account for inflation.
+                * Targets are shown at their value on the goal date (inflation included). When adding a goal you can enter its amount in today&apos;s money and we&apos;ll inflate it to the target date for you.
               </p>
             </>
           )}

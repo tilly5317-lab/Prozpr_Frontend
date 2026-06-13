@@ -1,9 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Send, Mic, MicOff, AlertCircle, Loader2, Sparkles, Check, Square, ChevronDown, ChevronUp, Pencil, ArrowRight, Plus, Trash2, MessageSquare, Menu } from "lucide-react";
+import { X, Send, Mic, MicOff, AlertCircle, Loader2, Sparkles, Check, Square, ChevronDown, ChevronUp, Pencil, ArrowRight, Plus, Trash2, MessageSquare, Menu, Star } from "lucide-react";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { formatInrMillions } from "@/lib/utils";
 import {
   createChatSession,
   sendChatMessage,
@@ -80,7 +81,7 @@ const DUMMY_USER_CONTEXT: UserInfo = {
 const GOAL_DEMO_CHECKPOINT_LABELS = ["Goals", "Corpus", "Deadline", "Inflation", "Review", "Summary"] as const;
 
 function formatDemoINR(n: number): string {
-  return `₹${Math.round(Math.max(0, n)).toLocaleString("en-IN")}`;
+  return `₹${Math.round(Math.max(0, n)).toLocaleString("en-US")}`;
 }
 
 function splitGoalItems(text: string): string[] {
@@ -258,13 +259,17 @@ const KUDOS_MESSAGES = [
   "Another step closer to your financial clarity. 💎",
 ];
 
-const formatTimestamp = () => {
-  const now = new Date();
-  const hours = now.getHours();
-  const mins = now.getMinutes().toString().padStart(2, "0");
+const formatTimestamp = (date: Date = new Date()) => {
+  const datePart = date.toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+  const hours = date.getHours();
+  const mins = date.getMinutes().toString().padStart(2, "0");
   const ampm = hours >= 12 ? "PM" : "AM";
   const h = hours % 12 || 12;
-  return `Today, ${h}:${mins} ${ampm}`;
+  return `${datePart}, ${h}:${mins} ${ampm}`;
 };
 
 const MarkdownMessage = ({ text }: { text: string }) => {
@@ -785,6 +790,12 @@ const AIChatPanel = ({
   demoExpenseRef.current = demoExpense;
   demoEmergencyMonthsRef.current = demoEmergencyMonths;
 
+  /* ── Session rating (1–5) — replaces per-message thumbs. Shown once Pi has
+     answered a few questions; one rating per conversation. */
+  const [sessionRating, setSessionRating] = useState<number | null>(null);
+  const [ratingDismissed, setRatingDismissed] = useState(false);
+  const submitRating = useCallback((n: number) => setSessionRating(n), []);
+
   /* ── Kudos dismissal ── */
   const [dismissedKudos, setDismissedKudos] = useState<Set<number>>(new Set());
 
@@ -805,6 +816,8 @@ const AIChatPanel = ({
       const session = await createChatSession("New conversation");
       sessionIdRef.current = session.id;
       setMessages([]);
+      setSessionRating(null);
+      setRatingDismissed(false);
       setChatStartTime(formatTimestamp());
       setShowFirstUseHint(true);
       setOnboardingActive(false);
@@ -818,12 +831,10 @@ const AIChatPanel = ({
     if (dummyMessages) {
       const dummy = DUMMY_SESSIONS.find((s) => s.id === sessionId);
       sessionIdRef.current = sessionId;
+      setSessionRating(null);
+      setRatingDismissed(false);
       setMessages(dummyMessages.map((m) => ({ ...m })));
-      setChatStartTime(
-        new Date(dummy?.created_at ?? Date.now()).toLocaleString("en-IN", {
-          day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true,
-        }),
-      );
+      setChatStartTime(formatTimestamp(new Date(dummy?.created_at ?? Date.now())));
       setShowFirstUseHint(false);
       setOnboardingActive(false);
       setCompletedSections([]);
@@ -832,6 +843,8 @@ const AIChatPanel = ({
     try {
       const session = await getChatSession(sessionId);
       sessionIdRef.current = session.id;
+      setSessionRating(null);
+      setRatingDismissed(false);
       setMessages(
         session.messages.map((m) => ({
           role: m.role === "assistant" ? ("ai" as const) : ("user" as const),
@@ -839,11 +852,7 @@ const AIChatPanel = ({
           chartPayloads: m.chart_payloads || null,
         })),
       );
-      setChatStartTime(
-        new Date(session.created_at).toLocaleString("en-IN", {
-          day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true,
-        }),
-      );
+      setChatStartTime(formatTimestamp(new Date(session.created_at)));
       setShowFirstUseHint(false);
       setOnboardingActive(false);
       setCompletedSections([]);
@@ -950,6 +959,9 @@ const AIChatPanel = ({
               chartPayloads: m.chart_payloads || null,
             })),
           );
+          // Stamp the header with when this session actually started, not "now"
+          // (mirrors handleSelectSession). An empty session keeps the current time.
+          setChatStartTime(formatTimestamp(new Date(session.created_at)));
         }
       } catch {
         // Fallback: session will be created on first send
@@ -974,8 +986,7 @@ const AIChatPanel = ({
     if (!p || p.total_value <= 0) {
       return "Your profile is set up. Add holdings or sync to see portfolio-level insights.";
     }
-    const fmt = (n: number) =>
-      n >= 100000 ? `₹${(n / 100000).toFixed(1)}L` : `₹${Math.round(n).toLocaleString("en-IN")}`;
+    const fmt = (n: number) => formatInrMillions(n);
     if (!p.allocations.length) {
       return `Your portfolio is valued at ${fmt(p.total_value)}. Add allocation details for richer guidance.`;
     }
@@ -1314,7 +1325,7 @@ const AIChatPanel = ({
   const embeddedSuggestions = goalPlanningDemo
     ? ["Retirement · 15+ years", "Home down payment", "Education fund"]
     : chatFirst
-      ? ["Review my portfolio", "Where to invest", "Plan a goal", "Complete profile"]
+      ? ["Review my portfolio", "Where to invest", "Complete profile"]
       : ["Why is my portfolio up today?"];
 
   const hasMessages = messages.length > 0 || isTyping;
@@ -1455,6 +1466,47 @@ const AIChatPanel = ({
           </div>
         </div>
       )}
+
+      {/* Session rating — asked once Pi has answered a few questions, instead of
+          rating every individual response. */}
+      {(() => {
+        if (isTyping) return null;
+        if (sessionRating !== null) {
+          return (
+            <div className="mx-auto mt-1 flex max-w-[90%] items-center gap-1.5 text-[11px] text-muted-foreground">
+              <Check className="h-3.5 w-3.5 text-wealth-green" />
+              Thanks — you rated Pi {sessionRating}/5.
+            </div>
+          );
+        }
+        const questionCount = messages.filter((m) => m.role === "user").length;
+        if (ratingDismissed || questionCount < 3) return null;
+        return (
+          <div className="mx-auto mt-2 flex w-full max-w-[90%] flex-col items-center gap-2 rounded-2xl border border-border/40 bg-muted/30 px-4 py-3">
+            <p className="text-[12px] font-medium text-foreground">How is Pi doing so far?</p>
+            <div className="flex items-center gap-1">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => submitRating(n)}
+                  aria-label={`Rate ${n} out of 5`}
+                  className="rounded-full p-1 text-muted-foreground/40 transition-colors hover:text-amber-400"
+                >
+                  <Star className="h-5 w-5" />
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setRatingDismissed(true)}
+              className="text-[10px] text-muted-foreground/60 hover:text-foreground"
+            >
+              Maybe later
+            </button>
+          </div>
+        );
+      })()}
     </>
   );
 
