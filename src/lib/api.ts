@@ -526,13 +526,20 @@ export interface CamsPdfImportResponse {
  * statement was generated — usually the investor's PAN in capitals). The backend parses
  * it, stores the holdings/transactions, and refreshes the primary portfolio.
  */
-export async function uploadCamsStatement(file: File, password: string): Promise<CamsPdfImportResponse> {
+export async function uploadCamsStatement(
+  file: File,
+  password: string,
+  replaceExisting = false,
+): Promise<CamsPdfImportResponse> {
   if (Date.now() < backendOfflineUntil) {
     throw new BackendOfflineError();
   }
   const form = new FormData();
   form.append("file", file);
   form.append("password", password);
+  // When true the backend wipes all prior CAMS-derived data (transactions, holdings,
+  // allocations, net-worth history) and recomputes from this statement alone.
+  form.append("replace_existing", replaceExisting ? "true" : "false");
 
   // NB: do not set Content-Type — the browser must add the multipart boundary itself.
   const headers: Record<string, string> = {};
@@ -2216,4 +2223,87 @@ export async function runRebalancing(
     true,
     CHAT_REQUEST_TIMEOUT_MS,
   );
+}
+
+// ── Support: report an issue ────────────────────────────
+export const ISSUE_SOURCES = [
+  "Chat Response",
+  "Portfolio NAV",
+  "Rebalancing",
+  "Goal Planning",
+  "Onboarding",
+  "Other",
+] as const;
+
+export type IssueSource = (typeof ISSUE_SOURCES)[number];
+
+export interface IssueReportResponse {
+  id: string;
+  source: string;
+  source_detail: string | null;
+  description: string;
+  has_screenshot: boolean;
+  created_at: string;
+  message: string;
+}
+
+/** Multipart (optional screenshot) — same shape as uploadCamsStatement. */
+export async function reportIssue(
+  source: IssueSource,
+  description: string,
+  screenshot?: File | null,
+  sourceDetail?: string,
+): Promise<IssueReportResponse> {
+  if (Date.now() < backendOfflineUntil) {
+    throw new BackendOfflineError();
+  }
+  const form = new FormData();
+  form.append("source", source);
+  if (sourceDetail) form.append("source_detail", sourceDetail);
+  form.append("description", description);
+  if (screenshot) form.append("screenshot", screenshot);
+
+  // NB: do not set Content-Type — the browser must add the multipart boundary itself.
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const familyMemberId = getActiveFamilyMemberId();
+  if (familyMemberId) headers["X-Family-Member-Id"] = familyMemberId;
+
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(`${API}/support/report-issue`, {
+      method: "POST",
+      headers,
+      body: form,
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error("Request timed out. Please try again.");
+    }
+    backendOfflineUntil = Date.now() + OFFLINE_RETRY_MS;
+    throw new BackendOfflineError("Backend is unreachable");
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+
+  const text = await res.text();
+  if (!res.ok) {
+    let msg: string;
+    try {
+      const body = JSON.parse(text) as { detail?: unknown };
+      msg = typeof body?.detail === "string" ? body.detail : JSON.stringify(body);
+    } catch {
+      msg = text.trim() || `Request failed (${res.status})`;
+    }
+    if ([502, 503, 504].includes(res.status)) {
+      backendOfflineUntil = Date.now() + OFFLINE_RETRY_MS;
+      throw new BackendOfflineError(msg || "Backend unavailable");
+    }
+    throw new Error(msg || `Request failed (${res.status})`);
+  }
+  return JSON.parse(text) as IssueReportResponse;
 }
