@@ -959,6 +959,9 @@ const AIChatPanel = ({
               chartPayloads: m.chart_payloads || null,
             })),
           );
+          // Stamp the header with when this session actually started, not "now"
+          // (mirrors handleSelectSession). An empty session keeps the current time.
+          setChatStartTime(formatTimestamp(new Date(session.created_at)));
         }
       } catch {
         // Fallback: session will be created on first send
