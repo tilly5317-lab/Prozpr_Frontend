@@ -1412,7 +1412,7 @@ export async function updatePortfolioHistory(
   });
 }
 
-export type PortfolioNavHorizon = "1M" | "1Y" | "3Y" | "MAX";
+export type PortfolioNavHorizon = "1M" | "3M" | "1Y" | "3Y" | "MAX";
 
 export interface PortfolioNavHistoryPoint {
   recorded_date: string;

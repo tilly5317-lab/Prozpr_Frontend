@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   ArrowRight,
@@ -29,6 +29,11 @@ const MAX_PDF_BYTES = 20 * 1024 * 1024;
  */
 const CamsUpload = () => {
   const navigate = useNavigate();
+  // Opened from Profile ("Update Holdings") → return there instead of continuing
+  // the onboarding flow to link-accounts.
+  const [searchParams] = useSearchParams();
+  const fromProfile = searchParams.get("from") === "profile";
+  const exitRoute = fromProfile ? "/profile" : "/link-accounts";
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [password, setPassword] = useState("");
@@ -234,10 +239,10 @@ const CamsUpload = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
           type="button"
-          onClick={() => navigate("/link-accounts")}
+          onClick={() => navigate(exitRoute)}
           className="flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold text-primary-foreground tracking-wide transition-all active:scale-[0.98]"
         >
-          Continue
+          {fromProfile ? "Done — back to profile" : "Continue"}
           <ArrowRight className="h-4 w-4" />
         </motion.button>
       ) : (
@@ -266,11 +271,11 @@ const CamsUpload = () => {
 
       <button
         type="button"
-        onClick={() => navigate("/link-accounts")}
+        onClick={() => navigate(exitRoute)}
         disabled={uploading}
         className="mt-3 w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
       >
-        Skip for now — I&apos;ll add it later
+        {fromProfile ? "Cancel — back to profile" : "Skip for now — I'll add it later"}
       </button>
     </div>
   );
