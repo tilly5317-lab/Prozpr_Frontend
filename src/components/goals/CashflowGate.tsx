@@ -5,6 +5,7 @@ import {
   getCashflowReadiness,
   saveCashflowInputs,
   computeCashflow,
+  getMyPortfolio,
   type CashflowReadiness,
   type CashflowReadinessField,
   type CashflowInputValues,
@@ -41,6 +42,7 @@ const PFP_NUMERIC_KEYS = new Set([
   "financial_assets",
   "financial_liabilities_excl_mortgage",
   "starting_monthly_investment",
+  "current_portfolio_corpus",
 ]);
 
 /** Show numeric inputs with thousands separators (Indian grouping), e.g. 12,34,567. */
@@ -74,6 +76,17 @@ const CashflowGate = ({ onReady, editSignal }: CashflowGateProps) => {
   const [saving, setSaving] = useState(false);
   const [values, setValues] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
+  // Total portfolio value, used to prefill "Current portfolio corpus" when the
+  // user hasn't entered one yet (sourced from CAMS / the portfolio page).
+  const [portfolioValue, setPortfolioValue] = useState<number | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    getMyPortfolio()
+      .then((p) => { if (active) setPortfolioValue(p.total_value ?? null); })
+      .catch(() => { /* no portfolio yet — field just stays blank */ });
+    return () => { active = false; };
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -98,12 +111,19 @@ const CashflowGate = ({ onReady, editSignal }: CashflowGateProps) => {
     if (!readiness) return;
     const seed: Record<string, string> = {};
     for (const f of readiness.fields) {
-      seed[f.key] = f.value == null ? "" : String(f.value);
+      if (f.value != null) {
+        seed[f.key] = String(f.value);
+      } else if (f.key === "current_portfolio_corpus" && portfolioValue != null) {
+        // Prefill the MF portfolio corpus from the live portfolio value.
+        seed[f.key] = String(Math.round(portfolioValue));
+      } else {
+        seed[f.key] = "";
+      }
     }
     setValues(seed);
     setErrors({});
     setFormOpen(true);
-  }, [readiness]);
+  }, [readiness, portfolioValue]);
 
   // Open the form when the parent bumps editSignal (Settings button). Skip the
   // initial mount (editSignal === undefined / 0) so it only reacts to clicks.
