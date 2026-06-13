@@ -1,7 +1,7 @@
 import { type CSSProperties, useCallback, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowRight, Check, Loader2, Settings2, Sparkles } from "lucide-react";
+import { ArrowRight, Check, Loader2, Sparkles } from "lucide-react";
 import BottomNav from "@/components/BottomNav";
 import RebalanceGate from "@/components/invest/RebalanceGate";
 import TradeFundDetailView from "@/components/fund/TradeFundDetailView";
@@ -249,7 +249,6 @@ const RebalanceExplanation = () => {
   const [dataLoading, setDataLoading] = useState(false);
   const [dataError, setDataError] = useState<string | null>(null);
   const [approving, setApproving] = useState(false);
-  const [editSignal, setEditSignal] = useState(0);
 
   // Open the full fund-detail page (same screen as a portfolio holding), passing
   // the trade's rationale so it can render a "Why this trade" card on top. The
@@ -329,7 +328,7 @@ const RebalanceExplanation = () => {
   return (
     <div className="mobile-container bg-background min-h-screen pb-24">
       {/* Gate: blurs the page and collects missing inputs until a plan exists. */}
-      <RebalanceGate onReady={loadData} editSignal={editSignal} />
+      <RebalanceGate onReady={loadData} />
 
       <div className="px-5 pt-10 pb-2 space-y-3">
         {dataLoading && (
@@ -347,19 +346,8 @@ const RebalanceExplanation = () => {
 
         {!dataLoading && !dataError && detail && (
           <>
-            {/* Open the inputs editor — view/edit the figures the engine runs on
-                and upload the latest CAMS statement, then re-run. */}
-            <div className="flex items-center justify-between -mb-1">
+            <div className="-mb-1">
               <span className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">Rebalancing plan</span>
-              <button
-                type="button"
-                onClick={() => setEditSignal((n) => n + 1)}
-                className="shrink-0 inline-flex items-center gap-1 rounded-full border border-[#D4A868]/50 bg-card px-2.5 py-1 text-[11px] font-semibold text-[#D4A868] hover:bg-[#D4A868]/10"
-                aria-label="Edit rebalancing inputs"
-              >
-                <Settings2 className="h-3 w-3" />
-                Inputs
-              </button>
             </div>
 
             <motion.section

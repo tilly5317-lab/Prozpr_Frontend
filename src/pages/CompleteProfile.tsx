@@ -1,7 +1,7 @@
-import { useState, useCallback, useMemo, useEffect, type ReactNode } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, Check, ChevronLeft, ChevronRight, Plus, X, Info, AlertTriangle, Lock, Wallet, Target, TrendingUp, Landmark } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Slider } from "@/components/ui/slider";
 import {
@@ -1000,6 +1000,26 @@ const CompleteProfile = () => {
     setGroupIndex(0);
     markInProgress(idx);
   };
+
+  // Deep-link from the portfolio "Unlock" circles: ?section=N opens that section
+  // directly once the profile has loaded (runs once).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const deepLinkedRef = useRef(false);
+  useEffect(() => {
+    if (deepLinkedRef.current || !profileLoaded) return;
+    const raw = searchParams.get("section");
+    if (raw == null) return;
+    deepLinkedRef.current = true;
+    const idx = Number(raw);
+    if (Number.isInteger(idx) && idx >= 0 && idx < SECTION_TITLES.length) {
+      openSectionCard(idx);
+    }
+    // Clear the param so a refresh/back doesn't re-trigger it.
+    const next = new URLSearchParams(searchParams);
+    next.delete("section");
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profileLoaded]);
 
   const toggleChipArray = (arr: string[], item: string, setter: (v: string[]) => void) => {
     setter(arr.includes(item) ? arr.filter((x) => x !== item) : [...arr, item]);
