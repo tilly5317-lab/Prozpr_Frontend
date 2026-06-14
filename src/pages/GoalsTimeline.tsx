@@ -2053,6 +2053,9 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
             const yearGoals = goalsByYear.get(y) ?? [];
             const hasGoals = yearGoals.length > 0;
             const isMilestone = y % 5 === 0;
+            // The user's age in this calendar year — shown beside the year so the
+            // timeline reads in life-stage terms, not just dates. Only when DOB is known.
+            const ageAtYear = birthYear != null ? y - birthYear : null;
             const proj = projectionByYear.get(y);
             const prevProj = projectionByYear.get(y - 1) ?? proj;
             const tornadoRow = isTornado ? tornadoCorpusByYear?.get(y) : undefined;
@@ -2333,19 +2336,24 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                     </div>
                   )}
 
-                  {/* Year label */}
+                  {/* Year + the user's age that year */}
                   <div
-                    className={`relative z-10 w-[40px] shrink-0 flex items-start ${hasGoals ? "pt-2" : "pt-0"}`}
+                    className={`relative z-10 w-[48px] shrink-0 flex flex-col items-start leading-tight ${hasGoals ? "pt-2" : "pt-0"}`}
                   >
                     <span
-                      className={`text-[11px] tabular-nums ${
+                      className={`text-[12px] tabular-nums ${
                         isMilestone || hasGoals
                           ? "font-semibold text-foreground"
-                          : "text-muted-foreground/60"
+                          : "text-muted-foreground/50"
                       }`}
                     >
                       {y}
                     </span>
+                    {(isMilestone || hasGoals) && ageAtYear != null && ageAtYear >= 0 && (
+                      <span className="text-[9px] font-medium tabular-nums text-muted-foreground/55">
+                        {ageAtYear} yrs
+                      </span>
+                    )}
                   </div>
 
                   {/* Right side: NAV figure + goal cards (empty years stay as a thin tick) */}
