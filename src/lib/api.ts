@@ -947,6 +947,8 @@ export interface CurrentPropertyPayload {
   has_mortgage: boolean;
   mortgage_emi?: number | null;
   mortgage_end_date?: string | null; // ISO yyyy-mm-dd
+  /** Outstanding loan balance (informational; preserves equity across edits). */
+  mortgage_balance?: number | null;
 }
 
 export interface CurrentPropertyResponse extends CurrentPropertyPayload {
