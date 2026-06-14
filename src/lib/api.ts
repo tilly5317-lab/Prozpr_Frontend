@@ -117,6 +117,8 @@ const OFFLINE_RETRY_MS = 15_000;
 const REQUEST_TIMEOUT_MS = 45_000;
 /** Chat can run intent classification + optional market commentary + LLM — allow longer */
 const CHAT_REQUEST_TIMEOUT_MS = 120_000;
+/** Issue reporting blocks a user-facing submit button — keep it snappy and bounded. */
+const ISSUE_REQUEST_TIMEOUT_MS = 20_000;
 // till this
 
 async function request<T>(
@@ -2278,7 +2280,7 @@ export async function reportIssue(
   if (familyMemberId) headers["X-Family-Member-Id"] = familyMemberId;
 
   const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeoutId = window.setTimeout(() => controller.abort(), ISSUE_REQUEST_TIMEOUT_MS);
   let res: Response;
   try {
     res = await fetch(`${API}/support/report-issue`, {
