@@ -75,7 +75,9 @@ const ReportIssueDialog = ({ children }: { children: ReactNode }) => {
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (submitting) return;
+        // Allow closing even while a submit is in flight so the user is never
+        // trapped behind the spinner; the in-flight request still completes and
+        // shows its success/error toast.
         setOpen(next);
         if (!next) reset();
       }}
