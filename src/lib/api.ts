@@ -1082,6 +1082,22 @@ export interface PortfolioDetail {
   holdings: { id: string; instrument_name: string; instrument_type: string; ticker_symbol: string | null; quantity: number | null; average_cost: number | null; current_price: number | null; current_value: number; allocation_percentage: number | null; asset_class: string | null; sub_category: string | null }[];
 }
 
+export interface TwrPoint {
+  date: string;
+  portfolio_index: number;
+  nifty_index: number | null;
+}
+
+export interface TwrSeriesResponse {
+  has_data: boolean;
+  points: TwrPoint[];
+}
+
+/** Real TWR series (portfolio vs Nifty 50, MF-only). Frontend rebases per range. */
+export async function getPortfolioTwr(): Promise<TwrSeriesResponse> {
+  return request<TwrSeriesResponse>("/portfolio/twr");
+}
+
 /** Primary portfolio for the logged-in user (from DB). */
 export async function getMyPortfolio(): Promise<PortfolioDetail> {
   const cached = getCachedUserContextValue("portfolio");
