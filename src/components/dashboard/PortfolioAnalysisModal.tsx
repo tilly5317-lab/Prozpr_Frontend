@@ -204,7 +204,7 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
     return stored === "returns" || stored === "waterfall" ? stored : "returns";
   });
   const [range, setRange] = useState<AnalysisRange>("1M");
-  const [infoOpen, setInfoOpen] = useState<"twr" | null>(null);
+  const [infoOpen, setInfoOpen] = useState<"twr" | "mwr" | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -228,6 +228,23 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
   const simpleGain = portfolio.total_gain_percentage ?? 0;
   const fullTwr = Math.round(simpleGain * 100) / 100;
   const scaledTwr = Math.round(fullTwr * rangeScaleFactor(range) * 100) / 100;
+
+  // Annualised money-weighted return (a.k.a. money-rated return / MWR): the
+  // actual return on the rupees invested, annualised over the holding period.
+  // Unlike TWR it reflects the size & timing of contributions. Derived from the
+  // real invested vs current value and the portfolio's age.
+  const annualMwr = useMemo(() => {
+    const invested = portfolio.total_invested;
+    const value = portfolio.total_value;
+    if (invested <= 0 || value <= 0) return 0;
+    const startMs = new Date(portfolio.created_at).getTime();
+    const yearsHeld = Number.isFinite(startMs)
+      ? (Date.now() - startMs) / (365.25 * 24 * 3600 * 1000)
+      : 1;
+    const yrs = Math.max(yearsHeld, 0.25); // avoid explosive annualisation for very new portfolios
+    const annualised = (Math.pow(value / invested, 1 / yrs) - 1) * 100;
+    return Math.round(annualised * 100) / 100;
+  }, [portfolio.total_invested, portfolio.total_value, portfolio.created_at]);
 
   // Single fixed benchmark — Nifty 50 (the add/compare picker was removed).
   const primaryBenchmark = BENCHMARKS.find((b) => b.id === "nifty50") ?? BENCHMARKS[0];
@@ -455,7 +472,7 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                     {/* — Returns tab — */}
                     {tab === "returns" && (
                       <div>
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-3 gap-2">
                           <div
                             className="rounded-xl p-2.5"
                             style={{ border: `1px solid ${HAIRLINE}` }}
@@ -474,7 +491,7 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                               </button>
                             </div>
                             <p
-                              className="text-base font-semibold leading-tight"
+                              className="text-sm font-semibold leading-tight"
                               style={{
                                 color: scaledTwr >= 0 ? POSITIVE : NEGATIVE,
                                 fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
@@ -484,6 +501,37 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                             </p>
                             <p className="text-[9px] text-muted-foreground mt-0.5">{range}</p>
                           </div>
+
+                          {/* Annual return (money-weighted / money-rated return) */}
+                          <div
+                            className="rounded-xl p-2.5"
+                            style={{ border: `1px solid ${HAIRLINE}` }}
+                          >
+                            <div className="flex items-center gap-1 mb-0.5">
+                              <p className="text-[9px] uppercase tracking-wide text-muted-foreground leading-tight">
+                                Annual
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => setInfoOpen((o) => (o === "mwr" ? null : "mwr"))}
+                                className="text-muted-foreground hover:text-foreground"
+                                aria-label="About Annual Return"
+                              >
+                                <Info className="h-3 w-3" />
+                              </button>
+                            </div>
+                            <p
+                              className="text-sm font-semibold leading-tight"
+                              style={{
+                                color: annualMwr >= 0 ? POSITIVE : NEGATIVE,
+                                fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                              }}
+                            >
+                              {fmtPct(annualMwr)}
+                            </p>
+                            <p className="text-[9px] text-muted-foreground mt-0.5">p.a. · MWR</p>
+                          </div>
+
                           <div
                             className="rounded-xl p-2.5"
                             style={{ border: `1px solid ${HAIRLINE}` }}
@@ -492,7 +540,7 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                               {primaryBenchmark.fullName}
                             </p>
                             <p
-                              className="text-base font-semibold leading-tight"
+                              className="text-sm font-semibold leading-tight"
                               style={{
                                 color: primaryBench >= 0 ? POSITIVE : NEGATIVE,
                                 fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
@@ -509,11 +557,20 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                             className="mt-2 rounded-lg px-3 py-2"
                             style={{ backgroundColor: "hsl(var(--muted) / 0.6)" }}
                           >
-                            <p className="text-[11.5px] text-foreground leading-relaxed">
-                              <strong>TWR</strong> measures the portfolio's compounded
-                              performance over time, stripping out the effect of when and how
-                              much you contributed — so it isolates investment performance.
-                            </p>
+                            {infoOpen === "twr" ? (
+                              <p className="text-[11.5px] text-foreground leading-relaxed">
+                                <strong>TWR</strong> measures the portfolio's compounded
+                                performance over time, stripping out the effect of when and how
+                                much you contributed — so it isolates investment performance.
+                              </p>
+                            ) : (
+                              <p className="text-[11.5px] text-foreground leading-relaxed">
+                                <strong>Annual Return</strong> is your money-weighted (money-rated)
+                                return, annualised. Unlike TWR, it reflects the size and timing of
+                                your contributions — it's the actual annual growth rate earned on
+                                the money you put in.
+                              </p>
+                            )}
                           </div>
                         )}
 

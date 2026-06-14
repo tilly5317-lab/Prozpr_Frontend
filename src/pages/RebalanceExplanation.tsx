@@ -84,7 +84,24 @@ type UITrade = {
   name: string;
   category: string;
   rationale: string;
+  reasonCode: string;
 };
+
+/* Proposed trades are grouped by *why* the engine recommends them. Each group
+   may cover several reason_codes; unknown codes fall back to the trade's own
+   reason_title. Order = most-actionable first. `color` highlights a heading. */
+const REASON_GROUPS: { codes: string[]; label: string; color?: string }[] = [
+  { codes: ["exit_low_rated"], label: "Underperformance" },
+  {
+    codes: ["exit_bad_fund", "migrate_neutral_to_recommended"],
+    label: "Not on recommended list",
+    color: "#E0772F",
+  },
+  { codes: ["sell_excess_direct_stocks"], label: "Reduce single-stock risk" },
+  { codes: ["trim_over_target"], label: "Trim back to target" },
+  { codes: ["cap_spill_buy"], label: "Diversifying allocation" },
+  { codes: ["add_to_target"], label: "Top up to target" },
+];
 
 const fmtINR = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
 
@@ -164,7 +181,34 @@ function mapTrade(t: RebalancingTrade): UITrade {
     name: t.recommended_fund,
     category: t.sub_category || t.asset_subgroup,
     rationale: t.reason_text,
+    reasonCode: t.reason_code,
   };
+}
+
+/** Group trades by reason heading, in REASON_GROUPS order; any unmapped
+    reason_code becomes its own group keyed by the trade's reason_title. */
+function groupTradesByReason(
+  trades: UITrade[],
+): { label: string; color?: string; trades: UITrade[] }[] {
+  const byCode = new Map<string, UITrade[]>();
+  for (const t of trades) {
+    const arr = byCode.get(t.reasonCode);
+    if (arr) arr.push(t);
+    else byCode.set(t.reasonCode, [t]);
+  }
+  const out: { label: string; color?: string; trades: UITrade[] }[] = [];
+  const seen = new Set<string>();
+  for (const { codes, label, color } of REASON_GROUPS) {
+    const groupTrades = codes.flatMap((c) => byCode.get(c) ?? []);
+    codes.forEach((c) => seen.add(c));
+    if (groupTrades.length) out.push({ label, color, trades: groupTrades });
+  }
+  // Unknown codes — keep them visible under their reason_title.
+  for (const [code, arr] of byCode) {
+    if (seen.has(code) || !arr.length) continue;
+    out.push({ label: arr[0].subtitle || "Other trades", trades: arr });
+  }
+  return out;
 }
 
 /** Total invested (cost basis): per-unit avg × qty, else avg treated as aggregate. */
@@ -303,6 +347,7 @@ const RebalanceExplanation = () => {
 
   const driftRows = useMemo(() => buildDriftRows(detail?.subgroup_summaries ?? []), [detail]);
   const uiTrades = useMemo(() => (detail?.trades ?? []).map(mapTrade), [detail]);
+  const tradeGroups = useMemo(() => groupTradesByReason(uiTrades), [uiTrades]);
   const keptFunds = useMemo(() => buildKeptFunds(portfolio, uiTrades), [portfolio, uiTrades]);
   const taxText = useMemo(() => {
     const tax = detail?.totals?.total_tax_estimate_inr ?? 0;
@@ -500,21 +545,29 @@ const RebalanceExplanation = () => {
                 </p>
               ) : (
                 <div className="mt-3 space-y-4">
-                  {BUCKET_ORDER.map((b) => ({ b, bucketTrades: uiTrades.filter((t) => t.bucket === b) }))
-                    .filter(({ bucketTrades }) => bucketTrades.length > 0)
-                    .map(({ b, bucketTrades }) => (
-                      <div key={b}>
-                        <div className="flex items-center gap-2 pb-1.5">
-                          <span
-                            className="h-1.5 w-3 rounded-full"
-                            style={{ backgroundColor: BUCKET_META[b].color, boxShadow: `0 0 10px ${BUCKET_META[b].color}55` }}
-                          />
-                          <p className="text-[10px] tracking-[0.14em] uppercase" style={{ color: BUCKET_META[b].color }}>
-                            {BUCKET_META[b].label}
-                          </p>
+                  {tradeGroups.map(({ label, color, trades }) => (
+                      <div key={label}>
+                        <div className="flex items-center justify-between gap-2 pb-1.5">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            {color && (
+                              <span
+                                className="h-1.5 w-1.5 rounded-full shrink-0"
+                                style={{ backgroundColor: color, boxShadow: `0 0 8px ${color}` }}
+                              />
+                            )}
+                            <p
+                              className="text-[10px] font-bold tracking-[0.14em] uppercase truncate"
+                              style={{ color: color ?? "hsl(var(--foreground) / 0.8)" }}
+                            >
+                              {label}
+                            </p>
+                          </div>
+                          <span className="text-[9px] shrink-0" style={{ color: color ?? "hsl(var(--muted-foreground))" }}>
+                            {trades.length} {trades.length === 1 ? "fund" : "funds"}
+                          </span>
                         </div>
                         <div className="divide-y divide-border">
-                          {bucketTrades.map((trade) => (
+                          {trades.map((trade) => (
                             <button
                               key={trade.id}
                               type="button"
@@ -538,7 +591,7 @@ const RebalanceExplanation = () => {
                               </span>
                               <div className="min-w-0 flex-1">
                                 <p className="text-[13px] leading-tight font-medium text-foreground truncate">{trade.name}</p>
-                                <p className="text-[10.5px] text-muted-foreground truncate">{trade.subtitle}</p>
+                                <p className="text-[10.5px] text-muted-foreground truncate">{trade.category}</p>
                               </div>
                               <p className="text-[14px] leading-none font-semibold text-foreground shrink-0">{trade.amount}</p>
                             </button>
@@ -553,8 +606,15 @@ const RebalanceExplanation = () => {
             {/* Funds you're keeping — everything in the portfolio NOT being sold,
                 tagged performing-well / neutral, with the same fund details. */}
             {keptFunds.length > 0 && (
-              <section style={cardStyle} className="px-4 py-4">
-                <p className="text-[10px] tracking-[0.16em] uppercase text-muted-foreground">
+              <section
+                className="px-4 py-4"
+                style={{
+                  background: "hsl(150 28% 45% / 0.05)",
+                  border: "1px solid hsl(150 28% 42% / 0.22)",
+                  borderRadius: 16,
+                }}
+              >
+                <p className="text-[10px] tracking-[0.16em] uppercase" style={{ color: "hsl(150 22% 42%)" }}>
                   Funds you're keeping
                 </p>
                 <p className="mt-1 text-[11.5px] leading-snug text-muted-foreground">
