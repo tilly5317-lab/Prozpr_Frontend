@@ -11,6 +11,7 @@ import {
   updatePersonalFinance,
   updateInvestmentProfile,
   updateCurrentProperties,
+  getCurrentProperties,
   saveOtherAssets,
   getOtherAssets,
   listGoals,
@@ -699,10 +700,8 @@ const CompleteProfile = () => {
           const ip = p.investment_profile;
           if (ip.investable_assets != null) setInvestableAssets(parseNum(ip.investable_assets?.toString()));
           if (ip.total_liabilities != null) setLiabilities(parseNum(ip.total_liabilities?.toString()));
-          if (ip.property_value) {
-            setOwnsHome(true);
-            setProperties([{ value: parseNum(ip.property_value?.toString()), mortgage: parseNum(ip.mortgage_amount?.toString()), monthlyRepayment: "", yearPurchased: "", mortgageEndDate: "", lastPaymentDate: "" }]);
-          }
+          // Owned home is loaded from user_current_properties below (the table the
+          // save writes to) — not from the legacy investment_profile aggregate.
           setEmergencyFund(parseNum(ip.emergency_fund?.toString()));
           if (ip.emergency_fund_months) setEmergencyTimeframe(ip.emergency_fund_months);
           if (ip.investable_assets != null) newStatuses[0] = "confirmed";
@@ -841,7 +840,28 @@ const CompleteProfile = () => {
         // None saved yet — keep the empty default row.
       }
 
-      // 4) "What are you trying to achieve?" is complete once the user has at
+      // 4) Owned home — load from user_current_properties (the table the save
+      //    writes to), so "Do you own a home?" and its details persist on return.
+      try {
+        const props = await getCurrentProperties();
+        if (!cancelled && props.length > 0) {
+          setOwnsHome(true);
+          setProperties(
+            props.map((p) => ({
+              value: p.property_value != null ? parseNum(String(p.property_value)) : "",
+              mortgage: p.mortgage_balance != null ? parseNum(String(p.mortgage_balance)) : "",
+              monthlyRepayment: p.mortgage_emi != null ? parseNum(String(p.mortgage_emi)) : "",
+              yearPurchased: "",
+              mortgageEndDate: p.mortgage_end_date ? p.mortgage_end_date.slice(0, 4) : "",
+              lastPaymentDate: "",
+            })),
+          );
+        }
+      } catch {
+        // No properties saved yet — keep the default (ownsHome = No).
+      }
+
+      // 5) "What are you trying to achieve?" is complete once the user has at
       //    least one goal (goals live in the goals service / goal planner).
       try {
         const goals = await listGoals();
@@ -1022,15 +1042,19 @@ const CompleteProfile = () => {
                     const value = toNum(p.value);
                     const emi = toNum(p.monthlyRepayment);
                     const endDate = toIsoDate(p.mortgageEndDate);
-                    const hasMortgage =
-                      (toNum(p.mortgage) ?? 0) > 0 && emi != null && endDate != null;
-                    if (value == null && !hasMortgage) return null;
+                    const balance = toNum(p.mortgage);
+                    // A mortgage is present when EMI + end date are set (the
+                    // backend requires both when has_mortgage is true). The
+                    // outstanding balance is stored separately and is optional.
+                    const hasMortgage = emi != null && endDate != null;
+                    if (value == null && balance == null && !hasMortgage) return null;
                     return {
                       name: properties.length > 1 ? `Property ${i + 1}` : "Primary residence",
                       property_value: value,
                       has_mortgage: hasMortgage,
                       mortgage_emi: hasMortgage ? emi : null,
                       mortgage_end_date: hasMortgage ? endDate : null,
+                      mortgage_balance: balance,
                     };
                   })
                   .filter((p): p is CurrentPropertyPayload => p !== null)
@@ -1299,44 +1323,81 @@ const CompleteProfile = () => {
            </div>
           ) },
           { label: "Property", body: (
-           <div className="space-y-3">
+           <div className="space-y-4">
             <div>
               <FieldLabel>Do you own a home?</FieldLabel>
+              <p className="text-[10px] text-muted-foreground -mt-0.5 mb-2">
+                Any residential property you own. Used for your net worth and to plan around your mortgage.
+              </p>
               <Toggle value={ownsHome} onChange={setOwnsHome} labelA="No" labelB="Yes" />
-              {ownsHome && (
-                <div className="mt-3 space-y-3">
-                  {properties.map((prop, idx) => {
-                    const updateProp = (field: keyof Property, val: string) => {
-                      setProperties(prev => prev.map((p, i) => i === idx ? { ...p, [field]: val } : p));
-                    };
-                    return (
-                      <div key={idx} className="relative space-y-2 pl-1 border-l-2 border-accent/20 ml-1 rounded-lg bg-card p-3">
+            </div>
+
+            {ownsHome && (
+              <div className="space-y-3">
+                {properties.map((prop, idx) => {
+                  const updateProp = (field: keyof Property, val: string) => {
+                    setProperties(prev => prev.map((p, i) => i === idx ? { ...p, [field]: val } : p));
+                  };
+                  return (
+                    <div key={idx} className="relative rounded-xl border border-border bg-card p-4 shadow-sm">
+                      <div className="mb-3 flex items-center justify-between">
+                        <p className="text-xs font-semibold text-foreground">
+                          {properties.length > 1 ? `Property ${idx + 1}` : "Your home"}
+                        </p>
                         {properties.length > 1 && (
-                          <button onClick={() => setProperties(prev => prev.filter((_, i) => i !== idx))} className="absolute top-2 right-2 h-5 w-5 flex items-center justify-center rounded-full bg-muted hover:bg-destructive/20 transition-colors">
-                            <X className="h-3 w-3 text-muted-foreground" />
+                          <button
+                            onClick={() => setProperties(prev => prev.filter((_, i) => i !== idx))}
+                            className="flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                            aria-label="Remove property"
+                          >
+                            <X className="h-3.5 w-3.5" />
                           </button>
                         )}
-                        {properties.length > 1 && <p className="text-[10px] font-semibold text-muted-foreground mb-1">Property {idx + 1}</p>}
-                        <div><label className="text-[10px] text-muted-foreground">Property value</label><TextInput value={prop.value} onChange={(v) => updateProp("value", v)} prefix="₹" placeholder="e.g. 1.20 Cr" /></div>
-                        <div><label className="text-[10px] text-muted-foreground">Total outstanding mortgage</label><TextInput value={prop.mortgage} onChange={(v) => updateProp("mortgage", v)} prefix="₹" placeholder="e.g. 45,00,000" /></div>
-                        <div><label className="text-[10px] text-muted-foreground">Current monthly repayment</label><TextInput value={prop.monthlyRepayment} onChange={(v) => updateProp("monthlyRepayment", v)} prefix="₹" placeholder="e.g. 35,000" /></div>
+                      </div>
+
+                      <div className="space-y-3">
                         <div>
-                          <label className="text-[10px] text-muted-foreground">Year repayment finishes</label>
-                          <TextInput
-                            value={prop.mortgageEndDate}
-                            onChange={(v) => updateProp("mortgageEndDate", v.replace(/[^\d]/g, "").slice(0, 4))}
-                            placeholder="e.g. 2042"
-                          />
+                          <label className="text-[10px] uppercase tracking-wide text-muted-foreground">Current market value</label>
+                          <TextInput value={prop.value} onChange={(v) => updateProp("value", v)} prefix="₹" placeholder="e.g. 1.20 Cr" />
+                        </div>
+
+                        {/* Mortgage sub-group */}
+                        <div className="rounded-lg bg-muted/30 p-3">
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Home loan</p>
+                          <p className="mb-2 text-[10px] text-muted-foreground">Leave blank if it's fully paid off.</p>
+                          <div className="space-y-3">
+                            <div>
+                              <label className="text-[10px] text-muted-foreground">Outstanding balance</label>
+                              <TextInput value={prop.mortgage} onChange={(v) => updateProp("mortgage", v)} prefix="₹" placeholder="e.g. 45,00,000" />
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="text-[10px] text-muted-foreground">Monthly EMI</label>
+                                <TextInput value={prop.monthlyRepayment} onChange={(v) => updateProp("monthlyRepayment", v)} prefix="₹" placeholder="e.g. 35,000" />
+                              </div>
+                              <div>
+                                <label className="text-[10px] text-muted-foreground">Ends in (year)</label>
+                                <TextInput
+                                  value={prop.mortgageEndDate}
+                                  onChange={(v) => updateProp("mortgageEndDate", v.replace(/[^\d]/g, "").slice(0, 4))}
+                                  placeholder="e.g. 2042"
+                                />
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    );
-                  })}
-                  <button onClick={() => setProperties(prev => [...prev, { value: "", mortgage: "", monthlyRepayment: "", yearPurchased: "", mortgageEndDate: "", lastPaymentDate: "" }])} className="flex items-center gap-1 text-xs font-medium text-accent hover:text-accent/80 transition-colors mt-1">
-                    <Plus className="h-3 w-3" /> Add another property
-                  </button>
-                </div>
-              )}
-            </div>
+                    </div>
+                  );
+                })}
+                <button
+                  onClick={() => setProperties(prev => [...prev, { value: "", mortgage: "", monthlyRepayment: "", yearPurchased: "", mortgageEndDate: "", lastPaymentDate: "" }])}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-border py-2.5 text-xs font-medium text-accent transition-colors hover:border-accent/50 hover:bg-accent/5"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add another property
+                </button>
+              </div>
+            )}
            </div>
           ) },
           { label: "Planned large expenses", body: (
