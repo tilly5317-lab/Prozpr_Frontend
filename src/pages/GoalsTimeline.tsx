@@ -109,7 +109,6 @@ function birthYearFromDob(dob: string | null | undefined): number | null {
 // NAV chart spans the full row width and renders behind the row content.
 const NAV_PAD_PCT = 4; // horizontal padding (%) so the line never touches the edges
 const TORNADO_CENTER_X = 50; // viewBox x for ₹0 (symmetric tornado axis)
-const MONTHLY_MAX = 500000; // upper bound of the monthly investment slider
 
 // Earned milestones — light up the first year the projected NAV crosses each.
 interface Milestone {
@@ -1398,7 +1397,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
       const pf = await getPersonalFinance();
       const raw = pf.starting_monthly_investment;
       if (raw != null && Number.isFinite(raw)) {
-        const sip = Math.min(MONTHLY_MAX, Math.max(0, Math.round(raw)));
+        const sip = Math.max(0, Math.round(raw));
         setMonthlyContrib(sip);
         setPlanSip(sip);
       } else {
@@ -1431,6 +1430,21 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
       setApplyingSip(false);
     }
   }, [monthlyContrib, fetchCashflow]);
+
+  // The engine caps the monthly SIP to the household's affordable savings
+  // (income − tax − expense − EMIs) — it never invests more than you can save.
+  // `savings_post_emi` is independent of the SIP, so this ceiling stays stable as
+  // the user types; surface it so an over-large SIP is explained, not silently
+  // clamped. Skip the partial current FY (fewer months → understated monthly).
+  const affordableMonthly = useMemo<number | null>(() => {
+    const rows = cashflowData?.annual_cashflow ?? [];
+    const investingYears = rows.filter((r) => r.savings_post_emi > 0);
+    if (investingYears.length === 0) return null;
+    const ref = investingYears.length > 1 ? investingYears[1] : investingYears[0];
+    return ref.savings_post_emi / 12;
+  }, [cashflowData]);
+
+  const sipCapped = affordableMonthly != null && monthlyContrib > affordableMonthly + 1;
 
   const toggleGoalExpanded = (id: string) => {
     setExpandedGoals((prev) => {
@@ -1923,7 +1937,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
               onChange={(e) => {
                 const digits = e.target.value.replace(/[^\d]/g, "");
                 const v = digits === "" ? 0 : Number(digits);
-                if (Number.isFinite(v)) setMonthlyContrib(Math.min(MONTHLY_MAX, Math.max(0, v)));
+                if (Number.isFinite(v)) setMonthlyContrib(Math.max(0, v));
               }}
               className="w-full min-w-0 bg-transparent text-[12px] font-semibold tabular-nums text-foreground outline-none"
               style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
@@ -1960,6 +1974,13 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
             <RotateCcw className="h-3 w-3" />
           </button>
           </div>
+          {sipCapped && affordableMonthly != null && (
+            <p className="mt-1 px-1 text-[10px] leading-snug text-amber-600 dark:text-amber-400">
+              You can invest about {formatINRCompact(affordableMonthly)}/mo from your income
+              (after tax, expenses &amp; EMIs). A higher SIP is capped to that — it won't grow
+              your corpus further, since the plan never invests more than you can save.
+            </p>
+          )}
         </div>
 
         {/* Priority filter — toggle which goals feed the projection */}

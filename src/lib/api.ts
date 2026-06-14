@@ -327,10 +327,14 @@ export interface OnboardingProfileResponse {
   date_of_birth: string | null;
   assumed_lifespan_years: number | null;
   occupation: string | null;
+  family_status?: string | null;
+  wealth_sources?: string[] | null;
+  personal_values?: string[] | null;
   selected_goals?: string[];
   custom_goals?: string[];
   investment_horizon?: string | null;
   annual_income?: number | null;
+  effective_tax_rate?: number | null;
   monthly_household_expense?: number | null;
   financial_assets?: number | null;
   financial_liabilities_excl_mortgage?: number | null;
@@ -354,6 +358,11 @@ export interface OtherAssetResponse {
   asset_name: string;
   asset_type: string | null;
   current_value: number | null;
+}
+
+/** Read back the user's saved "other assets" so the form can prefill on return. */
+export async function getOtherAssets(): Promise<OtherAssetResponse[]> {
+  return request<OtherAssetResponse[]>("/onboarding/other-assets");
 }
 
 /** Full-replace write of the user's "other assets" list. */
@@ -858,6 +867,8 @@ export interface InvestmentConstraintResponse extends InvestmentConstraintPayloa
 export interface TaxProfilePayload {
   income_tax_rate?: number | null;
   capital_gains_tax_rate?: number | null;
+  /** "old" | "new" — the user's income-tax regime. */
+  tax_regime?: string | null;
   notes?: string | null;
 }
 
