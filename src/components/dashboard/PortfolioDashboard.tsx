@@ -168,7 +168,6 @@ function PortfolioMainPanel({
       <PortfolioAnalysisModal
         open={analysisOpen}
         onClose={() => setAnalysisOpen(false)}
-        portfolio={portfolio}
       />
     </div>
   );
