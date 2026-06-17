@@ -40,8 +40,8 @@
     --wealth-navy-light: 220 35% 28%;
     --wealth-blue: 215 60% 48%;
     --wealth-blue-light: 215 40% 94%;
-    --wealth-green: 160 50% 38%;
-    --wealth-green-light: 160 30% 93%;
+    --wealth-green: 164 54% 40%;     /* #2E9C7E — the app's buy/positive green */
+    --wealth-green-light: 164 35% 93%;
     --wealth-amber: 38 80% 48%;
     --wealth-amber-light: 38 60% 93%;
     --wealth-surface: 220 15% 98%;
@@ -63,12 +63,18 @@
     --hairline: 220 14% 94%;
     --cream-bg: 48 20% 97%;
 
-    /* Recommended Investment Plan bucket accents.
-       Equity mirrors --accent (the app's blue) so it matches the donut chart
-       and the highlighted words in the narrative summary. */
-    --bucket-equity: 215 60% 48%;   /* app blue — same family as donut's India Equity navy */
-    --bucket-debt: 219 39% 40%;     /* muted slate, distinct from equity */
-    --bucket-hybrid: 38 64% 47%;    /* warm amber, matches Gold wedge */
+    /* Canonical asset-class palette — used app-wide (donuts, allocation bars,
+       rebalancing buckets, fund lists). Single source of truth. */
+    --asset-equity: 215 60% 48%;        /* blue */
+    --asset-debt: 188 52% 41%;          /* teal */
+    --asset-hybrid: 38 64% 47%;         /* amber */
+    --asset-cash: 214 14% 47%;          /* slate */
+    --asset-alternatives: 348 35% 43%;  /* muted maroon */
+
+    /* Back-compat aliases (older code references --bucket-*). */
+    --bucket-equity: 215 60% 48%;
+    --bucket-debt: 188 52% 41%;
+    --bucket-hybrid: 38 64% 47%;
 
     /* Semantic warning (amber) — used for "X% remaining" / neutral cautions. */
     --warning: 38 80% 40%;

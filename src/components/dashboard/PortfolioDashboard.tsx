@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { TrendingUp, TrendingDown, Compass, ArrowRight, Wallet, Target, Activity, Landmark, Check } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import BottomNav from "@/components/BottomNav";
+import { Skeleton } from "@/components/ui/skeleton";
 import NetWorthSparkline from "./NetWorthSparkline";
 import PortfolioNavChart from "./PortfolioNavChart";
 import CurrentAllocationCard from "./CurrentAllocationCard";
@@ -253,7 +254,7 @@ function ProfileUnlockCircles({ profile }: { profile: FullProfileResponse | null
       title: "Your money map",
       unlocks: "Supercharge rebalancing",
       flash: true,
-      ring: "#3B6FA8",
+      ring: "hsl(215 60% 48%)",
       done: false,
     },
     {
@@ -262,7 +263,7 @@ function ProfileUnlockCircles({ profile }: { profile: FullProfileResponse | null
       title: "Tax details",
       unlocks: "Unlock smarter funds",
       flash: true,
-      ring: "#A8872F",
+      ring: "hsl(38 64% 47%)",
       done: false,
     },
     {
@@ -625,8 +626,25 @@ const PortfolioDashboard = () => {
       {activeView.type === "self" && (
         <>
           {selfLoading && !hasShownInitialLoad && (
-            <div className="px-5 py-8 flex justify-center">
-              <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted border-t-foreground" />
+            <div className="px-5 pt-4 space-y-3" aria-busy="true" aria-label="Loading your portfolio">
+              {/* Value + chart placeholder */}
+              <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
+                <Skeleton className="h-3 w-24" />
+                <Skeleton className="h-8 w-40" />
+                <Skeleton className="h-28 w-full rounded-xl" />
+              </div>
+              {/* Allocation placeholder */}
+              <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
+                <Skeleton className="h-3 w-28" />
+                <div className="flex items-center gap-4">
+                  <Skeleton className="h-24 w-24 rounded-full" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-3 w-full" />
+                    <Skeleton className="h-3 w-5/6" />
+                    <Skeleton className="h-3 w-2/3" />
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 

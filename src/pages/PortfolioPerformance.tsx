@@ -14,7 +14,7 @@ const TIME_RANGES: TimeRange[] = ["1M", "6M", "1Y", "All"];
 const LAST_UPDATED = "22 Apr 2026 at 09:42";
 const PORTFOLIO_START_DATE = "14 Feb 2021";
 
-const GREEN = "hsl(160 50% 38%)";       // wealth-green
+const GREEN = "hsl(164 54% 40%)";       // wealth-green
 
 const MWR_COPY = {
   heading: "Money-weighted rate of return",

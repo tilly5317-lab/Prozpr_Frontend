@@ -340,9 +340,9 @@ export function NavChart({
     [sampled, benchScaled, hasData],
   );
 
-  const stroke = isUp ? "hsl(160 50% 38%)" : "hsl(0 84% 50%)";
-  const fillStart = isUp ? "hsl(160 50% 38% / 0.18)" : "hsl(0 84% 50% / 0.18)";
-  const fillEnd = isUp ? "hsl(160 50% 38% / 0.02)" : "hsl(0 84% 50% / 0.02)";
+  const stroke = isUp ? "hsl(164 54% 40%)" : "hsl(0 84% 50%)";
+  const fillStart = isUp ? "hsl(164 54% 40% / 0.18)" : "hsl(0 84% 50% / 0.18)";
+  const fillEnd = isUp ? "hsl(164 54% 40% / 0.02)" : "hsl(0 84% 50% / 0.02)";
 
   // First load: clip wipes left → right. Horizon changes only morph path shape underneath.
   useEffect(() => {

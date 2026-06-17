@@ -20,7 +20,7 @@ import {
   type MfHoldingDetailResponse,
 } from "@/lib/api";
 
-const NAV_UP_COLOR = "hsl(160 50% 38%)";
+const NAV_UP_COLOR = "hsl(164 54% 40%)";
 const NAV_DOWN_COLOR = "hsl(0 84% 50%)";
 
 const tradePillClass = (type: "BUY" | "SELL"): string =>

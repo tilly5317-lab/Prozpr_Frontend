@@ -275,8 +275,8 @@ const GoalTracker = () => {
                     <stop offset="100%" stopColor="hsl(215, 60%, 48%)" stopOpacity={0} />
                   </linearGradient>
                   <linearGradient id="projGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="hsl(160, 50%, 38%)" stopOpacity={0.15} />
-                    <stop offset="100%" stopColor="hsl(160, 50%, 38%)" stopOpacity={0} />
+                    <stop offset="0%" stopColor="hsl(164, 54%, 40%)" stopOpacity={0.15} />
+                    <stop offset="100%" stopColor="hsl(164, 54%, 40%)" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(220, 13%, 91%)" vertical={false} />
@@ -284,7 +284,7 @@ const GoalTracker = () => {
                 <YAxis tick={{ fontSize: 7, fill: "hsl(220, 10%, 46%)" }} axisLine={false} tickLine={false} tickFormatter={formatINR} />
                 <ReferenceLine y={targetAmount} stroke="hsl(38, 80%, 48%)" strokeDasharray="6 4" strokeWidth={1.5} label={{ value: "Target", position: "right", fontSize: 7, fill: "hsl(38, 80%, 48%)" }} />
                 <Area type="monotone" dataKey="actual" stroke="hsl(215, 60%, 48%)" strokeWidth={2} fill="url(#actualGrad)" dot={{ r: 2, fill: "hsl(215, 60%, 48%)" }} connectNulls={false} />
-                <Area type="monotone" dataKey="projected" stroke="hsl(160, 50%, 38%)" strokeWidth={2} strokeDasharray="6 3" fill="url(#projGrad)" dot={false} />
+                <Area type="monotone" dataKey="projected" stroke="hsl(164, 54%, 40%)" strokeWidth={2} strokeDasharray="6 3" fill="url(#projGrad)" dot={false} />
               </AreaChart>
             </ResponsiveContainer>
           </div>

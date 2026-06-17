@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Bar,
@@ -1152,7 +1153,7 @@ function ProjectionSheet({ open, onClose, fundFlow, headline, sipMonthly }: Proj
                     style={{
                       fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
                       color:
-                        CLOSING >= 0 ? "hsl(160 50% 38%)" : "hsl(var(--destructive))",
+                        CLOSING >= 0 ? "hsl(164 54% 40%)" : "hsl(var(--destructive))",
                     }}
                   >
                     {CLOSING < 0 ? "−" : ""}
@@ -1230,7 +1231,7 @@ function ProjectionSheet({ open, onClose, fundFlow, headline, sipMonthly }: Proj
                       it.kind === "negative"
                         ? "hsl(var(--destructive))"
                         : it.kind === "positive"
-                          ? "hsl(160 50% 38%)"
+                          ? "hsl(164 54% 40%)"
                           : "hsl(var(--foreground))";
                     return (
                       <div
@@ -1306,6 +1307,11 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   // When the typed amount differs, an "Apply to plan" action re-runs the engine.
   const [planSip, setPlanSip] = useState<number | null>(null);
   const [applyingSip, setApplyingSip] = useState(false);
+  const [insightClosed, setInsightClosed] = useState(false);
+  // When arriving from the "What are you trying to achieve?" card (?inputs=1),
+  // open the cashflow inputs form straight away.
+  const [searchParams] = useSearchParams();
+  const autoOpenInputs = searchParams.get("inputs") === "1";
   const [expandedGoals, setExpandedGoals] = useState<Set<string>>(new Set());
   const [draggingGoalId, setDraggingGoalId] = useState<string | null>(null);
   const [dropTargetYear, setDropTargetYear] = useState<number | null>(null);
@@ -1835,9 +1841,6 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
             {goalsLoading && (
               <span className="text-[10px] text-muted-foreground">Goals…</span>
             )}
-            {!goalsLoading && cashflowData && (
-              <span className="text-[10px] font-medium text-emerald-600">Live data</span>
-            )}
             {cashflowLoading && (
               <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
             )}
@@ -1851,10 +1854,10 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                   )
                 }
                 className="shrink-0 inline-flex items-center gap-1 rounded-full border border-border bg-card px-2.5 py-0.5 text-[11px] font-semibold text-foreground hover:bg-muted/40"
-                aria-label="Download cashflow XLS"
+                aria-label="Download cashflow"
               >
                 <Download className="h-3 w-3" />
-                XLS
+                Download
               </button>
             ) : (
               !cashflowLoading && (
@@ -1895,6 +1898,40 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3, ease: "easeOut" }}
       >
+        {/* Insight banner — closeable, with the headline rolling right→left.
+            Suggests the monthly amount the user can comfortably invest. */}
+        {!insightClosed && affordableMonthly != null && affordableMonthly > 0 && (
+          <motion.div
+            className="relative -mx-5 flex items-center overflow-hidden"
+            style={{
+              backgroundImage: "linear-gradient(100deg, #D4A868, #C2487A, #7A52C8, #D4A868)",
+              backgroundSize: "300% 100%",
+              boxShadow: "0 0 12px rgba(212,168,104,0.45)",
+            }}
+            animate={{ backgroundPosition: ["0% 50%", "100% 50%"] }}
+            transition={{ duration: 6, repeat: Infinity, ease: "linear" }}
+          >
+            <div className="flex-1 overflow-hidden py-2">
+              <motion.div
+                className="whitespace-nowrap text-[12px] font-semibold text-white"
+                animate={{ x: ["100%", "-100%"] }}
+                transition={{ duration: 23.4, repeat: Infinity, ease: "linear" }}
+              >
+                💡 Based on your cashflow, you could invest up to{" "}
+                <span className="font-bold">{formatINR(Math.round(affordableMonthly))}/month</span>{" "}
+                towards your goals — adjust your SIP below to put it to work.
+              </motion.div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setInsightClosed(true)}
+              aria-label="Dismiss insight"
+              className="absolute right-2 top-1/2 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded-full bg-black/20 text-white hover:bg-black/30 transition-colors"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </motion.div>
+        )}
         {cashflowError && !cashflowLoading && (
           <p className="px-1 text-[11px] text-amber-600">{cashflowError}</p>
         )}
@@ -2336,24 +2373,21 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                     </div>
                   )}
 
-                  {/* Year + the user's age that year */}
+                  {/* The user's age that year. Hover shows the calendar year.
+                      Falls back to the year when we have no date of birth. */}
                   <div
                     className={`relative z-10 w-[48px] shrink-0 flex flex-col items-start leading-tight ${hasGoals ? "pt-2" : "pt-0"}`}
                   >
                     <span
+                      title={ageAtYear != null && ageAtYear >= 0 ? `Year ${y}` : undefined}
                       className={`text-[12px] tabular-nums ${
                         isMilestone || hasGoals
                           ? "font-semibold text-foreground"
                           : "text-muted-foreground/50"
                       }`}
                     >
-                      {y}
+                      {ageAtYear != null && ageAtYear >= 0 ? `${ageAtYear} yrs` : y}
                     </span>
-                    {(isMilestone || hasGoals) && ageAtYear != null && ageAtYear >= 0 && (
-                      <span className="text-[9px] font-medium tabular-nums text-muted-foreground/55">
-                        {ageAtYear} yrs
-                      </span>
-                    )}
                   </div>
 
                   {/* Right side: NAV figure + goal cards (empty years stay as a thin tick) */}
@@ -2598,12 +2632,6 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
           </span>
         </p>
 
-        {/* Assumptions — plain-text return rates */}
-        {isTornado && (
-          <p className="px-1 pt-2 text-[10.5px] leading-snug text-muted-foreground/80">
-            Assumes Equity return of 12% p.a. and Debt return of 7% p.a.
-          </p>
-        )}
       </motion.main>
 
       <AddGoalSheet
@@ -2652,7 +2680,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
       {/* Locks the goal-planning page (blur + unlock card) until every cashflow
           input is present, then loads the real projection. The Settings/"Inputs"
           button bumps editSignal to reopen the form for viewing/editing. */}
-      <CashflowGate onReady={fetchCashflow} editSignal={editSignal} />
+      <CashflowGate onReady={fetchCashflow} editSignal={editSignal} autoOpenInputs={autoOpenInputs} />
     </div>
   );
 };

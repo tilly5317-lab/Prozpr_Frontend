@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ArrowRight, Check, Loader2, Sparkles } from "lucide-react";
 import BottomNav from "@/components/BottomNav";
+import { Skeleton } from "@/components/ui/skeleton";
 import RebalanceGate from "@/components/invest/RebalanceGate";
 import TradeFundDetailView from "@/components/fund/TradeFundDetailView";
 import { toast } from "@/hooks/use-toast";
@@ -26,9 +27,9 @@ type Bucket = "equity" | "debt" | "others";
 
 const BUCKET_ORDER: Bucket[] = ["equity", "debt", "others"];
 const BUCKET_META: Record<Bucket, { label: string; color: string }> = {
-  equity: { label: "Equity", color: "#3B6FA8" },
-  debt: { label: "Debt", color: "#A8872F" },
-  others: { label: "Others", color: "#E0B84A" },
+  equity: { label: "Equity", color: "hsl(215 60% 48%)" },
+  debt: { label: "Debt", color: "hsl(188 52% 41%)" },
+  others: { label: "Others", color: "hsl(38 64% 47%)" },
 };
 
 // Normalize the backend's canonical asset_class ("Equity" / "Debt" / "Others")
@@ -66,17 +67,21 @@ type UITrade = {
 /* Proposed trades are grouped by *why* the engine recommends them. Each group
    may cover several reason_codes; unknown codes fall back to the trade's own
    reason_title. Order = most-actionable first. `color` highlights a heading. */
+// Colour rule: buys are green, everything else is orange.
+const BUY_GREEN = "#2E9C7E";
+const TRADE_ORANGE = "#E0772F";
+
 const REASON_GROUPS: { codes: string[]; label: string; color?: string }[] = [
-  { codes: ["exit_low_rated"], label: "Underperformance" },
+  { codes: ["exit_low_rated"], label: "Underperformance", color: TRADE_ORANGE },
   {
     codes: ["exit_bad_fund", "migrate_neutral_to_recommended"],
     label: "Not on recommended list",
-    color: "#E0772F",
+    color: TRADE_ORANGE,
   },
-  { codes: ["sell_excess_direct_stocks"], label: "Reduce single-stock risk" },
-  { codes: ["trim_over_target"], label: "Trim back to target" },
-  { codes: ["cap_spill_buy"], label: "Diversifying allocation" },
-  { codes: ["add_to_target"], label: "Top up to target" },
+  { codes: ["sell_excess_direct_stocks"], label: "Reduce single-stock risk", color: TRADE_ORANGE },
+  { codes: ["trim_over_target"], label: "Trim back to target", color: TRADE_ORANGE },
+  { codes: ["cap_spill_buy"], label: "Diversifying allocation", color: BUY_GREEN },
+  { codes: ["add_to_target"], label: "Top up to target", color: BUY_GREEN },
 ];
 
 const fmtINR = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
@@ -257,10 +262,11 @@ const OVERWEIGHT = "hsl(var(--destructive))";
 const UNDERWEIGHT = "hsl(var(--wealth-green))";
 const NEUTRAL = "hsl(var(--muted-foreground))";
 
-// Current vs target bars — Current is soft gold at 50% opacity, Target is solid gold.
-// Current vs target bars: Current is a very light gold tint, Target is a strong deep gold.
-const GOLD = "#A8761F"; // Target — very strong
-const GOLD_SOFT = "rgba(212, 168, 104, 0.22)"; // Current — very light
+// Current vs target bars now use each asset class's own colour: Target is the
+// solid asset colour, Current is the same colour lightened. `withAlpha` turns an
+// `hsl(h s% l%)` token into a translucent version.
+const withAlpha = (color: string, a: number): string =>
+  color.startsWith("hsl") ? color.replace(/\)\s*$/, ` / ${a})`) : color;
 
 const RebalanceExplanation = () => {
   const navigate = useNavigate();
@@ -353,9 +359,32 @@ const RebalanceExplanation = () => {
 
       <div className="px-5 pt-10 pb-2 space-y-3">
         {dataLoading && (
-          <div className="flex items-center justify-center gap-2 py-20 text-muted-foreground">
-            <Loader2 className="h-5 w-5 animate-spin" />
-            <span className="text-sm">Loading your plan…</span>
+          <div className="space-y-3" aria-busy="true" aria-label="Loading your plan">
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span className="text-[12px]">Building your plan…</span>
+            </div>
+            {/* Drift card placeholder */}
+            <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
+              <Skeleton className="h-3 w-28" />
+              <Skeleton className="h-3 w-full" />
+              <Skeleton className="h-3 w-5/6" />
+              <Skeleton className="h-3 w-2/3" />
+            </div>
+            {/* Proposed-trades placeholder */}
+            <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
+              <Skeleton className="h-3 w-32" />
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="flex items-center gap-3">
+                  <Skeleton className="h-7 w-11 rounded-md" />
+                  <div className="flex-1 space-y-1.5">
+                    <Skeleton className="h-3 w-3/4" />
+                    <Skeleton className="h-2.5 w-1/3" />
+                  </div>
+                  <Skeleton className="h-3 w-14" />
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -435,11 +464,11 @@ const RebalanceExplanation = () => {
                     <p className="text-[11px] tracking-[0.16em] uppercase text-muted-foreground">Current vs target</p>
                     <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
                       <span className="inline-flex items-center gap-1">
-                        <span className="h-2 w-3.5 rounded-sm" style={{ background: GOLD_SOFT }} />
+                        <span className="h-2 w-3.5 rounded-sm" style={{ background: withAlpha("hsl(var(--muted-foreground))", 0.3) }} />
                         Current
                       </span>
                       <span className="inline-flex items-center gap-1">
-                        <span className="h-2 w-3.5 rounded-sm" style={{ background: GOLD }} />
+                        <span className="h-2 w-3.5 rounded-sm bg-muted-foreground" />
                         Target
                       </span>
                     </div>
@@ -465,13 +494,13 @@ const RebalanceExplanation = () => {
                           </div>
 
                           {/* Current (top) + Target (bottom) — flush, no gap between them.
-                              Current = very light gold, Target = strong deep gold. */}
+                              Current = the asset colour lightened, Target = solid asset colour. */}
                           <div className="overflow-hidden rounded-[3px] bg-muted">
                             <div
                               className="h-3.5"
                               style={{
                                 width: `${Math.max(curWidth, 0.5)}%`,
-                                background: GOLD_SOFT,
+                                background: withAlpha(row.color, 0.3),
                               }}
                               title={`Current · ${axisINR(row.currentInr)}`}
                             />
@@ -479,7 +508,7 @@ const RebalanceExplanation = () => {
                               className="h-3.5"
                               style={{
                                 width: `${Math.max(tgtWidth, 0.5)}%`,
-                                background: GOLD,
+                                background: row.color,
                               }}
                               title={`Target · ${axisINR(row.targetInr)}`}
                             />
@@ -520,58 +549,58 @@ const RebalanceExplanation = () => {
                   No trades needed — your portfolio is already aligned with the plan.
                 </p>
               ) : (
-                <div className="mt-3 space-y-4">
+                <div className="mt-3 space-y-5">
                   {tradeGroups.map(({ label, color, trades }) => (
                       <div key={label}>
-                        <div className="flex items-center justify-between gap-2 pb-1.5">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            {color && (
-                              <span
-                                className="h-1.5 w-1.5 rounded-full shrink-0"
-                                style={{ backgroundColor: color, boxShadow: `0 0 8px ${color}` }}
-                              />
-                            )}
-                            <p
-                              className="text-[10px] font-bold tracking-[0.14em] uppercase truncate"
-                              style={{ color: color ?? "hsl(var(--foreground) / 0.8)" }}
-                            >
-                              {label}
-                            </p>
-                          </div>
-                          <span className="text-[9px] shrink-0" style={{ color: color ?? "hsl(var(--muted-foreground))" }}>
-                            {trades.length} {trades.length === 1 ? "fund" : "funds"}
+                        {/* Headings are neutral by default; a flagged group (e.g.
+                            "Not on recommended list") gets a crisp accent so it
+                            pops, without the glow/clutter from before. */}
+                        <div className="flex items-center gap-2 pb-2">
+                          <p
+                            className="text-[10px] font-bold tracking-[0.14em] uppercase truncate"
+                            style={{ color: color ?? "hsl(var(--muted-foreground))" }}
+                          >
+                            {label}
+                          </p>
+                          <span
+                            className="shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold"
+                            style={
+                              color
+                                ? { backgroundColor: `${color}1f`, color }
+                                : { backgroundColor: "hsl(var(--muted))", color: "hsl(var(--muted-foreground))" }
+                            }
+                          >
+                            {trades.length}
                           </span>
+                          <div className="h-px flex-1" style={{ backgroundColor: color ? `${color}55` : "hsl(var(--border))" }} />
                         </div>
-                        <div className="divide-y divide-border">
-                          {trades.map((trade) => (
-                            <button
-                              key={trade.id}
-                              type="button"
-                              onClick={() => openTrade(trade)}
-                              className="w-full py-2.5 text-left flex items-center gap-3"
-                            >
-                              <span
-                                className="px-2 py-0.5 rounded-md text-[11px] font-semibold tracking-wide shrink-0"
-                                style={{
-                                  backgroundColor:
-                                    trade.type === "SELL"
-                                      ? "hsl(var(--destructive) / 0.12)"
-                                      : "hsl(var(--wealth-green) / 0.12)",
-                                  color:
-                                    trade.type === "SELL"
-                                      ? "hsl(var(--destructive))"
-                                      : "hsl(var(--wealth-green))",
-                                }}
+                        <div className="space-y-1.5">
+                          {trades.map((trade) => {
+                            const isSell = trade.type === "SELL";
+                            const tone = isSell ? TRADE_ORANGE : BUY_GREEN;
+                            return (
+                              <button
+                                key={trade.id}
+                                type="button"
+                                onClick={() => openTrade(trade)}
+                                className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-left flex items-center gap-3 transition-colors hover:bg-muted/40"
                               >
-                                {trade.type}
-                              </span>
-                              <div className="min-w-0 flex-1">
-                                <p className="text-[13px] leading-tight font-medium text-foreground truncate">{trade.name}</p>
-                                <p className="text-[10.5px] text-muted-foreground truncate">{trade.category}</p>
-                              </div>
-                              <p className="text-[14px] leading-none font-semibold text-foreground shrink-0">{trade.amount}</p>
-                            </button>
-                          ))}
+                                <span
+                                  className="w-11 shrink-0 rounded-md py-1 text-center text-[10px] font-bold tracking-wide"
+                                  style={{ backgroundColor: `${tone}1f`, color: tone }}
+                                >
+                                  {trade.type}
+                                </span>
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-[13px] leading-tight font-medium text-foreground truncate">{trade.name}</p>
+                                  <p className="text-[10.5px] text-muted-foreground truncate">{trade.category}</p>
+                                </div>
+                                <p className="shrink-0 text-[14px] leading-none font-semibold tabular-nums" style={{ color: tone }}>
+                                  {isSell ? "−" : "+"}{trade.amount}
+                                </p>
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
                     ))}
@@ -594,13 +623,13 @@ const RebalanceExplanation = () => {
                   Funds you're keeping
                 </p>
                 <p className="mt-1 text-[11.5px] leading-snug text-muted-foreground">
-                  Performing well or neutral — staying in your portfolio, not part of these trades.
+                  Wins or neutral — staying in your portfolio, not part of these trades.
                 </p>
                 <div className="mt-3 divide-y divide-border">
                   {keptFunds.map((f) => (
                     <div key={f.id} className="flex items-center gap-3 py-2.5">
                       <span
-                        className="px-2 py-0.5 rounded-md text-[10px] font-semibold tracking-wide shrink-0"
+                        className="w-[52px] shrink-0 px-2 py-1 rounded-md text-[10px] font-semibold tracking-wide leading-tight text-center"
                         style={{
                           backgroundColor:
                             f.tone === "well"
@@ -612,7 +641,7 @@ const RebalanceExplanation = () => {
                               : "hsl(var(--muted-foreground))",
                         }}
                       >
-                        {f.tone === "well" ? "Performing well" : "Neutral"}
+                        {f.tone === "well" ? "Win" : "Neutral"}
                       </span>
                       <div className="min-w-0 flex-1">
                         <p className="text-[13px] leading-tight font-medium text-foreground truncate">{f.name}</p>

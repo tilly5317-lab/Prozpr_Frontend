@@ -258,7 +258,7 @@ export default function PortfolioFundDetail() {
                   <p className="text-[10px] text-muted-foreground">{range} change</p>
                   <p
                     className="text-[13px] font-semibold tabular-nums"
-                    style={{ color: isUp ? "hsl(160 50% 38%)" : "hsl(0 84% 50%)" }}
+                    style={{ color: isUp ? "hsl(164 54% 40%)" : "hsl(0 84% 50%)" }}
                   >
                     {formatPct1(rangeReturn)}
                   </p>
@@ -288,7 +288,7 @@ export default function PortfolioFundDetail() {
                             value == null
                               ? "hsl(var(--muted-foreground))"
                               : positive
-                                ? "hsl(160 50% 38%)"
+                                ? "hsl(164 54% 40%)"
                                 : "hsl(0 84% 50%)",
                         }}
                       >
@@ -341,7 +341,7 @@ export default function PortfolioFundDetail() {
                     label="Unrealised gain"
                     value={`${unrealisedGain >= 0 ? "+" : "−"}${formatINRPaisa(Math.abs(unrealisedGain))}`}
                     hint={formatPct1(unrealisedPct)}
-                    valueColor={unrealisedGain >= 0 ? "hsl(160 50% 38%)" : "hsl(0 84% 50%)"}
+                    valueColor={unrealisedGain >= 0 ? "hsl(164 54% 40%)" : "hsl(0 84% 50%)"}
                   />
                   <StatBlock
                     label="Avg cost / unit"

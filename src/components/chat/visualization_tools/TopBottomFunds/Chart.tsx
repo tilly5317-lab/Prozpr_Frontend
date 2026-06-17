@@ -3,7 +3,7 @@ import type { TopBottomFundsPayload, FundReturnRow } from "./types";
 function Row({ row, tone }: { row: FundReturnRow; tone: "up" | "down" }) {
   const sign = row.return_pct >= 0 ? "+" : "";
   const colorClass = tone === "up" ? "text-[hsl(160_50%_28%)]" : "text-destructive";
-  const barColor = tone === "up" ? "hsl(160 50% 38%)" : "hsl(0 72% 51%)";
+  const barColor = tone === "up" ? "hsl(164 54% 40%)" : "hsl(0 72% 51%)";
   // Bar width is proportional to absolute return, capped at 100% for visual scaling.
   const widthPct = Math.min(100, Math.abs(row.return_pct) * 3);
   return (
