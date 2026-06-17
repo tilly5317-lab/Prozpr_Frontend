@@ -17,8 +17,10 @@ import {
 } from "recharts";
 import { Download, Info, X } from "lucide-react";
 import {
+  getMyPortfolio,
   getPortfolioNavHistory,
   getPortfolioTwr,
+  type PortfolioDetail,
   type PortfolioNavHistoryResponse,
   type TwrSeriesResponse,
 } from "@/lib/api";
@@ -140,7 +142,8 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
     return stored === "returns" || stored === "waterfall" ? stored : "returns";
   });
   const [range, setRange] = useState<AnalysisRange>("1M");
-  const [infoOpen, setInfoOpen] = useState<"twr" | null>(null);
+  const [infoOpen, setInfoOpen] = useState<"twr" | "mwr" | null>(null);
+  const [portfolio, setPortfolio] = useState<PortfolioDetail | null>(null);
   const [twrData, setTwrData] = useState<TwrSeriesResponse | null>(null);
   const [twrLoading, setTwrLoading] = useState(false);
   const [twrError, setTwrError] = useState(false);
@@ -171,6 +174,31 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
       .finally(() => { if (!cancelled) setNavLoading(false); });
     return () => { cancelled = true; };
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    getMyPortfolio()
+      .then((p) => { if (!cancelled) setPortfolio(p); })
+      .catch(() => { /* annual-return card just hides */ });
+    return () => { cancelled = true; };
+  }, [open]);
+
+  // Annualised money-weighted return (a.k.a. money-rated return / MWR): the
+  // actual return on the rupees invested, annualised over the holding period.
+  // Unlike TWR it reflects the size & timing of contributions.
+  const annualMwr = useMemo(() => {
+    if (!portfolio) return null;
+    const invested = portfolio.total_invested;
+    const value = portfolio.total_value;
+    if (invested <= 0 || value <= 0) return null;
+    const startMs = new Date(portfolio.created_at).getTime();
+    const yearsHeld = Number.isFinite(startMs)
+      ? (Date.now() - startMs) / (365.25 * 24 * 3600 * 1000)
+      : 1;
+    const yrs = Math.max(yearsHeld, 0.25); // avoid explosive annualisation for very new portfolios
+    return Math.round((Math.pow(value / invested, 1 / yrs) - 1) * 100 * 100) / 100;
+  }, [portfolio]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -418,7 +446,7 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
 
                         {!twrLoading && !twrError && rebased && (
                           <>
-                            <div className="grid grid-cols-2 gap-2">
+                            <div className="grid grid-cols-3 gap-2">
                               <div className="rounded-xl p-2.5" style={{ border: `1px solid ${HAIRLINE}` }}>
                                 <div className="flex items-center gap-1 mb-0.5">
                                   <p className="text-[9px] uppercase tracking-wide text-muted-foreground">TWR</p>
@@ -432,7 +460,7 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
                                   </button>
                                 </div>
                                 <p
-                                  className="text-base font-semibold leading-tight"
+                                  className="text-sm font-semibold leading-tight"
                                   style={{
                                     color: scaledTwr >= 0 ? POSITIVE : NEGATIVE,
                                     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
@@ -442,11 +470,34 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
                                 </p>
                               </div>
                               <div className="rounded-xl p-2.5" style={{ border: `1px solid ${HAIRLINE}` }}>
+                                <div className="flex items-center gap-1 mb-0.5">
+                                  <p className="text-[9px] uppercase tracking-wide text-muted-foreground">Annual</p>
+                                  <button
+                                    type="button"
+                                    onClick={() => setInfoOpen((o) => (o === "mwr" ? null : "mwr"))}
+                                    className="text-muted-foreground hover:text-foreground"
+                                    aria-label="About Annual Return"
+                                  >
+                                    <Info className="h-3 w-3" />
+                                  </button>
+                                </div>
+                                <p
+                                  className="text-sm font-semibold leading-tight"
+                                  style={{
+                                    color: (annualMwr ?? 0) >= 0 ? POSITIVE : NEGATIVE,
+                                    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                                  }}
+                                >
+                                  {annualMwr == null ? "—" : fmtPct(annualMwr)}
+                                </p>
+                                <p className="text-[9px] text-muted-foreground mt-0.5">p.a. · MWR</p>
+                              </div>
+                              <div className="rounded-xl p-2.5" style={{ border: `1px solid ${HAIRLINE}` }}>
                                 <p className="text-[9px] uppercase tracking-wide text-muted-foreground mb-0.5 leading-tight">
                                   {NIFTY.fullName}
                                 </p>
                                 <p
-                                  className="text-base font-semibold leading-tight"
+                                  className="text-sm font-semibold leading-tight"
                                   style={{
                                     color: (primaryBench ?? 0) >= 0 ? POSITIVE : NEGATIVE,
                                     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
@@ -459,14 +510,23 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
 
                             {infoOpen && (
                               <div className="mt-2 rounded-lg px-3 py-2" style={{ backgroundColor: "hsl(var(--muted) / 0.6)" }}>
-                                <p className="text-[11.5px] text-foreground leading-relaxed">
-                                  Use this to see whether your fund choices are actually beating the
-                                  market. If your <strong>TWR</strong> sits above the Nifty 50 line,
-                                  your picks are adding value over a plain index fund; if it trails, a
-                                  low-cost index fund may have served you better. TWR ignores how much
-                                  you invested and when, so it judges the funds themselves — not your
-                                  contribution timing. (Covers your mutual-fund holdings only.)
-                                </p>
+                                {infoOpen === "twr" ? (
+                                  <p className="text-[11.5px] text-foreground leading-relaxed">
+                                    Use this to see whether your fund choices are actually beating the
+                                    market. If your <strong>TWR</strong> sits above the Nifty 50 line,
+                                    your picks are adding value over a plain index fund; if it trails, a
+                                    low-cost index fund may have served you better. TWR ignores how much
+                                    you invested and when, so it judges the funds themselves — not your
+                                    contribution timing. (Covers your mutual-fund holdings only.)
+                                  </p>
+                                ) : (
+                                  <p className="text-[11.5px] text-foreground leading-relaxed">
+                                    <strong>Annual Return</strong> is your money-weighted (money-rated)
+                                    return, annualised. Unlike TWR, it reflects the size and timing of
+                                    your contributions — the actual annual growth rate earned on the
+                                    money you put in.
+                                  </p>
+                                )}
                               </div>
                             )}
 
