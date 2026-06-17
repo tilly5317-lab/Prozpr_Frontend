@@ -117,6 +117,8 @@ const OFFLINE_RETRY_MS = 15_000;
 const REQUEST_TIMEOUT_MS = 45_000;
 /** Chat can run intent classification + optional market commentary + LLM — allow longer */
 const CHAT_REQUEST_TIMEOUT_MS = 120_000;
+/** Issue reporting blocks a user-facing submit button — keep it snappy and bounded. */
+const ISSUE_REQUEST_TIMEOUT_MS = 20_000;
 // till this
 
 async function request<T>(
@@ -325,10 +327,14 @@ export interface OnboardingProfileResponse {
   date_of_birth: string | null;
   assumed_lifespan_years: number | null;
   occupation: string | null;
+  family_status?: string | null;
+  wealth_sources?: string[] | null;
+  personal_values?: string[] | null;
   selected_goals?: string[];
   custom_goals?: string[];
   investment_horizon?: string | null;
   annual_income?: number | null;
+  effective_tax_rate?: number | null;
   monthly_household_expense?: number | null;
   financial_assets?: number | null;
   financial_liabilities_excl_mortgage?: number | null;
@@ -352,6 +358,11 @@ export interface OtherAssetResponse {
   asset_name: string;
   asset_type: string | null;
   current_value: number | null;
+}
+
+/** Read back the user's saved "other assets" so the form can prefill on return. */
+export async function getOtherAssets(): Promise<OtherAssetResponse[]> {
+  return request<OtherAssetResponse[]>("/onboarding/other-assets");
 }
 
 /** Full-replace write of the user's "other assets" list. */
@@ -769,6 +780,7 @@ export interface PersonalFinancePayload {
   financial_liabilities_excl_mortgage?: number | null;
   monthly_household_expense?: number | null;
   starting_monthly_investment?: number | null;
+  current_portfolio_corpus?: number | null;
   selected_goals?: string[] | null;
   custom_goals?: string[] | null;
   investment_horizon?: string | null;
@@ -855,6 +867,8 @@ export interface InvestmentConstraintResponse extends InvestmentConstraintPayloa
 export interface TaxProfilePayload {
   income_tax_rate?: number | null;
   capital_gains_tax_rate?: number | null;
+  /** "old" | "new" — the user's income-tax regime. */
+  tax_regime?: string | null;
   notes?: string | null;
 }
 
@@ -933,6 +947,8 @@ export interface CurrentPropertyPayload {
   has_mortgage: boolean;
   mortgage_emi?: number | null;
   mortgage_end_date?: string | null; // ISO yyyy-mm-dd
+  /** Outstanding loan balance (informational; preserves equity across edits). */
+  mortgage_balance?: number | null;
 }
 
 export interface CurrentPropertyResponse extends CurrentPropertyPayload {
@@ -1079,6 +1095,22 @@ export interface PortfolioDetail {
   updated_at: string;
   allocations: { id: string; asset_class: string; allocation_percentage: number; amount: number; performance_percentage: number | null }[];
   holdings: { id: string; instrument_name: string; instrument_type: string; ticker_symbol: string | null; quantity: number | null; average_cost: number | null; current_price: number | null; current_value: number; allocation_percentage: number | null; asset_class: string | null; sub_category: string | null }[];
+}
+
+export interface TwrPoint {
+  date: string;
+  portfolio_index: number;
+  nifty_index: number | null;
+}
+
+export interface TwrSeriesResponse {
+  has_data: boolean;
+  points: TwrPoint[];
+}
+
+/** Real TWR series (portfolio vs Nifty 50, MF-only). Frontend rebases per range. */
+export async function getPortfolioTwr(): Promise<TwrSeriesResponse> {
+  return request<TwrSeriesResponse>("/portfolio/twr");
 }
 
 /** Primary portfolio for the logged-in user (from DB). */
@@ -1508,6 +1540,7 @@ export interface GoalCreatePayload {
   priority?: string;
   inflation_rate?: number;
   notes?: string;
+  monthly_contribution?: number;
 }
 
 export async function createGoal(payload: GoalCreatePayload): Promise<GoalResponse> {
@@ -1524,6 +1557,7 @@ export interface GoalUpdatePayload {
   priority?: string;
   inflation_rate?: number;
   notes?: string;
+  monthly_contribution?: number;
 }
 
 export async function updateGoal(goalId: string, payload: GoalUpdatePayload): Promise<GoalResponse> {
@@ -1730,6 +1764,7 @@ export interface CashflowInputValues {
   /** Fraction (0-1). The form collects a percentage and divides before calling. */
   effective_tax_rate?: number;
   starting_monthly_investment?: number;
+  current_portfolio_corpus?: number;
   financial_assets?: number;
   financial_liabilities_excl_mortgage?: number;
 }
@@ -1747,6 +1782,7 @@ export async function saveCashflowInputs(v: CashflowInputValues): Promise<void> 
   if (v.monthly_household_expense != null) finance.monthly_household_expense = v.monthly_household_expense;
   if (v.effective_tax_rate != null) finance.effective_tax_rate = v.effective_tax_rate;
   if (v.starting_monthly_investment != null) finance.starting_monthly_investment = v.starting_monthly_investment;
+  if (v.current_portfolio_corpus != null) finance.current_portfolio_corpus = v.current_portfolio_corpus;
   if (v.financial_assets != null) finance.financial_assets = v.financial_assets;
   if (v.financial_liabilities_excl_mortgage != null)
     finance.financial_liabilities_excl_mortgage = v.financial_liabilities_excl_mortgage;
@@ -2103,6 +2139,7 @@ export interface RebalancingTrade {
   isin: string;
   recommended_fund: string;
   asset_subgroup: string;
+  asset_class: string; // backend-derived "Equity" | "Debt" | "Others"
   sub_category: string;
   action: string; // "BUY" | "SELL" | "EXIT"
   amount_inr: number;
@@ -2127,6 +2164,7 @@ export interface RebalancingTotals {
 
 export interface RebalancingSubgroupSummary {
   asset_subgroup: string;
+  asset_class: string; // backend-derived "Equity" | "Debt" | "Others"
   goal_target_inr: number;
   current_holding_inr: number;
   suggested_final_holding_inr: number;
@@ -2271,7 +2309,7 @@ export async function reportIssue(
   if (familyMemberId) headers["X-Family-Member-Id"] = familyMemberId;
 
   const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeoutId = window.setTimeout(() => controller.abort(), ISSUE_REQUEST_TIMEOUT_MS);
   let res: Response;
   try {
     res = await fetch(`${API}/support/report-issue`, {

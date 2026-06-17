@@ -11,7 +11,10 @@ import {
   updatePersonalFinance,
   updateInvestmentProfile,
   updateCurrentProperties,
+  getCurrentProperties,
   saveOtherAssets,
+  getOtherAssets,
+  listGoals,
   updateRiskProfile,
   updateConstraints,
   updateTaxProfile,
@@ -565,6 +568,13 @@ const CompleteProfile = () => {
     return s;
   });
   const [profileLoaded, setProfileLoaded] = useState(false);
+  // True while a step/section save is in flight — drives the button spinner and
+  // blocks double-submits.
+  const [saving, setSaving] = useState(false);
+  // Snapshot of each step's field signature (keyed `${section}-${group}`), taken
+  // when a section is opened and refreshed after each successful save. Used to
+  // skip the save API for steps the user didn't actually edit (avoids lag).
+  const savedSig = useRef<Record<string, string>>({});
 
   // Section 0 — Who are you?
   const [occupation, setOccupation] = useState("");
@@ -655,44 +665,50 @@ const CompleteProfile = () => {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      const newStatuses: SectionStatus[] = Array(SECTION_TITLES.length).fill("not_started");
+      newStatuses[0] = "auto_filled";
+
+      // "N earning, M dependents" (the format confirmSection writes) → the two
+      // separate number inputs in the "Family situation" step.
+      const applyFamilyStatus = (fs: string | null | undefined) => {
+        if (!fs) return;
+        const m = fs.match(/(\d+)\s*earning[^\d]*(\d+)\s*dependent/i);
+        if (m) {
+          setEarningMembers(m[1]);
+          setDependents(m[2]);
+        }
+      };
+
+      // 1) Full profile — risk / tax / constraints / investment-profile extras.
+      //    Best-effort: an onboarding-only user may have none of these yet, so a
+      //    failure here must NOT block the onboarding prefill below.
       try {
         const p = await getFullProfile();
         if (cancelled) return;
-        const newStatuses: SectionStatus[] = Array(SECTION_TITLES.length).fill("not_started");
-        newStatuses[0] = "auto_filled";
 
-        // Load personal info data (no longer a separate section)
+        // Personal info (occupation, family, wealth sources, values).
         if (p.personal_info) {
           const pi = p.personal_info;
           if (pi.occupation) setOccupation(pi.occupation);
-          if (pi.family_status) {
-            setEarningMembers("");
-            setDependents("");
-          }
-          if (pi.personal_values) setValues(pi.personal_values.join(", "));
+          applyFamilyStatus(pi.family_status);
+          if (pi.wealth_sources?.length) setPrimaryWealthSource(pi.wealth_sources);
+          if (pi.personal_values?.length) setValues(pi.personal_values.join(", "));
         }
 
-        // Section 0 — financial picture (from investment profile)
+        // Investment profile — assets, liabilities, property, emergency, goals.
         if (p.investment_profile) {
           const ip = p.investment_profile;
-          if (p.personal_info?.wealth_sources?.length) {
-            setPrimaryWealthSource(p.personal_info.wealth_sources);
-          }
-          setInvestableAssets(parseNum(ip.investable_assets?.toString()));
-          setLiabilities(parseNum(ip.total_liabilities?.toString()));
-          if (ip.property_value) {
-            setOwnsHome(true);
-            setProperties([{ value: parseNum(ip.property_value?.toString()), mortgage: parseNum(ip.mortgage_amount?.toString()), monthlyRepayment: "", yearPurchased: "", mortgageEndDate: "", lastPaymentDate: "" }]);
-          }
-          // plannedExpenses removed — now structured fields
+          if (ip.investable_assets != null) setInvestableAssets(parseNum(ip.investable_assets?.toString()));
+          if (ip.total_liabilities != null) setLiabilities(parseNum(ip.total_liabilities?.toString()));
+          // Owned home is loaded from user_current_properties below (the table the
+          // save writes to) — not from the legacy investment_profile aggregate.
           setEmergencyFund(parseNum(ip.emergency_fund?.toString()));
           if (ip.emergency_fund_months) setEmergencyTimeframe(ip.emergency_fund_months);
           if (ip.investable_assets != null) newStatuses[0] = "confirmed";
-
-          // Section 1 — goals
-          if (ip.objectives?.length) setSelectedObjectives(ip.objectives);
-          if (ip.objectives?.length) newStatuses[1] = "confirmed";
-
+          if (ip.objectives?.length) {
+            setSelectedObjectives(ip.objectives);
+            newStatuses[1] = "confirmed";
+          }
         }
 
         // Section 2 — risk
@@ -712,14 +728,18 @@ const CompleteProfile = () => {
           const tp = p.tax_profile;
           if (tp.income_tax_rate != null) setIncomeTaxRate(String(tp.income_tax_rate));
           if (tp.capital_gains_tax_rate != null) setCgtRate(String(tp.capital_gains_tax_rate));
-          if (tp.notes) {
+          // Prefer the dedicated tax_regime column; fall back to parsing the
+          // legacy "Regime: old/new" note for users saved before the column existed.
+          if (tp.tax_regime === "old" || tp.tax_regime === "new") {
+            setTaxRegime(tp.tax_regime);
+          } else if (tp.notes) {
             const regimeMatch = tp.notes.match(/regime:\s*(old|new)/i);
             if (regimeMatch) setTaxRegime(regimeMatch[1].toLowerCase() as "old" | "new");
-            else setTaxNotes(tp.notes);
           }
+          // Keep any genuine free-form note (not the legacy regime marker).
+          if (tp.notes && !/regime:/i.test(tp.notes)) setTaxNotes(tp.notes);
           if (tp.income_tax_rate != null) newStatuses[3] = "confirmed";
         }
-
 
         // Load review preference data
         if (p.review_preference) {
@@ -748,47 +768,111 @@ const CompleteProfile = () => {
             setAllocations((prev) => ({ ...prev, ...loaded }));
           }
         }
-
-        // Prefill the household-finance answers captured during onboarding
-        // (DOB, annual income & expense, assets/liabilities, monthly investment).
-        // These live on personal_finance_profiles and aren't part of getFullProfile.
-        try {
-          const op = await getOnboardingProfile();
-          if (!cancelled) {
-            if (op.annual_income != null) {
-              setAnnualIncome(parseNum(String(Math.round(op.annual_income))));
-            }
-            if (op.monthly_household_expense != null) {
-              setAnnualExpense(parseNum(String(Math.round(op.monthly_household_expense * 12))));
-            }
-            if (op.starting_monthly_investment != null) {
-              setMonthlyInvestment((cur) => cur || parseNum(String(op.starting_monthly_investment)));
-            }
-            if (op.financial_assets != null) {
-              setInvestableAssets((cur) => cur || parseNum(String(op.financial_assets)));
-            }
-            if (op.financial_liabilities_excl_mortgage != null) {
-              setLiabilities((cur) => cur || parseNum(String(op.financial_liabilities_excl_mortgage)));
-            }
-            if (op.investment_horizon) {
-              setInvestmentHorizon((cur) => cur || op.investment_horizon || "");
-            }
-            if (op.date_of_birth) {
-              const [y, m, d] = op.date_of_birth.split("-");
-              if (y) setDobYear(y);
-              if (m) setDobMonth(String(Number(m)));
-              if (d) setDobDay(String(Number(d)));
-            }
-          }
-        } catch {
-          // No onboarding profile yet — nothing to prefill.
-        }
-
-        setStatuses(newStatuses);
       } catch {
-        // first-time user
-      } finally {
-        if (!cancelled) setProfileLoaded(true);
+        // No full profile yet — fall through to the onboarding prefill.
+      }
+
+      // 2) Onboarding profile — the canonical source for the household-finance
+      //    answers (income, expense, assets, liabilities, DOB) plus identity
+      //    fields. Its own request so a missing full profile never blocks it.
+      try {
+        const op = await getOnboardingProfile();
+        if (!cancelled) {
+          if (op.occupation) setOccupation((cur) => cur || op.occupation || "");
+          applyFamilyStatus(op.family_status);
+          if (op.wealth_sources?.length) {
+            setPrimaryWealthSource((cur) => (cur.length ? cur : op.wealth_sources!));
+          }
+          if (op.personal_values?.length) {
+            setValues((cur) => cur || op.personal_values!.join(", "));
+          }
+          if (op.annual_income != null) {
+            setAnnualIncome(parseNum(String(Math.round(op.annual_income))));
+          }
+          if (op.monthly_household_expense != null) {
+            setAnnualExpense(parseNum(String(Math.round(op.monthly_household_expense * 12))));
+          }
+          if (op.starting_monthly_investment != null) {
+            setMonthlyInvestment((cur) => cur || parseNum(String(op.starting_monthly_investment)));
+          }
+          if (op.financial_assets != null) {
+            setInvestableAssets((cur) => cur || parseNum(String(op.financial_assets)));
+          }
+          if (op.financial_liabilities_excl_mortgage != null) {
+            setLiabilities((cur) => cur || parseNum(String(op.financial_liabilities_excl_mortgage)));
+          }
+          if (op.investment_horizon) {
+            setInvestmentHorizon((cur) => cur || op.investment_horizon || "");
+          }
+          if (op.date_of_birth) {
+            const [y, m, d] = op.date_of_birth.split("-");
+            if (y) setDobYear(y);
+            if (m) setDobMonth(String(Number(m)));
+            if (d) setDobDay(String(Number(d)));
+          }
+          // The user answered the core financial picture during onboarding —
+          // reflect that on the section card.
+          if (
+            op.annual_income != null ||
+            op.financial_assets != null ||
+            op.monthly_household_expense != null
+          ) {
+            newStatuses[0] = "confirmed";
+          }
+        }
+      } catch {
+        // No onboarding profile yet — nothing to prefill.
+      }
+
+      // 3) Prefill previously-saved "other assets" so a returning user sees and
+      //    can edit them (the save is a full-replace, so they must be loaded).
+      try {
+        const savedAssets = await getOtherAssets();
+        if (!cancelled && savedAssets.length > 0) {
+          setOtherAssets(
+            savedAssets.map((a) => ({
+              name: a.asset_name,
+              value: a.current_value != null ? parseNum(String(a.current_value)) : "",
+            })),
+          );
+        }
+      } catch {
+        // None saved yet — keep the empty default row.
+      }
+
+      // 4) Owned home — load from user_current_properties (the table the save
+      //    writes to), so "Do you own a home?" and its details persist on return.
+      try {
+        const props = await getCurrentProperties();
+        if (!cancelled && props.length > 0) {
+          setOwnsHome(true);
+          setProperties(
+            props.map((p) => ({
+              value: p.property_value != null ? parseNum(String(p.property_value)) : "",
+              mortgage: p.mortgage_balance != null ? parseNum(String(p.mortgage_balance)) : "",
+              monthlyRepayment: p.mortgage_emi != null ? parseNum(String(p.mortgage_emi)) : "",
+              yearPurchased: "",
+              mortgageEndDate: p.mortgage_end_date ? p.mortgage_end_date.slice(0, 4) : "",
+              lastPaymentDate: "",
+            })),
+          );
+        }
+      } catch {
+        // No properties saved yet — keep the default (ownsHome = No).
+      }
+
+      // 5) "What are you trying to achieve?" is complete once the user has at
+      //    least one goal (goals live in the goals service / goal planner).
+      try {
+        const goals = await listGoals();
+        if (!cancelled && goals.length > 0) newStatuses[1] = "confirmed";
+      } catch {
+        // No goals yet — leave the section not-started.
+      }
+
+      if (!cancelled) {
+        setStatuses(newStatuses);
+        setProfileLoaded(true);
       }
     })();
     return () => { cancelled = true; };
@@ -837,75 +921,108 @@ const CompleteProfile = () => {
     updateGoalDetail(objective, { purposes });
   };
 
-  const confirmSection = useCallback(async (idx: number) => {
+  // A compact signature of the fields each step persists. Compared against the
+  // snapshot taken when the section was opened so we only call the save API on a
+  // real edit. Must list exactly the state each persistGroup branch reads.
+  const signatureFor = (sectionIdx: number, groupIdx: number): string => {
+    if (sectionIdx === 0) {
+      switch (groupIdx) {
+        case 0: return JSON.stringify([earningMembers, dependents]);
+        case 1: return JSON.stringify([annualIncome, annualExpense]);
+        case 2: return JSON.stringify([primaryWealthSource, wealthSourceOtherText]);
+        case 3: return JSON.stringify([investableAssets, liabilities, monthlyInvestment, otherAssets]);
+        case 4: return JSON.stringify([ownsHome, properties]);
+        case 5: return JSON.stringify([plannedExpenses]);
+        case 6: return JSON.stringify([largeIncomes, emergencyFund, emergencyTimeframe]);
+      }
+    } else if (sectionIdx === 2) {
+      switch (groupIdx) {
+        case 0: return JSON.stringify([investmentHorizon]);
+        case 1: return JSON.stringify([riskLevelIdx, riskCapacity, investmentExperience, behavQ1, maxDrawdown, comfortAssets]);
+      }
+    } else if (sectionIdx === 3) {
+      switch (groupIdx) {
+        case 0: return JSON.stringify([incomeTaxRate]);
+        case 1: return JSON.stringify([cgtRate, taxRegime, taxNotes]);
+      }
+    }
+    return "";
+  };
+
+  const isGroupDirty = (sectionIdx: number, groupIdx: number): boolean =>
+    savedSig.current[`${sectionIdx}-${groupIdx}`] !== signatureFor(sectionIdx, groupIdx);
+
+  // Capture the baseline signatures for a section's steps as it's opened, so an
+  // untouched step never hits the API. Group counts mirror sectionGroups /
+  // signatureFor: section 0 has 7 steps; sections 2 and 3 have 2 each.
+  const snapshotSectionSignatures = (sectionIdx: number) => {
+    const count = sectionIdx === 0 ? 7 : 2;
+    for (let g = 0; g < count; g++) {
+      savedSig.current[`${sectionIdx}-${g}`] = signatureFor(sectionIdx, g);
+    }
+  };
+
+  // Confirm the section: the per-step saves already ran on each "Next"; here we
+  // persist only the final step (if edited) and mark the section confirmed.
+  const confirmSection = async (idx: number, lastGroupIdx: number) => {
+    if (saving) return;
+    let ok = true;
+    if (isGroupDirty(idx, lastGroupIdx)) {
+      setSaving(true);
+      ok = await persistGroup(idx, lastGroupIdx);
+      setSaving(false);
+    }
+    if (!ok) return;
+
+    const nextStatuses = [...statuses];
+    nextStatuses[idx] = "confirmed";
+    setStatuses(nextStatuses);
+    // Back to the section cards — the next card to tackle is visible there.
+    setOpenSection(-1);
+    setGroupIndex(0);
+    toast.success(`Section ${idx + 1} confirmed ✓`);
+  };
+
+  // Persist just the fields belonging to one question group, so answers are
+  // saved step-by-step as the user taps "Next" (not only on final confirm).
+  // The backend PUT endpoints use exclude_unset, so sending a partial payload
+  // never nulls fields owned by other steps. Returns false if the save failed.
+  const persistGroup = async (sectionIdx: number, groupIdx: number): Promise<boolean> => {
+    const key = `${sectionIdx}-${groupIdx}`;
+    const sig = signatureFor(sectionIdx, groupIdx);
+    // Unchanged since the section opened / last save → skip the API call entirely.
+    if (savedSig.current[key] === sig) return true;
     try {
-      switch (idx) {
-        case 0: {
-          // 1) Personal info → users + personal_finance_profiles (lists).
-          const sources = [...primaryWealthSource];
-          if (sources.includes("Others") && wealthSourceOtherText.trim()) {
-            sources[sources.indexOf("Others")] = wealthSourceOtherText.trim();
+      if (sectionIdx === 0) {
+        switch (groupIdx) {
+          case 0: // Family situation
+            await updatePersonalInfo({
+              family_status: `${earningMembers || "0"} earning, ${dependents || "0"} dependents`,
+            });
+            break;
+          case 1: { // Income & expenses
+            const annualExpenseNum = toNum(annualExpense);
+            await updatePersonalFinance({
+              annual_income: toNum(annualIncome),
+              monthly_household_expense:
+                annualExpenseNum != null ? Math.round(annualExpenseNum / 12) : null,
+            });
+            break;
           }
-          const personalValuesList = values
-            .split(",")
-            .map((v) => v.trim())
-            .filter(Boolean);
-          await updatePersonalInfo({
-            occupation: occupation.trim() || null,
-            wealth_sources: sources.length ? sources : null,
-            personal_values: personalValuesList.length ? personalValuesList : null,
-            family_status: `${earningMembers || "0"} earning, ${dependents || "0"} dependents`,
-          });
-
-          // 2) Household cashflow scalars → personal_finance_profiles.
-          // "Annual expense" is stored as monthly_household_expense (÷12).
-          const annualExpenseNum = toNum(annualExpense);
-          await updatePersonalFinance({
-            annual_income: toNum(annualIncome),
-            financial_assets: toNum(investableAssets),
-            financial_liabilities_excl_mortgage: toNum(liabilities),
-            monthly_household_expense:
-              annualExpenseNum != null ? Math.round(annualExpenseNum / 12) : null,
-            starting_monthly_investment: toNum(monthlyInvestment),
-          });
-
-          // 3) Investment-profile scalars → investment_profiles.
-          await updateInvestmentProfile({
-            planned_major_expenses:
-              plannedExpenses.reduce((sum, e) => sum + (toNum(e.amount) ?? 0), 0) || null,
-            expected_inflows:
-              largeIncomes.reduce((sum, i) => sum + (toNum(i.amount) ?? 0), 0) || null,
-            emergency_fund: toNum(emergencyFund),
-            emergency_fund_months: emergencyTimeframe || null,
-          });
-
-          // 4) Owned properties → user_current_properties (full replace; [] clears).
-          const propertyRows: CurrentPropertyPayload[] = ownsHome
-            ? properties
-                .map((p, i): CurrentPropertyPayload | null => {
-                  const value = toNum(p.value);
-                  const emi = toNum(p.monthlyRepayment);
-                  const endDate = toIsoDate(p.mortgageEndDate);
-                  // A mortgage row is only valid when EMI + end date are both
-                  // present (backend requires them when has_mortgage is true).
-                  const hasMortgage = (toNum(p.mortgage) ?? 0) > 0 && emi != null && endDate != null;
-                  // Skip fully-empty property rows.
-                  if (value == null && !hasMortgage) return null;
-                  return {
-                    name: properties.length > 1 ? `Property ${i + 1}` : "Primary residence",
-                    property_value: value,
-                    has_mortgage: hasMortgage,
-                    mortgage_emi: hasMortgage ? emi : null,
-                    mortgage_end_date: hasMortgage ? endDate : null,
-                  };
-                })
-                .filter((p): p is CurrentPropertyPayload => p !== null)
-            : [];
-          await updateCurrentProperties(propertyRows);
-
-          // 5) Other assets → other_investments (only when filled, to avoid
-          // wiping the list on a partial edit).
-          {
+          case 2: { // Income sources
+            const sources = [...primaryWealthSource];
+            if (sources.includes("Others") && wealthSourceOtherText.trim()) {
+              sources[sources.indexOf("Others")] = wealthSourceOtherText.trim();
+            }
+            await updatePersonalInfo({ wealth_sources: sources.length ? sources : null });
+            break;
+          }
+          case 3: { // Assets & liabilities (+ other assets)
+            await updatePersonalFinance({
+              financial_assets: toNum(investableAssets),
+              financial_liabilities_excl_mortgage: toNum(liabilities),
+              starting_monthly_investment: toNum(monthlyInvestment),
+            });
             const filledAssets = otherAssets.filter((a) => a.name.trim());
             if (filledAssets.length > 0) {
               await saveOtherAssets(
@@ -916,69 +1033,91 @@ const CompleteProfile = () => {
                 })),
               );
             }
+            break;
           }
-          break;
+          case 4: { // Property
+            const propertyRows: CurrentPropertyPayload[] = ownsHome
+              ? properties
+                  .map((p, i): CurrentPropertyPayload | null => {
+                    const value = toNum(p.value);
+                    const emi = toNum(p.monthlyRepayment);
+                    const endDate = toIsoDate(p.mortgageEndDate);
+                    const balance = toNum(p.mortgage);
+                    // A mortgage is present when EMI + end date are set (the
+                    // backend requires both when has_mortgage is true). The
+                    // outstanding balance is stored separately and is optional.
+                    const hasMortgage = emi != null && endDate != null;
+                    if (value == null && balance == null && !hasMortgage) return null;
+                    return {
+                      name: properties.length > 1 ? `Property ${i + 1}` : "Primary residence",
+                      property_value: value,
+                      has_mortgage: hasMortgage,
+                      mortgage_emi: hasMortgage ? emi : null,
+                      mortgage_end_date: hasMortgage ? endDate : null,
+                      mortgage_balance: balance,
+                    };
+                  })
+                  .filter((p): p is CurrentPropertyPayload => p !== null)
+              : [];
+            await updateCurrentProperties(propertyRows);
+            break;
+          }
+          case 5: // Planned large expenses
+            await updateInvestmentProfile({
+              planned_major_expenses:
+                plannedExpenses.reduce((sum, e) => sum + (toNum(e.amount) ?? 0), 0) || null,
+            });
+            break;
+          case 6: // Expected large income (+ emergency fund)
+            await updateInvestmentProfile({
+              expected_inflows:
+                largeIncomes.reduce((sum, i) => sum + (toNum(i.amount) ?? 0), 0) || null,
+              emergency_fund: toNum(emergencyFund),
+              emergency_fund_months: emergencyTimeframe || null,
+            });
+            break;
         }
-        case 1:
-          await updateInvestmentProfile({
-            objectives: selectedObjectives.length ? selectedObjectives : null,
-            detailed_goals: selectedObjectives.map((obj) => {
-              const d = getOrCreateGoalDetail(obj);
-              return {
-                description: obj,
-                year: d.year,
-                amount: d.amount,
-                currency: d.currency,
-                purposes: d.purposes,
-                min_return: d.minReturn,
-                notes: d.notes,
-              };
-            }),
-          });
-          break;
-        case 2:
-          await updateRiskProfile({
-            risk_level: riskLevelIdx,
-            risk_capacity: riskCapacity || null,
-            investment_experience: investmentExperience || null,
-            investment_horizon: investmentHorizon || null,
-            drop_reaction: behavQ1 || null,
-            max_drawdown: maxDrawdown ? Number(maxDrawdown) : null,
-            comfort_assets: comfortAssets.length ? comfortAssets : null,
-          });
-          break;
-        case 3:
-          await updateTaxProfile({
-            income_tax_rate: incomeTaxRate ? Number(incomeTaxRate) : null,
-            capital_gains_tax_rate: cgtRate ? Number(cgtRate) : null,
-            notes: taxRegime ? `Regime: ${taxRegime}` : taxNotes || null,
-          });
-          break;
+      } else if (sectionIdx === 2) {
+        switch (groupIdx) {
+          case 0: // Investment horizon
+            await updateRiskProfile({ investment_horizon: investmentHorizon || null });
+            break;
+          case 1: // Behavioural risk
+            await updateRiskProfile({
+              risk_level: riskLevelIdx,
+              risk_capacity: riskCapacity || null,
+              investment_experience: investmentExperience || null,
+              drop_reaction: behavQ1 || null,
+              max_drawdown: maxDrawdown ? Number(maxDrawdown) : null,
+              comfort_assets: comfortAssets.length ? comfortAssets : null,
+            });
+            break;
+        }
+      } else if (sectionIdx === 3) {
+        switch (groupIdx) {
+          case 0: // Marginal tax rate
+            await updateTaxProfile({
+              income_tax_rate: incomeTaxRate ? Number(incomeTaxRate) : null,
+            });
+            break;
+          case 1: // Tax regime
+            await updateTaxProfile({
+              capital_gains_tax_rate: cgtRate ? Number(cgtRate) : null,
+              tax_regime: taxRegime || null,
+              notes: taxNotes || null,
+            });
+            break;
+        }
       }
+      // Saved successfully → this step is now clean.
+      savedSig.current[key] = sig;
+      return true;
     } catch (err) {
-      if (err instanceof BackendOfflineError) return;
+      if (err instanceof BackendOfflineError) return false;
       toast.error(`Failed to save: ${err instanceof Error ? err.message : "unknown error"}`);
-      return;
+      return false;
     }
-
-    const nextStatuses = [...statuses];
-    nextStatuses[idx] = "confirmed";
-    setStatuses(nextStatuses);
-    // Back to the section cards — the next card to tackle is visible there.
-    setOpenSection(-1);
-    setGroupIndex(0);
-    toast.success(`Section ${idx + 1} confirmed ✓`);
-  }, [
-    statuses,
-    occupation, primaryResidence, earningMembers, dependents, values,
-    annualIncome, annualExpense, monthlyInvestment, wealthSourceOtherText,
-    primaryWealthSource, investableAssets, liabilities, properties, plannedExpenses, emergencyFund, emergencyTimeframe, otherAssets, ownsHome, expectingLargeIncome, largeIncomes,
-    selectedObjectives, goalDetails,
-    riskLevelIdx, riskCapacity, investmentExperience, investmentHorizon, horizonNotes, behavQ1, behavQ2, behavQ3, maxDrawdown, comfortAssets,
-    permittedAssets, allocations, prohibited, leverage, derivatives, diversificationNotes,
-    incomeTaxRate, cgtRate, taxNotes, taxRegime,
-    reviewFreq, reviewTriggers, updateProcess,
-  ]);
+  };
 
   const markInProgress = useCallback((idx: number) => {
     setStatuses((prev) => {
@@ -996,6 +1135,9 @@ const CompleteProfile = () => {
       navigate("/goal-planner");
       return;
     }
+    // Baseline the steps' signatures as they are now, so a step the user never
+    // touches won't trigger a save when they click through.
+    snapshotSectionSignatures(idx);
     setOpenSection(idx);
     setGroupIndex(0);
     markInProgress(idx);
@@ -1201,44 +1343,81 @@ const CompleteProfile = () => {
            </div>
           ) },
           { label: "Property", body: (
-           <div className="space-y-3">
+           <div className="space-y-4">
             <div>
               <FieldLabel>Do you own a home?</FieldLabel>
+              <p className="text-[10px] text-muted-foreground -mt-0.5 mb-2">
+                Any residential property you own. Used for your net worth and to plan around your mortgage.
+              </p>
               <Toggle value={ownsHome} onChange={setOwnsHome} labelA="No" labelB="Yes" />
-              {ownsHome && (
-                <div className="mt-3 space-y-3">
-                  {properties.map((prop, idx) => {
-                    const updateProp = (field: keyof Property, val: string) => {
-                      setProperties(prev => prev.map((p, i) => i === idx ? { ...p, [field]: val } : p));
-                    };
-                    return (
-                      <div key={idx} className="relative space-y-2 pl-1 border-l-2 border-accent/20 ml-1 rounded-lg bg-card p-3">
+            </div>
+
+            {ownsHome && (
+              <div className="space-y-3">
+                {properties.map((prop, idx) => {
+                  const updateProp = (field: keyof Property, val: string) => {
+                    setProperties(prev => prev.map((p, i) => i === idx ? { ...p, [field]: val } : p));
+                  };
+                  return (
+                    <div key={idx} className="relative rounded-xl border border-border bg-card p-4 shadow-sm">
+                      <div className="mb-3 flex items-center justify-between">
+                        <p className="text-xs font-semibold text-foreground">
+                          {properties.length > 1 ? `Property ${idx + 1}` : "Your home"}
+                        </p>
                         {properties.length > 1 && (
-                          <button onClick={() => setProperties(prev => prev.filter((_, i) => i !== idx))} className="absolute top-2 right-2 h-5 w-5 flex items-center justify-center rounded-full bg-muted hover:bg-destructive/20 transition-colors">
-                            <X className="h-3 w-3 text-muted-foreground" />
+                          <button
+                            onClick={() => setProperties(prev => prev.filter((_, i) => i !== idx))}
+                            className="flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                            aria-label="Remove property"
+                          >
+                            <X className="h-3.5 w-3.5" />
                           </button>
                         )}
-                        {properties.length > 1 && <p className="text-[10px] font-semibold text-muted-foreground mb-1">Property {idx + 1}</p>}
-                        <div><label className="text-[10px] text-muted-foreground">Property value</label><TextInput value={prop.value} onChange={(v) => updateProp("value", v)} prefix="₹" placeholder="e.g. 1.20 Cr" /></div>
-                        <div><label className="text-[10px] text-muted-foreground">Total outstanding mortgage</label><TextInput value={prop.mortgage} onChange={(v) => updateProp("mortgage", v)} prefix="₹" placeholder="e.g. 45,00,000" /></div>
-                        <div><label className="text-[10px] text-muted-foreground">Current monthly repayment</label><TextInput value={prop.monthlyRepayment} onChange={(v) => updateProp("monthlyRepayment", v)} prefix="₹" placeholder="e.g. 35,000" /></div>
+                      </div>
+
+                      <div className="space-y-3">
                         <div>
-                          <label className="text-[10px] text-muted-foreground">Year repayment finishes</label>
-                          <TextInput
-                            value={prop.mortgageEndDate}
-                            onChange={(v) => updateProp("mortgageEndDate", v.replace(/[^\d]/g, "").slice(0, 4))}
-                            placeholder="e.g. 2042"
-                          />
+                          <label className="text-[10px] uppercase tracking-wide text-muted-foreground">Current market value</label>
+                          <TextInput value={prop.value} onChange={(v) => updateProp("value", v)} prefix="₹" placeholder="e.g. 1.20 Cr" />
+                        </div>
+
+                        {/* Mortgage sub-group */}
+                        <div className="rounded-lg bg-muted/30 p-3">
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Home loan</p>
+                          <p className="mb-2 text-[10px] text-muted-foreground">Leave blank if it's fully paid off.</p>
+                          <div className="space-y-3">
+                            <div>
+                              <label className="text-[10px] text-muted-foreground">Outstanding balance</label>
+                              <TextInput value={prop.mortgage} onChange={(v) => updateProp("mortgage", v)} prefix="₹" placeholder="e.g. 45,00,000" />
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="text-[10px] text-muted-foreground">Monthly EMI</label>
+                                <TextInput value={prop.monthlyRepayment} onChange={(v) => updateProp("monthlyRepayment", v)} prefix="₹" placeholder="e.g. 35,000" />
+                              </div>
+                              <div>
+                                <label className="text-[10px] text-muted-foreground">Ends in (year)</label>
+                                <TextInput
+                                  value={prop.mortgageEndDate}
+                                  onChange={(v) => updateProp("mortgageEndDate", v.replace(/[^\d]/g, "").slice(0, 4))}
+                                  placeholder="e.g. 2042"
+                                />
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    );
-                  })}
-                  <button onClick={() => setProperties(prev => [...prev, { value: "", mortgage: "", monthlyRepayment: "", yearPurchased: "", mortgageEndDate: "", lastPaymentDate: "" }])} className="flex items-center gap-1 text-xs font-medium text-accent hover:text-accent/80 transition-colors mt-1">
-                    <Plus className="h-3 w-3" /> Add another property
-                  </button>
-                </div>
-              )}
-            </div>
+                    </div>
+                  );
+                })}
+                <button
+                  onClick={() => setProperties(prev => [...prev, { value: "", mortgage: "", monthlyRepayment: "", yearPurchased: "", mortgageEndDate: "", lastPaymentDate: "" }])}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-border py-2.5 text-xs font-medium text-accent transition-colors hover:border-accent/50 hover:bg-accent/5"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add another property
+                </button>
+              </div>
+            )}
            </div>
           ) },
           { label: "Planned large expenses", body: (
@@ -1871,23 +2050,50 @@ const CompleteProfile = () => {
                   {gi > 0 && (
                     <button
                       onClick={() => setGroupIndex((i) => Math.max(0, i - 1))}
-                      className="flex items-center justify-center gap-1 rounded-xl border border-border bg-card px-5 py-3 text-sm font-semibold text-foreground transition-all active:scale-[0.98]"
+                      disabled={saving}
+                      className="flex items-center justify-center gap-1 rounded-xl border border-border bg-card px-5 py-3 text-sm font-semibold text-foreground transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <ChevronLeft className="h-4 w-4" />
                       Back
                     </button>
                   )}
                   <button
-                    onClick={() => (isLastGroup ? confirmSection(openSection) : setGroupIndex((i) => i + 1))}
-                    className="flex flex-1 items-center justify-center gap-1.5 rounded-xl py-3 text-sm font-semibold text-primary-foreground hover:opacity-90 transition-all active:scale-[0.98]"
+                    disabled={saving}
+                    onClick={async () => {
+                      if (saving) return;
+                      if (isLastGroup) {
+                        await confirmSection(openSection, gi);
+                        return;
+                      }
+                      // Untouched step → just advance, no API call (no lag / spinner).
+                      if (!isGroupDirty(openSection, gi)) {
+                        setGroupIndex((i) => i + 1);
+                        return;
+                      }
+                      // Persist this step before advancing; only move on if it saved.
+                      setSaving(true);
+                      const ok = await persistGroup(openSection, gi);
+                      setSaving(false);
+                      if (ok) setGroupIndex((i) => i + 1);
+                    }}
+                    className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl py-3 text-sm font-semibold text-primary-foreground transition-all active:scale-[0.98] ${saving ? "cursor-wait opacity-80" : "hover:opacity-90"}`}
                     style={{ backgroundColor: "hsl(var(--wealth-navy))" }}
                   >
-                    {isLastGroup ? "Confirm & continue" : "Next"}
-                    {isLastGroup ? <Check className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    {saving ? (
+                      <>
+                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary-foreground/40 border-t-primary-foreground" />
+                        Saving…
+                      </>
+                    ) : (
+                      <>
+                        {isLastGroup ? "Confirm & continue" : "Next"}
+                        {isLastGroup ? <Check className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                      </>
+                    )}
                   </button>
                 </div>
                 <p className="mt-1.5 text-center text-[10px] text-muted-foreground">
-                  Your answers are saved when you confirm this section
+                  Your answers are saved as you go — pick up where you left off anytime
                 </p>
               </div>
             </div>

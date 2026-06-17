@@ -107,7 +107,7 @@ function PortfolioMainPanel({
                 <TrendingDown className="h-2.5 w-2.5" />
               )}
               {activeGain >= 0 ? "+" : ""}
-              {activeGain.toFixed(0)}%
+              {activeGain.toFixed(2)}%
             </span>
           )}
         </div>
@@ -168,7 +168,6 @@ function PortfolioMainPanel({
       <PortfolioAnalysisModal
         open={analysisOpen}
         onClose={() => setAnalysisOpen(false)}
-        portfolio={portfolio}
       />
     </div>
   );

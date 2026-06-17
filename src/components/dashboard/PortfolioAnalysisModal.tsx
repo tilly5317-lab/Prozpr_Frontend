@@ -16,36 +16,29 @@ import {
   YAxis,
 } from "recharts";
 import { Download, Info, X } from "lucide-react";
-import type { PortfolioDetail } from "@/lib/api";
+import {
+  getPortfolioNavHistory,
+  getPortfolioTwr,
+  type PortfolioNavHistoryResponse,
+  type TwrSeriesResponse,
+} from "@/lib/api";
+import { computeBuildUp } from "@/lib/buildUp";
+import { rebaseTwr, windowStartIndex, type AnalysisRange } from "@/lib/twr";
 
 type AnalysisTab = "returns" | "waterfall";
-type AnalysisRange = "1M" | "3M" | "YTD" | "1Y" | "3Y" | "All";
 
 const TABS: { id: AnalysisTab; label: string }[] = [
-  { id: "returns", label: "Returns" },
+  { id: "returns", label: "Performance" },
   { id: "waterfall", label: "Value Build-Up" },
 ];
 
-// Catalog of benchmarks the user can layer onto the Returns chart.
-// `multiplier` is applied to the portfolio TWR to synthesize a plausible benchmark return.
-type BenchmarkOption = {
-  id: string;
-  shortName: string;
-  fullName: string;
-  multiplier: number;
-  seed: number;
-  color: string;
-  dash: string;
+// Single fixed benchmark — Nifty 50. Its value now comes from real Nifty TRI data.
+const NIFTY = {
+  fullName: "Benchmark: Nifty 50",
+  shortName: "Nifty 50",
+  color: "hsl(var(--muted-foreground))",
+  dash: "2 3",
 };
-
-const BENCHMARKS: BenchmarkOption[] = [
-  { id: "nifty50", shortName: "Nifty 50", fullName: "Benchmark: Nifty 50", multiplier: 0.85, seed: 17, color: "hsl(var(--muted-foreground))", dash: "2 3" },
-  { id: "niftynext50", shortName: "Nifty Next 50", fullName: "Benchmark: Nifty Next 50", multiplier: 0.92, seed: 23, color: "#D4A868", dash: "4 3" },
-  { id: "midcap150", shortName: "Nifty Midcap 150", fullName: "Benchmark: Nifty Midcap 150", multiplier: 1.05, seed: 29, color: "#3B6FA8", dash: "5 3" },
-  { id: "sensex", shortName: "BSE Sensex", fullName: "Benchmark: BSE Sensex", multiplier: 0.83, seed: 31, color: "#7B4F8F", dash: "6 2" },
-  { id: "crisil-bond", shortName: "Crisil Composite Bond", fullName: "Benchmark: Crisil Composite Bond", multiplier: 0.55, seed: 37, color: "#5C7C3D", dash: "3 2" },
-  { id: "gold-spot", shortName: "Domestic Gold", fullName: "Benchmark: Domestic Gold", multiplier: 0.7, seed: 41, color: "#E0B84A", dash: "1 3" },
-];
 
 const RANGES: AnalysisRange[] = ["1M", "3M", "YTD", "1Y", "3Y", "All"];
 
@@ -55,39 +48,6 @@ const POSITIVE = "hsl(var(--wealth-green))";
 const NEGATIVE = "hsl(var(--destructive))";
 const USER_LINE = "hsl(var(--wealth-green))";
 const HAIRLINE = "hsl(var(--hairline))";
-
-function pointsForRange(range: AnalysisRange): number {
-  switch (range) {
-    case "1M": return 30;
-    case "3M": return 24;
-    case "YTD": return 20;
-    case "1Y": return 24;
-    case "3Y": return 30;
-    case "All": return 36;
-  }
-}
-
-function rangeScaleFactor(range: AnalysisRange): number {
-  switch (range) {
-    case "1M": return 0.12;
-    case "3M": return 0.28;
-    case "YTD": return 0.45;
-    case "1Y": return 0.75;
-    case "3Y": return 0.92;
-    case "All": return 1;
-  }
-}
-
-function synthCurve(start: number, end: number, n: number, seed: number): number[] {
-  const out: number[] = [];
-  for (let i = 0; i < n; i++) {
-    const t = i / (n - 1);
-    const base = start + (end - start) * t;
-    const wobble = Math.sin((i + seed) * 0.9) * 0.6 + Math.cos((i + seed) * 1.6) * 0.4;
-    out.push(Math.round((base + wobble) * 100) / 100);
-  }
-  return out;
-}
 
 // Portfolio-analysis figures are all shown to a single decimal place.
 function fmtPct(n: number): string {
@@ -110,29 +70,6 @@ function fmtInrCompact1(n: number): string {
 }
 
 const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-function rangeSpanDays(range: AnalysisRange, today: Date): number {
-  switch (range) {
-    case "1M": return 30;
-    case "3M": return 90;
-    case "YTD": {
-      const start = new Date(today.getFullYear(), 0, 1);
-      return Math.max(1, Math.floor((today.getTime() - start.getTime()) / 86_400_000));
-    }
-    case "1Y": return 365;
-    case "3Y": return 365 * 3;
-    case "All": return 365 * 5;
-  }
-}
-
-function dateForIndex(range: AnalysisRange, i: number, n: number, today: Date): Date {
-  const span = rangeSpanDays(range, today);
-  const t = n <= 1 ? 1 : i / (n - 1);
-  const offsetDays = Math.round(span * (1 - t));
-  const d = new Date(today);
-  d.setDate(d.getDate() - offsetDays);
-  return d;
-}
 
 function formatDateTick(range: AnalysisRange, d: Date): string {
   if (range === "1M" || range === "3M" || range === "YTD") {
@@ -194,17 +131,46 @@ function downloadFile(filename: string, mime: string, data: string) {
 interface Props {
   open: boolean;
   onClose: () => void;
-  portfolio: PortfolioDetail;
 }
 
-const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
+const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
   const [tab, setTab] = useState<AnalysisTab>(() => {
     if (typeof window === "undefined") return "returns";
     const stored = window.sessionStorage.getItem(STORAGE_KEY) as AnalysisTab | null;
     return stored === "returns" || stored === "waterfall" ? stored : "returns";
   });
   const [range, setRange] = useState<AnalysisRange>("1M");
-  const [infoOpen, setInfoOpen] = useState<"twr" | "mwr" | null>(null);
+  const [infoOpen, setInfoOpen] = useState<"twr" | null>(null);
+  const [twrData, setTwrData] = useState<TwrSeriesResponse | null>(null);
+  const [twrLoading, setTwrLoading] = useState(false);
+  const [twrError, setTwrError] = useState(false);
+  const [navData, setNavData] = useState<PortfolioNavHistoryResponse | null>(null);
+  const [navLoading, setNavLoading] = useState(false);
+  const [navError, setNavError] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setTwrLoading(true);
+    setTwrError(false);
+    getPortfolioTwr()
+      .then((d) => { if (!cancelled) setTwrData(d); })
+      .catch(() => { if (!cancelled) setTwrError(true); })
+      .finally(() => { if (!cancelled) setTwrLoading(false); });
+    return () => { cancelled = true; };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setNavLoading(true);
+    setNavError(false);
+    getPortfolioNavHistory("MAX")
+      .then((d) => { if (!cancelled) setNavData(d); })
+      .catch(() => { if (!cancelled) setNavError(true); })
+      .finally(() => { if (!cancelled) setNavLoading(false); });
+    return () => { cancelled = true; };
+  }, [open]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -221,77 +187,34 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  // Time-weighted return: the portfolio's compounded holding-period return,
-  // independent of the size/timing of contributions (unlike MWR). The API
-  // doesn't return it yet, so approximate it from the simple holding-period
-  // gain — with no contribution-drag factor applied.
-  const simpleGain = portfolio.total_gain_percentage ?? 0;
-  const fullTwr = Math.round(simpleGain * 100) / 100;
-  const scaledTwr = Math.round(fullTwr * rangeScaleFactor(range) * 100) / 100;
-
-  // Annualised money-weighted return (a.k.a. money-rated return / MWR): the
-  // actual return on the rupees invested, annualised over the holding period.
-  // Unlike TWR it reflects the size & timing of contributions. Derived from the
-  // real invested vs current value and the portfolio's age.
-  const annualMwr = useMemo(() => {
-    const invested = portfolio.total_invested;
-    const value = portfolio.total_value;
-    if (invested <= 0 || value <= 0) return 0;
-    const startMs = new Date(portfolio.created_at).getTime();
-    const yearsHeld = Number.isFinite(startMs)
-      ? (Date.now() - startMs) / (365.25 * 24 * 3600 * 1000)
-      : 1;
-    const yrs = Math.max(yearsHeld, 0.25); // avoid explosive annualisation for very new portfolios
-    const annualised = (Math.pow(value / invested, 1 / yrs) - 1) * 100;
-    return Math.round(annualised * 100) / 100;
-  }, [portfolio.total_invested, portfolio.total_value, portfolio.created_at]);
-
-  // Single fixed benchmark — Nifty 50 (the add/compare picker was removed).
-  const primaryBenchmark = BENCHMARKS.find((b) => b.id === "nifty50") ?? BENCHMARKS[0];
-  const activeBenchmarks = [primaryBenchmark];
-  const benchPctById = (() => {
-    const out: Record<string, number> = {};
-    for (const b of BENCHMARKS) {
-      out[b.id] = Math.round(scaledTwr * b.multiplier * 100) / 100;
-    }
-    return out;
-  })();
-  const primaryBench = benchPctById[primaryBenchmark.id];
-
+  // Real time-weighted return. The backend returns a daily growth-of-1 series since
+  // inception; we rebase it to the selected range here (value_t / value_start − 1).
   const today = useMemo(() => new Date(), []);
-  const seriesPoints = pointsForRange(range);
+
+  const rebased = useMemo(() => {
+    if (!twrData || !twrData.has_data) return null;
+    const startIdx = windowStartIndex(twrData.points.map((p) => p.date), range, today);
+    return rebaseTwr(twrData.points, startIdx);
+  }, [twrData, range, today]);
+
+  const returnsSeries = rebased?.series ?? [];
+  const seriesPoints = returnsSeries.length;
+  const scaledTwr = rebased?.twr ?? 0;
+  const primaryBench = rebased?.niftyTwr ?? null;
+  const hasBench = returnsSeries.some((p) => p.bench_nifty50 !== undefined);
   const dateTicks = useMemo(() => tickIndicesFor(seriesPoints), [seriesPoints]);
-  const formatXTick = (v: number) =>
-    formatDateTick(range, dateForIndex(range, Number(v), seriesPoints, today));
-
-  const returnsSeries = useMemo(() => {
-    const n = pointsForRange(range);
-    const twr = synthCurve(0, scaledTwr, n, 11);
-    const benchCurves: Record<string, number[]> = {};
-    for (const b of activeBenchmarks) {
-      const target = Math.round(scaledTwr * b.multiplier * 100) / 100;
-      benchCurves[b.id] = synthCurve(0, target, n, b.seed);
-    }
-    return twr.map((m, i) => {
-      const point: Record<string, number> = { i, twr: m };
-      for (const b of activeBenchmarks) {
-        point[`bench_${b.id}`] = benchCurves[b.id][i];
-      }
-      return point;
-    });
-  }, [range, scaledTwr, activeBenchmarks]);
+  const formatXTick = (v: number) => {
+    const p = returnsSeries[Number(v)];
+    return p ? formatDateTick(range, new Date(p.date)) : "";
+  };
 
 
-  const currentNav = portfolio.total_value;
-
-  // Waterfall breakdown — synthesized from total_invested + total_value.
-  const invested = portfolio.total_invested;
-  const gainTotal = currentNav - invested;
-  const estDividends = Math.max(0, Math.round(invested * 0.025));
-  const estFees = Math.max(0, Math.round(invested * 0.005));
-  const estContributions = Math.max(0, Math.round(invested * 0.08));
-  const baseAmount = invested - estContributions;
-  const capitalGains = gainTotal - estDividends + estFees;
+  // Real value build-up over the selected window, sliced client-side from the daily
+  // nav-history series: startingValue + netInvested + marketGain = currentValue.
+  const buildUp = useMemo(
+    () => (navData ? computeBuildUp(navData.points, range, today) : null),
+    [navData, range, today]
+  );
 
   type WaterfallItem = {
     label: string;
@@ -301,19 +224,19 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
   };
 
   const waterfall: WaterfallItem[] = (() => {
-    const items: Omit<WaterfallItem, "running">[] = [
-      { label: "Base", value: baseAmount, kind: "base" },
-      { label: "+ Contributions", value: estContributions, kind: "positive" },
-      { label: "+ Capital Gains", value: capitalGains, kind: "positive" },
-      { label: "+ Dividends", value: estDividends, kind: "positive" },
-      { label: "− Fees", value: -estFees, kind: "negative" },
-      { label: "= Current Corpus", value: currentNav, kind: "total" },
-    ];
+    if (!buildUp) return [];
+    const { startingValue, netInvested, marketGain, currentValue } = buildUp;
+    const items: Omit<WaterfallItem, "running">[] = [];
+    // "All" anchors before inception, so startingValue is ₹0 — skip the empty bar.
+    if (startingValue > 0) {
+      items.push({ label: "Starting value", value: startingValue, kind: "base" });
+    }
+    items.push({ label: "Net invested", value: netInvested, kind: netInvested >= 0 ? "positive" : "negative" });
+    items.push({ label: "Market gain", value: marketGain, kind: marketGain >= 0 ? "positive" : "negative" });
+    items.push({ label: "Current value", value: currentValue, kind: "total" });
     let running = 0;
     return items.map((it) => {
-      if (it.kind === "base") {
-        running = it.value;
-      } else if (it.kind === "total") {
+      if (it.kind === "base" || it.kind === "total") {
         running = it.value;
       } else {
         running += it.value;
@@ -322,17 +245,16 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
     });
   })();
 
-  // Build recharts data for the waterfall. For each bar we need "base" (invisible spacer) and "value" (coloured).
+  // Build recharts data for the waterfall: each bar needs a "spacer" (invisible) + "bar" (coloured).
   const waterfallData = waterfall.map((w) => {
     if (w.kind === "base" || w.kind === "total") {
       return { label: w.label, spacer: 0, bar: w.value, kind: w.kind, display: w.value };
     }
     const end = w.running;
-    const start = w.value >= 0 ? end - w.value : end - w.value; // same formula: start = end - value (value negative for fees)
-    // For positive bars: spacer = start, bar = value
-    // For negative bars: spacer = end, bar = |value| (so it draws above spacer and overlaps)
+    // Positive delta floats from its start (end − value) upward; a negative delta sits
+    // at the new lower running and draws |value| up to the previous level.
     if (w.value >= 0) {
-      return { label: w.label, spacer: start, bar: w.value, kind: w.kind, display: w.value };
+      return { label: w.label, spacer: end - w.value, bar: w.value, kind: w.kind, display: w.value };
     }
     return { label: w.label, spacer: end, bar: -w.value, kind: w.kind, display: w.value };
   });
@@ -341,14 +263,17 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
     const ts = new Date().toISOString().slice(0, 10);
     if (tab === "returns") {
       const rows: (string | number)[][] = [
-        ["Metric", `${range}`, "Full period"],
-        ["TWR %", scaledTwr, fullTwr],
-        ...activeBenchmarks.map((b) => [`${b.fullName} %`, benchPctById[b.id], ""]),
+        ["Metric (Mutual funds)", `${range}`],
+        ["Portfolio TWR %", scaledTwr],
+        ["Nifty 50 TWR %", primaryBench ?? ""],
       ];
-      downloadFile(`portfolio-returns-${ts}.csv`, "text/csv", toCsv(rows));
+      downloadFile(`portfolio-performance-${ts}.csv`, "text/csv", toCsv(rows));
       return;
     }
-    const rows: (string | number)[][] = [["Line item", "Value (₹)"]];
+    const rows: (string | number)[][] = [
+      ["Timeframe", range],
+      ["Line item", "Value (₹)"],
+    ];
     waterfall.forEach((w) => rows.push([w.label, w.kind === "total" ? w.running : w.value]));
     downloadFile(`portfolio-build-up-${ts}.csv`, "text/csv", toCsv(rows));
   };
@@ -446,240 +371,228 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                     exit={{ opacity: 0, y: -4 }}
                     transition={{ duration: 0.18, ease: "easeOut" }}
                   >
-                    {/* Range selector (returns + nav only) */}
-                    {tab !== "waterfall" && (
-                      <div className="flex flex-wrap gap-1 mb-3">
-                        {RANGES.map((r) => {
-                          const active = range === r;
-                          return (
-                            <button
-                              key={r}
-                              type="button"
-                              onClick={() => setRange(r)}
-                              className={`rounded-full px-2.5 py-1 text-[10px] font-semibold transition-colors ${
-                                active
-                                  ? "bg-primary/10 text-primary"
-                                  : "bg-muted/60 text-muted-foreground/70 hover:text-foreground"
-                              }`}
-                            >
-                              {r}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
+                    {/* Range selector — shared by both tabs */}
+                    <div className="flex flex-wrap gap-1 mb-3">
+                      {RANGES.map((r) => {
+                        const active = range === r;
+                        return (
+                          <button
+                            key={r}
+                            type="button"
+                            onClick={() => setRange(r)}
+                            className={`rounded-full px-2.5 py-1 text-[10px] font-semibold transition-colors ${
+                              active
+                                ? "bg-primary/10 text-primary"
+                                : "bg-muted/60 text-muted-foreground/70 hover:text-foreground"
+                            }`}
+                          >
+                            {r}
+                          </button>
+                        );
+                      })}
+                    </div>
 
                     {/* — Returns tab — */}
                     {tab === "returns" && (
                       <div>
-                        <div className="grid grid-cols-3 gap-2">
-                          <div
-                            className="rounded-xl p-2.5"
-                            style={{ border: `1px solid ${HAIRLINE}` }}
-                          >
-                            <div className="flex items-center gap-1 mb-0.5">
-                              <p className="text-[9px] uppercase tracking-wide text-muted-foreground">
-                                TWR
-                              </p>
-                              <button
-                                type="button"
-                                onClick={() => setInfoOpen((o) => (o === "twr" ? null : "twr"))}
-                                className="text-muted-foreground hover:text-foreground"
-                                aria-label="About TWR"
-                              >
-                                <Info className="h-3 w-3" />
-                              </button>
-                            </div>
-                            <p
-                              className="text-sm font-semibold leading-tight"
-                              style={{
-                                color: scaledTwr >= 0 ? POSITIVE : NEGATIVE,
-                                fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-                              }}
-                            >
-                              {fmtPct(scaledTwr)}
-                            </p>
-                            <p className="text-[9px] text-muted-foreground mt-0.5">{range}</p>
-                          </div>
-
-                          {/* Annual return (money-weighted / money-rated return) */}
-                          <div
-                            className="rounded-xl p-2.5"
-                            style={{ border: `1px solid ${HAIRLINE}` }}
-                          >
-                            <div className="flex items-center gap-1 mb-0.5">
-                              <p className="text-[9px] uppercase tracking-wide text-muted-foreground leading-tight">
-                                Annual
-                              </p>
-                              <button
-                                type="button"
-                                onClick={() => setInfoOpen((o) => (o === "mwr" ? null : "mwr"))}
-                                className="text-muted-foreground hover:text-foreground"
-                                aria-label="About Annual Return"
-                              >
-                                <Info className="h-3 w-3" />
-                              </button>
-                            </div>
-                            <p
-                              className="text-sm font-semibold leading-tight"
-                              style={{
-                                color: annualMwr >= 0 ? POSITIVE : NEGATIVE,
-                                fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-                              }}
-                            >
-                              {fmtPct(annualMwr)}
-                            </p>
-                            <p className="text-[9px] text-muted-foreground mt-0.5">p.a. · MWR</p>
-                          </div>
-
-                          <div
-                            className="rounded-xl p-2.5"
-                            style={{ border: `1px solid ${HAIRLINE}` }}
-                          >
-                            <p className="text-[9px] uppercase tracking-wide text-muted-foreground mb-0.5 leading-tight">
-                              {primaryBenchmark.fullName}
-                            </p>
-                            <p
-                              className="text-sm font-semibold leading-tight"
-                              style={{
-                                color: primaryBench >= 0 ? POSITIVE : NEGATIVE,
-                                fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-                              }}
-                            >
-                              {fmtPct(primaryBench)}
-                            </p>
-                            <p className="text-[9px] text-muted-foreground mt-0.5">{range}</p>
-                          </div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                            Performance
+                          </p>
+                          <span className="text-[9px] rounded-full px-1.5 py-0.5 bg-muted text-muted-foreground">
+                            Mutual funds
+                          </span>
                         </div>
 
-                        {infoOpen && (
-                          <div
-                            className="mt-2 rounded-lg px-3 py-2"
-                            style={{ backgroundColor: "hsl(var(--muted) / 0.6)" }}
-                          >
-                            {infoOpen === "twr" ? (
-                              <p className="text-[11.5px] text-foreground leading-relaxed">
-                                <strong>TWR</strong> measures the portfolio's compounded
-                                performance over time, stripping out the effect of when and how
-                                much you contributed — so it isolates investment performance.
-                              </p>
-                            ) : (
-                              <p className="text-[11.5px] text-foreground leading-relaxed">
-                                <strong>Annual Return</strong> is your money-weighted (money-rated)
-                                return, annualised. Unlike TWR, it reflects the size and timing of
-                                your contributions — it's the actual annual growth rate earned on
-                                the money you put in.
-                              </p>
-                            )}
-                          </div>
+                        {twrLoading && (
+                          <p className="text-[12px] text-muted-foreground py-8 text-center">
+                            Loading your returns…
+                          </p>
                         )}
 
-                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground mt-4 mb-1.5">
-                          Portfolio vs benchmarks over {range}
-                        </p>
-                        <div className="h-[180px] w-full">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <LineChart
-                              data={returnsSeries}
-                              margin={{ top: 8, right: 12, left: 12, bottom: 18 }}
-                            >
-                              <CartesianGrid stroke={HAIRLINE} vertical={false} />
-                              <XAxis
-                                dataKey="i"
-                                type="number"
-                                domain={[0, seriesPoints - 1]}
-                                ticks={dateTicks}
-                                tickFormatter={formatXTick}
-                                tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }}
-                                axisLine={false}
-                                tickLine={false}
-                                tickMargin={6}
-                                height={20}
-                                interval={0}
-                              />
-                              <YAxis
-                                orientation="right"
-                                width={36}
-                                tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
-                                tickFormatter={(v) => `${v}%`}
-                                axisLine={false}
-                                tickLine={false}
-                              />
-                              <ReferenceLine y={0} stroke={HAIRLINE} strokeDasharray="3 3" />
-                              <Tooltip
-                                contentStyle={{
-                                  fontSize: 11,
-                                  borderRadius: 8,
-                                  border: `1px solid ${HAIRLINE}`,
-                                  backgroundColor: "hsl(var(--card))",
-                                  color: "hsl(var(--foreground))",
-                                }}
-                                labelStyle={{ color: "hsl(var(--foreground))", fontWeight: 600 }}
-                                formatter={(v: number, name: string) => [`${v}%`, name.toUpperCase()]}
-                                labelFormatter={(label) =>
-                                  formatDateTick(range, dateForIndex(range, Number(label), seriesPoints, today))
-                                }
-                              />
-                              <Line
-                                type="monotone"
-                                dataKey="twr"
-                                name="TWR"
-                                stroke={USER_LINE}
-                                strokeWidth={2}
-                                dot={false}
-                                isAnimationActive={false}
-                              />
-                              {activeBenchmarks.map((b) => (
-                                <Line
-                                  key={b.id}
-                                  type="monotone"
-                                  dataKey={`bench_${b.id}`}
-                                  name={b.shortName}
-                                  stroke={b.color}
-                                  strokeWidth={1.75}
-                                  strokeDasharray={b.dash}
-                                  dot={false}
-                                  isAnimationActive={false}
-                                />
-                              ))}
-                            </LineChart>
-                          </ResponsiveContainer>
-                        </div>
+                        {!twrLoading && (twrError || !rebased) && (
+                          <p className="text-[12px] text-muted-foreground py-8 text-center leading-relaxed">
+                            Not enough history yet — import your transactions to see your returns.
+                          </p>
+                        )}
 
-                        <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 mt-2 text-[11px]">
-                          <span className="inline-flex items-center gap-1.5">
-                            <span
-                              className="inline-block h-0.5 w-4"
-                              style={{ backgroundColor: USER_LINE }}
-                            />
-                            TWR
-                          </span>
-                          {activeBenchmarks.map((b) => (
-                            <span key={b.id} className="inline-flex items-center gap-1.5">
-                              <span
-                                className="inline-block h-0.5 w-4"
-                                style={{ backgroundColor: b.color }}
-                              />
-                              {b.shortName}
-                            </span>
-                          ))}
-                        </div>
+                        {!twrLoading && !twrError && rebased && (
+                          <>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="rounded-xl p-2.5" style={{ border: `1px solid ${HAIRLINE}` }}>
+                                <div className="flex items-center gap-1 mb-0.5">
+                                  <p className="text-[9px] uppercase tracking-wide text-muted-foreground">TWR</p>
+                                  <button
+                                    type="button"
+                                    onClick={() => setInfoOpen((o) => (o === "twr" ? null : "twr"))}
+                                    className="text-muted-foreground hover:text-foreground"
+                                    aria-label="About TWR"
+                                  >
+                                    <Info className="h-3 w-3" />
+                                  </button>
+                                </div>
+                                <p
+                                  className="text-base font-semibold leading-tight"
+                                  style={{
+                                    color: scaledTwr >= 0 ? POSITIVE : NEGATIVE,
+                                    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                                  }}
+                                >
+                                  {fmtPct(scaledTwr)}
+                                </p>
+                              </div>
+                              <div className="rounded-xl p-2.5" style={{ border: `1px solid ${HAIRLINE}` }}>
+                                <p className="text-[9px] uppercase tracking-wide text-muted-foreground mb-0.5 leading-tight">
+                                  {NIFTY.fullName}
+                                </p>
+                                <p
+                                  className="text-base font-semibold leading-tight"
+                                  style={{
+                                    color: (primaryBench ?? 0) >= 0 ? POSITIVE : NEGATIVE,
+                                    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                                  }}
+                                >
+                                  {primaryBench == null ? "—" : fmtPct(primaryBench)}
+                                </p>
+                              </div>
+                            </div>
+
+                            {infoOpen && (
+                              <div className="mt-2 rounded-lg px-3 py-2" style={{ backgroundColor: "hsl(var(--muted) / 0.6)" }}>
+                                <p className="text-[11.5px] text-foreground leading-relaxed">
+                                  Use this to see whether your fund choices are actually beating the
+                                  market. If your <strong>TWR</strong> sits above the Nifty 50 line,
+                                  your picks are adding value over a plain index fund; if it trails, a
+                                  low-cost index fund may have served you better. TWR ignores how much
+                                  you invested and when, so it judges the funds themselves — not your
+                                  contribution timing. (Covers your mutual-fund holdings only.)
+                                </p>
+                              </div>
+                            )}
+
+                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground mt-4 mb-1.5">
+                              TWR Benchmarking
+                            </p>
+                            <div className="h-[180px] w-full">
+                              <ResponsiveContainer width="100%" height="100%">
+                                <LineChart data={returnsSeries} margin={{ top: 8, right: 12, left: 12, bottom: 18 }}>
+                                  <CartesianGrid stroke={HAIRLINE} vertical={false} />
+                                  <XAxis
+                                    dataKey="i"
+                                    type="number"
+                                    domain={[0, Math.max(0, seriesPoints - 1)]}
+                                    ticks={dateTicks}
+                                    tickFormatter={formatXTick}
+                                    tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }}
+                                    axisLine={false}
+                                    tickLine={false}
+                                    tickMargin={6}
+                                    height={20}
+                                    interval={0}
+                                  />
+                                  <YAxis
+                                    orientation="right"
+                                    width={36}
+                                    tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                                    tickFormatter={(v) => `${v}%`}
+                                    axisLine={false}
+                                    tickLine={false}
+                                  />
+                                  <ReferenceLine y={0} stroke={HAIRLINE} strokeDasharray="3 3" />
+                                  <Tooltip
+                                    contentStyle={{
+                                      fontSize: 11,
+                                      borderRadius: 8,
+                                      border: `1px solid ${HAIRLINE}`,
+                                      backgroundColor: "hsl(var(--card))",
+                                      color: "hsl(var(--foreground))",
+                                    }}
+                                    labelStyle={{ color: "hsl(var(--foreground))", fontWeight: 600 }}
+                                    formatter={(v: number, name: string) => [`${v}%`, name.toUpperCase()]}
+                                    labelFormatter={(label) => {
+                                      const p = returnsSeries[Number(label)];
+                                      return p ? formatDateTick(range, new Date(p.date)) : "";
+                                    }}
+                                  />
+                                  <Line
+                                    type="monotone"
+                                    dataKey="twr"
+                                    name="TWR"
+                                    stroke={USER_LINE}
+                                    strokeWidth={2}
+                                    dot={false}
+                                    isAnimationActive={false}
+                                  />
+                                  {hasBench && (
+                                    <Line
+                                      type="monotone"
+                                      dataKey="bench_nifty50"
+                                      name={NIFTY.shortName}
+                                      stroke={NIFTY.color}
+                                      strokeWidth={1.75}
+                                      strokeDasharray={NIFTY.dash}
+                                      dot={false}
+                                      isAnimationActive={false}
+                                    />
+                                  )}
+                                </LineChart>
+                              </ResponsiveContainer>
+                            </div>
+
+                            <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 mt-2 text-[11px]">
+                              <span className="inline-flex items-center gap-1.5">
+                                <span className="inline-block h-0.5 w-4" style={{ backgroundColor: USER_LINE }} />
+                                TWR
+                              </span>
+                              {hasBench && (
+                                <span className="inline-flex items-center gap-1.5">
+                                  <span className="inline-block h-0.5 w-4" style={{ backgroundColor: NIFTY.color }} />
+                                  {NIFTY.shortName}
+                                </span>
+                              )}
+                            </div>
+                          </>
+                        )}
                       </div>
                     )}
 
                     {/* — Waterfall tab — */}
                     {tab === "waterfall" && (
                       <div>
-                        <p className="text-[11.5px] text-muted-foreground mb-3 leading-relaxed">
-                          How your portfolio reached{" "}
-                          <span
-                            className="font-semibold text-foreground"
-                            style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
-                          >
-                            {fmtInrCompact1(currentNav)}
-                          </span>{" "}
-                          — each bar shows one source of value.
-                        </p>
+                        {navLoading && (
+                          <p className="text-[12px] text-muted-foreground py-8 text-center">
+                            Loading your value build-up…
+                          </p>
+                        )}
+
+                        {!navLoading && (navError || !buildUp) && (
+                          <p className="text-[12px] text-muted-foreground py-8 text-center leading-relaxed">
+                            Not enough history yet — import your transactions to see how your value built up.
+                          </p>
+                        )}
+
+                        {!navLoading && !navError && buildUp && (
+                          <>
+                            <p className="text-[11.5px] text-muted-foreground mb-3 leading-relaxed">
+                              {range === "All" ? (
+                                <>
+                                  How much of your{" "}
+                                  <span
+                                    className="font-semibold text-foreground"
+                                    style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
+                                  >
+                                    {fmtInrCompact1(buildUp.currentValue)}
+                                  </span>{" "}
+                                  you invested, and how much the market earned on top. (Mutual funds only.)
+                                </>
+                              ) : (
+                                <>
+                                  {range === "YTD" ? "So far this year" : `Over the last ${range}`}: how
+                                  much you added, and how much the market earned on top of where you started.
+                                  (Mutual funds only.)
+                                </>
+                              )}
+                            </p>
 
                         <div className="h-[200px] w-full">
                           <ResponsiveContainer width="100%" height="100%">
@@ -802,6 +715,8 @@ const PortfolioAnalysisModal = ({ open, onClose, portfolio }: Props) => {
                             );
                           })}
                         </div>
+                          </>
+                        )}
                       </div>
                     )}
 
