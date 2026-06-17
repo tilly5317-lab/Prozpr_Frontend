@@ -117,7 +117,7 @@ const AdvisorMeetings = () => {
                   <p className="text-[20px] leading-none font-semibold text-foreground">{meeting.date}</p>
                   <p className="text-xs text-muted-foreground mt-1">{meeting.advisor}</p>
                 </div>
-                <span className="rounded-full px-2 py-1 text-[11px] font-medium bg-[#A8872F]/20 text-[#A8872F]">
+                <span className="rounded-full px-2 py-1 text-[11px] font-medium bg-[hsl(38_64%_47%)]/20 text-[hsl(38_64%_47%)]">
                   {meeting.tag}
                 </span>
               </div>

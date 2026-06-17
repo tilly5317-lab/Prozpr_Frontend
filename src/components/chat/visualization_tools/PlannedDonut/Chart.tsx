@@ -2,16 +2,16 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import type { PlannedDonutPayload } from "./types";
 import { formatInrMillions } from "@/lib/utils";
 
-// Tinted-blue rotation for sub-categories — keeps the editorial-wealth feel
-// while offering enough distinct hues for ~6-8 categories.
+// Canonical asset-class palette (app-wide), with lighter tints appended so
+// there are enough distinct hues for ~6-8 sub-categories.
 const PALETTE = [
-  "hsl(215 60% 48%)",
-  "hsl(222 47% 14%)",
-  "hsl(160 50% 38%)",
-  "hsl(38 80% 48%)",
-  "hsl(220 35% 28%)",
+  "hsl(215 60% 48%)",   // equity
+  "hsl(188 52% 41%)",   // debt
+  "hsl(38 64% 47%)",    // hybrid
+  "hsl(214 14% 47%)",   // cash
+  "hsl(348 35% 43%)",   // alternatives
   "hsl(215 50% 65%)",
-  "hsl(160 30% 55%)",
+  "hsl(188 40% 60%)",
   "hsl(38 60% 65%)",
 ];
 

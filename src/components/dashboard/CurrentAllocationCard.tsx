@@ -10,10 +10,12 @@ import type { PortfolioDetail } from "@/lib/api";
 // never re-derives this; it only displays what the API sends.
 type HoldingBucket = "Equity" | "Debt" | "Others";
 
-const EQUITY_COLOR = "#3B6FA8";
-const DEBT_COLOR = "#A8872F";
-const GOLD_COLOR = "#E0B84A";
-const CASH_COLOR = "#F1DA9B";
+// Canonical asset-class palette (app-wide).
+const EQUITY_COLOR = "hsl(215 60% 48%)";
+const DEBT_COLOR = "hsl(188 52% 41%)";
+const GOLD_COLOR = "hsl(38 64% 47%)";   // Hybrid / Others
+const CASH_COLOR = "hsl(214 14% 47%)";
+const ALT_COLOR = "hsl(348 35% 43%)";   // Alternatives
 
 const BUCKET_ORDER: HoldingBucket[] = ["Equity", "Debt", "Others"];
 
@@ -46,27 +48,6 @@ const NEGATIVE = "#c24c3a";
 const LABEL_CLASS = "text-[10px] text-muted-foreground uppercase tracking-wide";
 const VALUE_CLASS = "text-sm font-semibold text-foreground";
 
-// 3Y / 5Y returns aren't in the API yet — derive deterministic demo values from the 1Y return
-// so each fund shows plausible, distinct numbers.
-function deriveMultiYearReturns(oneYear: number | null, seed: string): {
-  threeYear: number | null;
-  fiveYear: number | null;
-} {
-  if (oneYear === null) return { threeYear: null, fiveYear: null };
-  const hash = seed.split("").reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
-  const v3 = ((hash % 30) / 10) - 1.5;
-  const v5 = (((hash >>> 5) % 30) / 10) - 1.5;
-  return {
-    threeYear: Math.round((oneYear * 0.82 + v3) * 10) / 10,
-    fiveYear: Math.round((oneYear * 0.76 + v5) * 10) / 10,
-  };
-}
-
-function formatPct(n: number | null): string {
-  if (n === null) return "—";
-  return `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
-}
-
 /** Compact INR with a single decimal place (e.g. ₹4.8L, ₹1.2Cr). */
 function formatInr1(n: number): string {
   if (n >= 10000000) return `₹${(n / 10000000).toFixed(1)}Cr`;
@@ -75,10 +56,6 @@ function formatInr1(n: number): string {
   return `₹${n.toFixed(1)}`;
 }
 
-function pctColor(n: number | null): string {
-  if (n === null) return "#1a1a1a";
-  return n >= 0 ? POSITIVE : NEGATIVE;
-}
 
 const DONUT_COLORS: Record<string, string> = {
   Equity: EQUITY_COLOR,
@@ -92,18 +69,20 @@ const DONUT_COLORS: Record<string, string> = {
   Cash: CASH_COLOR,
   Other: CASH_COLOR,
   "Cash/Other": CASH_COLOR,
-  "Hybrid & Others": CASH_COLOR,
+  "Hybrid & Others": GOLD_COLOR,
+  Alternatives: ALT_COLOR,
 };
 
-const FALLBACK_PALETTE = [EQUITY_COLOR, DEBT_COLOR, GOLD_COLOR, CASH_COLOR, "#7DA2C8", "#BFA769"];
+const FALLBACK_PALETTE = [EQUITY_COLOR, DEBT_COLOR, GOLD_COLOR, CASH_COLOR, ALT_COLOR];
 
 function getColor(name: string, i: number) {
   if (DONUT_COLORS[name]) return DONUT_COLORS[name];
   const normalized = name.trim().toLowerCase();
   if (normalized.includes("equity")) return EQUITY_COLOR;
   if (normalized.includes("debt") || normalized.includes("fixed income")) return DEBT_COLOR;
-  if (normalized.includes("gold") || normalized.includes("inflation")) return GOLD_COLOR;
-  if (normalized.includes("cash") || normalized.includes("other") || normalized.includes("hybrid")) return CASH_COLOR;
+  if (normalized.includes("gold") || normalized.includes("inflation") || normalized.includes("hybrid")) return GOLD_COLOR;
+  if (normalized.includes("alternative")) return ALT_COLOR;
+  if (normalized.includes("cash") || normalized.includes("other")) return CASH_COLOR;
   return FALLBACK_PALETTE[i % FALLBACK_PALETTE.length];
 }
 
@@ -117,7 +96,7 @@ function normalizeBucket(name: string): HoldingBucket {
 
 const HOLDINGS_BAR_BY_BUCKET: Record<HoldingBucket, { bg: string; border?: string }> = {
   Equity: { bg: EQUITY_COLOR },
-  Debt: { bg: DEBT_COLOR, border: "#8E7228" },
+  Debt: { bg: DEBT_COLOR },
   Others: { bg: GOLD_COLOR },
 };
 
@@ -428,10 +407,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
               <div className="flex items-center gap-1.5">
                 <span
                   className="h-2.5 w-2.5 rounded-full shrink-0"
-                  style={{
-                    backgroundColor: selected.color,
-                    border: selected.color === CASH_COLOR ? "1px solid #DCCB96" : undefined,
-                  }}
+                  style={{ backgroundColor: selected.color }}
                 />
                 <span className="text-[11px] font-semibold text-foreground leading-tight truncate">
                   {selected.name}
@@ -471,10 +447,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                 <div className="flex items-center gap-1.5">
                   <span
                     className="h-2.5 w-2.5 rounded-full shrink-0"
-                    style={{
-                      backgroundColor: item.color,
-                      border: item.color === CASH_COLOR ? "1px solid #DCCB96" : undefined,
-                    }}
+                    style={{ backgroundColor: item.color }}
                   />
                   <span className="text-[10px] text-muted-foreground leading-tight">{item.name}</span>
                 </div>
@@ -586,7 +559,6 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                             {group.items.map((row) => {
                 const isExpanded = expandedHolding === row.id;
                 const oneYear = row.returnPct;
-                const { threeYear, fiveYear } = deriveMultiYearReturns(oneYear, row.id);
 
                 const collapsedReturnColor = oneYear !== null
                   ? (oneYear >= 0 ? POSITIVE : NEGATIVE)
@@ -672,35 +644,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                             className="ml-3 pt-2 pb-2.5 pr-1"
                             style={{ borderTop: `1px solid ${HAIRLINE}` }}
                           >
-                            {/* Group 1 — Returns (3-col) */}
-                            <div
-                              className="grid grid-cols-3"
-                              style={{ columnGap: 10, rowGap: 2 }}
-                            >
-                              <div>
-                                <p className={LABEL_CLASS}>1Y return</p>
-                                <p className={VALUE_CLASS} style={{ color: pctColor(oneYear) }}>
-                                  {formatPct(oneYear)}
-                                </p>
-                              </div>
-                              <div>
-                                <p className={LABEL_CLASS}>3Y return</p>
-                                <p className={VALUE_CLASS} style={{ color: pctColor(threeYear) }}>
-                                  {formatPct(threeYear)}
-                                </p>
-                              </div>
-                              <div>
-                                <p className={LABEL_CLASS}>5Y return</p>
-                                <p className={VALUE_CLASS} style={{ color: pctColor(fiveYear) }}>
-                                  {formatPct(fiveYear)}
-                                </p>
-                              </div>
-                            </div>
-
-                            {/* Hairline divider */}
-                            <div style={{ height: 1, background: HAIRLINE, margin: "8px 0" }} />
-
-                            {/* Group 2 — Holdings detail (2-col) */}
+                            {/* Holdings detail (2-col) */}
                             <div
                               className="grid grid-cols-2"
                               style={{ columnGap: 12, rowGap: 6 }}

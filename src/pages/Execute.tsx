@@ -58,10 +58,10 @@ const TOTAL_STORAGE_KEY = "execute:totalInvestment";
 const MIN_TOTAL = 1000;
 const MAX_TOTAL = 100_000_000; // ₹10 Cr
 
-const EQUITY_COLOR = "#3B6FA8";
-const DEBT_COLOR = "#A8872F";
-const GOLD_COLOR = "#E0B84A";
-const CASH_COLOR = "#F1DA9B";
+const EQUITY_COLOR = "hsl(215 60% 48%)";
+const DEBT_COLOR = "hsl(188 52% 41%)";
+const GOLD_COLOR = "hsl(38 64% 47%)";
+const CASH_COLOR = "hsl(214 14% 47%)";
 
 /* Category colors — private bank palette */
 const CAT_COLORS: Record<string, string> = {

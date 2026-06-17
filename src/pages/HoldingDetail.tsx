@@ -238,9 +238,9 @@ function NavChart({
         .map((v, i) => `${i === 0 ? "M" : "L"} ${xScale(i).toFixed(2)} ${yScale(v).toFixed(2)}`)
         .join(" ")
     : null;
-  const stroke = isUp ? "hsl(160 50% 38%)" : "hsl(0 84% 50%)";
-  const fillStart = isUp ? "hsl(160 50% 38% / 0.18)" : "hsl(0 84% 50% / 0.18)";
-  const fillEnd = isUp ? "hsl(160 50% 38% / 0.02)" : "hsl(0 84% 50% / 0.02)";
+  const stroke = isUp ? "hsl(164 54% 40%)" : "hsl(0 84% 50%)";
+  const fillStart = isUp ? "hsl(164 54% 40% / 0.18)" : "hsl(0 84% 50% / 0.18)";
+  const fillEnd = isUp ? "hsl(164 54% 40% / 0.02)" : "hsl(0 84% 50% / 0.02)";
   return (
     <div className="relative h-[180px] w-full">
       <svg
@@ -478,7 +478,7 @@ const HoldingDetail = () => {
               <p className="text-[10px] text-muted-foreground">{range} change</p>
               <p
                 className="text-[13px] font-semibold tabular-nums"
-                style={{ color: isUp ? "hsl(160 50% 38%)" : "hsl(0 84% 50%)" }}
+                style={{ color: isUp ? "hsl(164 54% 40%)" : "hsl(0 84% 50%)" }}
               >
                 {formatPct(rangeReturn)}
               </p>
@@ -501,7 +501,7 @@ const HoldingDetail = () => {
                     <span
                       className="inline-block h-0.5 w-3.5 rounded-full"
                       style={{
-                        backgroundColor: isUp ? "hsl(160 50% 38%)" : "hsl(0 84% 50%)",
+                        backgroundColor: isUp ? "hsl(164 54% 40%)" : "hsl(0 84% 50%)",
                       }}
                     />
                     Fund
@@ -522,7 +522,7 @@ const HoldingDetail = () => {
                   <span
                     className="ml-1 font-semibold"
                     style={{
-                      color: outperfPositive ? "hsl(160 50% 38%)" : "hsl(0 84% 50%)",
+                      color: outperfPositive ? "hsl(164 54% 40%)" : "hsl(0 84% 50%)",
                     }}
                   >
                     {outperfPositive ? "+" : "−"}
@@ -576,7 +576,7 @@ const HoldingDetail = () => {
                         value == null
                           ? "hsl(var(--muted-foreground))"
                           : positive
-                            ? "hsl(160 50% 38%)"
+                            ? "hsl(164 54% 40%)"
                             : "hsl(0 84% 50%)",
                     }}
                   >
@@ -604,7 +604,7 @@ const HoldingDetail = () => {
               label="Unrealised gain"
               value={`${unrealisedGain >= 0 ? "+" : "−"}${formatINRPaisa(Math.abs(unrealisedGain))}`}
               hint={formatPct(unrealisedPct)}
-              valueColor={unrealisedGain >= 0 ? "hsl(160 50% 38%)" : "hsl(0 84% 50%)"}
+              valueColor={unrealisedGain >= 0 ? "hsl(164 54% 40%)" : "hsl(0 84% 50%)"}
             />
             <StatBlock label="Units" value={formatUnits(units)} />
             <StatBlock

@@ -105,7 +105,7 @@ const STATUS_COLORS: Record<SectionStatus, string> = {
   in_progress:
     "bg-[hsl(38_80%_93%)] text-[hsl(38_80%_38%)] dark:bg-[hsl(38_70%_50%/0.18)] dark:text-[hsl(38_80%_70%)]",
   confirmed:
-    "bg-[hsl(160_30%_93%)] text-[hsl(160_50%_38%)] dark:bg-[hsl(160_45%_45%/0.18)] dark:text-[hsl(160_45%_65%)]",
+    "bg-[hsl(160_30%_93%)] text-[hsl(164_54%_40%)] dark:bg-[hsl(160_45%_45%/0.18)] dark:text-[hsl(160_45%_65%)]",
 };
 
 const SECTION_TITLES = [
@@ -206,7 +206,7 @@ const INVEST_PREF_OPTIONS = [
 
 /* ── Reusable micro-components ── */
 const FieldLabel = ({ children }: { children: React.ReactNode }) => (
-  <label className="block text-[11px] uppercase tracking-wide text-muted-foreground mb-1">{children}</label>
+  <label className="block text-[15px] font-medium text-foreground mb-1.5 leading-snug">{children}</label>
 );
 
 /** Live Indian comma-grouping for plain numeric entry (12,34,567). Leaves
@@ -221,7 +221,7 @@ const formatMoneyInput = (raw: string): string => {
 
 const TextInput = ({ value, onChange, placeholder, prefix, onFocus, onBlur }: { value: string; onChange: (v: string) => void; placeholder?: string; prefix?: string; onFocus?: () => void; onBlur?: () => void }) => (
   <div className="relative">
-    {prefix && <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">{prefix}</span>}
+    {prefix && <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[15px] text-muted-foreground">{prefix}</span>}
     <input
       inputMode={prefix === "₹" ? "numeric" : undefined}
       value={value}
@@ -229,7 +229,7 @@ const TextInput = ({ value, onChange, placeholder, prefix, onFocus, onBlur }: { 
       onFocus={onFocus}
       onBlur={onBlur}
       placeholder={placeholder}
-      className={`w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-accent transition-colors placeholder:text-[12px] ${prefix ? "pl-7" : ""}`}
+      className={`w-full rounded-xl border border-border bg-card px-3.5 py-3 text-[15px] text-foreground outline-none focus:border-accent focus:ring-2 focus:ring-accent/15 transition-colors placeholder:text-[14px] placeholder:text-muted-foreground/50 ${prefix ? "pl-8" : ""}`}
     />
   </div>
 );
@@ -256,12 +256,12 @@ const Chip = ({ label, active, onClick, disabled }: { label: string; active: boo
   <button
     onClick={onClick}
     disabled={disabled}
-    className={`rounded-full px-3.5 py-1.5 text-xs font-medium border transition-all ${
+    className={`rounded-full px-4 py-2 text-[13.5px] font-medium border transition-all ${
       disabled
         ? "bg-muted/50 text-muted-foreground/40 border-border/50 cursor-not-allowed"
         : active
         ? "bg-accent text-accent-foreground border-accent"
-        : "bg-card text-muted-foreground border-border hover:border-accent/40"
+        : "bg-card text-foreground/80 border-border hover:border-accent/40"
     }`}
   >
     {label}
@@ -270,8 +270,8 @@ const Chip = ({ label, active, onClick, disabled }: { label: string; active: boo
 
 const Toggle = ({ value, onChange, labelA, labelB }: { value: boolean; onChange: (v: boolean) => void; labelA: string; labelB: string }) => (
   <div className="flex gap-2">
-    <button onClick={() => onChange(false)} className={`rounded-full px-3.5 py-1.5 text-xs font-medium border transition-all ${!value ? "bg-accent text-accent-foreground border-accent" : "bg-card text-muted-foreground border-border"}`}>{labelA}</button>
-    <button onClick={() => onChange(true)} className={`rounded-full px-3.5 py-1.5 text-xs font-medium border transition-all ${value ? "bg-accent text-accent-foreground border-accent" : "bg-card text-muted-foreground border-border"}`}>{labelB}</button>
+    <button onClick={() => onChange(false)} className={`rounded-full px-5 py-2 text-[13.5px] font-medium border transition-all ${!value ? "bg-accent text-accent-foreground border-accent" : "bg-card text-foreground/80 border-border"}`}>{labelA}</button>
+    <button onClick={() => onChange(true)} className={`rounded-full px-5 py-2 text-[13.5px] font-medium border transition-all ${value ? "bg-accent text-accent-foreground border-accent" : "bg-card text-foreground/80 border-border"}`}>{labelB}</button>
   </div>
 );
 
@@ -283,7 +283,7 @@ const PrefilledBanner = () => (
 );
 
 const SelectInput = ({ value, onChange, options, placeholder }: { value: string; onChange: (v: string) => void; options: string[]; placeholder?: string }) => (
-  <select value={value} onChange={(e) => onChange(e.target.value)} className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-accent transition-colors appearance-none placeholder:text-[12px]">
+  <select value={value} onChange={(e) => onChange(e.target.value)} className="w-full rounded-xl border border-border bg-card px-3.5 py-3 text-[15px] text-foreground outline-none focus:border-accent focus:ring-2 focus:ring-accent/15 transition-colors appearance-none">
     {placeholder && <option value="">{placeholder}</option>}
     {options.map((o) => <option key={o} value={o}>{o}</option>)}
   </select>
@@ -310,7 +310,7 @@ const AllocationBar = ({
       <p className="text-xs font-semibold text-foreground">{asset}</p>
       <div className="flex items-center gap-2">
         <div className="flex-1">
-          <label className="text-[10px] text-muted-foreground">Min %</label>
+          <label className="text-[12px] text-muted-foreground mb-0.5 block">Min %</label>
           <input
             type="number"
             min={0}
@@ -334,7 +334,7 @@ const AllocationBar = ({
           />
         </div>
         <div className="flex-1">
-          <label className="text-[10px] text-muted-foreground">Max %</label>
+          <label className="text-[12px] text-muted-foreground mb-0.5 block">Max %</label>
           <input
             type="number"
             min={range.min}
@@ -1132,7 +1132,7 @@ const CompleteProfile = () => {
     // "What are you trying to achieve?" lives in Goal planning — send the user
     // there to set goals and complete the cashflow inputs in one place.
     if (idx === 1) {
-      navigate("/goal-planner");
+      navigate("/goal-planner?inputs=1");
       return;
     }
     // Baseline the steps' signatures as they are now, so a step the user never
@@ -1205,25 +1205,25 @@ const CompleteProfile = () => {
             <div>
               <div className="space-y-3">
                 <div>
-                  <label className="text-[10px] text-muted-foreground">Earning members</label>
+                  <label className="text-[12px] text-muted-foreground mb-0.5 block">Earning members</label>
                   <input
                     type="number"
                     min={0}
                     value={earningMembers}
                     onChange={(e) => setEarningMembers(e.target.value)}
                     placeholder="e.g. 2"
-                    className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-accent transition-colors placeholder:text-[12px]"
+                    className="w-full rounded-xl border border-border bg-card px-3.5 py-3 text-[15px] text-foreground outline-none focus:border-accent focus:ring-2 focus:ring-accent/15 transition-colors placeholder:text-[12px]"
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] text-muted-foreground">Dependents</label>
+                  <label className="text-[12px] text-muted-foreground mb-0.5 block">Dependents</label>
                   <input
                     type="number"
                     min={0}
                     value={dependents}
                     onChange={(e) => setDependents(e.target.value)}
                     placeholder="e.g. 2"
-                    className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-accent transition-colors placeholder:text-[12px]"
+                    className="w-full rounded-xl border border-border bg-card px-3.5 py-3 text-[15px] text-foreground outline-none focus:border-accent focus:ring-2 focus:ring-accent/15 transition-colors placeholder:text-[12px]"
                   />
                 </div>
               </div>
@@ -1234,12 +1234,12 @@ const CompleteProfile = () => {
            <div className="space-y-3">
             <div>
               <FieldLabel>Annual income</FieldLabel>
-              <p className="text-[10px] text-muted-foreground -mt-0.5 mb-1">Includes salary and regular income (e.g. rental income)</p>
+              <p className="text-[12.5px] text-muted-foreground -mt-0.5 mb-2 leading-snug">Includes salary and regular income (e.g. rental income)</p>
               <TextInput value={annualIncome} onChange={setAnnualIncome} prefix="₹" placeholder="e.g. 50,00,000" />
             </div>
             <div>
               <FieldLabel>Annual expense</FieldLabel>
-              <p className="text-[10px] text-muted-foreground -mt-0.5 mb-1">Excludes all debt obligations (e.g. loans)</p>
+              <p className="text-[12.5px] text-muted-foreground -mt-0.5 mb-2 leading-snug">Excludes all debt obligations (e.g. loans)</p>
               <TextInput value={annualExpense} onChange={setAnnualExpense} prefix="₹" placeholder="e.g. 30,00,000" />
             </div>
            </div>
@@ -1274,17 +1274,17 @@ const CompleteProfile = () => {
            <div className="space-y-3">
             <div>
               <FieldLabel>Cash and financial assets</FieldLabel>
-              <p className="text-[10px] text-muted-foreground -mt-0.5 mb-1">Cash, mutual funds, stocks, ETFs, bonds and similar holdings.</p>
+              <p className="text-[12.5px] text-muted-foreground -mt-0.5 mb-2 leading-snug">Cash, mutual funds, stocks, ETFs, bonds and similar holdings.</p>
               <TextInput value={investableAssets} onChange={setInvestableAssets} prefix="₹" placeholder="e.g. 42,00,000" />
             </div>
             <div>
               <FieldLabel>Regular monthly investment</FieldLabel>
-              <p className="text-[10px] text-muted-foreground -mt-0.5 mb-1">Optional — SIPs or other recurring contributions you already have in flight.</p>
+              <p className="text-[12.5px] text-muted-foreground -mt-0.5 mb-2 leading-snug">Optional — SIPs or other recurring contributions you already have in flight.</p>
               <TextInput value={monthlyInvestment} onChange={setMonthlyInvestment} prefix="₹" placeholder="e.g. 25,000" />
             </div>
             <div>
               <FieldLabel>Other assets</FieldLabel>
-              <p className="text-[10px] text-muted-foreground -mt-0.5 mb-1">Includes unlisted shares, gold and other assets. Excludes home / properties.</p>
+              <p className="text-[12.5px] text-muted-foreground -mt-0.5 mb-2 leading-snug">Includes unlisted shares, gold and other assets. Excludes home / properties.</p>
               {otherAssets.map((asset, idx) => {
                 const query = asset.name.trim().toLowerCase();
                 const matches = OTHER_ASSET_SUGGESTIONS.filter(
@@ -1295,7 +1295,7 @@ const CompleteProfile = () => {
                   <div key={idx} className="mb-2">
                     <div className="grid grid-cols-2 gap-2">
                       <div className="relative">
-                        <label className="text-[10px] text-muted-foreground">Asset (description)</label>
+                        <label className="text-[12px] text-muted-foreground mb-0.5 block">Asset (description)</label>
                         <TextInput
                           value={asset.name}
                           onChange={(v) => updateOtherAsset(idx, "name", v)}
@@ -1323,7 +1323,7 @@ const CompleteProfile = () => {
                           </div>
                         )}
                       </div>
-                      <div><label className="text-[10px] text-muted-foreground">Amount</label><TextInput value={asset.value} onChange={(v) => updateOtherAsset(idx, "value", v)} prefix="₹" placeholder="e.g. 10,00,000" /></div>
+                      <div><label className="text-[12px] text-muted-foreground mb-0.5 block">Amount</label><TextInput value={asset.value} onChange={(v) => updateOtherAsset(idx, "value", v)} prefix="₹" placeholder="e.g. 10,00,000" /></div>
                     </div>
                     {otherAssets.length > 1 && (
                       <button onClick={() => removeOtherAsset(idx)} className="mt-1 text-[10px] text-destructive hover:underline">Remove</button>
@@ -1337,7 +1337,7 @@ const CompleteProfile = () => {
             </div>
             <div>
               <FieldLabel>Liabilities / debts</FieldLabel>
-              <p className="text-[10px] text-muted-foreground -mt-0.5 mb-1">Excludes mortgage repayment</p>
+              <p className="text-[12.5px] text-muted-foreground -mt-0.5 mb-2 leading-snug">Excludes mortgage repayment</p>
               <TextInput value={liabilities} onChange={setLiabilities} prefix="₹" placeholder="e.g. 5,00,000" />
             </div>
            </div>
@@ -1387,16 +1387,16 @@ const CompleteProfile = () => {
                           <p className="mb-2 text-[10px] text-muted-foreground">Leave blank if it's fully paid off.</p>
                           <div className="space-y-3">
                             <div>
-                              <label className="text-[10px] text-muted-foreground">Outstanding balance</label>
+                              <label className="text-[12px] text-muted-foreground mb-0.5 block">Outstanding balance</label>
                               <TextInput value={prop.mortgage} onChange={(v) => updateProp("mortgage", v)} prefix="₹" placeholder="e.g. 45,00,000" />
                             </div>
                             <div className="grid grid-cols-2 gap-2">
                               <div>
-                                <label className="text-[10px] text-muted-foreground">Monthly EMI</label>
+                                <label className="text-[12px] text-muted-foreground mb-0.5 block">Monthly EMI</label>
                                 <TextInput value={prop.monthlyRepayment} onChange={(v) => updateProp("monthlyRepayment", v)} prefix="₹" placeholder="e.g. 35,000" />
                               </div>
                               <div>
-                                <label className="text-[10px] text-muted-foreground">Ends in (year)</label>
+                                <label className="text-[12px] text-muted-foreground mb-0.5 block">Ends in (year)</label>
                                 <TextInput
                                   value={prop.mortgageEndDate}
                                   onChange={(v) => updateProp("mortgageEndDate", v.replace(/[^\d]/g, "").slice(0, 4))}
@@ -1426,10 +1426,14 @@ const CompleteProfile = () => {
               <FieldLabel>Planned large expenses</FieldLabel>
               {plannedExpenses.map((expense, idx) => (
                 <div key={idx} className="mb-3">
-                  <div className="grid grid-cols-3 gap-2">
-                    <div><label className="text-[10px] text-muted-foreground">Description</label><TextInput value={expense.description} onChange={(v) => { const next = [...plannedExpenses]; next[idx] = { ...next[idx], description: v }; setPlannedExpenses(next); }} placeholder="e.g. Wedding" /></div>
-                    <div><label className="text-[10px] text-muted-foreground">Year</label><TextInput value={expense.year} onChange={(v) => { const next = [...plannedExpenses]; next[idx] = { ...next[idx], year: v }; setPlannedExpenses(next); }} placeholder="e.g. 2026" /></div>
-                    <div className="relative"><label className="text-[10px] text-muted-foreground">Amount</label><TextInput value={expense.amount} onChange={(v) => { const next = [...plannedExpenses]; next[idx] = { ...next[idx], amount: v }; setPlannedExpenses(next); }} prefix="₹" placeholder="e.g. 25L" /></div>
+                  <div className="space-y-2.5">
+                    <div><label className="text-[12px] text-muted-foreground mb-0.5 block">Description</label><TextInput value={expense.description} onChange={(v) => { const next = [...plannedExpenses]; next[idx] = { ...next[idx], description: v }; setPlannedExpenses(next); }} placeholder="e.g. Wedding" /></div>
+                    <div><label className="text-[12px] text-muted-foreground mb-0.5 block">Year</label><TextInput value={expense.year} onChange={(v) => { const next = [...plannedExpenses]; next[idx] = { ...next[idx], year: v }; setPlannedExpenses(next); }} placeholder="e.g. 2026" /></div>
+                    <div>
+                      <label className="text-[12px] text-muted-foreground mb-0.5 block">Amount</label>
+                      <TextInput value={expense.amount} onChange={(v) => { const next = [...plannedExpenses]; next[idx] = { ...next[idx], amount: v }; setPlannedExpenses(next); }} prefix="₹" placeholder="e.g. 25L" />
+                      {(() => { const n = toNum(expense.amount); return n != null && n >= 100000 ? <p className="mt-1 text-[11px] font-medium text-muted-foreground">= {formatINR(n)}</p> : null; })()}
+                    </div>
                   </div>
                   {expense.description.trim() && (
                     <div className="mt-2 rounded-lg border border-border bg-card/50 px-3 py-2">
@@ -1467,7 +1471,7 @@ const CompleteProfile = () => {
            <div className="space-y-3">
             <div>
               <FieldLabel>Expected large income</FieldLabel>
-              <p className="text-[10px] text-muted-foreground -mt-0.5 mb-1">e.g. bonus, inheritance, property sale</p>
+              <p className="text-[12.5px] text-muted-foreground -mt-0.5 mb-2 leading-snug">e.g. bonus, inheritance, property sale</p>
               {largeIncomes.map((inc, idx) => {
                 const updateInc = (field: keyof LargeIncome, val: string) => {
                   setLargeIncomes((prev) =>
@@ -1476,9 +1480,9 @@ const CompleteProfile = () => {
                 };
                 return (
                   <div key={idx} className="mb-3">
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="space-y-2.5">
                       <div>
-                        <label className="text-[10px] text-muted-foreground">Description</label>
+                        <label className="text-[12px] text-muted-foreground mb-0.5 block">Description</label>
                         <TextInput
                           value={inc.description}
                           onChange={(v) => updateInc("description", v)}
@@ -1486,7 +1490,7 @@ const CompleteProfile = () => {
                         />
                       </div>
                       <div>
-                        <label className="text-[10px] text-muted-foreground">Year</label>
+                        <label className="text-[12px] text-muted-foreground mb-0.5 block">Year</label>
                         <TextInput
                           value={inc.year}
                           onChange={(v) => updateInc("year", v)}
@@ -1494,13 +1498,14 @@ const CompleteProfile = () => {
                         />
                       </div>
                       <div>
-                        <label className="text-[10px] text-muted-foreground">Amount</label>
+                        <label className="text-[12px] text-muted-foreground mb-0.5 block">Amount</label>
                         <TextInput
                           value={inc.amount}
                           onChange={(v) => updateInc("amount", v)}
                           prefix="₹"
                           placeholder="e.g. 25,00,000"
                         />
+                        {(() => { const n = toNum(inc.amount); return n != null && n >= 100000 ? <p className="mt-1 text-[11px] font-medium text-muted-foreground">= {formatINR(n)}</p> : null; })()}
                       </div>
                     </div>
                     {largeIncomes.length > 1 && (
@@ -1570,7 +1575,7 @@ const CompleteProfile = () => {
                     }
                   }}
                   placeholder="e.g. Start a business, Travel the world..."
-                  className="flex-1 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-accent transition-colors placeholder:text-muted-foreground/50"
+                  className="flex-1 rounded-xl border border-border bg-card px-3.5 py-3 text-[15px] text-foreground outline-none focus:border-accent focus:ring-2 focus:ring-accent/15 transition-colors placeholder:text-muted-foreground/50"
                 />
                 <button
                   type="button"
@@ -1626,10 +1631,10 @@ const CompleteProfile = () => {
                   className="rounded-lg border border-border bg-card/50 p-3 space-y-2.5"
                 >
                   <p className="text-xs font-semibold text-foreground">{obj}</p>
-                  <div><label className="text-[10px] text-muted-foreground">Amount</label><TextInput value={detail.amount} onChange={(v) => updateGoalDetail(obj, { amount: v })} prefix="₹" placeholder="e.g. 50,00,000" /></div>
-                  <div><label className="text-[10px] text-muted-foreground">Expected year</label><TextInput value={detail.year} onChange={(v) => updateGoalDetail(obj, { year: v })} placeholder="e.g. 2035" /></div>
+                  <div><label className="text-[12px] text-muted-foreground mb-0.5 block">Amount</label><TextInput value={detail.amount} onChange={(v) => updateGoalDetail(obj, { amount: v })} prefix="₹" placeholder="e.g. 50,00,000" /></div>
+                  <div><label className="text-[12px] text-muted-foreground mb-0.5 block">Expected year</label><TextInput value={detail.year} onChange={(v) => updateGoalDetail(obj, { year: v })} placeholder="e.g. 2035" /></div>
                   <div>
-                    <label className="text-[10px] text-muted-foreground">Value type</label>
+                    <label className="text-[12px] text-muted-foreground mb-0.5 block">Value type</label>
                     <div className="flex gap-2 mt-1">
                       <Chip label="Present Value" active={detail.notes === "Present Value"} onClick={() => updateGoalDetail(obj, { notes: "Present Value" })} />
                       <Chip label="Future Value" active={detail.notes === "Future Value"} onClick={() => updateGoalDetail(obj, { notes: "Future Value" })} />
@@ -1639,7 +1644,7 @@ const CompleteProfile = () => {
                     <>
                       <div className="grid grid-cols-2 gap-2 pt-1">
                         <div>
-                          <label className="text-[10px] text-muted-foreground">Down payment</label>
+                          <label className="text-[12px] text-muted-foreground mb-0.5 block">Down payment</label>
                           <TextInput
                             value={detail.downPaymentPct}
                             onChange={(v) => updateGoalDetail(obj, { downPaymentPct: v })}
@@ -1648,7 +1653,7 @@ const CompleteProfile = () => {
                           />
                         </div>
                         <div>
-                          <label className="text-[10px] text-muted-foreground">Loan tenure (years)</label>
+                          <label className="text-[12px] text-muted-foreground mb-0.5 block">Loan tenure (years)</label>
                           <TextInput
                             value={detail.loanTenureYears}
                             onChange={(v) => updateGoalDetail(obj, { loanTenureYears: v })}
@@ -1660,7 +1665,7 @@ const CompleteProfile = () => {
                   )}
                   {obj === "Child's education" && (
                     <div>
-                      <label className="text-[10px] text-muted-foreground">Studying abroad?</label>
+                      <label className="text-[12px] text-muted-foreground mb-0.5 block">Studying abroad?</label>
                       <div className="mt-1 flex gap-2">
                         <Chip
                           label="No"
@@ -1680,11 +1685,11 @@ const CompleteProfile = () => {
                     const current = detail.inflationRate || suggested;
                     return (
                       <div>
-                        <label className="text-[10px] text-muted-foreground">Inflation rate</label>
+                        <label className="text-[12px] text-muted-foreground mb-0.5 block">Inflation rate</label>
                         <select
                           value={current}
                           onChange={(e) => updateGoalDetail(obj, { inflationRate: e.target.value })}
-                          className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-accent transition-colors appearance-none"
+                          className="w-full rounded-xl border border-border bg-card px-3.5 py-3 text-[15px] text-foreground outline-none focus:border-accent focus:ring-2 focus:ring-accent/15 transition-colors appearance-none"
                         >
                           {INFLATION_OPTIONS.map((rate) => (
                             <option key={rate} value={rate}>
@@ -1758,7 +1763,7 @@ const CompleteProfile = () => {
           <div className="space-y-4">
             <div>
               <div className="flex items-center gap-1 mb-1">
-                <label className="block text-[11px] uppercase tracking-wide text-muted-foreground">
+                <label className="block text-[15px] font-medium text-foreground leading-snug">
                   What is your marginal tax rate?
                 </label>
                 <button
@@ -1770,7 +1775,7 @@ const CompleteProfile = () => {
                   <Info className="h-3 w-3" />
                 </button>
               </div>
-              <p className="text-[10px] text-muted-foreground -mt-0.5 mb-1.5">
+              <p className="text-[12.5px] text-muted-foreground -mt-0.5 mb-2 leading-snug.5">
                 Your marginal tax rate is the tax rate applied to your highest slab of income. This helps us recommend tax-efficient investments.
               </p>
               {showMarginalInfo && (
@@ -1783,7 +1788,7 @@ const CompleteProfile = () => {
               <select
                 value={incomeTaxRate}
                 onChange={(e) => setIncomeTaxRate(e.target.value)}
-                className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-accent transition-colors appearance-none"
+                className="w-full rounded-xl border border-border bg-card px-3.5 py-3 text-[15px] text-foreground outline-none focus:border-accent focus:ring-2 focus:ring-accent/15 transition-colors appearance-none"
               >
                 <option value="">Select your slab</option>
                 {MARGINAL_TAX_RATE_OPTIONS.map((o) => (
@@ -1954,7 +1959,7 @@ const CompleteProfile = () => {
                       <p className="mt-1 text-[11.5px] leading-snug text-muted-foreground">{meta.description}</p>
                       <div className="mt-2.5 flex items-center gap-2">
                         <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${STATUS_COLORS[status]}`}>{STATUS_LABELS[status]}</span>
-                        <span className="text-[10px] text-muted-foreground">
+                        <span className="text-[12px] text-muted-foreground mb-0.5 block">
                           {idx === 1
                             ? `Opens Goal planning · ${meta.estimate}`
                             : `${groups.length} quick ${groups.length === 1 ? "step" : "steps"} · ${meta.estimate}`}
@@ -2007,7 +2012,7 @@ const CompleteProfile = () => {
                   <p className="text-[13px] font-semibold text-foreground leading-tight truncate">
                     {SECTION_TITLES[openSection]}
                   </p>
-                  <p className="text-[10px] text-muted-foreground">
+                  <p className="text-[12px] text-muted-foreground mb-0.5 block">
                     Step {gi + 1} of {total} · {SECTION_META[openSection].estimate}
                   </p>
                 </div>
@@ -2086,7 +2091,7 @@ const CompleteProfile = () => {
                       </>
                     ) : (
                       <>
-                        {isLastGroup ? "Confirm & continue" : "Next"}
+                        Save and continue
                         {isLastGroup ? <Check className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                       </>
                     )}

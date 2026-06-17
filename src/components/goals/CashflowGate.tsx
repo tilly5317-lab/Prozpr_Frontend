@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Lock, Loader2, ShieldCheck, AlertCircle } from "lucide-react";
 import {
@@ -39,6 +39,12 @@ interface CashflowGateProps {
    * demand — lets the user review/adjust their cashflow inputs even when unlocked.
    */
   editSignal?: number;
+  /**
+   * When true, open the inputs form automatically as soon as readiness loads
+   * (used when arriving from the "What are you trying to achieve?" card so the
+   * user lands straight on the input form). Fires once.
+   */
+  autoOpenInputs?: boolean;
 }
 
 /**
@@ -105,7 +111,7 @@ function displayValue(f: CashflowReadinessField, raw: string): string {
   return formatWithCommas(raw);
 }
 
-const CashflowGate = ({ onReady, editSignal }: CashflowGateProps) => {
+const CashflowGate = ({ onReady, editSignal, autoOpenInputs }: CashflowGateProps) => {
   const [readiness, setReadiness] = useState<CashflowReadiness | null>(null);
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
@@ -184,6 +190,16 @@ const CashflowGate = ({ onReady, editSignal }: CashflowGateProps) => {
     if (editSignal && readiness) openForm();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editSignal]);
+
+  // Auto-open the inputs form once readiness has loaded (e.g. arriving from the
+  // "What are you trying to achieve?" card). Fires a single time.
+  const autoOpenedRef = useRef(false);
+  useEffect(() => {
+    if (autoOpenInputs && readiness && !autoOpenedRef.current) {
+      autoOpenedRef.current = true;
+      openForm();
+    }
+  }, [autoOpenInputs, readiness, openForm]);
 
   // Every input is shown, grouped by the backend's grouping. All are editable
   // except the CAMS-sourced corpus (see LOCKED_KEYS).
@@ -341,66 +357,21 @@ const CashflowGate = ({ onReady, editSignal }: CashflowGateProps) => {
     </div>
   );
 
-  const ready = !!readiness?.ready;
-  // Lock overlay only while locked or still checking. When ready, render nothing
-  // here — but the panel (below) can still be opened on demand for review.
-  const showLockOverlay = loading || !ready;
-
-  const missingCount = readiness
-    ? readiness.fields.filter((f) => !f.optional && !f.present).length
-    : 0;
-
   return (
     <>
-      {/* Blurred lock overlay over the page — stops above the bottom nav
-          (bottom-16) and sits below it (z-40 < nav z-50) so the nav stays
-          sharp and tappable. */}
-      {showLockOverlay && (
-      <div className="fixed inset-x-0 top-0 bottom-16 z-40 flex items-center justify-center px-6 backdrop-blur-md bg-background/70">
-        {loading ? (
+      {/* Goal planning is never locked. While we're still checking readiness,
+          show a brief, non-blocking "checking" hint; the page underneath stays
+          usable and the inputs form is opened via Settings / auto-open. */}
+      {loading && (
+        <div className="fixed inset-x-0 top-0 bottom-16 z-40 flex items-center justify-center px-6 backdrop-blur-md bg-background/70">
           <div className="flex items-center gap-2 text-muted-foreground">
             <Loader2 className="h-5 w-5 animate-spin" />
             <span className="text-sm">Checking your goal plan…</span>
           </div>
-        ) : (
-          <motion.div
-            initial={{ opacity: 0, y: 12, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-            className="relative w-full max-w-sm overflow-hidden rounded-2xl border border-[#D4A868]/35 bg-card/55 p-6 text-center shadow-2xl backdrop-blur-xl"
-          >
-            {/* Soft golden glow */}
-            <div
-              aria-hidden
-              className="pointer-events-none absolute -top-16 left-1/2 h-36 w-36 -translate-x-1/2 rounded-full bg-[#D4A868]/25 blur-3xl"
-            />
-            <div className="relative mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-[#D4A868]/40 bg-[#D4A868]/10">
-              <Lock className="h-6 w-6 text-[#D4A868]" strokeWidth={2} />
-            </div>
-            <h2 className="relative mt-4 text-lg font-semibold text-foreground">Goal planning is locked</h2>
-            <p className="relative mt-2 text-sm leading-relaxed text-muted-foreground">
-              To project your cashflow on your real numbers, we need a few details
-              {missingCount > 0 ? (
-                <> — <span className="font-semibold text-[#D4A868]">{missingCount} still missing</span>.</>
-              ) : (
-                "."
-              )}{" "}
-              Nothing is estimated or guessed.
-            </p>
-            <button
-              type="button"
-              onClick={openForm}
-              className="relative mt-5 inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl border border-[#D4A868]/60 bg-[#D4A868] text-sm font-semibold text-white shadow-[0_8px_24px_-8px_rgba(212,168,104,0.7)] transition-opacity hover:opacity-90"
-            >
-              <ShieldCheck className="h-4 w-4" />
-              Review &amp; complete
-            </button>
-          </motion.div>
-        )}
-      </div>
+        </div>
       )}
 
-      {/* Inputs panel — opened from the lock card or the Settings button. Every
+      {/* Inputs panel — opened from the Settings button or auto-open. Every
           input is shown and editable except the CAMS-sourced portfolio corpus. */}
       <AnimatePresence>
         {formOpen && readiness && (

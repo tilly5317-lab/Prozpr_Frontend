@@ -2,24 +2,25 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import type { CurrentDonutPayload } from "./types";
 import { formatInrMillions } from "@/lib/utils";
 
-// Asset-class palette mirrors the spec: Equity = wealth-blue, Debt = wealth-navy,
-// Real Estate = wealth-green, Cash = wealth-amber. Falls back to a wealth-tinted
-// rotation for other classes.
+// Canonical asset-class palette (app-wide): Equity = blue, Debt = teal,
+// Hybrid/Gold = amber, Cash = slate, Alternatives = maroon.
 const ASSET_PALETTE: Record<string, string> = {
   Equity: "hsl(215 60% 48%)",
-  Debt: "hsl(222 47% 14%)",
-  "Real Estate": "hsl(160 50% 38%)",
-  Cash: "hsl(38 80% 48%)",
-  Gold: "hsl(38 80% 48%)",
-  Liquid: "hsl(220 35% 28%)",
+  Debt: "hsl(188 52% 41%)",
+  Hybrid: "hsl(38 64% 47%)",
+  Gold: "hsl(38 64% 47%)",
+  "Real Estate": "hsl(348 35% 43%)",
+  Alternatives: "hsl(348 35% 43%)",
+  Cash: "hsl(214 14% 47%)",
+  Liquid: "hsl(214 14% 47%)",
 };
 
 const FALLBACK = [
   "hsl(215 60% 48%)",
-  "hsl(222 47% 14%)",
-  "hsl(160 50% 38%)",
-  "hsl(38 80% 48%)",
-  "hsl(220 35% 28%)",
+  "hsl(188 52% 41%)",
+  "hsl(38 64% 47%)",
+  "hsl(214 14% 47%)",
+  "hsl(348 35% 43%)",
 ];
 
 function colorFor(label: string, i: number): string {
