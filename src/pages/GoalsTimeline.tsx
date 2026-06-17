@@ -41,7 +41,10 @@ import {
   saveCashflowInputs,
   getOnboardingProfile,
   getInvestmentProfile,
+  getPersonalFinance,
   type CashflowPlanRunDetail,
+  type FundFlowSummary,
+  type HeadlineStatus,
   type GoalResponse,
 } from "@/lib/api";
 import { exportCashflowXls } from "@/lib/export-xls";
@@ -58,7 +61,6 @@ interface TimelineGoal {
   priority: Priority;
 }
 
-const HORIZON_YEARS = 24;
 const INFLATION_DEFAULT = 6;
 const PRIORITIES: Priority[] = ["Low", "Medium", "High"];
 
@@ -104,15 +106,9 @@ function birthYearFromDob(dob: string | null | undefined): number | null {
   return new Date(parsed).getFullYear();
 }
 
-// Portfolio projection assumptions — sourced from the planner's headline figures.
-const START_NAV = 2_85_50_000;
-const MONTHLY_CONTRIBUTION = 2_27_500;
-const ANNUAL_RETURN_PCT = 9;
-
 // NAV chart spans the full row width and renders behind the row content.
 const NAV_PAD_PCT = 4; // horizontal padding (%) so the line never touches the edges
 const TORNADO_CENTER_X = 50; // viewBox x for ₹0 (symmetric tornado axis)
-const MONTHLY_MAX = 500000; // upper bound of the monthly investment slider
 
 // Earned milestones — light up the first year the projected NAV crosses each.
 interface Milestone {
@@ -300,85 +296,6 @@ interface ProjectionPoint {
 interface TornadoCorpusRow {
   corpusClosing: number;
   goalPayout: number;
-}
-
-/**
- * Earliest fractional year (eg. 2031.5) at which a single goal becomes affordable
- * assuming today's NAV grows alone (no other withdrawals), with the given monthly
- * contribution. Returns null if not achievable within the horizon.
- */
-function earliestAffordableYear(
-  goal: TimelineGoal,
-  startYear: number,
-  yearsAhead: number,
-  monthlyContribution: number,
-): number | null {
-  const r = ANNUAL_RETURN_PCT / 100;
-  const annualContribution = monthlyContribution * 12;
-  const contribGrowth = annualContribution * (1 + r / 2);
-
-  let nav = START_NAV;
-  let prevNav = nav;
-  for (let i = 0; i <= yearsAhead; i++) {
-    const year = startYear + i;
-    const fv = futureValue(
-      goal.presentValue,
-      goal.inflationRate,
-      Math.max(0, year - startYear),
-    );
-    if (nav >= fv) {
-      if (i === 0) return year;
-      // Linearly interpolate within the year for finer "months earlier" resolution.
-      const prevFv = futureValue(
-        goal.presentValue,
-        goal.inflationRate,
-        Math.max(0, year - 1 - startYear),
-      );
-      const navGain = nav - prevNav;
-      const target = fv - prevNav;
-      const frac = navGain > 0 ? Math.min(1, Math.max(0, target / navGain)) : 1;
-      // Use prevFv to avoid lint warning (it's part of a fuller model we could expand).
-      void prevFv;
-      return year - 1 + frac;
-    }
-    prevNav = nav;
-    nav = nav * (1 + r) + contribGrowth;
-  }
-  return null;
-}
-
-function buildProjection(
-  goals: TimelineGoal[],
-  startYear: number,
-  yearsAhead: number,
-  monthlyContribution: number,
-): ProjectionPoint[] {
-  const r = ANNUAL_RETURN_PCT / 100;
-  const annualContribution = monthlyContribution * 12;
-  const contributionGrowth = annualContribution * (1 + r / 2);
-
-  const withdrawalByYear = new Map<number, number>();
-  for (const g of goals) {
-    const yearsAway = Math.max(0, g.year - startYear);
-    const fv = futureValue(g.presentValue, g.inflationRate, yearsAway);
-    withdrawalByYear.set(g.year, (withdrawalByYear.get(g.year) ?? 0) + fv);
-  }
-
-  const out: ProjectionPoint[] = [];
-  let nav = START_NAV;
-  for (let i = 0; i <= yearsAhead; i++) {
-    const year = startYear + i;
-    if (i === 0) {
-      out.push({ year, endNav: nav, withdrawal: 0 });
-      continue;
-    }
-    nav = nav * (1 + r) + contributionGrowth;
-    const withdrawal = withdrawalByYear.get(year) ?? 0;
-    nav -= withdrawal;
-    if (nav < 0) nav = 0;
-    out.push({ year, endNav: nav, withdrawal });
-  }
-  return out;
 }
 
 interface AddGoalSheetProps {
@@ -970,13 +887,22 @@ function AddGoalSheet({
   );
 }
 
-// Static goals-projection summary surfaced as a popup from the tornado view.
-// Numbers mirror what the GoalPlanner cards used to render, so the page-level
-// flow stays consistent without dragging the whole sandbox slider over.
+// Goals-projection waterfall surfaced as a popup from the tornado view.
+// Every figure comes from the cashflow engine's fund-flow summary (the single
+// source of truth) — nothing here is hardcoded. The return-scenario toggle only
+// scales the engine's ROI; all other flows are held at their engine values.
 interface ProjectionSheetProps {
   open: boolean;
   onClose: () => void;
+  /** Engine fund-flow summary (SSOT for the waterfall). Null until a plan exists. */
+  fundFlow: FundFlowSummary | null;
+  /** Headline status — supplies the projection horizon (last FY end). */
+  headline: HeadlineStatus | null;
+  /** The plan's monthly SIP, for the header label. */
+  sipMonthly: number | null;
 }
+
+type WaterfallItem = { axis: string; label: string; value: number; kind: WaterfallKind };
 
 // Sensitivity scenarios for the projection — only return-on-investment reacts
 // to the assumed post-tax rate; everything else (contributions, one-offs, goals)
@@ -1016,23 +942,32 @@ const ProjectionAxisTick = (props: { x?: number; y?: number; payload?: { value?:
   );
 };
 
-function ProjectionSheet({ open, onClose }: ProjectionSheetProps) {
-  const horizonYear = 2051;
-  const horizonLabel = "Mar 2051";
-  const monthlyLabel = "₹2.27L/mo";
+function ProjectionSheet({ open, onClose, fundFlow, headline, sipMonthly }: ProjectionSheetProps) {
   const [scenarioId, setScenarioId] = useState("base");
   const scenario = PROJECTION_SCENARIOS.find((s) => s.id === scenarioId) ?? PROJECTION_SCENARIOS[1];
 
-  const BEGIN = 1_50_00_000;
-  const INVESTMENTS = 10_74_74_878;
-  const ROI_BASE = 24_44_98_818;
-  const ONE_OFF_IN = 1_20_00_000;
-  const ONE_OFF_OUT = -1_00_00_000;
-  const GOALS_OUT = -57_78_00_000;
+  const currentYear = new Date().getFullYear();
+  // Horizon comes from the engine: last FY-end = max(retirement, last goal).
+  const horizonYear = headline?.last_fy_end_date
+    ? new Date(headline.last_fy_end_date).getFullYear()
+    : currentYear;
+  const horizonLabel = headline?.last_fy_end_date
+    ? new Date(headline.last_fy_end_date).toLocaleDateString("en-IN", { month: "short", year: "numeric" })
+    : "—";
+  const monthlyLabel = sipMonthly != null ? `${formatINRCompact(sipMonthly)}/mo` : "SIP not set";
 
-  // Scale the base ROI by the ratio of compounding factors so the Base scenario
-  // lands exactly on the headline number while the others fan out realistically.
-  const horizonYears = Math.max(1, horizonYear - new Date().getFullYear());
+  // Every base figure comes straight from the engine's fund-flow summary (SSOT);
+  // 0 when no plan has been computed yet (the early return below shows a prompt).
+  const BEGIN = fundFlow?.corpus_opening ?? 0;
+  const INVESTMENTS = fundFlow?.total_investments ?? 0;
+  const ROI_BASE = fundFlow?.total_roi ?? 0;
+  const ONE_OFF_IN = fundFlow?.total_one_off_in ?? 0;
+  const ONE_OFF_OUT = -Math.abs(fundFlow?.total_one_off_out ?? 0);
+  const GOALS_OUT = -Math.abs(fundFlow?.total_goals_paid ?? 0);
+
+  // Scale the engine ROI by the ratio of compounding factors so the Base scenario
+  // lands exactly on the engine's number while the others fan out realistically.
+  const horizonYears = Math.max(1, horizonYear - currentYear);
   const ROI = useMemo(() => {
     const factor =
       Math.pow(1 + scenario.rate / 100, horizonYears) /
@@ -1040,14 +975,66 @@ function ProjectionSheet({ open, onClose }: ProjectionSheetProps) {
     return Math.round(ROI_BASE * factor);
   }, [scenario.rate, horizonYears, ROI_BASE]);
 
+  // No plan yet → don't fabricate a waterfall; prompt to complete inputs.
+  if (!fundFlow) {
+    return (
+      <AnimatePresence>
+        {open && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[60] bg-black/50"
+              onClick={onClose}
+              aria-hidden="true"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 12 }}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Goals projection"
+              className="fixed inset-0 z-[60] flex items-center justify-center px-4"
+            >
+              <div
+                className="w-full max-w-md rounded-2xl bg-card p-6 text-center shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                  Goals projection
+                </p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Complete your cashflow inputs to see your projection.
+                </p>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="mt-4 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted/60"
+                >
+                  Close
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    );
+  }
+
   const CLOSING = BEGIN + INVESTMENTS + ROI + ONE_OFF_IN + ONE_OFF_OUT + GOALS_OUT;
 
-  const items: { axis: string; label: string; value: number; kind: WaterfallKind }[] = [
+  const items: WaterfallItem[] = [
     { axis: "Beginning", label: "Beginning financial assets", value: BEGIN, kind: "base" },
     { axis: "Investments", label: "+ Investments", value: INVESTMENTS, kind: "positive" },
     { axis: "Returns", label: "+ Return on investments", value: ROI, kind: "positive" },
-    { axis: "One-off in", label: "+ One-off income", value: ONE_OFF_IN, kind: "positive" },
-    { axis: "One-off out", label: "− One-off expense", value: ONE_OFF_OUT, kind: "negative" },
+    ...(ONE_OFF_IN
+      ? [{ axis: "One-off in", label: "+ One-off income", value: ONE_OFF_IN, kind: "positive" } as WaterfallItem]
+      : []),
+    ...(ONE_OFF_OUT
+      ? [{ axis: "One-off out", label: "− One-off expense", value: ONE_OFF_OUT, kind: "negative" } as WaterfallItem]
+      : []),
     { axis: "Goals", label: "− Goals", value: GOALS_OUT, kind: "negative" },
     { axis: "Closing", label: "= Closing financial assets", value: CLOSING, kind: "total" },
   ];
@@ -1312,7 +1299,9 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
     new Set<Priority>(["Low", "Medium", "High"]),
   );
   const [hoveredYear, setHoveredYear] = useState<number | null>(null);
-  const [monthlyContrib, setMonthlyContrib] = useState<number>(MONTHLY_CONTRIBUTION);
+  // Starts at 0 and is populated from the plan's actual SIP once it loads (the
+  // effect below) — never a fabricated default.
+  const [monthlyContrib, setMonthlyContrib] = useState<number>(0);
   // SIP the engine's current plan actually uses (null until a plan run loads).
   // When the typed amount differs, an "Apply to plan" action re-runs the engine.
   const [planSip, setPlanSip] = useState<number | null>(null);
@@ -1397,35 +1386,33 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
 
   useEffect(() => { fetchCashflow(); }, [fetchCashflow]);
 
-  useEffect(() => {
-    // The "Invest /mo" figure must be a MONTHLY value. The monthly cashflow row
-    // carries the true per-month investment (e.g. ₹10k); the annual row's
-    // `monthly_investment` is actually the FY total (12 months summed), so fall
-    // back to annual ÷ 12 only when monthly rows aren't available.
-    const firstMonth = cashflowData?.monthly_cashflow?.[0];
-    const annualRows = cashflowData?.annual_cashflow;
-    let next: number | null = null;
-    if (firstMonth) {
-      next = firstMonth.monthly_investment;
-    } else if (annualRows?.length) {
-      // Fallback when monthly rows aren't persisted: the annual row's
-      // `monthly_investment` is an FY TOTAL. Use a FULL fiscal year (index 1 —
-      // index 0 is the partial first FY) and divide by 12 to recover a monthly.
-      const fullFy = annualRows[1] ?? annualRows[0];
-      next = fullFy ? fullFy.monthly_investment / 12 : null;
+  // The "Invest /mo" control reflects the user's CANONICAL monthly SIP
+  // (`starting_monthly_investment` on the personal-finance profile — the exact
+  // value the inputs form edits), so the goal page and the inputs form always
+  // show the same number. It is deliberately NOT derived from the engine's
+  // projected `monthly_investment` rows: those apply the annual step-up
+  // (annual_invested_amount_growth), which turned e.g. ₹55,000 into ₹59,400.
+  const fetchSip = useCallback(async () => {
+    try {
+      const pf = await getPersonalFinance();
+      const raw = pf.starting_monthly_investment;
+      if (raw != null && Number.isFinite(raw)) {
+        const sip = Math.max(0, Math.round(raw));
+        setMonthlyContrib(sip);
+        setPlanSip(sip);
+      } else {
+        setPlanSip(0);
+      }
+    } catch {
+      // SIP not set yet — leave the slider at its default (0).
     }
-    // Only adopt a clean, in-range number — never feed NaN/undefined to the
-    // slider (a range input with value=NaN crashes the page). Otherwise keep
-    // the current default.
-    if (next != null && Number.isFinite(next)) {
-      const sip = Math.min(MONTHLY_MAX, Math.max(0, Math.round(next)));
-      setMonthlyContrib(sip);
-      setPlanSip(sip);
-    }
-  }, [cashflowData]);
+  }, []);
+
+  useEffect(() => { void fetchSip(); }, [fetchSip]);
 
   // Persist the typed SIP and re-run the engine so the whole cashflow
-  // (corpus bars, annual rows, goal funding) reflects the new amount.
+  // (corpus bars, annual rows, goal funding) reflects the new amount. The
+  // canonical SIP is the value we just saved, so reflect it immediately.
   const applySipToPlan = useCallback(async () => {
     if (!Number.isFinite(monthlyContrib)) return;
     setApplyingSip(true);
@@ -1434,6 +1421,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
       await saveCashflowInputs({ starting_monthly_investment: monthlyContrib });
       await computeCashflow();
       await fetchCashflow();
+      setPlanSip(monthlyContrib);
       toast.success("Plan updated with the new SIP");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Couldn't update the plan";
@@ -1442,6 +1430,21 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
       setApplyingSip(false);
     }
   }, [monthlyContrib, fetchCashflow]);
+
+  // The engine caps the monthly SIP to the household's affordable savings
+  // (income − tax − expense − EMIs) — it never invests more than you can save.
+  // `savings_post_emi` is independent of the SIP, so this ceiling stays stable as
+  // the user types; surface it so an over-large SIP is explained, not silently
+  // clamped. Skip the partial current FY (fewer months → understated monthly).
+  const affordableMonthly = useMemo<number | null>(() => {
+    const rows = cashflowData?.annual_cashflow ?? [];
+    const investingYears = rows.filter((r) => r.savings_post_emi > 0);
+    if (investingYears.length === 0) return null;
+    const ref = investingYears.length > 1 ? investingYears[1] : investingYears[0];
+    return ref.savings_post_emi / 12;
+  }, [cashflowData]);
+
+  const sipCapped = affordableMonthly != null && monthlyContrib > affordableMonthly + 1;
 
   const toggleGoalExpanded = (id: string) => {
     setExpandedGoals((prev) => {
@@ -1638,12 +1641,19 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   }, [visibleGoals]);
 
   // ── Timeline extent ──────────────────────────────────────────────────────
-  // End the timeline at the later of the last goal year and the retirement
-  // year (age 60 by default). Dragging a goal down can temporarily reveal rows
+  // End the timeline at the engine's projection horizon — last_fy_end_date =
+  // max(retirement, last goal) — which is the single source of truth. Before a
+  // plan loads we fall back to the user's profile retirement age + last goal so
+  // the timeline still renders; we never assume a retirement age once the
+  // engine's horizon is known. Dragging a goal down can temporarily reveal rows
   // up to the lifespan cap (age 100). All goals count toward the last-goal year
   // (not just visible ones) so toggling a priority filter never shrinks it.
   const effectiveBirthYear = birthYear ?? currentYear - FALLBACK_CURRENT_AGE;
   const retirementYear = effectiveBirthYear + retirementAge;
+  // Engine's actual projection end (FY) — authoritative when a plan is loaded.
+  const engineEndYear = cashflowData?.headline?.last_fy_end_date
+    ? new Date(cashflowData.headline.last_fy_end_date).getFullYear()
+    : null;
   // Draggable ceiling: 100 calendar years from today (2026 → 2126, 2027 → 2127).
   // The backend cashflow engine's horizon cap matches (100 FY-years), so every
   // draggable year still produces corpus-closing bars.
@@ -1656,7 +1666,13 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
     [goals, currentYear],
   );
   const baseEndYear = clamp(
-    Math.max(lastGoalYear, retirementYear, currentYear + MIN_HORIZON_YEARS),
+    Math.max(
+      lastGoalYear,
+      // Prefer the engine's horizon; fall back to the profile-derived retirement
+      // year only until a plan run is available.
+      engineEndYear ?? retirementYear,
+      currentYear + MIN_HORIZON_YEARS,
+    ),
     currentYear + MIN_HORIZON_YEARS,
     capYear,
   );
@@ -1719,9 +1735,12 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
     return points.length > 0 ? points : null;
   }, [tornadoCorpusByYear, currentYear]);
 
-  const projection = useMemo(
-    () => cashflowProjection ?? buildProjection(visibleGoals, currentYear, HORIZON_YEARS, monthlyContrib),
-    [cashflowProjection, visibleGoals, currentYear, monthlyContrib],
+  // The projection is the engine's per-FY corpus path ONLY — never a client-side
+  // fabrication. Empty until the plan loads (the page shows a loading/CTA state
+  // and the CashflowGate blocks until the real inputs exist).
+  const projection = useMemo<ProjectionPoint[]>(
+    () => cashflowProjection ?? [],
+    [cashflowProjection],
   );
 
   const projectionByYear = useMemo(() => {
@@ -1745,12 +1764,6 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
     }
     return map;
   }, [projection]);
-
-  const baselineNav =
-    cashflowData?.headline?.corpus_today ??
-    cashflowData?.annual_cashflow?.[0]?.corpus_opening ??
-    cashflowProjection?.[0]?.endNav ??
-    START_NAV;
 
   const tornadoAbsValues = useMemo(() => {
     if (!tornadoCorpusByYear?.size) return [] as number[];
@@ -1776,13 +1789,10 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
     [tornadoBarScale, tornadoHalfSpan],
   );
 
-  const peakAnchor = useMemo(() => {
-    if (cashflowProjection) {
-      return cashflowProjection.reduce((m, p) => (p.endNav > m ? p.endNav : m), 0);
-    }
-    const maxProj = buildProjection(visibleGoals, currentYear, HORIZON_YEARS, MONTHLY_MAX);
-    return maxProj.reduce((m, p) => (p.endNav > m ? p.endNav : m), 0);
-  }, [cashflowProjection, visibleGoals, currentYear]);
+  const peakAnchor = useMemo(
+    () => projection.reduce((m, p) => (p.endNav > m ? p.endNav : m), 0),
+    [projection],
+  );
 
   // Line mode: sqrt scale from left edge (0) to max NAV.
   const navToX = (nav: number): number => {
@@ -1927,7 +1937,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
               onChange={(e) => {
                 const digits = e.target.value.replace(/[^\d]/g, "");
                 const v = digits === "" ? 0 : Number(digits);
-                if (Number.isFinite(v)) setMonthlyContrib(Math.min(MONTHLY_MAX, Math.max(0, v)));
+                if (Number.isFinite(v)) setMonthlyContrib(Math.max(0, v));
               }}
               className="w-full min-w-0 bg-transparent text-[12px] font-semibold tabular-nums text-foreground outline-none"
               style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
@@ -1954,8 +1964,8 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
           )}
           <button
             type="button"
-            onClick={() => setMonthlyContrib(planSip ?? MONTHLY_CONTRIBUTION)}
-            disabled={monthlyContrib === (planSip ?? MONTHLY_CONTRIBUTION)}
+            onClick={() => setMonthlyContrib(planSip ?? 0)}
+            disabled={monthlyContrib === (planSip ?? 0)}
             className="shrink-0 inline-flex items-center justify-center rounded-full bg-muted/50 h-6 w-6 text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             style={{ border: "1px solid hsl(var(--border))" }}
             aria-label="Reset monthly investment to your plan's SIP"
@@ -1964,6 +1974,13 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
             <RotateCcw className="h-3 w-3" />
           </button>
           </div>
+          {sipCapped && affordableMonthly != null && (
+            <p className="mt-1 px-1 text-[10px] leading-snug text-amber-600 dark:text-amber-400">
+              You can invest about {formatINRCompact(affordableMonthly)}/mo from your income
+              (after tax, expenses &amp; EMIs). A higher SIP is capped to that — it won't grow
+              your corpus further, since the plan never invests more than you can save.
+            </p>
+          )}
         </div>
 
         {/* Priority filter — toggle which goals feed the projection */}
@@ -2036,6 +2053,9 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
             const yearGoals = goalsByYear.get(y) ?? [];
             const hasGoals = yearGoals.length > 0;
             const isMilestone = y % 5 === 0;
+            // The user's age in this calendar year — shown beside the year so the
+            // timeline reads in life-stage terms, not just dates. Only when DOB is known.
+            const ageAtYear = birthYear != null ? y - birthYear : null;
             const proj = projectionByYear.get(y);
             const prevProj = projectionByYear.get(y - 1) ?? proj;
             const tornadoRow = isTornado ? tornadoCorpusByYear?.get(y) : undefined;
@@ -2316,19 +2336,24 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                     </div>
                   )}
 
-                  {/* Year label */}
+                  {/* Year + the user's age that year */}
                   <div
-                    className={`relative z-10 w-[40px] shrink-0 flex items-start ${hasGoals ? "pt-2" : "pt-0"}`}
+                    className={`relative z-10 w-[48px] shrink-0 flex flex-col items-start leading-tight ${hasGoals ? "pt-2" : "pt-0"}`}
                   >
                     <span
-                      className={`text-[11px] tabular-nums ${
+                      className={`text-[12px] tabular-nums ${
                         isMilestone || hasGoals
                           ? "font-semibold text-foreground"
-                          : "text-muted-foreground/60"
+                          : "text-muted-foreground/50"
                       }`}
                     >
                       {y}
                     </span>
+                    {(isMilestone || hasGoals) && ageAtYear != null && ageAtYear >= 0 && (
+                      <span className="text-[9px] font-medium tabular-nums text-muted-foreground/55">
+                        {ageAtYear} yrs
+                      </span>
+                    )}
                   </div>
 
                   {/* Right side: NAV figure + goal cards (empty years stay as a thin tick) */}
@@ -2592,7 +2617,13 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
         onSubmit={handleGoalSubmit}
       />
 
-      <ProjectionSheet open={projectionOpen} onClose={() => setProjectionOpen(false)} />
+      <ProjectionSheet
+        open={projectionOpen}
+        onClose={() => setProjectionOpen(false)}
+        fundFlow={cashflowData?.fund_flow_summary ?? null}
+        headline={cashflowData?.headline ?? null}
+        sipMonthly={planSip}
+      />
 
       {/* Floating + FAB — pinned to the right edge of the page column */}
       <div

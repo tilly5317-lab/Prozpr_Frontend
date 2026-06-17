@@ -1,5 +1,5 @@
-import { useRef, useState, type ReactNode } from "react";
-import { Bug, ImagePlus, Loader2, X } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { Bug, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -22,9 +22,6 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ISSUE_SOURCES, reportIssue, type IssueSource } from "@/lib/api";
 
-const MAX_SCREENSHOT_BYTES = 5 * 1024 * 1024;
-const ACCEPTED_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
-
 /**
  * "Report an Issue" dialog. Wrap any element to use it as the trigger:
  *
@@ -35,42 +32,12 @@ const ReportIssueDialog = ({ children }: { children: ReactNode }) => {
   const [source, setSource] = useState<IssueSource | "">("");
   const [sourceDetail, setSourceDetail] = useState("");
   const [description, setDescription] = useState("");
-  const [screenshot, setScreenshot] = useState<File | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const reset = () => {
     setSource("");
     setSourceDetail("");
     setDescription("");
-    clearScreenshot();
-  };
-
-  const clearScreenshot = () => {
-    setScreenshot(null);
-    setPreview((url) => {
-      if (url) URL.revokeObjectURL(url);
-      return null;
-    });
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  };
-
-  const handleFile = (file: File | undefined) => {
-    if (!file) return;
-    if (!ACCEPTED_TYPES.includes(file.type)) {
-      toast.error("Screenshot must be a PNG, JPEG, WEBP, or GIF image.");
-      return;
-    }
-    if (file.size > MAX_SCREENSHOT_BYTES) {
-      toast.error("Screenshot is too large (max 5 MB).");
-      return;
-    }
-    setPreview((url) => {
-      if (url) URL.revokeObjectURL(url);
-      return URL.createObjectURL(file);
-    });
-    setScreenshot(file);
   };
 
   const handleSubmit = async () => {
@@ -91,7 +58,7 @@ const ReportIssueDialog = ({ children }: { children: ReactNode }) => {
       await reportIssue(
         source,
         description.trim(),
-        screenshot,
+        null,
         source === "Other" ? sourceDetail.trim() : undefined,
       );
       toast.success("Issue reported. Our team will look into it — thank you!");
@@ -108,7 +75,9 @@ const ReportIssueDialog = ({ children }: { children: ReactNode }) => {
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (submitting) return;
+        // Allow closing even while a submit is in flight so the user is never
+        // trapped behind the spinner; the in-flight request still completes and
+        // shows its success/error toast.
         setOpen(next);
         if (!next) reset();
       }}
@@ -167,43 +136,6 @@ const ReportIssueDialog = ({ children }: { children: ReactNode }) => {
               rows={4}
               className="text-xs resize-none"
             />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label className="text-xs">Screenshot (optional)</Label>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept={ACCEPTED_TYPES.join(",")}
-              className="hidden"
-              onChange={(e) => handleFile(e.target.files?.[0])}
-            />
-            {preview ? (
-              <div className="relative inline-block">
-                <img
-                  src={preview}
-                  alt="Screenshot preview"
-                  className="max-h-28 rounded-lg border border-border object-contain"
-                />
-                <button
-                  type="button"
-                  onClick={clearScreenshot}
-                  aria-label="Remove screenshot"
-                  className="absolute -right-2 -top-2 rounded-full bg-destructive p-1 text-destructive-foreground shadow"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-border py-3 text-xs text-muted-foreground transition-colors hover:bg-secondary"
-              >
-                <ImagePlus className="h-4 w-4" />
-                Attach a screenshot
-              </button>
-            )}
           </div>
 
           <Button onClick={handleSubmit} disabled={submitting} className="w-full text-xs" size="sm">
