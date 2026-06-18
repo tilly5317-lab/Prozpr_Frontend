@@ -17,10 +17,8 @@ import {
 } from "recharts";
 import { Download, Info, X } from "lucide-react";
 import {
-  getMyPortfolio,
   getPortfolioNavHistory,
   getPortfolioTwr,
-  type PortfolioDetail,
   type PortfolioNavHistoryResponse,
   type TwrSeriesResponse,
 } from "@/lib/api";
@@ -36,7 +34,7 @@ const TABS: { id: AnalysisTab; label: string }[] = [
 
 // Single fixed benchmark — Nifty 50. Its value now comes from real Nifty TRI data.
 const NIFTY = {
-  fullName: "Benchmark: Nifty 50",
+  fullName: "TWR: Nifty 50",
   shortName: "Nifty 50",
   color: "hsl(var(--muted-foreground))",
   dash: "2 3",
@@ -72,6 +70,12 @@ function fmtInrCompact1(n: number): string {
 }
 
 const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** "2026-06-10" → "10 Jun 2026" (parses parts to avoid timezone drift). */
+function fmtAsOf(iso: string): string {
+  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
+  return `${d} ${MONTH_ABBR[m - 1]} ${y}`;
+}
 
 function formatDateTick(range: AnalysisRange, d: Date): string {
   if (range === "1M" || range === "3M" || range === "YTD") {
@@ -143,7 +147,6 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
   });
   const [range, setRange] = useState<AnalysisRange>("1M");
   const [infoOpen, setInfoOpen] = useState<"twr" | "mwr" | null>(null);
-  const [portfolio, setPortfolio] = useState<PortfolioDetail | null>(null);
   const [twrData, setTwrData] = useState<TwrSeriesResponse | null>(null);
   const [twrLoading, setTwrLoading] = useState(false);
   const [twrError, setTwrError] = useState(false);
@@ -175,30 +178,11 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
     return () => { cancelled = true; };
   }, [open]);
 
-  useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-    getMyPortfolio()
-      .then((p) => { if (!cancelled) setPortfolio(p); })
-      .catch(() => { /* annual-return card just hides */ });
-    return () => { cancelled = true; };
-  }, [open]);
-
-  // Annualised money-weighted return (a.k.a. money-rated return / MWR): the
-  // actual return on the rupees invested, annualised over the holding period.
-  // Unlike TWR it reflects the size & timing of contributions.
-  const annualMwr = useMemo(() => {
-    if (!portfolio) return null;
-    const invested = portfolio.total_invested;
-    const value = portfolio.total_value;
-    if (invested <= 0 || value <= 0) return null;
-    const startMs = new Date(portfolio.created_at).getTime();
-    const yearsHeld = Number.isFinite(startMs)
-      ? (Date.now() - startMs) / (365.25 * 24 * 3600 * 1000)
-      : 1;
-    const yrs = Math.max(yearsHeld, 0.25); // avoid explosive annualisation for very new portfolios
-    return Math.round((Math.pow(value / invested, 1 / yrs) - 1) * 100 * 100) / 100;
-  }, [portfolio]);
+  // Since-inception XIRR (money-weighted return), computed backend-side from every
+  // buy & sell + current value. Decimal from the API → percent for display. It is a
+  // whole-life figure, so unlike TWR/Nifty it does not change with the range above.
+  const xirrPct = twrData?.portfolio_xirr != null ? twrData.portfolio_xirr * 100 : null;
+  const asOf = twrData?.as_of_date ?? null;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -294,6 +278,7 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
         ["Metric (Mutual funds)", `${range}`],
         ["Portfolio TWR %", scaledTwr],
         ["Nifty 50 TWR %", primaryBench ?? ""],
+        ["Portfolio XIRR % (since inception)", xirrPct ?? ""],
       ];
       downloadFile(`portfolio-performance-${ts}.csv`, "text/csv", toCsv(rows));
       return;
@@ -399,6 +384,81 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
                     exit={{ opacity: 0, y: -4 }}
                     transition={{ duration: 0.18, ease: "easeOut" }}
                   >
+                    {/* XIRR headline — since-inception; intentionally NOT governed by the range below. */}
+                    {tab === "returns" && xirrPct != null && (
+                      <div className="mb-3 rounded-xl p-2.5" style={{ border: `1px solid ${HAIRLINE}` }}>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1">
+                            <p className="text-sm tracking-wide text-muted-foreground">
+                              XIRR · Since Inception
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => setInfoOpen((o) => (o === "mwr" ? null : "mwr"))}
+                              className="text-muted-foreground hover:text-foreground"
+                              aria-label="About XIRR"
+                            >
+                              <Info className="h-3 w-3" />
+                            </button>
+                          </div>
+                          <div className="text-right">
+                            <p
+                              className="text-sm font-semibold leading-tight"
+                              style={{
+                                color: xirrPct >= 0 ? POSITIVE : NEGATIVE,
+                                fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                              }}
+                            >
+                              {fmtPct(xirrPct)}
+                            </p>
+                            <p className="text-[9px] text-muted-foreground mt-0.5">
+                              p.a.{asOf ? ` · as of ${fmtAsOf(asOf)}` : ""}
+                            </p>
+                          </div>
+                        </div>
+                        {infoOpen === "mwr" && (
+                          <div className="mt-2 rounded-lg px-3 py-2" style={{ backgroundColor: "hsl(var(--muted) / 0.6)" }}>
+                            <p className="text-[11.5px] text-foreground leading-relaxed">
+                              <strong>XIRR</strong> is your money-weighted return since you started
+                              investing — the real annual growth rate on the money you put in,
+                              accounting for every buy and sell and exactly when each happened.
+                              It's a whole-life figure, so it doesn't change with the range below.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {tab === "returns" && (
+                      <div className="mb-2">
+                        <div className="flex items-center gap-1">
+                          <p className="text-sm tracking-wide text-muted-foreground">
+                            TWR Benchmarking
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => setInfoOpen((o) => (o === "twr" ? null : "twr"))}
+                            className="text-muted-foreground hover:text-foreground"
+                            aria-label="About TWR Benchmarking"
+                          >
+                            <Info className="h-3 w-3" />
+                          </button>
+                        </div>
+                        {infoOpen === "twr" && (
+                          <div className="mt-2 rounded-lg px-3 py-2" style={{ backgroundColor: "hsl(var(--muted) / 0.6)" }}>
+                            <p className="text-[11.5px] text-foreground leading-relaxed">
+                              Use this to see whether your fund choices are actually beating the
+                              market. If your <strong>TWR</strong> sits above the Nifty 50 line,
+                              your picks are adding value over a plain index fund; if it trails, a
+                              low-cost index fund may have served you better. TWR ignores how much
+                              you invested and when, so it judges the funds themselves — not your
+                              contribution timing. (Covers your mutual-fund holdings only.)
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {/* Range selector — shared by both tabs */}
                     <div className="flex flex-wrap gap-1 mb-3">
                       {RANGES.map((r) => {
@@ -423,15 +483,6 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
                     {/* — Returns tab — */}
                     {tab === "returns" && (
                       <div>
-                        <div className="flex items-center gap-2 mb-2">
-                          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                            Performance
-                          </p>
-                          <span className="text-[9px] rounded-full px-1.5 py-0.5 bg-muted text-muted-foreground">
-                            Mutual funds
-                          </span>
-                        </div>
-
                         {twrLoading && (
                           <p className="text-[12px] text-muted-foreground py-8 text-center">
                             Loading your returns…
@@ -446,19 +497,9 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
 
                         {!twrLoading && !twrError && rebased && (
                           <>
-                            <div className="grid grid-cols-3 gap-2">
+                            <div className="grid grid-cols-2 gap-2">
                               <div className="rounded-xl p-2.5" style={{ border: `1px solid ${HAIRLINE}` }}>
-                                <div className="flex items-center gap-1 mb-0.5">
-                                  <p className="text-[9px] uppercase tracking-wide text-muted-foreground">TWR</p>
-                                  <button
-                                    type="button"
-                                    onClick={() => setInfoOpen((o) => (o === "twr" ? null : "twr"))}
-                                    className="text-muted-foreground hover:text-foreground"
-                                    aria-label="About TWR"
-                                  >
-                                    <Info className="h-3 w-3" />
-                                  </button>
-                                </div>
+                                <p className="text-[9px] tracking-wide text-muted-foreground mb-0.5 leading-tight">TWR: Portfolio</p>
                                 <p
                                   className="text-sm font-semibold leading-tight"
                                   style={{
@@ -470,30 +511,7 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
                                 </p>
                               </div>
                               <div className="rounded-xl p-2.5" style={{ border: `1px solid ${HAIRLINE}` }}>
-                                <div className="flex items-center gap-1 mb-0.5">
-                                  <p className="text-[9px] uppercase tracking-wide text-muted-foreground">Annual</p>
-                                  <button
-                                    type="button"
-                                    onClick={() => setInfoOpen((o) => (o === "mwr" ? null : "mwr"))}
-                                    className="text-muted-foreground hover:text-foreground"
-                                    aria-label="About Annual Return"
-                                  >
-                                    <Info className="h-3 w-3" />
-                                  </button>
-                                </div>
-                                <p
-                                  className="text-sm font-semibold leading-tight"
-                                  style={{
-                                    color: (annualMwr ?? 0) >= 0 ? POSITIVE : NEGATIVE,
-                                    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-                                  }}
-                                >
-                                  {annualMwr == null ? "—" : fmtPct(annualMwr)}
-                                </p>
-                                <p className="text-[9px] text-muted-foreground mt-0.5">p.a. · MWR</p>
-                              </div>
-                              <div className="rounded-xl p-2.5" style={{ border: `1px solid ${HAIRLINE}` }}>
-                                <p className="text-[9px] uppercase tracking-wide text-muted-foreground mb-0.5 leading-tight">
+                                <p className="text-[9px] tracking-wide text-muted-foreground mb-0.5 leading-tight">
                                   {NIFTY.fullName}
                                 </p>
                                 <p
@@ -508,32 +526,7 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
                               </div>
                             </div>
 
-                            {infoOpen && (
-                              <div className="mt-2 rounded-lg px-3 py-2" style={{ backgroundColor: "hsl(var(--muted) / 0.6)" }}>
-                                {infoOpen === "twr" ? (
-                                  <p className="text-[11.5px] text-foreground leading-relaxed">
-                                    Use this to see whether your fund choices are actually beating the
-                                    market. If your <strong>TWR</strong> sits above the Nifty 50 line,
-                                    your picks are adding value over a plain index fund; if it trails, a
-                                    low-cost index fund may have served you better. TWR ignores how much
-                                    you invested and when, so it judges the funds themselves — not your
-                                    contribution timing. (Covers your mutual-fund holdings only.)
-                                  </p>
-                                ) : (
-                                  <p className="text-[11.5px] text-foreground leading-relaxed">
-                                    <strong>Annual Return</strong> is your money-weighted (money-rated)
-                                    return, annualised. Unlike TWR, it reflects the size and timing of
-                                    your contributions — the actual annual growth rate earned on the
-                                    money you put in.
-                                  </p>
-                                )}
-                              </div>
-                            )}
-
-                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground mt-4 mb-1.5">
-                              TWR Benchmarking
-                            </p>
-                            <div className="h-[180px] w-full">
+                            <div className="h-[180px] w-full mt-4">
                               <ResponsiveContainer width="100%" height="100%">
                                 <LineChart data={returnsSeries} margin={{ top: 8, right: 12, left: 12, bottom: 18 }}>
                                   <CartesianGrid stroke={HAIRLINE} vertical={false} />
@@ -568,7 +561,7 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
                                       color: "hsl(var(--foreground))",
                                     }}
                                     labelStyle={{ color: "hsl(var(--foreground))", fontWeight: 600 }}
-                                    formatter={(v: number, name: string) => [`${v}%`, name.toUpperCase()]}
+                                    formatter={(v: number, name: string) => [`${v}%`, name]}
                                     labelFormatter={(label) => {
                                       const p = returnsSeries[Number(label)];
                                       return p ? formatDateTick(range, new Date(p.date)) : "";
@@ -611,6 +604,10 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
                                 </span>
                               )}
                             </div>
+
+                            <p className="text-[9px] text-muted-foreground mt-3">
+                              All figures shown cover your mutual-fund holdings only.
+                            </p>
                           </>
                         )}
                       </div>
@@ -720,7 +717,7 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
                           </ResponsiveContainer>
                         </div>
 
-                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground mt-4 mb-1.5">
+                        <p className="text-[10px] tracking-wide text-muted-foreground mt-4 mb-1.5">
                           Breakdown
                         </p>
                         <div
