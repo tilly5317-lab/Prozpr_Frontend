@@ -1106,6 +1106,10 @@ export interface TwrPoint {
 export interface TwrSeriesResponse {
   has_data: boolean;
   points: TwrPoint[];
+  /** Since-inception money-weighted return (decimal, 0.11 == 11%); null if undefined. */
+  portfolio_xirr: number | null;
+  /** ISO date the current value is priced at (latest NAV used for XIRR); null if none. */
+  as_of_date: string | null;
 }
 
 /** Real TWR series (portfolio vs Nifty 50, MF-only). Frontend rebases per range. */
