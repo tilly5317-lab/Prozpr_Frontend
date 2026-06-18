@@ -9,7 +9,6 @@ import PortfolioNavChart from "./PortfolioNavChart";
 import CurrentAllocationCard from "./CurrentAllocationCard";
 import AdvisorMeetingsSlot from "./AdvisorMeetingsSlot";
 import PortfolioAnalysisModal from "./PortfolioAnalysisModal";
-import BenchmarkHistoryCard from "./BenchmarkHistoryCard";
 import ProfileSwitcher from "./ProfileSwitcher";
 import { useFamily } from "@/context/FamilyContext";
 import {
@@ -665,7 +664,6 @@ const PortfolioDashboard = () => {
                 useNavChart
               />
               <DiscoverEntryCard />
-              <BenchmarkHistoryCard />
               <ProfileUnlockCircles profile={selfProfile} />
               <AdvisorMeetingsSlot />
             </div>
