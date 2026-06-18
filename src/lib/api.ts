@@ -1113,6 +1113,58 @@ export async function getPortfolioTwr(): Promise<TwrSeriesResponse> {
   return request<TwrSeriesResponse>("/portfolio/twr");
 }
 
+// ── Benchmarks (market index EOD data, e.g. Nifty 50) ───────────────────────
+
+/** One benchmark index in the catalogue + its latest EOD value. */
+export interface BenchmarkSummary {
+  id: string;
+  code: string;
+  display_name: string;
+  short_name: string;
+  provider: string;
+  asset_class: string;
+  description: string | null;
+  earliest_available: string | null;
+  is_active: boolean;
+  latest_value: number | null;
+  latest_value_date: string | null;
+  created_at: string;
+}
+
+/** One daily EOD value point for a benchmark index. */
+export interface BenchmarkHistoryPoint {
+  value_date: string;
+  tri_value: number;
+  ntr_value: number | null;
+  pr_value: number | null;
+}
+
+export interface BenchmarkHistoryResponse {
+  code: string;
+  display_name: string;
+  points: BenchmarkHistoryPoint[];
+}
+
+/** List benchmark indices in the catalogue (each with its latest EOD value). */
+export async function listBenchmarks(activeOnly = false): Promise<BenchmarkSummary[]> {
+  const q = activeOnly ? "?active_only=true" : "";
+  return request<BenchmarkSummary[]>(`/benchmarks${q}`);
+}
+
+/** EOD value history for one benchmark index, optionally clipped to [from, to]. */
+export async function getBenchmarkHistory(
+  code: string,
+  opts?: { from?: string; to?: string }
+): Promise<BenchmarkHistoryResponse> {
+  const params = new URLSearchParams();
+  if (opts?.from) params.set("from", opts.from);
+  if (opts?.to) params.set("to", opts.to);
+  const qs = params.toString();
+  return request<BenchmarkHistoryResponse>(
+    `/benchmarks/${encodeURIComponent(code)}/history${qs ? `?${qs}` : ""}`
+  );
+}
+
 /** Primary portfolio for the logged-in user (from DB). */
 export async function getMyPortfolio(): Promise<PortfolioDetail> {
   const cached = getCachedUserContextValue("portfolio");
