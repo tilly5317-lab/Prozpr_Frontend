@@ -12,7 +12,6 @@ import {
   createGoal,
   updateGoal,
   removeGoal,
-  getCashflowLatest,
   updatePersonalFinance,
   getPersonalFinance,
   computeCashflow,
@@ -822,7 +821,12 @@ const GoalPlanner = () => {
   const fetchCashflow = useCallback(async () => {
     setCashflowLoading(true);
     try {
-      const res = await getCashflowLatest();
+      // Force a fresh recompute so the projection always reflects the CURRENT
+      // engine + the user's current goals/retirement age. `/cashflow/latest`
+      // only auto-recomputes on an engine-version bump or an explicit stale flag
+      // — NOT when goals/retirement change — so it can serve an outdated run that
+      // stops at the last goal instead of running to max(last_goal, retirement).
+      const res = await computeCashflow();
       setCashflowData(res);
     } catch {
       // Cashflow may not be available yet

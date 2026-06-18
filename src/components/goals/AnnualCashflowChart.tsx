@@ -19,13 +19,17 @@ interface Props {
 export default function AnnualCashflowChart({ data }: Props) {
   const chartData = useMemo(
     () =>
-      data.map((r) => ({
-        fy: r.fy_label,
-        Income: r.income,
-        Expenses: r.household_expense + r.existing_mortgage_emi + r.goal_mortgage_emi,
-        Savings: r.savings_post_emi,
-        Corpus: r.corpus_closing,
-      })),
+      // Sort chronologically so the full series renders in order regardless of the
+      // order the rows arrive in (defensive — the API also orders them now).
+      [...data]
+        .sort((a, b) => a.fy_end_date.localeCompare(b.fy_end_date))
+        .map((r) => ({
+          fy: r.fy_label,
+          Income: r.income,
+          Expenses: r.household_expense + r.existing_mortgage_emi + r.goal_mortgage_emi,
+          Savings: r.savings_post_emi,
+          Corpus: r.corpus_closing,
+        })),
     [data],
   );
 
