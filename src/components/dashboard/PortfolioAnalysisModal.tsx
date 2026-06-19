@@ -490,7 +490,7 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
                                 >
                                   {annualMwr == null ? "—" : fmtPct(annualMwr)}
                                 </p>
-                                <p className="text-[9px] text-muted-foreground mt-0.5">p.a. · MWR</p>
+                                <p className="text-[9px] text-muted-foreground mt-0.5">p.a. · XIRR</p>
                               </div>
                               <div className="rounded-xl p-2.5" style={{ border: `1px solid ${HAIRLINE}` }}>
                                 <p className="text-[9px] uppercase tracking-wide text-muted-foreground mb-0.5 leading-tight">
@@ -512,19 +512,21 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
                               <div className="mt-2 rounded-lg px-3 py-2" style={{ backgroundColor: "hsl(var(--muted) / 0.6)" }}>
                                 {infoOpen === "twr" ? (
                                   <p className="text-[11.5px] text-foreground leading-relaxed">
-                                    Use this to see whether your fund choices are actually beating the
-                                    market. If your <strong>TWR</strong> sits above the Nifty 50 line,
-                                    your picks are adding value over a plain index fund; if it trails, a
-                                    low-cost index fund may have served you better. TWR ignores how much
-                                    you invested and when, so it judges the funds themselves — not your
-                                    contribution timing. (Covers your mutual-fund holdings only.)
+                                    <strong>Time-weighted return (TWR)</strong> strips out how much you
+                                    invested and when, so it measures how your funds themselves performed.
+                                    That makes it the right number to read <strong>against a benchmark</strong>:
+                                    if your TWR sits above the Nifty 50 line your picks are beating a plain
+                                    index fund; if it trails, a low-cost index fund may have served you
+                                    better. TWR is best judged side-by-side with the benchmark — not on its
+                                    own. (Covers your mutual-fund holdings only.)
                                   </p>
                                 ) : (
                                   <p className="text-[11.5px] text-foreground leading-relaxed">
-                                    <strong>Annual Return</strong> is your money-weighted (money-rated)
-                                    return, annualised. Unlike TWR, it reflects the size and timing of
-                                    your contributions — the actual annual growth rate earned on the
-                                    money you put in.
+                                    <strong>Annual return (XIRR)</strong> is your money-weighted return,
+                                    annualised — the actual yearly growth rate earned on the money you put
+                                    in. Unlike TWR it <em>does</em> reflect how much you invested and when,
+                                    so it answers “how is <strong>my</strong> money doing,” not “how good are
+                                    the funds.” Compare it to your own goal, not to the benchmark.
                                   </p>
                                 )}
                               </div>
