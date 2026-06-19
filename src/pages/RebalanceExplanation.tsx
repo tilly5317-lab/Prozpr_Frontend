@@ -189,6 +189,10 @@ function groupTradesByReason(
     if (seen.has(code) || !arr.length) continue;
     out.push({ label: arr[0].subtitle || "Other trades", trades: arr });
   }
+  // List BUY groups before SELL groups (what to add first, then what to trim),
+  // preserving each side's REASON_GROUPS order — Array.sort is stable.
+  const isBuyGroup = (g: { trades: UITrade[] }) => g.trades[0]?.type === "BUY";
+  out.sort((a, b) => Number(isBuyGroup(b)) - Number(isBuyGroup(a)));
   return out;
 }
 
@@ -309,24 +313,6 @@ const EXAMPLE_DRIFT_ROWS: DriftRow[] = [
 
 const EXAMPLE_TRADE_GROUPS: { label: string; color?: string; trades: UITrade[] }[] = [
   {
-    label: "Trim back to target",
-    color: TRADE_ORANGE,
-    trades: [
-      {
-        id: "example-sell-1",
-        isin: "",
-        type: "SELL",
-        bucket: "equity",
-        amount: "₹40,000",
-        subtitle: "Trim back to target",
-        name: "Example Large Cap Fund",
-        category: "Equity · Large Cap",
-        rationale: "Sample trade — add your details to see your real plan.",
-        reasonCode: "trim_over_target",
-      },
-    ],
-  },
-  {
     label: "Top up to target",
     color: BUY_GREEN,
     trades: [
@@ -341,6 +327,24 @@ const EXAMPLE_TRADE_GROUPS: { label: string; color?: string; trades: UITrade[] }
         category: "Debt · Corporate Bond",
         rationale: "Sample trade — add your details to see your real plan.",
         reasonCode: "add_to_target",
+      },
+    ],
+  },
+  {
+    label: "Trim back to target",
+    color: TRADE_ORANGE,
+    trades: [
+      {
+        id: "example-sell-1",
+        isin: "",
+        type: "SELL",
+        bucket: "equity",
+        amount: "₹40,000",
+        subtitle: "Trim back to target",
+        name: "Example Large Cap Fund",
+        category: "Equity · Large Cap",
+        rationale: "Sample trade — add your details to see your real plan.",
+        reasonCode: "trim_over_target",
       },
     ],
   },
