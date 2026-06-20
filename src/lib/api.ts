@@ -310,6 +310,7 @@ export interface OnboardingProfilePayload {
   annual_income?: number;
   monthly_household_expense?: number;
   financial_assets?: number;
+  equity_shares?: number;
   financial_liabilities_excl_mortgage?: number;
   starting_monthly_investment?: number;
 }
@@ -337,6 +338,7 @@ export interface OnboardingProfileResponse {
   effective_tax_rate?: number | null;
   monthly_household_expense?: number | null;
   financial_assets?: number | null;
+  equity_shares?: number | null;
   financial_liabilities_excl_mortgage?: number | null;
   starting_monthly_investment?: number | null;
   updated_at: string | null;
@@ -777,6 +779,7 @@ export interface PersonalFinancePayload {
   /** Blended post-deduction rate as a fraction (e.g. 0.22), NOT a percentage. */
   effective_tax_rate?: number | null;
   financial_assets?: number | null;
+  equity_shares?: number | null;
   financial_liabilities_excl_mortgage?: number | null;
   monthly_household_expense?: number | null;
   starting_monthly_investment?: number | null;
@@ -1106,11 +1109,67 @@ export interface TwrPoint {
 export interface TwrSeriesResponse {
   has_data: boolean;
   points: TwrPoint[];
+  /** Since-inception money-weighted return (decimal, 0.11 == 11%); null if undefined. */
+  portfolio_xirr: number | null;
+  /** ISO date the current value is priced at (latest NAV used for XIRR); null if none. */
+  as_of_date: string | null;
 }
 
 /** Real TWR series (portfolio vs Nifty 50, MF-only). Frontend rebases per range. */
 export async function getPortfolioTwr(): Promise<TwrSeriesResponse> {
   return request<TwrSeriesResponse>("/portfolio/twr");
+}
+
+// ── Benchmarks (market index EOD data, e.g. Nifty 50) ───────────────────────
+
+/** One benchmark index in the catalogue + its latest EOD value. */
+export interface BenchmarkSummary {
+  id: string;
+  code: string;
+  display_name: string;
+  short_name: string;
+  provider: string;
+  asset_class: string;
+  description: string | null;
+  earliest_available: string | null;
+  is_active: boolean;
+  latest_value: number | null;
+  latest_value_date: string | null;
+  created_at: string;
+}
+
+/** One daily EOD value point for a benchmark index. */
+export interface BenchmarkHistoryPoint {
+  value_date: string;
+  tri_value: number;
+  ntr_value: number | null;
+  pr_value: number | null;
+}
+
+export interface BenchmarkHistoryResponse {
+  code: string;
+  display_name: string;
+  points: BenchmarkHistoryPoint[];
+}
+
+/** List benchmark indices in the catalogue (each with its latest EOD value). */
+export async function listBenchmarks(activeOnly = false): Promise<BenchmarkSummary[]> {
+  const q = activeOnly ? "?active_only=true" : "";
+  return request<BenchmarkSummary[]>(`/benchmarks${q}`);
+}
+
+/** EOD value history for one benchmark index, optionally clipped to [from, to]. */
+export async function getBenchmarkHistory(
+  code: string,
+  opts?: { from?: string; to?: string }
+): Promise<BenchmarkHistoryResponse> {
+  const params = new URLSearchParams();
+  if (opts?.from) params.set("from", opts.from);
+  if (opts?.to) params.set("to", opts.to);
+  const qs = params.toString();
+  return request<BenchmarkHistoryResponse>(
+    `/benchmarks/${encodeURIComponent(code)}/history${qs ? `?${qs}` : ""}`
+  );
 }
 
 /** Primary portfolio for the logged-in user (from DB). */
@@ -1766,6 +1825,7 @@ export interface CashflowInputValues {
   starting_monthly_investment?: number;
   current_portfolio_corpus?: number;
   financial_assets?: number;
+  equity_shares?: number;
   financial_liabilities_excl_mortgage?: number;
 }
 
@@ -1784,6 +1844,7 @@ export async function saveCashflowInputs(v: CashflowInputValues): Promise<void> 
   if (v.starting_monthly_investment != null) finance.starting_monthly_investment = v.starting_monthly_investment;
   if (v.current_portfolio_corpus != null) finance.current_portfolio_corpus = v.current_portfolio_corpus;
   if (v.financial_assets != null) finance.financial_assets = v.financial_assets;
+  if (v.equity_shares != null) finance.equity_shares = v.equity_shares;
   if (v.financial_liabilities_excl_mortgage != null)
     finance.financial_liabilities_excl_mortgage = v.financial_liabilities_excl_mortgage;
   if (Object.keys(finance).length > 0) await updatePersonalFinance(finance);

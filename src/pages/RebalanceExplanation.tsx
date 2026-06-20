@@ -189,6 +189,10 @@ function groupTradesByReason(
     if (seen.has(code) || !arr.length) continue;
     out.push({ label: arr[0].subtitle || "Other trades", trades: arr });
   }
+  // List BUY groups before SELL groups (what to add first, then what to trim),
+  // preserving each side's REASON_GROUPS order — Array.sort is stable.
+  const isBuyGroup = (g: { trades: UITrade[] }) => g.trades[0]?.type === "BUY";
+  out.sort((a, b) => Number(isBuyGroup(b)) - Number(isBuyGroup(a)));
   return out;
 }
 
@@ -268,6 +272,103 @@ const NEUTRAL = "hsl(var(--muted-foreground))";
 const withAlpha = (color: string, a: number): string =>
   color.startsWith("hsl") ? color.replace(/\)\s*$/, ` / ${a})`) : color;
 
+/* ── Example plan ──────────────────────────────────────────────────────────
+   Shown when the user hasn't supplied the inputs the engine needs yet (e.g. date
+   of birth, CAMS holdings). The page renders the real sections populated with
+   clearly-labelled SAMPLE numbers so the user can see what the page produces —
+   the dismissible RebalanceGate prompt offers to add their details to get the
+   real plan. Nothing here is persisted or actionable. */
+const EXAMPLE_DRIFT_ROWS: DriftRow[] = [
+  {
+    key: "equity",
+    label: BUCKET_META.equity.label,
+    color: BUCKET_META.equity.color,
+    current: 62,
+    target: 55,
+    currentInr: 3_100_000,
+    targetInr: 2_750_000,
+    amountText: "7% overweight · +₹3.5L",
+  },
+  {
+    key: "debt",
+    label: BUCKET_META.debt.label,
+    color: BUCKET_META.debt.color,
+    current: 28,
+    target: 35,
+    currentInr: 1_400_000,
+    targetInr: 1_750_000,
+    amountText: "7% underweight · -₹3.5L",
+  },
+  {
+    key: "others",
+    label: BUCKET_META.others.label,
+    color: BUCKET_META.others.color,
+    current: 10,
+    target: 10,
+    currentInr: 500_000,
+    targetInr: 500_000,
+    amountText: "On target",
+  },
+];
+
+const EXAMPLE_TRADE_GROUPS: { label: string; color?: string; trades: UITrade[] }[] = [
+  {
+    label: "Top up to target",
+    color: BUY_GREEN,
+    trades: [
+      {
+        id: "example-buy-1",
+        isin: "",
+        type: "BUY",
+        bucket: "debt",
+        amount: "₹40,000",
+        subtitle: "Top up to target",
+        name: "Example Corporate Bond Fund",
+        category: "Debt · Corporate Bond",
+        rationale: "Sample trade — add your details to see your real plan.",
+        reasonCode: "add_to_target",
+      },
+    ],
+  },
+  {
+    label: "Trim back to target",
+    color: TRADE_ORANGE,
+    trades: [
+      {
+        id: "example-sell-1",
+        isin: "",
+        type: "SELL",
+        bucket: "equity",
+        amount: "₹40,000",
+        subtitle: "Trim back to target",
+        name: "Example Large Cap Fund",
+        category: "Equity · Large Cap",
+        rationale: "Sample trade — add your details to see your real plan.",
+        reasonCode: "trim_over_target",
+      },
+    ],
+  },
+];
+
+const EXAMPLE_KEPT_FUNDS: KeptFund[] = [
+  {
+    id: "example-keep-1",
+    name: "Example Flexi Cap Fund",
+    subtitle: "Equity · Flexi Cap",
+    value: 800_000,
+    gainPct: 14.2,
+    tone: "well",
+  },
+  {
+    id: "example-keep-2",
+    name: "Example Gilt Fund",
+    subtitle: "Debt · Gilt",
+    value: 300_000,
+    gainPct: 6.1,
+    tone: "neutral",
+  },
+];
+
 const RebalanceExplanation = () => {
   const navigate = useNavigate();
   const [detail, setDetail] = useState<RebalancingRunDetail | null>(null);
@@ -275,6 +376,13 @@ const RebalanceExplanation = () => {
   const [dataLoading, setDataLoading] = useState(false);
   const [dataError, setDataError] = useState<string | null>(null);
   const [approving, setApproving] = useState(false);
+  // Whether the rebalancing inputs are complete. null = still checking (the gate
+  // shows a pill); false = missing inputs → render the example plan; true = real
+  // plan loads via onReady → loadData.
+  const [gateReady, setGateReady] = useState<boolean | null>(null);
+  // Bumped to open the gate's inputs form on demand (e.g. from the example plan's
+  // CTA) — so the user can add their details even after dismissing the prompt.
+  const [gateEditSignal, setGateEditSignal] = useState(0);
 
   // Open the full fund-detail page (same screen as a portfolio holding), passing
   // the trade's rationale so it can render a "Why this trade" card on top. The
@@ -338,6 +446,17 @@ const RebalanceExplanation = () => {
 
   const isApproved = detail?.status === "approved" || detail?.status === "executed";
 
+  // Render an example plan when the inputs aren't ready and there's no real plan
+  // to show. The same sections render either the real or the sample data.
+  const isExample = gateReady === false && !detail && !dataLoading && !dataError;
+  const driftRowsToShow = isExample ? EXAMPLE_DRIFT_ROWS : driftRows;
+  const tradeGroupsToShow = isExample ? EXAMPLE_TRADE_GROUPS : tradeGroups;
+  const tradeCountToShow = isExample
+    ? EXAMPLE_TRADE_GROUPS.reduce((n, g) => n + g.trades.length, 0)
+    : uiTrades.length;
+  const keptFundsToShow = isExample ? EXAMPLE_KEPT_FUNDS : keptFunds;
+  const taxTextToShow = isExample ? "Tax impact · ₹12,400 est." : taxText;
+
   const proceed = useCallback(async () => {
     if (!detail) return;
     setApproving(true);
@@ -354,8 +473,10 @@ const RebalanceExplanation = () => {
 
   return (
     <div className="mobile-container bg-background min-h-screen pb-24">
-      {/* Gate: blurs the page and collects missing inputs until a plan exists. */}
-      <RebalanceGate onReady={loadData} />
+      {/* Gate: never blocks the page. When inputs are missing it shows a
+          dismissible prompt and reports readiness so we render an example plan;
+          when ready it loads the real plan via onReady. */}
+      <RebalanceGate onReady={loadData} onResolved={setGateReady} editSignal={gateEditSignal} />
 
       <div className="px-5 pt-10 pb-2 space-y-3">
         {dataLoading && (
@@ -394,10 +515,15 @@ const RebalanceExplanation = () => {
           </div>
         )}
 
-        {!dataLoading && !dataError && detail && (
+        {!dataLoading && !dataError && (detail || isExample) && (
           <>
-            <div className="-mb-1">
+            <div className="-mb-1 flex items-center gap-2">
               <span className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">Rebalancing plan</span>
+              {isExample && (
+                <span className="rounded-full border border-[#D4A868]/40 bg-[#D4A868]/10 px-2 py-0.5 text-[9.5px] font-semibold uppercase tracking-wider text-[#9A7B2E]">
+                  Example
+                </span>
+              )}
             </div>
 
             <motion.section
@@ -454,8 +580,8 @@ const RebalanceExplanation = () => {
             {/* Current vs target — clustered ₹ bars per asset class. The Current
                 and Target bars sit flush (no gap) and share one ₹ x-axis so the
                 lengths are comparable across rows (mirrors a clustered bar chart). */}
-            {driftRows.length > 0 && (() => {
-              const rawMax = Math.max(1, ...driftRows.flatMap((r) => [r.currentInr, r.targetInr]));
+            {driftRowsToShow.length > 0 && (() => {
+              const rawMax = Math.max(1, ...driftRowsToShow.flatMap((r) => [r.currentInr, r.targetInr]));
               const axisMax = niceCeil(rawMax);
               const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * axisMax);
               return (
@@ -474,7 +600,7 @@ const RebalanceExplanation = () => {
                     </div>
                   </div>
                   <div className="mt-4 space-y-4">
-                    {driftRows.map((row) => {
+                    {driftRowsToShow.map((row) => {
                       const drift = row.current - row.target;
                       const curWidth = (row.currentInr / axisMax) * 100;
                       const tgtWidth = (row.targetInr / axisMax) * 100;
@@ -538,19 +664,22 @@ const RebalanceExplanation = () => {
               );
             })()}
 
-            {/* Proposed trades — the real BUY / SELL actions grouped by bucket. */}
+            {/* Proposed trades — the real BUY / SELL actions grouped by bucket
+                (sample trades when this is an example plan). */}
             <section style={cardStyle} className="px-4 py-4">
               <div className="flex items-center justify-between">
-                <p className="text-[10px] tracking-[0.16em] uppercase text-muted-foreground">Proposed trades</p>
-                <p className="text-[11px] text-wealth-green">{taxText}</p>
+                <p className="text-[10px] tracking-[0.16em] uppercase text-muted-foreground">
+                  Proposed trades{isExample ? " · example" : ""}
+                </p>
+                <p className="text-[11px] text-wealth-green">{taxTextToShow}</p>
               </div>
-              {uiTrades.length === 0 ? (
+              {tradeCountToShow === 0 ? (
                 <p className="mt-3 text-[13px] text-muted-foreground">
                   No trades needed — your portfolio is already aligned with the plan.
                 </p>
               ) : (
                 <div className="mt-3 space-y-5">
-                  {tradeGroups.map(({ label, color, trades }) => (
+                  {tradeGroupsToShow.map(({ label, color, trades }) => (
                       <div key={label}>
                         {/* Headings are neutral by default; a flagged group (e.g.
                             "Not on recommended list") gets a crisp accent so it
@@ -610,7 +739,7 @@ const RebalanceExplanation = () => {
 
             {/* Funds you're keeping — everything in the portfolio NOT being sold,
                 tagged performing-well / neutral, with the same fund details. */}
-            {keptFunds.length > 0 && (
+            {keptFundsToShow.length > 0 && (
               <section
                 className="px-4 py-4"
                 style={{
@@ -626,7 +755,7 @@ const RebalanceExplanation = () => {
                   Wins or neutral — staying in your portfolio, not part of these trades.
                 </p>
                 <div className="mt-3 divide-y divide-border">
-                  {keptFunds.map((f) => (
+                  {keptFundsToShow.map((f) => (
                     <div key={f.id} className="flex items-center gap-3 py-2.5">
                       <span
                         className="w-[52px] shrink-0 px-2 py-1 rounded-md text-[10px] font-semibold tracking-wide leading-tight text-center"
@@ -671,16 +800,27 @@ const RebalanceExplanation = () => {
               </section>
             )}
 
-            <button
-              type="button"
-              onClick={() => void proceed()}
-              disabled={approving || isApproved || uiTrades.length === 0}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground py-3.5 text-[15px] font-semibold tracking-wide text-background transition-all active:scale-[0.98] disabled:opacity-60"
-            >
-              {approving ? <Loader2 className="h-4 w-4 animate-spin" /> : isApproved ? <Check className="h-4 w-4" /> : null}
-              {isApproved ? "Plan approved" : approving ? "Approving…" : "Proceed"}
-              {!isApproved && !approving && <ArrowRight className="h-4 w-4" />}
-            </button>
+            {isExample ? (
+              <button
+                type="button"
+                onClick={() => setGateEditSignal((n) => n + 1)}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground py-3.5 text-[15px] font-semibold tracking-wide text-background transition-all active:scale-[0.98]"
+              >
+                Add your details to proceed
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void proceed()}
+                disabled={approving || isApproved || uiTrades.length === 0}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground py-3.5 text-[15px] font-semibold tracking-wide text-background transition-all active:scale-[0.98] disabled:opacity-60"
+              >
+                {approving ? <Loader2 className="h-4 w-4 animate-spin" /> : isApproved ? <Check className="h-4 w-4" /> : null}
+                {isApproved ? "Plan approved" : approving ? "Approving…" : "Proceed"}
+                {!isApproved && !approving && <ArrowRight className="h-4 w-4" />}
+              </button>
+            )}
           </>
         )}
       </div>
