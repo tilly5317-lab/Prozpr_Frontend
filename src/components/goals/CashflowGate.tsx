@@ -64,7 +64,7 @@ const LOCKED_KEYS = new Set(["current_portfolio_corpus"]);
 const FIELD_OVERRIDES: Record<string, { label?: string; help?: string }> = {
   financial_assets: {
     label: "Cash & debt",
-    help: "Cash, savings, FDs, bonds and debt funds. Equities are entered separately below; excludes other assets like gold or unlisted shares and your mutual-fund portfolio.",
+    help: "Bank balance, fixed deposits and bonds. Equities are entered separately below; excludes other assets like gold or unlisted shares and your mutual-fund portfolio.",
   },
 };
 
