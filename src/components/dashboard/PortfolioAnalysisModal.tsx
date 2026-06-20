@@ -146,7 +146,7 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
     return stored === "returns" || stored === "waterfall" ? stored : "returns";
   });
   const [range, setRange] = useState<AnalysisRange>("1M");
-  const [infoOpen, setInfoOpen] = useState<"twr" | "mwr" | null>(null);
+  const [infoOpen, setInfoOpen] = useState<"twr" | "mwr" | "bench" | null>(null);
   const [twrData, setTwrData] = useState<TwrSeriesResponse | null>(null);
   const [twrLoading, setTwrLoading] = useState(false);
   const [twrError, setTwrError] = useState(false);
@@ -429,36 +429,6 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
                       </div>
                     )}
 
-                    {tab === "returns" && (
-                      <div className="mb-2">
-                        <div className="flex items-center gap-1">
-                          <p className="text-sm tracking-wide text-muted-foreground">
-                            TWR Benchmarking
-                          </p>
-                          <button
-                            type="button"
-                            onClick={() => setInfoOpen((o) => (o === "twr" ? null : "twr"))}
-                            className="text-muted-foreground hover:text-foreground"
-                            aria-label="About TWR Benchmarking"
-                          >
-                            <Info className="h-3 w-3" />
-                          </button>
-                        </div>
-                        {infoOpen === "twr" && (
-                          <div className="mt-2 rounded-lg px-3 py-2" style={{ backgroundColor: "hsl(var(--muted) / 0.6)" }}>
-                            <p className="text-[11.5px] text-foreground leading-relaxed">
-                              Use this to see whether your fund choices are actually beating the
-                              market. If your <strong>TWR</strong> sits above the Nifty 50 line,
-                              your picks are adding value over a plain index fund; if it trails, a
-                              low-cost index fund may have served you better. TWR ignores how much
-                              you invested and when, so it judges the funds themselves — not your
-                              contribution timing. (Covers your mutual-fund holdings only.)
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
                     {/* Range selector — shared by both tabs */}
                     <div className="flex flex-wrap gap-1 mb-3">
                       {RANGES.map((r) => {
@@ -499,7 +469,17 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
                           <>
                             <div className="grid grid-cols-2 gap-2">
                               <div className="rounded-xl p-2.5" style={{ border: `1px solid ${HAIRLINE}` }}>
-                                <p className="text-[9px] tracking-wide text-muted-foreground mb-0.5 leading-tight">TWR: Portfolio</p>
+                                <div className="flex items-center gap-1 mb-0.5">
+                                  <p className="text-[9px] tracking-wide text-muted-foreground leading-tight">TWR: Portfolio</p>
+                                  <button
+                                    type="button"
+                                    onClick={() => setInfoOpen((o) => (o === "twr" ? null : "twr"))}
+                                    className="text-muted-foreground hover:text-foreground"
+                                    aria-label="About TWR: Portfolio"
+                                  >
+                                    <Info className="h-3 w-3" />
+                                  </button>
+                                </div>
                                 <p
                                   className="text-sm font-semibold leading-tight"
                                   style={{
@@ -512,31 +492,18 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
                               </div>
                               <div className="rounded-xl p-2.5" style={{ border: `1px solid ${HAIRLINE}` }}>
                                 <div className="flex items-center gap-1 mb-0.5">
-                                  <p className="text-[9px] uppercase tracking-wide text-muted-foreground">Annual</p>
+                                  <p className="text-[9px] uppercase tracking-wide text-muted-foreground leading-tight">
+                                    {NIFTY.fullName}
+                                  </p>
                                   <button
                                     type="button"
-                                    onClick={() => setInfoOpen((o) => (o === "mwr" ? null : "mwr"))}
+                                    onClick={() => setInfoOpen((o) => (o === "bench" ? null : "bench"))}
                                     className="text-muted-foreground hover:text-foreground"
-                                    aria-label="About Annual Return"
+                                    aria-label="About the Nifty 50 benchmark"
                                   >
                                     <Info className="h-3 w-3" />
                                   </button>
                                 </div>
-                                <p
-                                  className="text-sm font-semibold leading-tight"
-                                  style={{
-                                    color: (xirrPct ?? 0) >= 0 ? POSITIVE : NEGATIVE,
-                                    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-                                  }}
-                                >
-                                  {xirrPct == null ? "—" : fmtPct(xirrPct)}
-                                </p>
-                                <p className="text-[9px] text-muted-foreground mt-0.5">p.a. · XIRR</p>
-                              </div>
-                              <div className="rounded-xl p-2.5" style={{ border: `1px solid ${HAIRLINE}` }}>
-                                <p className="text-[9px] uppercase tracking-wide text-muted-foreground mb-0.5 leading-tight">
-                                  {NIFTY.fullName}
-                                </p>
                                 <p
                                   className="text-sm font-semibold leading-tight"
                                   style={{
@@ -549,27 +516,30 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
                               </div>
                             </div>
 
-                            {infoOpen && (
+                            {infoOpen === "twr" && (
                               <div className="mt-2 rounded-lg px-3 py-2" style={{ backgroundColor: "hsl(var(--muted) / 0.6)" }}>
-                                {infoOpen === "twr" ? (
-                                  <p className="text-[11.5px] text-foreground leading-relaxed">
-                                    <strong>Time-weighted return (TWR)</strong> strips out how much you
-                                    invested and when, so it measures how your funds themselves performed.
-                                    That makes it the right number to read <strong>against a benchmark</strong>:
-                                    if your TWR sits above the Nifty 50 line your picks are beating a plain
-                                    index fund; if it trails, a low-cost index fund may have served you
-                                    better. TWR is best judged side-by-side with the benchmark — not on its
-                                    own. (Covers your mutual-fund holdings only.)
-                                  </p>
-                                ) : (
-                                  <p className="text-[11.5px] text-foreground leading-relaxed">
-                                    <strong>Annual return (XIRR)</strong> is your money-weighted return,
-                                    annualised — the actual yearly growth rate earned on the money you put
-                                    in. Unlike TWR it <em>does</em> reflect how much you invested and when,
-                                    so it answers “how is <strong>my</strong> money doing,” not “how good are
-                                    the funds.” Compare it to your own goal, not to the benchmark.
-                                  </p>
-                                )}
+                                <p className="text-[11.5px] text-foreground leading-relaxed">
+                                  Use this to see whether your fund choices are actually beating the
+                                  market. If your <strong>TWR</strong> sits above the Nifty 50 line,
+                                  your picks are adding value over a plain index fund; if it trails, a
+                                  low-cost index fund may have served you better. TWR ignores how much
+                                  you invested and when, so it judges the funds themselves — not your
+                                  contribution timing. (Covers your mutual-fund holdings only.)
+                                </p>
+                              </div>
+                            )}
+
+                            {infoOpen === "bench" && (
+                              <div className="mt-2 rounded-lg px-3 py-2" style={{ backgroundColor: "hsl(var(--muted) / 0.6)" }}>
+                                <p className="text-[11.5px] text-foreground leading-relaxed">
+                                  <strong>Nifty 50 (TRI)</strong> tracks India's 50 largest listed
+                                  companies with dividends reinvested — a stand-in for “the market.”
+                                  We plot its time-weighted return over the <strong>same range</strong>{" "}
+                                  as your portfolio, so it's a like-for-like comparison: if your{" "}
+                                  <strong>TWR</strong> sits above this line your fund picks are beating a
+                                  plain index fund; if it trails, a low-cost index fund may have served
+                                  you better. (Covers your mutual-fund holdings only.)
+                                </p>
                               </div>
                             )}
 
