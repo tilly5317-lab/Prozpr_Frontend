@@ -1278,6 +1278,57 @@ export function inferOnboardingComplete(me: UserInfo, profile: FullProfileRespon
   return inferProfileSectionsComplete(profile);
 }
 
+/** Confirmation state of the four "Tell Us More About You" sections. */
+export interface AboutYouStatus {
+  /** Number of confirmed sections, 0–4. */
+  confirmedCount: number;
+  /** True only when all four sections are confirmed. */
+  allConfirmed: boolean;
+}
+
+/**
+ * Confirmation state of the four "Tell Us More About You" sections, using the
+ * same rules as the section-card derivation in `pages/CompleteProfile.tsx` so
+ * the Profile-page nudge dot and that page never disagree. Keep the two in sync.
+ *
+ * Sections: 0 financial picture · 1 goals · 2 risk · 3 tax. Each source is
+ * best-effort — a missing/erroring one just leaves its section unconfirmed.
+ */
+export async function getAboutYouStatus(): Promise<AboutYouStatus> {
+  const [profile, onboarding, goals] = await Promise.all([
+    getFullProfile().catch(() => null),
+    getOnboardingProfile().catch(() => null),
+    listGoals().catch(() => []),
+  ]);
+
+  const confirmed = [false, false, false, false];
+
+  // 0) Financial picture — investable assets, or any onboarding finance answer.
+  const inv = profile?.investment_profile;
+  if (inv?.investable_assets != null) confirmed[0] = true;
+  if (
+    onboarding &&
+    (onboarding.annual_income != null ||
+      onboarding.financial_assets != null ||
+      onboarding.monthly_household_expense != null)
+  ) {
+    confirmed[0] = true;
+  }
+
+  // 1) Goals — saved objectives, or at least one goal in the goal planner.
+  if (inv?.objectives?.length) confirmed[1] = true;
+  if (goals.length > 0) confirmed[1] = true;
+
+  // 2) Risk — a chosen risk level.
+  if (profile?.risk_profile?.risk_level != null) confirmed[2] = true;
+
+  // 3) Tax — a marginal income-tax rate.
+  if (profile?.tax_profile?.income_tax_rate != null) confirmed[3] = true;
+
+  const confirmedCount = confirmed.filter(Boolean).length;
+  return { confirmedCount, allConfirmed: confirmedCount === 4 };
+}
+
 /** User has linked an institution or already has portfolio value / holdings in DB. */
 export function inferAccountLinkingComplete(
   portfolio: PortfolioDetail | null | undefined,

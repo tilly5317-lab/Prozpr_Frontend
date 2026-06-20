@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  User, Pencil, Check, FileText, ChevronRight, ChevronDown,
+  User, Pencil, Check, ChevronRight, ChevronDown,
   MessageSquareText, Calculator, BarChart3, Users, Briefcase, AlertCircle, LogOut, UploadCloud,Bug,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -13,6 +13,7 @@ import { useAuth } from "@/context/AuthContext";
 import {
   updateMe,
   getFullProfile,
+  getAboutYouStatus,
   updatePersonalInfo,
   BackendOfflineError,
   type FullProfileResponse,
@@ -138,6 +139,10 @@ const Profile = () => {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<FullProfileResponse | null>(null);
   const [openSection, setOpenSection] = useState<string | null>(null);
+  /* Whether all four "Tell Us More About You" sections are confirmed — drives
+     the nudge dot on that card. Defaults to false so the dot shows until we
+     know the profile is fully complete. */
+  const [aboutYouConfirmed, setAboutYouConfirmed] = useState(false);
 
   /* editable contact fields */
   const [editingContact, setEditingContact] = useState(false);
@@ -193,6 +198,16 @@ const Profile = () => {
         if (!cancelled) setLoading(false);
       }
     })();
+    return () => { cancelled = true; };
+  }, []);
+
+  /* "Tell Us More About You" completeness — same rule as CompleteProfile's
+     section cards. Resolved independently so it never blocks the page render. */
+  useEffect(() => {
+    let cancelled = false;
+    getAboutYouStatus()
+      .then((s) => { if (!cancelled) setAboutYouConfirmed(s.allConfirmed); })
+      .catch(() => { /* leave the dot visible if status can't be resolved */ });
     return () => { cancelled = true; };
   }, []);
 
@@ -350,10 +365,9 @@ const Profile = () => {
 
       {/* Navigation rows */}
       {([
-        { icon: FileText, title: "Investment Policy Statement", sub: "Investment guidelines", route: "/profile/ips", showDot: false },
-        { icon: User, title: "Tell Us More About You", sub: "Goals, risk tolerance & mandates", route: "/profile/complete", showDot: true },
+        { icon: User, title: "Tell Us More About You", sub: "Goals, risk tolerance & mandates", route: "/profile/complete", showDot: !aboutYouConfirmed },
         { icon: UploadCloud, title: "Update Holdings", sub: "Upload your latest CAMS / KFintech statement", route: "/cams-upload?from=profile", showDot: false },
-      ] as const).map((item) => (
+      ]).map((item) => (
         <div key={item.title} className="px-5 mb-1.5">
           <button
             onClick={() => navigate(item.route)}
