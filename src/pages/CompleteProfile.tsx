@@ -1279,7 +1279,7 @@ const CompleteProfile = () => {
            <div className="space-y-3">
             <div>
               <FieldLabel>Cash &amp; debt</FieldLabel>
-              <p className="text-[12.5px] text-muted-foreground -mt-0.5 mb-2 leading-snug">Cash, savings, FDs, bonds and debt funds. Equities go in the next field.</p>
+              <p className="text-[12.5px] text-muted-foreground -mt-0.5 mb-2 leading-snug">Bank balance, fixed deposits and bonds. Equities go in the next field.</p>
               <TextInput value={investableAssets} onChange={setInvestableAssets} prefix="₹" placeholder="e.g. 42,00,000" />
             </div>
             <div>
