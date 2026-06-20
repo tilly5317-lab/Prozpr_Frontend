@@ -14,7 +14,6 @@ import Notifications from "./pages/Notifications";
 import CompleteProfile from "./pages/CompleteProfile";
 import Profile from "./pages/Profile";
 import Chat from "./pages/Chat";
-import InvestmentPolicyStatement from "./pages/InvestmentPolicyStatement";
 import MeetingNotes from "./pages/MeetingNotes";
 import MeetingNotesIndex from "./pages/MeetingNotesIndex";
 import Rebalancing from "./pages/Rebalancing";
@@ -80,7 +79,6 @@ const App = () => (
             <Route path="/discovery" element={<Discovery />} />
             <Route path="/advisor-meetings" element={<AdvisorMeetings />} />
             <Route path="/profile/complete" element={<CompleteProfile />} />
-            <Route path="/profile/ips" element={<InvestmentPolicyStatement />} />
             <Route path="/meeting-notes" element={<MeetingNotesIndex />} />
             <Route path="/meeting-notes/detail" element={<MeetingNotes />} />
             <Route path="/rebalancing" element={<Execute />} />

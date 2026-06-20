@@ -2122,14 +2122,11 @@ const CompleteProfile = () => {
         <div className="max-w-md mx-auto">
           <button
             disabled={!allConfirmed}
-            onClick={() => {
-              toast.success("Generating your Investment Policy Statement…");
-              navigate("/profile/ips");
-            }}
+            onClick={() => navigate("/profile")}
             style={allConfirmed ? { backgroundColor: "hsl(var(--wealth-navy))" } : undefined}
             className={`w-full rounded-xl py-3 text-sm font-semibold transition-all ${allConfirmed ? "text-primary-foreground hover:opacity-90" : "bg-muted text-muted-foreground cursor-not-allowed"}`}
           >
-            Generate My Investment Policy Statement →
+            Done →
           </button>
           <p className="text-[10px] text-center text-muted-foreground mt-1.5">Your answers are saved automatically</p>
         </div>
