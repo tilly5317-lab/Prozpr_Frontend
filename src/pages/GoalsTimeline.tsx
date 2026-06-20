@@ -1306,6 +1306,13 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   // SIP the engine's current plan actually uses (null until a plan run loads).
   // When the typed amount differs, an "Apply to plan" action re-runs the engine.
   const [planSip, setPlanSip] = useState<number | null>(null);
+  // Affordable monthly SIP derived straight from the profile finance fields
+  // (annual income − annual expense − tax, ÷ 12). This is a REAL number that
+  // shows even before any cashflow plan has been run, so the top banner always
+  // surfaces what the user can invest. The engine's per-year figure
+  // (`affordableMonthly` below) is preferred once a plan exists (it also nets out
+  // EMIs); this is the fallback.
+  const [profileAffordableMonthly, setProfileAffordableMonthly] = useState<number | null>(null);
   const [applyingSip, setApplyingSip] = useState(false);
   const [insightClosed, setInsightClosed] = useState(false);
   // When arriving from the "What are you trying to achieve?" card (?inputs=1),
@@ -1409,6 +1416,20 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
       } else {
         setPlanSip(0);
       }
+      // Real "you could invest up to ₹X/mo" figure, computed directly from the
+      // profile so the banner shows even before a cashflow plan exists:
+      //   (annual income − annual expense − tax) ÷ 12.
+      // Tax falls back to the engine's 0.25 default when no rate is stored, so
+      // this stays consistent with the engine's own savings figure.
+      const income = pf.annual_income;
+      if (income != null && Number.isFinite(income) && income > 0) {
+        const annualExpense = (pf.monthly_household_expense ?? 0) * 12;
+        const taxRate = pf.effective_tax_rate ?? 0.25;
+        const remainingMonthly = (income - annualExpense - income * taxRate) / 12;
+        setProfileAffordableMonthly(Math.max(0, Math.round(remainingMonthly)));
+      } else {
+        setProfileAffordableMonthly(null);
+      }
     } catch {
       // SIP not set yet — leave the slider at its default (0).
     }
@@ -1451,6 +1472,12 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   }, [cashflowData]);
 
   const sipCapped = affordableMonthly != null && monthlyContrib > affordableMonthly + 1;
+
+  // What the top banner shows: the engine's affordable figure once a plan exists
+  // (it also nets out EMIs), otherwise the real profile-derived figure. This means
+  // the "you could invest up to ₹X/month" banner always shows a real number, even
+  // on a blank page with no cashflow plan yet.
+  const displayAffordableMonthly = affordableMonthly ?? profileAffordableMonthly;
 
   const toggleGoalExpanded = (id: string) => {
     setExpandedGoals((prev) => {
@@ -1742,8 +1769,9 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   }, [tornadoCorpusByYear, currentYear]);
 
   // The projection is the engine's per-FY corpus path ONLY — never a client-side
-  // fabrication. Empty until the plan loads (the page shows a loading/CTA state
-  // and the CashflowGate blocks until the real inputs exist).
+  // fabrication. Empty until the plan loads — the page then renders as an example
+  // (ages + blank tornado axis) and CashflowGate shows a dismissible prompt for
+  // the missing inputs rather than blocking.
   const projection = useMemo<ProjectionPoint[]>(
     () => cashflowProjection ?? [],
     [cashflowProjection],
@@ -1900,7 +1928,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
       >
         {/* Insight banner — closeable, with the headline rolling right→left.
             Suggests the monthly amount the user can comfortably invest. */}
-        {!insightClosed && affordableMonthly != null && affordableMonthly > 0 && (
+        {!insightClosed && displayAffordableMonthly != null && displayAffordableMonthly > 0 && (
           <motion.div
             className="relative -mx-5 flex items-center overflow-hidden"
             style={{
@@ -1918,7 +1946,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                 transition={{ duration: 23.4, repeat: Infinity, ease: "linear" }}
               >
                 💡 Based on your cashflow, you could invest up to{" "}
-                <span className="font-bold">{formatINR(Math.round(affordableMonthly))}/month</span>{" "}
+                <span className="font-bold">{formatINR(Math.round(displayAffordableMonthly))}/month</span>{" "}
                 towards your goals — adjust your SIP below to put it to work.
               </motion.div>
             </div>
@@ -2677,9 +2705,10 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
 
       <BottomNav />
 
-      {/* Locks the goal-planning page (blur + unlock card) until every cashflow
-          input is present, then loads the real projection. The Settings/"Inputs"
-          button bumps editSignal to reopen the form for viewing/editing. */}
+      {/* Never blocks the goal-planning page. When inputs are missing it shows a
+          dismissible prompt (the page stays usable as an example); when they're
+          present it loads the real projection. The Settings/"Inputs" button bumps
+          editSignal to open the form for viewing/editing. */}
       <CashflowGate onReady={fetchCashflow} editSignal={editSignal} autoOpenInputs={autoOpenInputs} />
     </div>
   );

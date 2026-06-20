@@ -21,13 +21,6 @@ import {
   type FullProfileResponse,
   type PortfolioDetail,
 } from "@/lib/api";
-import {
-  buildDemoSparkline,
-  cloneDemoCumulativePortfolio,
-  cloneDemoFullProfile,
-  cloneDemoMemberPortfolio,
-  cloneDemoSelfPortfolio,
-} from "@/lib/portfolioDemoData";
 import { formatInrCompact, formatInrPaisa } from "@/lib/utils";
 
 // Unified card style — uses tokens so it flips correctly in dark mode.
@@ -92,24 +85,27 @@ function PortfolioMainPanel({
       <div className={CARD} style={CARD_BORDER}>
         <p className="mb-3" style={SECTION_LABEL}>Total Portfolio</p>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-3">
           <p className="text-2xl font-bold text-foreground tracking-tight">{fmtInr0(portfolio.total_value)}</p>
           {activeGain != null && (
-            <span
-              className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                activeGain >= 0
-                  ? "bg-wealth-green/15 text-wealth-green"
-                  : "bg-destructive/15 text-destructive"
-              }`}
-            >
-              {activeGain >= 0 ? (
-                <TrendingUp className="h-2.5 w-2.5" />
-              ) : (
-                <TrendingDown className="h-2.5 w-2.5" />
-              )}
-              {activeGain >= 0 ? "+" : ""}
-              {activeGain.toFixed(2)}%
-            </span>
+            <div className="flex flex-col items-start gap-0.5">
+              <span className="text-[9px] text-muted-foreground leading-tight">Overall gain</span>
+              <span
+                className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                  activeGain >= 0
+                    ? "bg-wealth-green/15 text-wealth-green"
+                    : "bg-destructive/15 text-destructive"
+                }`}
+              >
+                {activeGain >= 0 ? (
+                  <TrendingUp className="h-2.5 w-2.5" />
+                ) : (
+                  <TrendingDown className="h-2.5 w-2.5" />
+                )}
+                {activeGain >= 0 ? "+" : ""}
+                {activeGain.toFixed(2)}%
+              </span>
+            </div>
           )}
         </div>
 
@@ -442,7 +438,7 @@ const PortfolioDashboard = () => {
       getCumulativePortfolio()
         .then((d) => { if (!cancelled) setCumulativeData(d); })
         .catch(() => {
-          if (!cancelled) setCumulativeData(cloneDemoCumulativePortfolio());
+          if (!cancelled) setCumulativeData(null);
         })
         .finally(() => {
           if (!cancelled) {
@@ -452,11 +448,10 @@ const PortfolioDashboard = () => {
         });
     } else if (activeView.type === "member") {
       setFamilyLoading(!hasShownInitialLoad && !memberPortfolio);
-      const nick = activeView.member.nickname;
       getFamilyMemberPortfolio(activeView.member.id)
         .then((d) => { if (!cancelled) setMemberPortfolio(d); })
         .catch(() => {
-          if (!cancelled) setMemberPortfolio(cloneDemoMemberPortfolio(nick));
+          if (!cancelled) setMemberPortfolio(null);
         })
         .finally(() => {
           if (!cancelled) {
@@ -479,9 +474,8 @@ const PortfolioDashboard = () => {
     ])
       .then(([port, prof, hist]) => {
         if (cancelled) return;
-        const useDemoPortfolio = port === null;
-        setSelfPortfolio(useDemoPortfolio ? cloneDemoSelfPortfolio() : port);
-        setSelfProfile(useDemoPortfolio ? (prof ?? cloneDemoFullProfile()) : prof);
+        setSelfPortfolio(port);
+        setSelfProfile(prof);
         const sorted = [...hist].sort(
           (a, b) => new Date(a.recorded_date).getTime() - new Date(b.recorded_date).getTime()
         );
@@ -491,14 +485,14 @@ const PortfolioDashboard = () => {
         } else if (sorted.length === 1) {
           setSelfSparkline([sorted[0].total_value / 100000]);
         } else {
-          setSelfSparkline(useDemoPortfolio ? buildDemoSparkline() : undefined);
+          setSelfSparkline(undefined);
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setSelfPortfolio(cloneDemoSelfPortfolio());
-          setSelfProfile(cloneDemoFullProfile());
-          setSelfSparkline(buildDemoSparkline());
+          setSelfPortfolio(null);
+          setSelfProfile(null);
+          setSelfSparkline(undefined);
         }
       })
       .finally(() => {

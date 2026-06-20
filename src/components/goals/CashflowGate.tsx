@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Lock, Loader2, ShieldCheck, AlertCircle } from "lucide-react";
+import { Lock, Loader2, ShieldCheck, AlertCircle, Sparkles, X } from "lucide-react";
 import {
   getCashflowReadiness,
   saveCashflowInputs,
@@ -20,9 +20,9 @@ import { toast } from "@/hooks/use-toast";
  *
  * Every input is shown directly (nothing hidden behind an expander) and is
  * editable inline, writing back to the same canonical profile fields so goal
- * planning and profile/complete stay in sync. (Cash = the "Cash and financial
- * assets" figure only; "Other assets" live in their own store and are
- * deliberately excluded.)
+ * planning and profile/complete stay in sync. ("Cash & debt" and "Equities /
+ * shares" are separate canonical fields; "Other assets" live in their own store
+ * and are deliberately excluded.)
  *
  * The one exception is the current portfolio corpus: it is sourced from the
  * user's CAMS upload, so it stays read-only here with a prompt to upload a new
@@ -56,16 +56,15 @@ const LOCKED_KEYS = new Set(["current_portfolio_corpus"]);
 
 /**
  * Frontend label/help overrides for specific readiness fields, so the wording
- * matches profile/complete exactly. "Cash and financial assets" is cash + market
- * holdings only — it deliberately excludes the separate "other assets" (gold,
- * unlisted shares, etc.), which live in their own store and never roll into this
- * figure. The two screens write the same canonical field, so editing one syncs
- * the other.
+ * matches profile/complete exactly. "Cash & debt" is cash, savings and debt
+ * instruments only — equities live in the separate "Equities / shares" field, and
+ * "other assets" (gold, unlisted shares, etc.) live in their own store. Each
+ * screen writes the same canonical field, so editing one syncs the other.
  */
 const FIELD_OVERRIDES: Record<string, { label?: string; help?: string }> = {
   financial_assets: {
-    label: "Cash and financial assets",
-    help: "Cash, mutual funds, stocks, ETFs, bonds and similar holdings. Excludes other assets like gold or unlisted shares.",
+    label: "Cash & debt",
+    help: "Bank balance, fixed deposits and bonds. Equities are entered separately below; excludes other assets like gold or unlisted shares and your mutual-fund portfolio.",
   },
 };
 
@@ -115,6 +114,10 @@ const CashflowGate = ({ onReady, editSignal, autoOpenInputs }: CashflowGateProps
   const [readiness, setReadiness] = useState<CashflowReadiness | null>(null);
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
+  // The missing-inputs prompt is a dismissible hint, never a blocker — the user
+  // can close it and keep using the (example/blank) page. Once dismissed it stays
+  // hidden for this visit; it re-surfaces on the next page mount if still missing.
+  const [promptDismissed, setPromptDismissed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [values, setValues] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -207,6 +210,24 @@ const CashflowGate = ({ onReady, editSignal, autoOpenInputs }: CashflowGateProps
     () => (readiness ? groupFields(readiness.fields) : []),
     [readiness],
   );
+
+  // Required inputs the engine still needs to run a real projection — drives the
+  // dismissible prompt. Optional fields (missing = 0) never appear here.
+  const missingFields = useMemo(
+    () =>
+      readiness
+        ? readiness.fields
+            .filter((f) => !f.present && !f.optional)
+            .map((f) => withFieldOverrides(f))
+        : [],
+    [readiness],
+  );
+
+  // Show the dismissible "add a few details" prompt only when the plan isn't
+  // ready, there's actually something missing, the user hasn't dismissed it, and
+  // no other panel is open. It never blocks the page.
+  const showPrompt =
+    !loading && !formOpen && !promptDismissed && !!readiness && !readiness.ready && missingFields.length > 0;
 
   const setVal = (key: string, v: string) => {
     setValues((prev) => ({ ...prev, [key]: v }));
@@ -360,16 +381,83 @@ const CashflowGate = ({ onReady, editSignal, autoOpenInputs }: CashflowGateProps
   return (
     <>
       {/* Goal planning is never locked. While we're still checking readiness,
-          show a brief, non-blocking "checking" hint; the page underneath stays
-          usable and the inputs form is opened via Settings / auto-open. */}
+          show a brief, non-blocking "checking" pill; the page underneath stays
+          fully usable (no blur/overlay) and the inputs form opens via Settings /
+          auto-open. */}
       {loading && (
-        <div className="fixed inset-x-0 top-0 bottom-16 z-40 flex items-center justify-center px-6 backdrop-blur-md bg-background/70">
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <Loader2 className="h-5 w-5 animate-spin" />
-            <span className="text-sm">Checking your goal plan…</span>
+        <div className="pointer-events-none fixed inset-x-0 top-[68px] z-40 flex justify-center px-6">
+          <div className="flex items-center gap-2 rounded-full border border-border bg-card/90 px-3 py-1 shadow-sm backdrop-blur-sm">
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+            <span className="text-[11px] text-muted-foreground">Checking your goal plan…</span>
           </div>
         </div>
       )}
+
+      {/* Dismissible "add a few details" prompt — lists the inputs the projection
+          still needs, but never blocks the page. The user can open the inputs
+          form or close the prompt and keep exploring the (example) page. */}
+      <AnimatePresence>
+        {showPrompt && (
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 16 }}
+            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+            className="fixed inset-x-0 z-[55] mx-auto max-w-md px-4"
+            style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 140px)" }}
+          >
+            <div className="relative overflow-hidden rounded-2xl border border-[#D4A868]/35 bg-card/95 p-4 shadow-2xl backdrop-blur-xl">
+              <button
+                type="button"
+                onClick={() => setPromptDismissed(true)}
+                aria-label="Dismiss"
+                className="absolute right-2.5 top-2.5 flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+              <div className="flex items-center gap-2 pr-7">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#D4A868]/12 text-[#D4A868]">
+                  <Sparkles className="h-3.5 w-3.5" />
+                </span>
+                <h3 className="text-sm font-semibold text-foreground">
+                  See your real numbers
+                </h3>
+              </div>
+              <p className="mt-1.5 text-xs leading-snug text-muted-foreground">
+                You&apos;re viewing an example. Add a few details and your projection runs
+                on your real figures:
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {missingFields.map((f) => (
+                  <span
+                    key={f.key}
+                    className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/5 px-2 py-0.5 text-[10.5px] font-medium text-amber-700 dark:text-amber-400"
+                  >
+                    <AlertCircle className="h-3 w-3" /> {f.label}
+                  </span>
+                ))}
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={openForm}
+                  className="flex min-h-[40px] flex-1 items-center justify-center gap-1.5 rounded-xl border border-[#D4A868]/60 bg-[#D4A868] text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
+                >
+                  <ShieldCheck className="h-4 w-4" />
+                  Add details
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPromptDismissed(true)}
+                  className="min-h-[40px] rounded-xl px-3 text-[13px] font-medium text-muted-foreground hover:text-foreground"
+                >
+                  Maybe later
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Inputs panel — opened from the Settings button or auto-open. Every
           input is shown and editable except the CAMS-sourced portfolio corpus. */}
