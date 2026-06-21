@@ -1,7 +1,7 @@
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 
 const data = [
-  { name: "Equity", value: 62, color: "hsl(215, 60%, 48%)" },
+  { name: "Equity", value: 62, color: "#2563EB" },
   { name: "Debt", value: 24, color: "hsl(188, 52%, 41%)" },
   { name: "Real Estate", value: 11, color: "hsl(348, 35%, 43%)" },
   { name: "Cash", value: 3, color: "hsl(214, 14%, 47%)" },
