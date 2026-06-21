@@ -15,7 +15,7 @@ import {
   type PortfolioNavHistoryPoint,
   type PortfolioNavHorizon,
 } from "@/lib/api";
-import { formatInrPaisa } from "@/lib/utils";
+import { formatInr0 } from "@/lib/utils";
 
 const HORIZONS: PortfolioNavHorizon[] = ["1M", "3M", "1Y", "3Y", "MAX"];
 
@@ -62,9 +62,9 @@ function ChartTooltip({
       <p className="text-[10px] text-muted-foreground">
         {formatTooltipDate(p.recorded_date)}
       </p>
-      <p className="text-[12px] font-semibold">{formatInrPaisa(p.total_value)}</p>
+      <p className="text-[12px] font-semibold">{formatInr0(p.total_value)}</p>
       <p className="text-[10px] text-muted-foreground">
-        Invested {formatInrPaisa(p.total_invested)}
+        Invested {formatInr0(p.total_invested)}
       </p>
       <p
         className={`text-[10px] font-medium ${
