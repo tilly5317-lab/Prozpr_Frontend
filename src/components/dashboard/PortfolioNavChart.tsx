@@ -310,19 +310,6 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
         ))}
       </div>
 
-      {hasPoints && (
-        <div className="mb-1.5 flex items-center gap-3 text-[9px] text-muted-foreground">
-          <span className="flex items-center gap-1">
-            <span className="inline-block h-[2px] w-3.5 rounded-full" style={{ backgroundColor: strokeColor }} />
-            Total value
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="inline-block h-[2px] w-3.5 rounded-full bg-muted-foreground/45" />
-            Invested
-          </span>
-        </div>
-      )}
-
       <div className="h-36 w-full" onClick={(e) => e.stopPropagation()}>
         {loading && !hasPoints && (
           <div className="h-full w-full flex items-center justify-center">
@@ -467,6 +454,19 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
           </ResponsiveContainer>
         )}
       </div>
+
+      {hasPoints && (
+        <div className="mt-2 flex items-center justify-center gap-4 text-[9px] text-muted-foreground">
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-[2px] w-3.5 rounded-full" style={{ backgroundColor: strokeColor }} />
+            Total value
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-[2px] w-3.5 rounded-full bg-muted-foreground/45" />
+            Invested
+          </span>
+        </div>
+      )}
     </div>
   );
 };

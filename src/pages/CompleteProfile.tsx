@@ -247,7 +247,6 @@ const OTHER_ASSET_SUGGESTIONS = [
   "ESOPs (unvested)",
   "Private Equity",
   "REITs / Real Estate Funds",
-  "Fixed Deposits",
   "Crypto",
   "Art & Collectibles",
 ];
