@@ -284,8 +284,18 @@ const NEUTRAL = "hsl(var(--muted-foreground))";
 // Current vs target bars now use each asset class's own colour: Target is the
 // solid asset colour, Current is the same colour lightened. `withAlpha` turns an
 // `hsl(h s% l%)` token into a translucent version.
-const withAlpha = (color: string, a: number): string =>
-  color.startsWith("hsl") ? color.replace(/\)\s*$/, ` / ${a})`) : color;
+const withAlpha = (color: string, a: number): string => {
+  if (color.startsWith("hsl")) return color.replace(/\)\s*$/, ` / ${a})`);
+  if (color.startsWith("#")) {
+    const hex = color.slice(1);
+    const full = hex.length === 3 ? hex.split("").map((c) => c + c).join("") : hex;
+    const alpha = Math.round(Math.min(1, Math.max(0, a)) * 255)
+      .toString(16)
+      .padStart(2, "0");
+    return `#${full}${alpha}`;
+  }
+  return color;
+};
 
 /* ── Example plan ──────────────────────────────────────────────────────────
    Shown when the user hasn't supplied the inputs the engine needs yet (e.g. date
