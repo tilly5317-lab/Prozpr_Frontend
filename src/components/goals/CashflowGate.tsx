@@ -320,7 +320,7 @@ const CashflowGate = ({ onReady, editSignal, autoOpenInputs }: CashflowGateProps
             ) : null}
           </span>
           {showMissing && (
-            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-muted-foreground">
               <AlertCircle className="h-3 w-3" /> Needed
             </span>
           )}
@@ -330,6 +330,16 @@ const CashflowGate = ({ onReady, editSignal, autoOpenInputs }: CashflowGateProps
             type="date"
             value={values[f.key] ?? ""}
             onChange={(e) => setVal(f.key, e.target.value)}
+            className={`${inputClass} mt-1.5 ${err ? "border-destructive ring-1 ring-destructive" : ""}`}
+          />
+        ) : f.kind === "money" ? (
+          // Money fields show live Indian-grouped commas (12,34,567) while the
+          // stored value stays digits-only, so saveInputs' Number() parse works.
+          <input
+            type="text"
+            inputMode="numeric"
+            value={formatWithCommas(values[f.key] ?? "")}
+            onChange={(e) => setVal(f.key, e.target.value.replace(/\D/g, ""))}
             className={`${inputClass} mt-1.5 ${err ? "border-destructive ring-1 ring-destructive" : ""}`}
           />
         ) : (
@@ -431,7 +441,7 @@ const CashflowGate = ({ onReady, editSignal, autoOpenInputs }: CashflowGateProps
                 {missingFields.map((f) => (
                   <span
                     key={f.key}
-                    className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/5 px-2 py-0.5 text-[10.5px] font-medium text-amber-700 dark:text-amber-400"
+                    className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10.5px] font-medium text-muted-foreground"
                   >
                     <AlertCircle className="h-3 w-3" /> {f.label}
                   </span>

@@ -27,7 +27,7 @@ type Bucket = "equity" | "debt" | "others";
 
 const BUCKET_ORDER: Bucket[] = ["equity", "debt", "others"];
 const BUCKET_META: Record<Bucket, { label: string; color: string }> = {
-  equity: { label: "Equity", color: "hsl(215 60% 48%)" },
+  equity: { label: "Equity", color: "#2563EB" },
   debt: { label: "Debt", color: "hsl(188 52% 41%)" },
   others: { label: "Others", color: "hsl(38 64% 47%)" },
 };
@@ -748,11 +748,11 @@ const RebalanceExplanation = () => {
                   borderRadius: 16,
                 }}
               >
-                <p className="text-[10px] tracking-[0.16em] uppercase" style={{ color: "hsl(150 22% 42%)" }}>
+                <p className="text-[10px] tracking-[0.16em] uppercase" style={{ color: "hsl(var(--muted-foreground))" }}>
                   Funds you're keeping
                 </p>
                 <p className="mt-1 text-[11.5px] leading-snug text-muted-foreground">
-                  Wins or neutral — staying in your portfolio, not part of these trades.
+                  Ahead or neutral — staying in your portfolio, not part of these trades.
                 </p>
                 <div className="mt-3 divide-y divide-border">
                   {keptFundsToShow.map((f) => (
@@ -762,15 +762,15 @@ const RebalanceExplanation = () => {
                         style={{
                           backgroundColor:
                             f.tone === "well"
-                              ? "hsl(var(--wealth-green) / 0.12)"
+                              ? "rgba(99,102,241,0.12)"
                               : "hsl(var(--muted-foreground) / 0.12)",
                           color:
                             f.tone === "well"
-                              ? "hsl(var(--wealth-green))"
+                              ? "#6366F1"
                               : "hsl(var(--muted-foreground))",
                         }}
                       >
-                        {f.tone === "well" ? "Win" : "Neutral"}
+                        {f.tone === "well" ? "Ahead" : "Neutral"}
                       </span>
                       <div className="min-w-0 flex-1">
                         <p className="text-[13px] leading-tight font-medium text-foreground truncate">{f.name}</p>
@@ -817,7 +817,7 @@ const RebalanceExplanation = () => {
                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground py-3.5 text-[15px] font-semibold tracking-wide text-background transition-all active:scale-[0.98] disabled:opacity-60"
               >
                 {approving ? <Loader2 className="h-4 w-4 animate-spin" /> : isApproved ? <Check className="h-4 w-4" /> : null}
-                {isApproved ? "Plan approved" : approving ? "Approving…" : "Proceed"}
+                {isApproved ? "Plan approved" : approving ? "Approving…" : "Approve plan"}
                 {!isApproved && !approving && <ArrowRight className="h-4 w-4" />}
               </button>
             )}

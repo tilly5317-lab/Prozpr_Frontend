@@ -69,7 +69,7 @@ function ChartTooltip({
         }`}
       >
         {gain >= 0 ? "+" : ""}
-        {gain.toFixed(2)}% vs invested
+        {gain.toFixed(1)}% vs invested
       </p>
     </div>
   );
@@ -258,7 +258,7 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
     ? chartData[chartData.length - 1].gain_percentage >= 0
     : true;
   const strokeColor = positiveGain
-    ? "hsl(var(--accent))"
+    ? "#2563EB" // equity blue — matches the allocation donut's equity slice
     : "hsl(var(--destructive))";
 
   return (

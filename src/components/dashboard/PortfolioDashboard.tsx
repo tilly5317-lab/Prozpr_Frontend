@@ -89,7 +89,6 @@ function PortfolioMainPanel({
           <p className="text-2xl font-bold text-foreground tracking-tight">{fmtInr0(portfolio.total_value)}</p>
           {activeGain != null && (
             <div className="flex flex-col items-start gap-0.5">
-              <span className="text-[9px] text-muted-foreground leading-tight">Overall gain</span>
               <span
                 className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                   activeGain >= 0
@@ -103,7 +102,7 @@ function PortfolioMainPanel({
                   <TrendingDown className="h-2.5 w-2.5" />
                 )}
                 {activeGain >= 0 ? "+" : ""}
-                {activeGain.toFixed(2)}%
+                {activeGain.toFixed(1)}%
               </span>
             </div>
           )}
@@ -250,7 +249,7 @@ function ProfileUnlockCircles({ profile }: { profile: FullProfileResponse | null
       title: "Your money map",
       unlocks: "Supercharge rebalancing",
       flash: true,
-      ring: "hsl(215 60% 48%)",
+      ring: "#D4A868",
       done: false,
     },
     {
@@ -259,7 +258,7 @@ function ProfileUnlockCircles({ profile }: { profile: FullProfileResponse | null
       title: "Tax details",
       unlocks: "Unlock smarter funds",
       flash: true,
-      ring: "hsl(38 64% 47%)",
+      ring: "#D4A868",
       done: false,
     },
     {
@@ -268,7 +267,7 @@ function ProfileUnlockCircles({ profile }: { profile: FullProfileResponse | null
       title: "Risk behaviour",
       unlocks: "Tune your portfolio",
       flash: true,
-      ring: "#7A52C8",
+      ring: "#D4A868",
       done: false,
     },
     {
@@ -277,7 +276,7 @@ function ProfileUnlockCircles({ profile }: { profile: FullProfileResponse | null
       title: "Goal planning",
       unlocks: "Chart your future",
       flash: true,
-      ring: "#2E9C7E",
+      ring: "#D4A868",
       done: false,
     },
   ];
@@ -299,9 +298,10 @@ function ProfileUnlockCircles({ profile }: { profile: FullProfileResponse | null
           <motion.span
             className="shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-semibold text-white"
             style={{
+              // Same glowing purple/pink sweep as the Goals-page insight banner.
               backgroundImage: "linear-gradient(100deg, #D4A868, #C2487A, #7A52C8, #D4A868)",
               backgroundSize: "300% 100%",
-              boxShadow: "0 0 12px rgba(212,168,104,0.45)",
+              boxShadow: "0 0 14px rgba(160,70,170,0.5)",
             }}
             animate={{ backgroundPosition: ["0% 50%", "100% 50%"], scale: [1, 1.06, 1] }}
             transition={{

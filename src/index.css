@@ -65,14 +65,14 @@
 
     /* Canonical asset-class palette — used app-wide (donuts, allocation bars,
        rebalancing buckets, fund lists). Single source of truth. */
-    --asset-equity: 215 60% 48%;        /* blue */
+    --asset-equity: 221 83% 53%;        /* #2563EB */
     --asset-debt: 188 52% 41%;          /* teal */
     --asset-hybrid: 38 64% 47%;         /* amber */
     --asset-cash: 214 14% 47%;          /* slate */
     --asset-alternatives: 348 35% 43%;  /* muted maroon */
 
     /* Back-compat aliases (older code references --bucket-*). */
-    --bucket-equity: 215 60% 48%;
+    --bucket-equity: 221 83% 53%;    /* #2563EB */
     --bucket-debt: 188 52% 41%;
     --bucket-hybrid: 38 64% 47%;
 
@@ -140,7 +140,7 @@
 
     /* Dark surfaces — keep Equity as the single brand accent and let Debt / Hybrid
        sit as quiet, low-saturation neutrals so the page doesn't feel over-coloured. */
-    --bucket-equity: 215 75% 70%;  /* clean blue (no purple), mirrors --accent */
+    --bucket-equity: 221 83% 53%;  /* #2563EB — equity */
     --bucket-debt: 220 14% 64%;    /* muted blue-grey, near muted-foreground */
     --bucket-hybrid: 38 22% 62%;   /* warm tan-grey, gently distinct from debt */
 
