@@ -642,6 +642,8 @@ export interface ChatSessionInfo {
   id: string;
   title: string | null;
   status: string;
+  /** User's 1–5 rating of Pi for this session; null until rated. */
+  rating: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -733,6 +735,17 @@ export async function renameChatSession(
   return request<ChatSessionInfo>(`/chat/sessions/${sessionId}`, {
     method: "PATCH",
     body: JSON.stringify({ title }),
+  });
+}
+
+/** Persist the user's 1–5 rating of Pi for a session (one per session). */
+export async function rateChatSession(
+  sessionId: string,
+  rating: number,
+): Promise<ChatSessionInfo> {
+  return request<ChatSessionInfo>(`/chat/sessions/${sessionId}/rating`, {
+    method: "PATCH",
+    body: JSON.stringify({ rating }),
   });
 }
 
