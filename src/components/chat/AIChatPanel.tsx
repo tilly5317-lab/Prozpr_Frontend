@@ -13,6 +13,7 @@ import {
   listChatSessions,
   deleteChatSession,
   renameChatSession,
+  rateChatSession,
   getMe,
   getFullProfile,
   getMyPortfolio,
@@ -791,10 +792,25 @@ const AIChatPanel = ({
   demoEmergencyMonthsRef.current = demoEmergencyMonths;
 
   /* ── Session rating (1–5) — replaces per-message thumbs. Shown once Pi has
-     answered a few questions; one rating per conversation. */
+     answered a few questions; one rating per conversation. Persisted to the
+     chat session so the prompt is never shown again for an already-rated
+     session (loaded back in restoreSession / handleSelectSession). */
   const [sessionRating, setSessionRating] = useState<number | null>(null);
   const [ratingDismissed, setRatingDismissed] = useState(false);
-  const submitRating = useCallback((n: number) => setSessionRating(n), []);
+  // True only right after the user rates in this view, so we can show a brief
+  // "thanks" once. On an already-rated session loaded from the backend this
+  // stays false, so the rating UI is fully silent — it never nags again.
+  const [ratingJustSubmitted, setRatingJustSubmitted] = useState(false);
+  const submitRating = useCallback((n: number) => {
+    setSessionRating(n); // optimistic — reflect the choice immediately
+    setRatingJustSubmitted(true);
+    const sid = sessionIdRef.current;
+    if (sid) {
+      // Best-effort persistence; the UI is already updated. Demo/dummy sessions
+      // (no real backend row) just 404 here, which we ignore.
+      rateChatSession(sid, n).catch(() => { /* ignore */ });
+    }
+  }, []);
 
   /* ── Kudos dismissal ── */
   const [dismissedKudos, setDismissedKudos] = useState<Set<number>>(new Set());
@@ -818,6 +834,7 @@ const AIChatPanel = ({
       setMessages([]);
       setSessionRating(null);
       setRatingDismissed(false);
+      setRatingJustSubmitted(false);
       setChatStartTime(formatTimestamp());
       setShowFirstUseHint(true);
       setOnboardingActive(false);
@@ -833,6 +850,7 @@ const AIChatPanel = ({
       sessionIdRef.current = sessionId;
       setSessionRating(null);
       setRatingDismissed(false);
+      setRatingJustSubmitted(false);
       setMessages(dummyMessages.map((m) => ({ ...m })));
       setChatStartTime(formatTimestamp(new Date(dummy?.created_at ?? Date.now())));
       setShowFirstUseHint(false);
@@ -843,8 +861,11 @@ const AIChatPanel = ({
     try {
       const session = await getChatSession(sessionId);
       sessionIdRef.current = session.id;
-      setSessionRating(null);
+      // Restore any prior rating so an already-rated session isn't re-prompted
+      // (and stays silent — no thanks line either, since it wasn't just rated).
+      setSessionRating(session.rating ?? null);
       setRatingDismissed(false);
+      setRatingJustSubmitted(false);
       setMessages(
         session.messages.map((m) => ({
           role: m.role === "assistant" ? ("ai" as const) : ("user" as const),
@@ -951,6 +972,8 @@ const AIChatPanel = ({
         const session = await getOrCreateActiveSession();
         if (!mounted) return;
         sessionIdRef.current = session.id;
+        // Already-rated session → don't prompt again (the rating is per-session).
+        setSessionRating(session.rating ?? null);
         if (session.messages.length > 0) {
           setMessages(
             session.messages.map((m) => ({
@@ -1472,6 +1495,10 @@ const AIChatPanel = ({
       {(() => {
         if (isTyping) return null;
         if (sessionRating !== null) {
+          // Already rated. Show a brief thanks only right after the user rates;
+          // on later visits to an already-rated session, stay silent so the
+          // rating UI never reappears.
+          if (!ratingJustSubmitted) return null;
           return (
             <div className="mx-auto mt-1 flex max-w-[90%] items-center gap-1.5 text-[11px] text-muted-foreground">
               <Check className="h-3.5 w-3.5 text-wealth-green" />
