@@ -137,7 +137,9 @@ const CashflowGate = ({ onReady, editSignal, autoOpenInputs }: CashflowGateProps
   // Retirement-amount entry: whether the figure is in today's money or a future
   // amount (at retirement), plus the inflation rate used to discount a future
   // amount back to a present value. 6% is the standard Prozpr assumption.
-  const [corpusKind, setCorpusKind] = useState<"present" | "future">("present");
+  // null = nothing selected yet (the question is optional). If an amount is
+  // entered without a choice, we treat it as a present-value figure on save.
+  const [corpusKind, setCorpusKind] = useState<"present" | "future" | null>(null);
   const [corpusInflation, setCorpusInflation] = useState("");
   const PROZPR_INFLATION = 6;
 
@@ -190,9 +192,8 @@ const CashflowGate = ({ onReady, editSignal, autoOpenInputs }: CashflowGateProps
     }
     setValues(seed);
     setErrors({});
-    // A stored target corpus is a present-value figure; default the toggle to
-    // "today's money" so re-opening reflects how it was saved.
-    setCorpusKind("present");
+    // Leave the present/future toggle unselected — the question is optional.
+    setCorpusKind(null);
     setCorpusInflation("");
     setFormOpen(true);
   }, [readiness, portfolioValue, cashAssets]);
@@ -386,14 +387,14 @@ const CashflowGate = ({ onReady, editSignal, autoOpenInputs }: CashflowGateProps
                   key={opt.id}
                   type="button"
                   onClick={() => setCorpusKind(opt.id)}
-                  className={`flex-1 rounded-lg border px-2 py-1.5 text-[11px] font-medium transition-colors ${
+                  className={`flex flex-1 flex-col items-center gap-0.5 rounded-lg border px-2 py-1.5 text-center text-[11px] font-medium transition-colors ${
                     active
                       ? "border-[#D4A868]/60 bg-[#D4A868]/10 text-foreground"
                       : "border-border bg-background text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   {opt.label}
-                  <span className="ml-1 font-normal text-muted-foreground/70">
+                  <span className="font-normal text-muted-foreground/70">
                     {opt.id === "present" ? "in today's money" : "amount at retirement"}
                   </span>
                 </button>
