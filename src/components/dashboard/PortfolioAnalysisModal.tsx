@@ -71,12 +71,6 @@ function fmtInrCompact1(n: number): string {
 
 const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-/** "2026-06-10" → "10 Jun 2026" (parses parts to avoid timezone drift). */
-function fmtAsOf(iso: string): string {
-  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
-  return `${d} ${MONTH_ABBR[m - 1]} ${y}`;
-}
-
 function formatDateTick(range: AnalysisRange, d: Date): string {
   if (range === "1M" || range === "3M" || range === "YTD") {
     return `${d.getDate()} ${MONTH_ABBR[d.getMonth()]}`;
@@ -178,11 +172,12 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
     return () => { cancelled = true; };
   }, [open]);
 
-  // Since-inception XIRR (money-weighted return), computed backend-side from every
-  // buy & sell + current value. Decimal from the API → percent for display. It is a
-  // whole-life figure, so unlike TWR/Nifty it does not change with the range above.
+  // XIRR (money-weighted return), computed backend-side from every buy & sell +
+  // current value. Decimal from the API → percent for display. NOTE: the API only
+  // returns a single since-inception figure, so this value does NOT vary with the
+  // range selector yet — it's shown alongside TWR but stays constant until the
+  // backend exposes a range-parameterised XIRR.
   const xirrPct = twrData?.portfolio_xirr != null ? twrData.portfolio_xirr * 100 : null;
-  const asOf = twrData?.as_of_date ?? null;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -384,51 +379,6 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
                     exit={{ opacity: 0, y: -4 }}
                     transition={{ duration: 0.18, ease: "easeOut" }}
                   >
-                    {/* XIRR headline — since-inception; intentionally NOT governed by the range below. */}
-                    {tab === "returns" && xirrPct != null && (
-                      <div className="mb-3 rounded-xl p-2.5" style={{ border: `1px solid ${HAIRLINE}` }}>
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-1">
-                            <p className="text-sm tracking-wide text-muted-foreground">
-                              XIRR · Since Inception
-                            </p>
-                            <button
-                              type="button"
-                              onClick={() => setInfoOpen((o) => (o === "mwr" ? null : "mwr"))}
-                              className="text-muted-foreground hover:text-foreground"
-                              aria-label="About XIRR"
-                            >
-                              <Info className="h-3 w-3" />
-                            </button>
-                          </div>
-                          <div className="text-right">
-                            <p
-                              className="text-sm font-semibold leading-tight"
-                              style={{
-                                color: xirrPct >= 0 ? POSITIVE : NEGATIVE,
-                                fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-                              }}
-                            >
-                              {fmtPct(xirrPct)}
-                            </p>
-                            <p className="text-[9px] text-muted-foreground mt-0.5">
-                              p.a.{asOf ? ` · as of ${fmtAsOf(asOf)}` : ""}
-                            </p>
-                          </div>
-                        </div>
-                        {infoOpen === "mwr" && (
-                          <div className="mt-2 rounded-lg px-3 py-2" style={{ backgroundColor: "hsl(var(--muted) / 0.6)" }}>
-                            <p className="text-[11.5px] text-foreground leading-relaxed">
-                              <strong>XIRR</strong> is your money-weighted return since you started
-                              investing — the real annual growth rate on the money you put in,
-                              accounting for every buy and sell and exactly when each happened.
-                              It's a whole-life figure, so it doesn't change with the range below.
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
                     {/* Range selector — shared by both tabs */}
                     <div className="flex flex-wrap gap-1 mb-3">
                       {RANGES.map((r) => {
@@ -467,7 +417,7 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
 
                         {!twrLoading && !twrError && rebased && (
                           <>
-                            <div className="grid grid-cols-2 gap-2">
+                            <div className="grid grid-cols-3 gap-2">
                               <div className="rounded-xl p-2.5" style={{ border: `1px solid ${HAIRLINE}` }}>
                                 <div className="flex items-center gap-1 mb-0.5">
                                   <p className="text-[9px] tracking-wide text-muted-foreground leading-tight">TWR: Portfolio</p>
@@ -489,6 +439,29 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
                                 >
                                   {fmtPct(scaledTwr)}
                                 </p>
+                              </div>
+                              <div className="rounded-xl p-2.5" style={{ border: `1px solid ${HAIRLINE}` }}>
+                                <div className="flex items-center gap-1 mb-0.5">
+                                  <p className="text-[9px] uppercase tracking-wide text-muted-foreground leading-tight">XIRR</p>
+                                  <button
+                                    type="button"
+                                    onClick={() => setInfoOpen((o) => (o === "mwr" ? null : "mwr"))}
+                                    className="text-muted-foreground hover:text-foreground"
+                                    aria-label="About XIRR"
+                                  >
+                                    <Info className="h-3 w-3" />
+                                  </button>
+                                </div>
+                                <p
+                                  className="text-sm font-semibold leading-tight"
+                                  style={{
+                                    color: (xirrPct ?? 0) >= 0 ? POSITIVE : NEGATIVE,
+                                    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                                  }}
+                                >
+                                  {xirrPct == null ? "—" : fmtPct(xirrPct)}
+                                </p>
+                                <p className="text-[9px] text-muted-foreground mt-0.5 leading-tight">p.a.</p>
                               </div>
                               <div className="rounded-xl p-2.5" style={{ border: `1px solid ${HAIRLINE}` }}>
                                 <div className="flex items-center gap-1 mb-0.5">
@@ -539,6 +512,16 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
                                   <strong>TWR</strong> sits above this line your fund picks are beating a
                                   plain index fund; if it trails, a low-cost index fund may have served
                                   you better. (Covers your mutual-fund holdings only.)
+                                </p>
+                              </div>
+                            )}
+
+                            {infoOpen === "mwr" && (
+                              <div className="mt-2 rounded-lg px-3 py-2" style={{ backgroundColor: "hsl(var(--muted) / 0.6)" }}>
+                                <p className="text-[11.5px] text-foreground leading-relaxed">
+                                  <strong>XIRR</strong> (money-weighted return, MWR) is the real annual
+                                  growth rate on the money you've invested, accounting for every buy and
+                                  sell and exactly when each happened.
                                 </p>
                               </div>
                             )}

@@ -518,7 +518,7 @@ const RebalanceExplanation = () => {
         {!dataLoading && !dataError && (detail || isExample) && (
           <>
             <div className="-mb-1 flex items-center gap-2">
-              <span className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">Rebalancing plan</span>
+              <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-foreground/80">Rebalancing plan</span>
               {isExample && (
                 <span className="rounded-full border border-[#D4A868]/40 bg-[#D4A868]/10 px-2 py-0.5 text-[9.5px] font-semibold uppercase tracking-wider text-[#9A7B2E]">
                   Example
@@ -722,7 +722,6 @@ const RebalanceExplanation = () => {
                                 </span>
                                 <div className="min-w-0 flex-1">
                                   <p className="text-[13px] leading-tight font-medium text-foreground truncate">{trade.name}</p>
-                                  <p className="text-[10.5px] text-muted-foreground truncate">{trade.category}</p>
                                 </div>
                                 <p className="shrink-0 text-[14px] leading-none font-semibold tabular-nums" style={{ color: tone }}>
                                   {isSell ? "−" : "+"}{trade.amount}

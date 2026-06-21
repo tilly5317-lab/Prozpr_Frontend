@@ -63,6 +63,9 @@ function ChartTooltip({
         {formatTooltipDate(p.recorded_date)}
       </p>
       <p className="text-[12px] font-semibold">{formatInrPaisa(p.total_value)}</p>
+      <p className="text-[10px] text-muted-foreground">
+        Invested {formatInrPaisa(p.total_invested)}
+      </p>
       <p
         className={`text-[10px] font-medium ${
           gain >= 0 ? "text-wealth-green" : "text-destructive"
@@ -81,7 +84,7 @@ interface PortfolioNavChartProps {
 }
 
 const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
-  const [horizon, setHorizon] = useState<PortfolioNavHorizon>("1Y");
+  const [horizon, setHorizon] = useState<PortfolioNavHorizon>("3Y");
   const [points, setPoints] = useState<PortfolioNavHistoryPoint[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [errored, setErrored] = useState(false);
@@ -92,6 +95,11 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
   // Guards the auto-build so we kick it off at most once per mount (and never
   // auto-retry a failed build — that stays on the explicit "Try again" button).
   const autoStartedRef = useRef(false);
+  // Default horizon is 3Y; if the account has less than 3Y of history we fall
+  // back to the closest shorter standard period once (and never override a
+  // horizon the user has explicitly tapped).
+  const autoHorizonRef = useRef(false);
+  const userPickedHorizonRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -117,6 +125,23 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
 
   const hasPoints = !!points && points.length > 0;
   const jobActive = job?.status === "pending" || job?.status === "running";
+
+  // On first load, if the data spans less than the default 3Y, drop to the
+  // closest shorter standard period (1Y → 3M → 1M). Runs once, and never
+  // overrides a horizon the user has tapped.
+  useEffect(() => {
+    if (autoHorizonRef.current || userPickedHorizonRef.current) return;
+    if (!points || points.length < 2) return;
+    autoHorizonRef.current = true;
+    const first = new Date(points[0].recorded_date).getTime();
+    const last = new Date(points[points.length - 1].recorded_date).getTime();
+    const spanDays = (last - first) / 86_400_000;
+    // Slightly under each window so an account that just clears a period isn't
+    // bumped down a notch by a few edge days.
+    const best: PortfolioNavHorizon =
+      spanDays >= 1000 ? "3Y" : spanDays >= 300 ? "1Y" : spanDays >= 75 ? "3M" : "1M";
+    if (best !== "3Y") setHorizon(best);
+  }, [points]);
 
   // When there's no series yet, fetch the build-job status (e.g. the user
   // reloaded mid-build) so we can resume showing progress. The actual auto-build
@@ -238,7 +263,8 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
   // Evenly-spaced Y ticks across a padded [min, max] so the gridlines are uniform.
   const yTicks = useMemo(() => {
     if (!chartData.length) return undefined;
-    const vals = chartData.map((d) => d.total_value);
+    // Span both the total-value and invested lines so neither clips.
+    const vals = chartData.flatMap((d) => [d.total_value, d.total_invested]);
     let lo = Math.min(...vals);
     let hi = Math.max(...vals);
     if (!Number.isFinite(lo) || !Number.isFinite(hi)) return undefined;
@@ -270,6 +296,7 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
             type="button"
             onClick={(e) => {
               e.stopPropagation();
+              userPickedHorizonRef.current = true;
               setHorizon(h);
             }}
             className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition-all ${
@@ -282,6 +309,19 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
           </button>
         ))}
       </div>
+
+      {hasPoints && (
+        <div className="mb-1.5 flex items-center gap-3 text-[9px] text-muted-foreground">
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-[2px] w-3.5 rounded-full" style={{ backgroundColor: strokeColor }} />
+            Total value
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-[2px] w-3.5 rounded-full bg-muted-foreground/45" />
+            Invested
+          </span>
+        </div>
+      )}
 
       <div className="h-36 w-full" onClick={(e) => e.stopPropagation()}>
         {loading && !hasPoints && (
@@ -404,6 +444,21 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
                   stroke: "hsl(var(--card))",
                   strokeWidth: 2,
                 }}
+                isAnimationActive={true}
+                animationDuration={550}
+                animationEasing="ease-out"
+              />
+              {/* Invested baseline — smooth, soft line, no fill. The gap up to
+                  the total value line is the gain. */}
+              <Area
+                type="monotone"
+                dataKey="total_invested"
+                stroke="hsl(var(--muted-foreground))"
+                strokeOpacity={0.45}
+                strokeWidth={1.5}
+                fill="none"
+                dot={false}
+                activeDot={false}
                 isAnimationActive={true}
                 animationDuration={550}
                 animationEasing="ease-out"

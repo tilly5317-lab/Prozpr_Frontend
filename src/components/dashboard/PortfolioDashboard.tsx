@@ -26,7 +26,7 @@ import { formatInrCompact, formatInrPaisa } from "@/lib/utils";
 // Unified card style — uses tokens so it flips correctly in dark mode.
 const CARD = "bg-card rounded-[14px] p-[14px]" as const;
 const CARD_BORDER = { border: "1px solid hsl(var(--border))" } as const;
-const SECTION_LABEL = { fontSize: 10, fontWeight: 500, textTransform: "uppercase" as const, letterSpacing: "1.5px", color: "hsl(var(--muted-foreground))" };
+const SECTION_LABEL = { fontSize: 11, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "1.2px", color: "hsl(var(--foreground) / 0.78)" };
 
 /** ₹ with Indian grouping, no decimals — used by the Total Portfolio headline. */
 const fmtInr0 = (n: number) =>
