@@ -794,7 +794,15 @@ const AIChatPanel = ({
      answered a few questions; one rating per conversation. */
   const [sessionRating, setSessionRating] = useState<number | null>(null);
   const [ratingDismissed, setRatingDismissed] = useState(false);
-  const submitRating = useCallback((n: number) => setSessionRating(n), []);
+  // Star selection happens first (fills 1..n); the rating is only committed when
+  // the user taps Submit, so they can add an optional comment beforehand.
+  const [pendingRating, setPendingRating] = useState(0);
+  const [hoverRating, setHoverRating] = useState(0);
+  const [ratingComment, setRatingComment] = useState("");
+  const submitRating = useCallback((n: number, _comment?: string) => {
+    // _comment is optional free-text feedback, captured alongside the score.
+    setSessionRating(n);
+  }, []);
 
   /* ── Kudos dismissal ── */
   const [dismissedKudos, setDismissedKudos] = useState<Set<number>>(new Set());
@@ -818,6 +826,9 @@ const AIChatPanel = ({
       setMessages([]);
       setSessionRating(null);
       setRatingDismissed(false);
+      setPendingRating(0);
+      setHoverRating(0);
+      setRatingComment("");
       setChatStartTime(formatTimestamp());
       setShowFirstUseHint(true);
       setOnboardingActive(false);
@@ -833,6 +844,9 @@ const AIChatPanel = ({
       sessionIdRef.current = sessionId;
       setSessionRating(null);
       setRatingDismissed(false);
+      setPendingRating(0);
+      setHoverRating(0);
+      setRatingComment("");
       setMessages(dummyMessages.map((m) => ({ ...m })));
       setChatStartTime(formatTimestamp(new Date(dummy?.created_at ?? Date.now())));
       setShowFirstUseHint(false);
@@ -845,6 +859,9 @@ const AIChatPanel = ({
       sessionIdRef.current = session.id;
       setSessionRating(null);
       setRatingDismissed(false);
+      setPendingRating(0);
+      setHoverRating(0);
+      setRatingComment("");
       setMessages(
         session.messages.map((m) => ({
           role: m.role === "assistant" ? ("ai" as const) : ("user" as const),
@@ -1484,19 +1501,43 @@ const AIChatPanel = ({
         return (
           <div className="mx-auto mt-2 flex w-full max-w-[90%] flex-col items-center gap-2 rounded-2xl border border-border/40 bg-muted/30 px-4 py-3">
             <p className="text-[12px] font-medium text-foreground">How is Pi doing so far?</p>
-            <div className="flex items-center gap-1">
-              {[1, 2, 3, 4, 5].map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => submitRating(n)}
-                  aria-label={`Rate ${n} out of 5`}
-                  className="rounded-full p-1 text-muted-foreground/40 transition-colors hover:text-amber-400"
-                >
-                  <Star className="h-5 w-5" />
-                </button>
-              ))}
+            <div className="flex items-center gap-1" onMouseLeave={() => setHoverRating(0)}>
+              {[1, 2, 3, 4, 5].map((n) => {
+                const filled = n <= (hoverRating || pendingRating);
+                return (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setPendingRating(n)}
+                    onMouseEnter={() => setHoverRating(n)}
+                    aria-label={`Rate ${n} out of 5`}
+                    className={`rounded-full p-1 transition-colors ${
+                      filled ? "text-amber-400" : "text-muted-foreground/40 hover:text-amber-400"
+                    }`}
+                  >
+                    <Star className="h-5 w-5" fill={filled ? "currentColor" : "none"} />
+                  </button>
+                );
+              })}
             </div>
+            {pendingRating > 0 && (
+              <div className="flex w-full flex-col items-stretch gap-2">
+                <textarea
+                  value={ratingComment}
+                  onChange={(e) => setRatingComment(e.target.value)}
+                  rows={2}
+                  placeholder="Add a comment (optional)"
+                  className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2 text-[12px] text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-accent/20"
+                />
+                <button
+                  type="button"
+                  onClick={() => submitRating(pendingRating, ratingComment.trim() || undefined)}
+                  className="w-full rounded-xl bg-foreground py-2 text-[12px] font-semibold text-background transition-opacity hover:opacity-90"
+                >
+                  Submit rating
+                </button>
+              </div>
+            )}
             <button
               type="button"
               onClick={() => setRatingDismissed(true)}
