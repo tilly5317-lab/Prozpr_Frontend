@@ -95,17 +95,32 @@ function compactINR(n: number): string {
   return `${sign}₹${Math.round(a)}`;
 }
 
-function buildDriftRows(subs: RebalancingSubgroupSummary[]): DriftRow[] {
-  if (!subs.length) return [];
-  const agg: Record<Bucket, { current: number; target: number }> = {
-    equity: { current: 0, target: 0 },
-    debt: { current: 0, target: 0 },
-    others: { current: 0, target: 0 },
+function buildDriftRows(
+  subs: RebalancingSubgroupSummary[],
+  holdings: PortfolioDetail["holdings"] = [],
+): DriftRow[] {
+  if (!subs.length && !holdings.length) return [];
+  const agg: Record<Bucket, { current: number; target: number; inSubs: boolean }> = {
+    equity: { current: 0, target: 0, inSubs: false },
+    debt: { current: 0, target: 0, inSubs: false },
+    others: { current: 0, target: 0, inSubs: false },
   };
   for (const s of subs) {
     const b = toBucket(s.asset_class);
     agg[b].current += s.current_holding_inr || 0;
     agg[b].target += s.goal_target_inr || 0;
+    agg[b].inSubs = true;
+  }
+  // Show every asset class the user actually holds — even ones the rebalancing
+  // run didn't touch (no recommendation). Those fill from the live portfolio with
+  // target = current so the row reads "On target".
+  const heldByBucket: Record<Bucket, number> = { equity: 0, debt: 0, others: 0 };
+  for (const h of holdings) heldByBucket[toBucket(h.asset_class)] += h.current_value || 0;
+  for (const b of BUCKET_ORDER) {
+    if (!agg[b].inSubs && heldByBucket[b] > 0) {
+      agg[b].current = heldByBucket[b];
+      agg[b].target = heldByBucket[b];
+    }
   }
   const totalCur = BUCKET_ORDER.reduce((sum, b) => sum + agg[b].current, 0);
   const totalTgt = BUCKET_ORDER.reduce((sum, b) => sum + agg[b].target, 0);
@@ -435,7 +450,10 @@ const RebalanceExplanation = () => {
     }
   }, []);
 
-  const driftRows = useMemo(() => buildDriftRows(detail?.subgroup_summaries ?? []), [detail]);
+  const driftRows = useMemo(
+    () => buildDriftRows(detail?.subgroup_summaries ?? [], portfolio?.holdings ?? []),
+    [detail, portfolio],
+  );
   const uiTrades = useMemo(() => (detail?.trades ?? []).map(mapTrade), [detail]);
   const tradeGroups = useMemo(() => groupTradesByReason(uiTrades), [uiTrades]);
   const keptFunds = useMemo(() => buildKeptFunds(portfolio, uiTrades), [portfolio, uiTrades]);
