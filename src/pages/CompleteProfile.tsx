@@ -592,6 +592,7 @@ const CompleteProfile = () => {
   const [primaryWealthSource, setPrimaryWealthSource] = useState<string[]>([]);
   const [wealthSourceOtherText, setWealthSourceOtherText] = useState("");
   const [investableAssets, setInvestableAssets] = useState("");
+  const [equityShares, setEquityShares] = useState("");
   const [monthlyInvestment, setMonthlyInvestment] = useState("");
   const [liabilities, setLiabilities] = useState("");
   const [otherAssets, setOtherAssets] = useState<OtherAsset[]>([{ name: "", value: "" }]);
@@ -798,6 +799,9 @@ const CompleteProfile = () => {
           if (op.financial_assets != null) {
             setInvestableAssets((cur) => cur || parseNum(String(op.financial_assets)));
           }
+          if (op.equity_shares != null) {
+            setEquityShares((cur) => cur || parseNum(String(op.equity_shares)));
+          }
           if (op.financial_liabilities_excl_mortgage != null) {
             setLiabilities((cur) => cur || parseNum(String(op.financial_liabilities_excl_mortgage)));
           }
@@ -930,7 +934,7 @@ const CompleteProfile = () => {
         case 0: return JSON.stringify([earningMembers, dependents]);
         case 1: return JSON.stringify([annualIncome, annualExpense]);
         case 2: return JSON.stringify([primaryWealthSource, wealthSourceOtherText]);
-        case 3: return JSON.stringify([investableAssets, liabilities, monthlyInvestment, otherAssets]);
+        case 3: return JSON.stringify([investableAssets, equityShares, liabilities, monthlyInvestment, otherAssets]);
         case 4: return JSON.stringify([ownsHome, properties]);
         case 5: return JSON.stringify([plannedExpenses]);
         case 6: return JSON.stringify([largeIncomes, emergencyFund, emergencyTimeframe]);
@@ -1020,6 +1024,7 @@ const CompleteProfile = () => {
           case 3: { // Assets & liabilities (+ other assets)
             await updatePersonalFinance({
               financial_assets: toNum(investableAssets),
+              equity_shares: toNum(equityShares),
               financial_liabilities_excl_mortgage: toNum(liabilities),
               starting_monthly_investment: toNum(monthlyInvestment),
             });
@@ -1273,9 +1278,14 @@ const CompleteProfile = () => {
           { label: "Assets & liabilities", body: (
            <div className="space-y-3">
             <div>
-              <FieldLabel>Cash and financial assets</FieldLabel>
-              <p className="text-[12.5px] text-muted-foreground -mt-0.5 mb-2 leading-snug">Cash, mutual funds, stocks, ETFs, bonds and similar holdings.</p>
+              <FieldLabel>Cash &amp; debt</FieldLabel>
+              <p className="text-[12.5px] text-muted-foreground -mt-0.5 mb-2 leading-snug">Bank balance, fixed deposits and bonds. Equities go in the next field.</p>
               <TextInput value={investableAssets} onChange={setInvestableAssets} prefix="₹" placeholder="e.g. 42,00,000" />
+            </div>
+            <div>
+              <FieldLabel>Equities / shares</FieldLabel>
+              <p className="text-[12.5px] text-muted-foreground -mt-0.5 mb-2 leading-snug">Listed shares and equity funds you hold outside your mutual-fund portfolio.</p>
+              <TextInput value={equityShares} onChange={setEquityShares} prefix="₹" placeholder="e.g. 8,00,000" />
             </div>
             <div>
               <FieldLabel>Regular monthly investment</FieldLabel>

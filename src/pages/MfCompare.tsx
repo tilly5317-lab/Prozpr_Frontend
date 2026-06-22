@@ -39,7 +39,6 @@ interface CompareFund {
   amc: string | null;
   category: string | null;
   subCategory: string | null;
-  risk: string | null;
   latestNav: number | null;
   navHistory: FundNavPoint[];
   ret6m: number | null;
@@ -55,10 +54,6 @@ type CriterionKey =
   | "ret5y"
   | "ret6m"
   | "retYtd"
-  | "risk"
-  | "vol"
-  | "mdd"
-  | "nav"
   | "category";
 
 interface Criterion {
@@ -75,55 +70,6 @@ interface Criterion {
 const fmtPctVal = (n: number | null): string =>
   n == null ? "—" : `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
 
-/** Annualised volatility (std-dev of daily returns × √252) over the points given. */
-function annualizedVol(points: FundNavPoint[]): number | null {
-  if (points.length < 3) return null;
-  const rets: number[] = [];
-  for (let i = 1; i < points.length; i++) {
-    const p0 = points[i - 1]!.nav;
-    const p1 = points[i]!.nav;
-    if (p0 > 0) rets.push((p1 - p0) / p0);
-  }
-  if (rets.length < 2) return null;
-  const mean = rets.reduce((a, b) => a + b, 0) / rets.length;
-  const variance = rets.reduce((a, b) => a + (b - mean) ** 2, 0) / (rets.length - 1);
-  return Math.sqrt(variance) * Math.sqrt(252) * 100;
-}
-
-/** Largest peak-to-trough decline (%) over the points given — a negative number. */
-function maxDrawdown(points: FundNavPoint[]): number | null {
-  if (points.length < 2) return null;
-  let peak = points[0]!.nav;
-  let mdd = 0;
-  for (const p of points) {
-    if (p.nav > peak) peak = p.nav;
-    if (peak > 0) {
-      const dd = (p.nav - peak) / peak;
-      if (dd < mdd) mdd = dd;
-    }
-  }
-  return mdd * 100;
-}
-
-const riskScore = (risk: string | null): number | null => {
-  const v = (risk ?? "").toLowerCase();
-  if (!v) return null;
-  if (v.includes("very high")) return 5;
-  if (v.includes("high")) return 4;
-  if (v.includes("moderately")) return 3;
-  if (v.includes("moderate")) return 2;
-  if (v.includes("low")) return 1;
-  return null;
-};
-
-const riskBadgeClass = (risk: string | null): string => {
-  const v = (risk ?? "").toLowerCase();
-  if (v.includes("low")) return "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400";
-  if (v.includes("high") || v.includes("very")) return "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400";
-  if (v) return "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400";
-  return "bg-secondary text-muted-foreground";
-};
-
 const CRITERIA: Criterion[] = [
   { key: "ret1y", label: "1Y return", better: "high", value: (f) => f.ret1y, render: (f) => fmtPctVal(f.ret1y) },
   { key: "ret3y", label: "3Y return", better: "high", value: (f) => f.ret3y, render: (f) => fmtPctVal(f.ret3y) },
@@ -131,49 +77,15 @@ const CRITERIA: Criterion[] = [
   { key: "ret6m", label: "6M return", better: "high", value: (f) => f.ret6m, render: (f) => fmtPctVal(f.ret6m) },
   { key: "retYtd", label: "YTD return", better: "high", value: (f) => f.retYtd, render: (f) => fmtPctVal(f.retYtd) },
   {
-    key: "risk",
-    label: "Risk (SEBI)",
-    better: null,
-    value: (f) => riskScore(f.risk),
-    render: (f) => f.risk ?? "—",
-  },
-  {
-    key: "vol",
-    label: "Volatility (ann.)",
-    better: "low",
-    value: (_f, r) => annualizedVol(r),
-    render: (_f, r) => {
-      const v = annualizedVol(r);
-      return v == null ? "—" : `${v.toFixed(1)}%`;
-    },
-  },
-  {
-    key: "mdd",
-    label: "Max drawdown",
-    better: "high", // closer to 0 (less negative) is better
-    value: (_f, r) => maxDrawdown(r),
-    render: (_f, r) => {
-      const v = maxDrawdown(r);
-      return v == null ? "—" : `${v.toFixed(1)}%`;
-    },
-  },
-  {
-    key: "nav",
-    label: "Latest NAV",
-    better: null,
-    value: (f) => f.latestNav,
-    render: (f) => (f.latestNav == null ? "—" : `₹${f.latestNav.toFixed(2)}`),
-  },
-  {
     key: "category",
-    label: "Category",
+    label: "Fund type",
     better: null,
     value: () => null,
     render: (f) => [f.category, f.subCategory].filter(Boolean).join(" · ") || "—",
   },
 ];
 
-const DEFAULT_CRITERIA: CriterionKey[] = ["ret1y", "ret3y", "risk"];
+const DEFAULT_CRITERIA: CriterionKey[] = ["ret1y", "ret3y", "ret5y"];
 
 export default function MfCompare() {
   const navigate = useNavigate();
@@ -212,7 +124,6 @@ export default function MfCompare() {
             amc: meta?.amc_name ?? null,
             category: meta?.category ?? null,
             subCategory: meta?.sub_category ?? null,
-            risk: meta?.risk_rating_sebi ?? null,
             latestNav: null,
             navHistory: [],
             ret6m: null,
@@ -512,22 +423,14 @@ export default function MfCompare() {
                             const isWinner = winners?.has(f.schemeCode) ?? false;
                             return (
                               <td key={f.schemeCode} className="px-3 py-2.5">
-                                {c.key === "risk" ? (
-                                  <span
-                                    className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${riskBadgeClass(f.risk)}`}
-                                  >
-                                    {c.render(f, ranged)}
-                                  </span>
-                                ) : (
-                                  <span
-                                    className={`inline-flex items-center gap-1 text-[12px] tabular-nums ${
-                                      isWinner ? "font-bold text-emerald-600 dark:text-emerald-400" : "text-foreground"
-                                    }`}
-                                  >
-                                    {f.loading ? "…" : c.render(f, ranged)}
-                                    {isWinner && <Check className="h-3 w-3" />}
-                                  </span>
-                                )}
+                                <span
+                                  className={`inline-flex items-center gap-1 text-[12px] tabular-nums ${
+                                    isWinner ? "font-bold text-emerald-600 dark:text-emerald-400" : "text-foreground"
+                                  }`}
+                                >
+                                  {f.loading ? "…" : c.render(f, ranged)}
+                                  {isWinner && <Check className="h-3 w-3" />}
+                                </span>
                               </td>
                             );
                           })}
@@ -539,8 +442,8 @@ export default function MfCompare() {
               </div>
               <p className="border-t border-border/50 px-3 py-2 text-[10px] leading-snug text-muted-foreground/80">
                 <Check className="mr-0.5 inline h-3 w-3 text-emerald-600 dark:text-emerald-400" />
-                marks the best fund per metric. Volatility &amp; max drawdown are computed from NAV over
-                the selected range. Past performance isn&apos;t a forecast.
+                marks the best fund per metric. Returns are trailing figures from fund data. Past
+                performance isn&apos;t a forecast.
               </p>
             </section>
           </>
