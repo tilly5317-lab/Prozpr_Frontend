@@ -310,6 +310,7 @@ export interface OnboardingProfilePayload {
   annual_income?: number;
   monthly_household_expense?: number;
   financial_assets?: number;
+  equity_shares?: number;
   financial_liabilities_excl_mortgage?: number;
   starting_monthly_investment?: number;
 }
@@ -337,6 +338,7 @@ export interface OnboardingProfileResponse {
   effective_tax_rate?: number | null;
   monthly_household_expense?: number | null;
   financial_assets?: number | null;
+  equity_shares?: number | null;
   financial_liabilities_excl_mortgage?: number | null;
   starting_monthly_investment?: number | null;
   updated_at: string | null;
@@ -777,6 +779,7 @@ export interface PersonalFinancePayload {
   /** Blended post-deduction rate as a fraction (e.g. 0.22), NOT a percentage. */
   effective_tax_rate?: number | null;
   financial_assets?: number | null;
+  equity_shares?: number | null;
   financial_liabilities_excl_mortgage?: number | null;
   monthly_household_expense?: number | null;
   starting_monthly_investment?: number | null;
@@ -1108,6 +1111,8 @@ export interface TwrSeriesResponse {
   points: TwrPoint[];
   /** Since-inception money-weighted return (decimal, 0.11 == 11%); null if undefined. */
   portfolio_xirr: number | null;
+  /** Money-weighted XIRR per range label (1M/3M/YTD/1Y/3Y/All); decimals, null if undefined. */
+  windowed_xirr: Record<string, number | null>;
   /** ISO date the current value is priced at (latest NAV used for XIRR); null if none. */
   as_of_date: string | null;
 }
@@ -1822,6 +1827,7 @@ export interface CashflowInputValues {
   starting_monthly_investment?: number;
   current_portfolio_corpus?: number;
   financial_assets?: number;
+  equity_shares?: number;
   financial_liabilities_excl_mortgage?: number;
 }
 
@@ -1840,6 +1846,7 @@ export async function saveCashflowInputs(v: CashflowInputValues): Promise<void> 
   if (v.starting_monthly_investment != null) finance.starting_monthly_investment = v.starting_monthly_investment;
   if (v.current_portfolio_corpus != null) finance.current_portfolio_corpus = v.current_portfolio_corpus;
   if (v.financial_assets != null) finance.financial_assets = v.financial_assets;
+  if (v.equity_shares != null) finance.equity_shares = v.equity_shares;
   if (v.financial_liabilities_excl_mortgage != null)
     finance.financial_liabilities_excl_mortgage = v.financial_liabilities_excl_mortgage;
   if (Object.keys(finance).length > 0) await updatePersonalFinance(finance);

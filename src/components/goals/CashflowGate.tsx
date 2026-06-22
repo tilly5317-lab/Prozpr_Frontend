@@ -20,9 +20,9 @@ import { toast } from "@/hooks/use-toast";
  *
  * Every input is shown directly (nothing hidden behind an expander) and is
  * editable inline, writing back to the same canonical profile fields so goal
- * planning and profile/complete stay in sync. (Cash = the "Cash and financial
- * assets" figure only; "Other assets" live in their own store and are
- * deliberately excluded.)
+ * planning and profile/complete stay in sync. ("Cash & debt" and "Equities /
+ * shares" are separate canonical fields; "Other assets" live in their own store
+ * and are deliberately excluded.)
  *
  * The one exception is the current portfolio corpus: it is sourced from the
  * user's CAMS upload, so it stays read-only here with a prompt to upload a new
@@ -56,16 +56,15 @@ const LOCKED_KEYS = new Set(["current_portfolio_corpus"]);
 
 /**
  * Frontend label/help overrides for specific readiness fields, so the wording
- * matches profile/complete exactly. "Cash and financial assets" is cash + market
- * holdings only — it deliberately excludes the separate "other assets" (gold,
- * unlisted shares, etc.), which live in their own store and never roll into this
- * figure. The two screens write the same canonical field, so editing one syncs
- * the other.
+ * matches profile/complete exactly. "Cash & debt" is cash, savings and debt
+ * instruments only — equities live in the separate "Equities / shares" field, and
+ * "other assets" (gold, unlisted shares, etc.) live in their own store. Each
+ * screen writes the same canonical field, so editing one syncs the other.
  */
 const FIELD_OVERRIDES: Record<string, { label?: string; help?: string }> = {
   financial_assets: {
-    label: "Cash and financial assets",
-    help: "Cash, mutual funds, stocks, ETFs, bonds and similar holdings. Excludes other assets like gold or unlisted shares.",
+    label: "Cash & debt",
+    help: "Bank balance, fixed deposits and bonds. Equities are entered separately below; excludes other assets like gold or unlisted shares and your mutual-fund portfolio.",
   },
 };
 
