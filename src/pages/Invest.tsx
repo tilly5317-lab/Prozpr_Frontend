@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, TrendingUp, TrendingDown, Activity, AlertTriangle, Loader2 } from "lucide-react";
+import { ArrowRight, TrendingUp, TrendingDown, Activity, AlertTriangle, Loader2, FileText, UploadCloud } from "lucide-react";
 import BottomNav from "@/components/BottomNav";
+import CamsUploadModal from "@/components/onboarding/CamsUploadModal";
+import { useCamsMissing, shouldAutoOpenCamsPrompt } from "@/hooks/useCamsMissing";
 import { getMyPortfolio, type PortfolioDetail } from "@/lib/api";
 import { formatInrCompact } from "@/lib/utils";
 
@@ -164,15 +166,35 @@ const Invest = () => {
   const navigate = useNavigate();
   const [portfolio, setPortfolio] = useState<PortfolioDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  // Bumped after a CAMS upload to re-pull the (now-changed) portfolio.
+  const [reloadKey, setReloadKey] = useState(0);
+
+  // CAMS presence + the inline upload popup (shares the once-per-session prompt
+  // with the portfolio page). After a successful upload we re-pull the portfolio
+  // so the user stays on the invest page with refreshed holdings.
+  const cams = useCamsMissing();
+  const [camsOpen, setCamsOpen] = useState(false);
+
+  useEffect(() => {
+    if (cams.loading) return;
+    if (shouldAutoOpenCamsPrompt(cams.missing)) setCamsOpen(true);
+  }, [cams.loading, cams.missing]);
+
+  const handleCamsUploaded = () => {
+    setCamsOpen(false);
+    cams.refresh();
+    setReloadKey((k) => k + 1);
+  };
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
     getMyPortfolio()
       .then((p) => !cancelled && setPortfolio(p))
       .catch(() => { /* fall back to demo items */ })
       .finally(() => !cancelled && setLoading(false));
     return () => { cancelled = true; };
-  }, []);
+  }, [reloadKey]);
 
   const { items, isDemo } = useMemo(() => buildItems(portfolio), [portfolio]);
 
@@ -196,6 +218,16 @@ const Invest = () => {
         </p>
       </div>
 
+      {/* CAMS missing → passive nudge (message only, no button). */}
+      {cams.missing && (
+        <div className="mx-5 mt-1 flex items-start gap-2 rounded-lg border border-[#D4A868]/30 bg-[#D4A868]/[0.07] px-3 py-2">
+          <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#B07E22] dark:text-[#D4A868]" />
+          <p className="text-[11px] leading-snug text-foreground/90">
+            Upload your CAMS statement to see your real rebalancing plan.
+          </p>
+        </div>
+      )}
+
       {loading ? (
         <div className="flex items-center justify-center gap-2 px-5 pt-24 text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
@@ -203,6 +235,28 @@ const Invest = () => {
         </div>
       ) : (
         <div className="px-5 pt-2">
+          {/* CAMS missing → an explicit upload option on the invest page. On
+              success we stay on this page and refresh the form guide. */}
+          {cams.missing && (
+            <button
+              type="button"
+              onClick={() => setCamsOpen(true)}
+              className="mb-3 flex w-full items-center gap-3 rounded-2xl border border-dashed border-[#D4A868]/55 bg-[#D4A868]/[0.07] px-3.5 py-3 text-left transition-colors hover:bg-[#D4A868]/15"
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#D4A868]/15 text-[#B07E22] dark:text-[#D4A868]">
+                <UploadCloud className="h-4 w-4" />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-[13px] font-semibold text-foreground">
+                  Upload your CAMS statement
+                </span>
+                <span className="block text-[11px] text-muted-foreground">
+                  We&apos;ll read your real holdings so this form guide reflects your portfolio.
+                </span>
+              </span>
+            </button>
+          )}
+
           {/* Portfolio health — overall 0–100 rating with its three components */}
           {health && (
             <div className="mb-3 rounded-2xl border border-border bg-card p-4">
@@ -351,6 +405,14 @@ const Invest = () => {
           </button>
         </div>
       )}
+
+      {/* Inline CAMS upload — same flow as /cams-upload (instructions + file +
+          password). Opened from the upload card or the once-per-session popup. */}
+      <CamsUploadModal
+        open={camsOpen}
+        onClose={() => setCamsOpen(false)}
+        onUploaded={handleCamsUploaded}
+      />
 
       <BottomNav />
     </div>

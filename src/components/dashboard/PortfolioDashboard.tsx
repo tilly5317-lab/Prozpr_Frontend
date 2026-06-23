@@ -10,6 +10,8 @@ import CurrentAllocationCard from "./CurrentAllocationCard";
 import AdvisorMeetingsSlot from "./AdvisorMeetingsSlot";
 import PortfolioAnalysisModal from "./PortfolioAnalysisModal";
 import ProfileSwitcher from "./ProfileSwitcher";
+import CamsUploadModal from "@/components/onboarding/CamsUploadModal";
+import { useCamsMissing } from "@/hooks/useCamsMissing";
 import { useFamily } from "@/context/FamilyContext";
 import {
   getCumulativePortfolio,
@@ -62,6 +64,8 @@ function PortfolioMainPanel({
   horizonLabel,
   middleSlot,
   useNavChart = false,
+  camsMissing = false,
+  onUploadCams,
 }: {
   portfolio: PortfolioDetail;
   timePeriod: "1M" | "6M" | "1Y" | "All";
@@ -72,6 +76,10 @@ function PortfolioMainPanel({
   middleSlot?: ReactNode;
   /** When true, show the dated per-user NAV chart with its own horizon picker. */
   useNavChart?: boolean;
+  /** True when no CAMS holdings exist → the chart offers an inline upload. */
+  camsMissing?: boolean;
+  /** Open the CAMS upload popup from the chart. */
+  onUploadCams?: () => void;
 }) {
   const [analysisOpen, setAnalysisOpen] = useState(false);
 
@@ -111,7 +119,11 @@ function PortfolioMainPanel({
         <p className="text-[10px] text-muted-foreground/80 mt-1 mb-3">Invested {fmtInr0(portfolio.total_invested)}</p>
 
         {useNavChart ? (
-          <PortfolioNavChart fallbackValues={sparkline} />
+          <PortfolioNavChart
+            fallbackValues={sparkline}
+            camsMissing={camsMissing}
+            onUploadCams={onUploadCams}
+          />
         ) : (
           <>
             <div className="flex gap-1.5 mb-3" onClick={stop}>
@@ -430,6 +442,20 @@ const PortfolioDashboard = () => {
   const [selfProfile, setSelfProfile] = useState<FullProfileResponse | null>(null);
   const [selfSparkline, setSelfSparkline] = useState<number[] | undefined>(undefined);
   const [selfLoading, setSelfLoading] = useState(true);
+  // Bumped after a CAMS upload to re-pull the (now-changed) self portfolio.
+  const [selfReloadKey, setSelfReloadKey] = useState(0);
+
+  // CAMS presence. When it's missing we surface an upload prompt INSIDE the NAV
+  // history chart space (see PortfolioNavChart) — no auto-popup, no top banner.
+  // The popup only opens when the user clicks that in-chart upload button.
+  const cams = useCamsMissing();
+  const [camsOpen, setCamsOpen] = useState(false);
+
+  const handleCamsUploaded = () => {
+    setCamsOpen(false);
+    cams.refresh();
+    setSelfReloadKey((k) => k + 1);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -504,7 +530,7 @@ const PortfolioDashboard = () => {
     return () => {
       cancelled = true;
     };
-  }, [activeView.type, hasShownInitialLoad]);
+  }, [activeView.type, hasShownInitialLoad, selfReloadKey]);
 
   const viewLabel =
     activeView.type === "self"
@@ -656,6 +682,8 @@ const PortfolioDashboard = () => {
                   null
                 }
                 useNavChart
+                camsMissing={cams.missing}
+                onUploadCams={() => setCamsOpen(true)}
               />
               <DiscoverEntryCard />
               <ProfileUnlockCircles profile={selfProfile} />
@@ -671,6 +699,15 @@ const PortfolioDashboard = () => {
         </>
       )}
 
+
+      {/* Inline CAMS upload — same flow as /cams-upload (instructions + file +
+          password). Opened from the chart option or the once-per-session popup;
+          on success we re-pull the portfolio so the user stays right here. */}
+      <CamsUploadModal
+        open={camsOpen}
+        onClose={() => setCamsOpen(false)}
+        onUploaded={handleCamsUploaded}
+      />
 
       <BottomNav />
     </div>
