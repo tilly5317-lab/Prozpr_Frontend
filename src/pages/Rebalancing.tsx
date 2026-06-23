@@ -108,7 +108,7 @@ function parseRecommendationOptions(rec: RebalancingRecommendationInfo): ETFOpti
   const arr = candidates.find((c) => Array.isArray(c)) as unknown[] | undefined;
   if (!arr || arr.length === 0) return [];
   return arr
-    .map((item, idx) => {
+    .map((item, idx): ETFOption | null => {
       if (!item || typeof item !== "object") return null;
       const it = item as Record<string, unknown>;
       return {

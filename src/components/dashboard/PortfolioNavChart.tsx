@@ -16,6 +16,7 @@ import {
   type PortfolioNavHorizon,
 } from "@/lib/api";
 import { formatInr0 } from "@/lib/utils";
+import { UploadCloud } from "lucide-react";
 
 const HORIZONS: PortfolioNavHorizon[] = ["1M", "3M", "1Y", "3Y", "MAX"];
 
@@ -81,9 +82,13 @@ function ChartTooltip({
 interface PortfolioNavChartProps {
   /** Optional fallback used while the API is unreachable. */
   fallbackValues?: number[];
+  /** True when the user has no mutual-fund holdings (no CAMS imported yet). */
+  camsMissing?: boolean;
+  /** Open the CAMS upload popup — wired only when `camsMissing`. */
+  onUploadCams?: () => void;
 }
 
-const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
+const PortfolioNavChart = ({ fallbackValues, camsMissing, onUploadCams }: PortfolioNavChartProps) => {
   const [horizon, setHorizon] = useState<PortfolioNavHorizon>("3Y");
   const [points, setPoints] = useState<PortfolioNavHistoryPoint[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -289,28 +294,55 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
 
   return (
     <div>
-      <div className="flex gap-1.5 mb-3">
-        {HORIZONS.map((h) => (
-          <button
-            key={h}
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              userPickedHorizonRef.current = true;
-              setHorizon(h);
-            }}
-            className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition-all ${
-              horizon === h
-                ? "bg-accent/15 text-accent"
-                : "bg-muted/60 text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {h}
-          </button>
-        ))}
-      </div>
+      {/* Horizon picker is meaningless with no history — hide it until CAMS is in. */}
+      {!camsMissing && (
+        <div className="flex gap-1.5 mb-3">
+          {HORIZONS.map((h) => (
+            <button
+              key={h}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                userPickedHorizonRef.current = true;
+                setHorizon(h);
+              }}
+              className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition-all ${
+                horizon === h
+                  ? "bg-accent/15 text-accent"
+                  : "bg-muted/60 text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {h}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="h-36 w-full" onClick={(e) => e.stopPropagation()}>
+        {/* No CAMS imported yet → ask the user to upload it right here in the
+            NAV-history space. It only shows while CAMS is absent and disappears
+            once a statement is imported (then the real chart builds). */}
+        {camsMissing && onUploadCams ? (
+          <div className="flex h-full w-full flex-col items-center justify-center gap-1.5 px-4 text-center">
+            <UploadCloud className="h-6 w-6 text-[#D4A868]" />
+            <p className="text-[12px] font-medium text-foreground">See your portfolio history</p>
+            <p className="text-[10.5px] leading-snug text-muted-foreground">
+              Upload your CAMS statement — we&apos;ll build your net-worth history from your real holdings.
+            </p>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onUploadCams();
+              }}
+              className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-[#D4A868] px-4 py-1.5 text-[11px] font-semibold text-white transition-opacity hover:opacity-90"
+            >
+              <UploadCloud className="h-3.5 w-3.5" />
+              Upload CAMS statement
+            </button>
+          </div>
+        ) : (
+          <>
         {loading && !hasPoints && (
           <div className="h-full w-full flex items-center justify-center">
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-muted border-t-foreground" />
@@ -452,6 +484,8 @@ const PortfolioNavChart = ({ fallbackValues }: PortfolioNavChartProps) => {
               />
             </AreaChart>
           </ResponsiveContainer>
+        )}
+          </>
         )}
       </div>
 

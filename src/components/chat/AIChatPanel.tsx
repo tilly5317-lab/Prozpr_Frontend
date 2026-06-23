@@ -496,6 +496,7 @@ const DUMMY_SESSIONS: ChatSessionInfo[] = (() => {
       id: "demo-rebalance",
       title: "Q3 rebalance plan",
       status: "active",
+      rating: null,
       created_at: twoDays,
       updated_at: yesterday,
     },
@@ -503,6 +504,7 @@ const DUMMY_SESSIONS: ChatSessionInfo[] = (() => {
       id: "demo-elss",
       title: "ELSS picks & 80C strategy",
       status: "active",
+      rating: null,
       created_at: twoDays,
       updated_at: twoDays,
     },
@@ -801,14 +803,19 @@ const AIChatPanel = ({
   // "thanks" once. On an already-rated session loaded from the backend this
   // stays false, so the rating UI is fully silent — it never nags again.
   const [ratingJustSubmitted, setRatingJustSubmitted] = useState(false);
-  const submitRating = useCallback((n: number) => {
+  // Star-rating interaction state: the in-progress pick (pendingRating), the
+  // hover preview (hoverRating), and an optional free-text comment.
+  const [pendingRating, setPendingRating] = useState(0);
+  const [hoverRating, setHoverRating] = useState(0);
+  const [ratingComment, setRatingComment] = useState("");
+  const submitRating = useCallback((n: number, comment?: string) => {
     setSessionRating(n); // optimistic — reflect the choice immediately
     setRatingJustSubmitted(true);
     const sid = sessionIdRef.current;
     if (sid) {
       // Best-effort persistence; the UI is already updated. Demo/dummy sessions
       // (no real backend row) just 404 here, which we ignore.
-      rateChatSession(sid, n).catch(() => { /* ignore */ });
+      rateChatSession(sid, n, comment).catch(() => { /* ignore */ });
     }
   }, []);
 
@@ -834,13 +841,10 @@ const AIChatPanel = ({
       setMessages([]);
       setSessionRating(null);
       setRatingDismissed(false);
-<<<<<<< HEAD
       setRatingJustSubmitted(false);
-=======
       setPendingRating(0);
       setHoverRating(0);
       setRatingComment("");
->>>>>>> 69a1ed0d1f2f7df9074d6532b9bc1062465c0230
       setChatStartTime(formatTimestamp());
       setShowFirstUseHint(true);
       setOnboardingActive(false);
@@ -856,13 +860,10 @@ const AIChatPanel = ({
       sessionIdRef.current = sessionId;
       setSessionRating(null);
       setRatingDismissed(false);
-<<<<<<< HEAD
       setRatingJustSubmitted(false);
-=======
       setPendingRating(0);
       setHoverRating(0);
       setRatingComment("");
->>>>>>> 69a1ed0d1f2f7df9074d6532b9bc1062465c0230
       setMessages(dummyMessages.map((m) => ({ ...m })));
       setChatStartTime(formatTimestamp(new Date(dummy?.created_at ?? Date.now())));
       setShowFirstUseHint(false);
@@ -877,13 +878,10 @@ const AIChatPanel = ({
       // (and stays silent — no thanks line either, since it wasn't just rated).
       setSessionRating(session.rating ?? null);
       setRatingDismissed(false);
-<<<<<<< HEAD
       setRatingJustSubmitted(false);
-=======
       setPendingRating(0);
       setHoverRating(0);
       setRatingComment("");
->>>>>>> 69a1ed0d1f2f7df9074d6532b9bc1062465c0230
       setMessages(
         session.messages.map((m) => ({
           role: m.role === "assistant" ? ("ai" as const) : ("user" as const),

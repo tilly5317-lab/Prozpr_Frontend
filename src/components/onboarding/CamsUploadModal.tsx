@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { X, Loader2, FileText, UploadCloud, CheckCircle2 } from "lucide-react";
+import { X, Loader2, FileText, UploadCloud, CheckCircle2, ChevronDown } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import {
   uploadCamsStatement,
@@ -9,6 +9,7 @@ import {
   type CamsPdfImportResponse,
 } from "@/lib/api";
 import { formatInrCompact } from "@/lib/utils";
+import CamsStatementGuide from "@/components/onboarding/CamsStatementGuide";
 
 interface CamsUploadModalProps {
   open: boolean;
@@ -32,6 +33,10 @@ const CamsUploadModal = ({ open, onClose, onUploaded, replaceExisting = false }:
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState<CamsPdfImportResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The "how to generate your statement" guide (same as the /cams-upload page)
+  // is expanded by default so first-time users see the steps; collapsible so a
+  // returning user re-uploading isn't forced to scroll past it.
+  const [showGuide, setShowGuide] = useState(true);
 
   useEffect(() => {
     if (!open) {
@@ -40,6 +45,7 @@ const CamsUploadModal = ({ open, onClose, onUploaded, replaceExisting = false }:
       setUploading(false);
       setResult(null);
       setError(null);
+      setShowGuide(true);
     }
   }, [open]);
 
@@ -125,7 +131,14 @@ const CamsUploadModal = ({ open, onClose, onUploaded, replaceExisting = false }:
         >
           <motion.div
             className="relative bg-card shadow-xl"
-            style={{ width: "90%", maxWidth: 380, borderRadius: 16, padding: 24 }}
+            style={{
+              width: "90%",
+              maxWidth: 380,
+              maxHeight: "90vh",
+              overflowY: "auto",
+              borderRadius: 16,
+              padding: 24,
+            }}
             onClick={(e) => e.stopPropagation()}
             initial={{ opacity: 0, scale: 0.92, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -151,7 +164,40 @@ const CamsUploadModal = ({ open, onClose, onUploaded, replaceExisting = false }:
 
             {!done && (
               <>
+                {/* Step-by-step instructions for generating the statement —
+                    same guide as the dedicated /cams-upload page. Collapsible
+                    so a returning user can jump straight to the file picker. */}
                 <div className="mt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowGuide((v) => !v)}
+                    className="flex w-full items-center justify-between rounded-lg bg-muted/40 px-3 py-2 text-left transition-colors hover:bg-muted/60"
+                  >
+                    <span className="text-[12px] font-medium text-foreground">
+                      How to get your CAMS statement
+                    </span>
+                    <ChevronDown
+                      className={`h-4 w-4 text-muted-foreground transition-transform ${
+                        showGuide ? "rotate-180" : ""
+                      }`}
+                    />
+                  </button>
+                  {showGuide && (
+                    <div className="mt-2">
+                      <CamsStatementGuide compact />
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-4">
+                  <div className="mb-2 flex items-center gap-2">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-semibold text-primary">
+                      2
+                    </span>
+                    <p className="text-[12px] font-medium text-foreground">
+                      Upload the statement you received
+                    </p>
+                  </div>
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}

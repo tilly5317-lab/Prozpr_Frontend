@@ -742,10 +742,17 @@ export async function renameChatSession(
 export async function rateChatSession(
   sessionId: string,
   rating: number,
+  comment?: string,
 ): Promise<ChatSessionInfo> {
+  // `comment` is optional free-text feedback. The backend currently persists
+  // only `rating` and ignores unknown body fields, so sending it is harmless and
+  // forward-compatible — add a column server-side to start storing it.
+  const body: { rating: number; comment?: string } = { rating };
+  const trimmed = comment?.trim();
+  if (trimmed) body.comment = trimmed;
   return request<ChatSessionInfo>(`/chat/sessions/${sessionId}/rating`, {
     method: "PATCH",
-    body: JSON.stringify({ rating }),
+    body: JSON.stringify(body),
   });
 }
 

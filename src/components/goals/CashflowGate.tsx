@@ -177,15 +177,23 @@ const CashflowGate = ({ onReady, editSignal, autoOpenInputs }: CashflowGateProps
     if (!readiness) return;
     const seed: Record<string, string> = {};
     for (const f of readiness.fields) {
-      if (f.key === "financial_assets" && cashAssets.loaded) {
+      if (f.key === "current_portfolio_corpus") {
+        // Always show the LIVE portfolio value (today's NAV, from /portfolio) so
+        // the corpus tracks the current value on a daily basis — not the frozen
+        // statement-date figure stored on the profile. Fall back to the stored
+        // CAMS figure only when there's no live portfolio value yet.
+        seed[f.key] =
+          portfolioValue != null && portfolioValue > 0
+            ? String(Math.round(portfolioValue))
+            : f.value != null
+              ? String(f.value)
+              : "";
+      } else if (f.key === "financial_assets" && cashAssets.loaded) {
         // Cash-only figure from the profile, never the readiness aggregate that
         // also includes "other assets".
         seed[f.key] = cashAssets.value != null ? String(Math.round(cashAssets.value)) : "";
       } else if (f.value != null) {
         seed[f.key] = String(f.value);
-      } else if (f.key === "current_portfolio_corpus" && portfolioValue != null) {
-        // Show the MF portfolio corpus from the live portfolio value.
-        seed[f.key] = String(Math.round(portfolioValue));
       } else {
         seed[f.key] = "";
       }
