@@ -134,6 +134,14 @@ const CashflowGate = ({ onReady, editSignal, autoOpenInputs }: CashflowGateProps
     value: null,
     loaded: false,
   });
+  // Retirement-amount entry: whether the figure is in today's money or a future
+  // amount (at retirement), plus the inflation rate used to discount a future
+  // amount back to a present value. 6% is the standard Prozpr assumption.
+  // null = nothing selected yet (the question is optional). If an amount is
+  // entered without a choice, we treat it as a present-value figure on save.
+  const [corpusKind, setCorpusKind] = useState<"present" | "future" | null>(null);
+  const [corpusInflation, setCorpusInflation] = useState("");
+  const PROZPR_INFLATION = 6;
 
   useEffect(() => {
     let active = true;
@@ -184,8 +192,28 @@ const CashflowGate = ({ onReady, editSignal, autoOpenInputs }: CashflowGateProps
     }
     setValues(seed);
     setErrors({});
+    // Leave the present/future toggle unselected — the question is optional.
+    setCorpusKind(null);
+    setCorpusInflation("");
     setFormOpen(true);
   }, [readiness, portfolioValue, cashAssets]);
+
+  // Whole years from now until the planned retirement age (DOB + retirement_age
+  // from the form values; falls back to the standard age 60). Used to discount a
+  // future-dated retirement amount back to today's money.
+  const yearsToRetirement = useCallback((): number => {
+    const dob = values["date_of_birth"];
+    if (!dob) return 0;
+    const birth = new Date(dob);
+    if (Number.isNaN(birth.getTime())) return 0;
+    const now = new Date();
+    let age = now.getFullYear() - birth.getFullYear();
+    const m = now.getMonth() - birth.getMonth();
+    if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) age -= 1;
+    const retRaw = Number(values["retirement_age"]);
+    const retAge = Number.isFinite(retRaw) && retRaw > 0 ? retRaw : 60;
+    return Math.max(0, retAge - age);
+  }, [values]);
 
   // Open the panel when the parent bumps editSignal (Settings button). Skip the
   // initial mount (editSignal === undefined / 0) so it only reacts to clicks.
@@ -254,6 +282,26 @@ const CashflowGate = ({ onReady, editSignal, autoOpenInputs }: CashflowGateProps
         out[f.key] = raw;
         continue;
       }
+      if (f.key === "target_corpus") {
+        // Retirement amount → always stored as a present-value figure. A future
+        // amount is discounted back to today using the chosen inflation rate.
+        const amt = Number(raw);
+        if (!Number.isFinite(amt) || amt < 0) {
+          nextErrors[f.key] = "Enter a valid number";
+          continue;
+        }
+        if (corpusKind === "future") {
+          const inflPct = corpusInflation.trim() === "" ? PROZPR_INFLATION : Number(corpusInflation);
+          if (!Number.isFinite(inflPct) || inflPct < 0 || inflPct > 50) {
+            nextErrors[f.key] = "Inflation must be 0–50%";
+            continue;
+          }
+          out[f.key] = Math.round(amt / Math.pow(1 + inflPct / 100, yearsToRetirement()));
+        } else {
+          out[f.key] = Math.round(amt);
+        }
+        continue;
+      }
       const n = Number(raw);
       if (!Number.isFinite(n) || n < 0) {
         nextErrors[f.key] = "Enter a valid number";
@@ -305,11 +353,89 @@ const CashflowGate = ({ onReady, editSignal, autoOpenInputs }: CashflowGateProps
     } finally {
       setSaving(false);
     }
-  }, [readiness, values, onReady]);
+  }, [readiness, values, onReady, corpusKind, corpusInflation, yearsToRetirement]);
 
   const renderEditableField = (f: CashflowReadinessField) => {
     const err = errors[f.key];
     const showMissing = !f.present && !f.optional;
+
+    // Retirement amount — money input plus a present/future-value toggle and (for
+    // future amounts) an inflation rate with the Prozpr suggestion.
+    if (f.key === "target_corpus") {
+      return (
+        <div key={f.key}>
+          <label className="block text-xs font-medium text-foreground/90">
+            {f.label}
+            {f.unit ? <span className="ml-1 font-normal text-muted-foreground">({f.unit})</span> : null}
+          </label>
+          <input
+            type="text"
+            inputMode="numeric"
+            value={formatWithCommas(values[f.key] ?? "")}
+            onChange={(e) => setVal(f.key, e.target.value.replace(/\D/g, ""))}
+            placeholder="e.g. 5,00,00,000"
+            className={`${inputClass} mt-1.5 ${err ? "border-destructive ring-1 ring-destructive" : ""}`}
+          />
+          <div className="mt-2 flex gap-1.5">
+            {([
+              { id: "present" as const, label: "Today's value" },
+              { id: "future" as const, label: "Future value" },
+            ]).map((opt) => {
+              const active = corpusKind === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setCorpusKind(opt.id)}
+                  className={`flex flex-1 flex-col items-center gap-0.5 rounded-lg border px-2 py-1.5 text-center text-[11px] font-medium transition-colors ${
+                    active
+                      ? "border-[#D4A868]/60 bg-[#D4A868]/10 text-foreground"
+                      : "border-border bg-background text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {opt.label}
+                  <span className="font-normal text-muted-foreground/70">
+                    {opt.id === "present" ? "in today's money" : "amount at retirement"}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          {corpusKind === "future" && (
+            <div className="mt-2">
+              <label className="block text-[11px] font-medium text-muted-foreground">
+                Expected inflation (%/yr)
+              </label>
+              <input
+                type="number"
+                inputMode="decimal"
+                step="0.5"
+                value={corpusInflation}
+                onChange={(e) => setCorpusInflation(e.target.value)}
+                placeholder={String(PROZPR_INFLATION)}
+                className={`${inputClass} mt-1.5`}
+              />
+              <button
+                type="button"
+                onClick={() => setCorpusInflation(String(PROZPR_INFLATION))}
+                className="mt-1.5 inline-flex items-center gap-1 rounded-full border border-[#D4A868]/40 bg-[#D4A868]/[0.06] px-2.5 py-1 text-[10.5px] font-medium text-[#D4A868] transition-colors hover:bg-[#D4A868]/10"
+              >
+                <Sparkles className="h-3 w-3" /> Prozpr suggests {PROZPR_INFLATION}%
+              </button>
+              <p className="mt-1 text-[10.5px] leading-snug text-muted-foreground/80">
+                We&apos;ll discount this back to today&apos;s money over your {yearsToRetirement()} year
+                {yearsToRetirement() === 1 ? "" : "s"} to retirement.
+              </p>
+            </div>
+          )}
+          {f.help && !err && (
+            <p className="mt-1 text-[10.5px] leading-snug text-muted-foreground/80">{f.help}</p>
+          )}
+          {err && <p className="mt-1 text-[10.5px] font-medium text-destructive">{err}</p>}
+        </div>
+      );
+    }
+
     return (
       <div key={f.key}>
         <label className="flex items-center justify-between text-xs font-medium text-foreground/90">
@@ -320,7 +446,7 @@ const CashflowGate = ({ onReady, editSignal, autoOpenInputs }: CashflowGateProps
             ) : null}
           </span>
           {showMissing && (
-            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-muted-foreground">
               <AlertCircle className="h-3 w-3" /> Needed
             </span>
           )}
@@ -330,6 +456,16 @@ const CashflowGate = ({ onReady, editSignal, autoOpenInputs }: CashflowGateProps
             type="date"
             value={values[f.key] ?? ""}
             onChange={(e) => setVal(f.key, e.target.value)}
+            className={`${inputClass} mt-1.5 ${err ? "border-destructive ring-1 ring-destructive" : ""}`}
+          />
+        ) : f.kind === "money" ? (
+          // Money fields show live Indian-grouped commas (12,34,567) while the
+          // stored value stays digits-only, so saveInputs' Number() parse works.
+          <input
+            type="text"
+            inputMode="numeric"
+            value={formatWithCommas(values[f.key] ?? "")}
+            onChange={(e) => setVal(f.key, e.target.value.replace(/\D/g, ""))}
             className={`${inputClass} mt-1.5 ${err ? "border-destructive ring-1 ring-destructive" : ""}`}
           />
         ) : (
@@ -439,7 +575,7 @@ const CashflowGate = ({ onReady, editSignal, autoOpenInputs }: CashflowGateProps
                 {missingFields.map((f) => (
                   <span
                     key={f.key}
-                    className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/5 px-2 py-0.5 text-[10.5px] font-medium text-amber-700 dark:text-amber-400"
+                    className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10.5px] font-medium text-muted-foreground"
                   >
                     <AlertCircle className="h-3 w-3" /> {f.label}
                   </span>

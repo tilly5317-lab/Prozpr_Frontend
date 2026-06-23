@@ -5,7 +5,7 @@ import { formatInrMillions } from "@/lib/utils";
 // Canonical asset-class palette (app-wide): Equity = blue, Debt = teal,
 // Hybrid/Gold = amber, Cash = slate, Alternatives = maroon.
 const ASSET_PALETTE: Record<string, string> = {
-  Equity: "hsl(215 60% 48%)",
+  Equity: "#2563EB",
   Debt: "hsl(188 52% 41%)",
   Hybrid: "hsl(38 64% 47%)",
   Gold: "hsl(38 64% 47%)",
@@ -16,7 +16,7 @@ const ASSET_PALETTE: Record<string, string> = {
 };
 
 const FALLBACK = [
-  "hsl(215 60% 48%)",
+  "#2563EB",
   "hsl(188 52% 41%)",
   "hsl(38 64% 47%)",
   "hsl(214 14% 47%)",

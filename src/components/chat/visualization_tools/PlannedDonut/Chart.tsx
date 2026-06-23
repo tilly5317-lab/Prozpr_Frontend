@@ -5,7 +5,7 @@ import { formatInrMillions } from "@/lib/utils";
 // Canonical asset-class palette (app-wide), with lighter tints appended so
 // there are enough distinct hues for ~6-8 sub-categories.
 const PALETTE = [
-  "hsl(215 60% 48%)",   // equity
+  "#2563EB",            // equity
   "hsl(188 52% 41%)",   // debt
   "hsl(38 64% 47%)",    // hybrid
   "hsl(214 14% 47%)",   // cash

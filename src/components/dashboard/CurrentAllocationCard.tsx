@@ -11,7 +11,7 @@ import type { PortfolioDetail } from "@/lib/api";
 type HoldingBucket = "Equity" | "Debt" | "Others";
 
 // Canonical asset-class palette (app-wide).
-const EQUITY_COLOR = "hsl(215 60% 48%)";
+const EQUITY_COLOR = "#2563EB";
 const DEBT_COLOR = "hsl(188 52% 41%)";
 const GOLD_COLOR = "hsl(38 64% 47%)";   // Hybrid / Others
 const CASH_COLOR = "hsl(214 14% 47%)";
