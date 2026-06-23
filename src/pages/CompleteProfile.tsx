@@ -165,11 +165,11 @@ const BEHAV_Q1_OPTIONS = [
 ];
 
 const BEHAV_Q2_OPTIONS = [
-  "Guaranteed",
-  "Stable reliable",
-  "Some variability",
-  "Moderate variability",
-  "High returns",
+  "Keep it safe — I'll accept low returns to protect my money",
+  "Mostly steady — small dips are fine for modest growth",
+  "Balanced — I'll ride moderate ups and downs for moderate growth",
+  "Growth-first — I can handle big swings for higher long-term returns",
+  "Maximise growth — I'm comfortable with large losses while chasing the highest returns",
 ];
 
 const BEHAV_Q3_OPTIONS = [
@@ -247,7 +247,6 @@ const OTHER_ASSET_SUGGESTIONS = [
   "ESOPs (unvested)",
   "Private Equity",
   "REITs / Real Estate Funds",
-  "Fixed Deposits",
   "Crypto",
   "Art & Collectibles",
 ];
@@ -1210,7 +1209,7 @@ const CompleteProfile = () => {
             <div>
               <div className="space-y-3">
                 <div>
-                  <label className="text-[12px] text-muted-foreground mb-0.5 block">Earning members</label>
+                  <FieldLabel>Earning members</FieldLabel>
                   <input
                     type="number"
                     min={0}
@@ -1221,7 +1220,7 @@ const CompleteProfile = () => {
                   />
                 </div>
                 <div>
-                  <label className="text-[12px] text-muted-foreground mb-0.5 block">Dependents</label>
+                  <FieldLabel>Dependents</FieldLabel>
                   <input
                     type="number"
                     min={0}
@@ -1253,7 +1252,7 @@ const CompleteProfile = () => {
            <div className="space-y-3">
             <div>
               <FieldLabel>What makes up your primary income?</FieldLabel>
-              <div className="flex flex-wrap gap-1.5">
+              <div className="flex flex-wrap gap-x-2 gap-y-2.5 mt-1">
                 {INCOME_SOURCE_OPTIONS.map((s) => (
                   <Chip
                     key={s}
@@ -1279,7 +1278,7 @@ const CompleteProfile = () => {
            <div className="space-y-3">
             <div>
               <FieldLabel>Cash &amp; debt</FieldLabel>
-              <p className="text-[12.5px] text-muted-foreground -mt-0.5 mb-2 leading-snug">Bank balance, fixed deposits and bonds. Equities go in the next field.</p>
+              <p className="text-[12.5px] text-muted-foreground -mt-0.5 mb-2 leading-snug">Bank balance, fixed deposits and bonds.</p>
               <TextInput value={investableAssets} onChange={setInvestableAssets} prefix="₹" placeholder="e.g. 42,00,000" />
             </div>
             <div>
@@ -1737,15 +1736,20 @@ const CompleteProfile = () => {
           </div>
           ) },
           { label: "Behavioural risk", body: (
-          <div className="space-y-5">
+          <div className="space-y-4">
             {([
               { label: "How would you describe your investment experience?", options: BEHAV_Q1_OPTIONS, value: behavQ1, setter: setBehavQ1 },
               { label: "How would you describe your investment focus?", options: BEHAV_Q2_OPTIONS, value: behavQ2, setter: setBehavQ2 },
               { label: "If in the current year the value of your investments declines by ~20%, what would you do?", options: BEHAV_Q3_OPTIONS, value: behavQ3, setter: setBehavQ3 },
-            ] as const).map((q) => (
-              <div key={q.label}>
-                <p className="text-xs font-semibold text-foreground mb-2">{q.label}</p>
-                <div className="space-y-1.5">
+            ] as const).map((q, qi) => (
+              <div key={q.label} className="rounded-2xl border border-border bg-muted/20 p-4">
+                <p className="mb-3 flex items-start gap-2 text-[14px] font-semibold text-foreground leading-snug">
+                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-wealth-navy text-[11px] font-bold text-primary-foreground">
+                    {qi + 1}
+                  </span>
+                  <span>{q.label}</span>
+                </p>
+                <div className="space-y-2">
                   {q.options.map((o) => (
                     <button
                       key={o}
@@ -1972,7 +1976,7 @@ const CompleteProfile = () => {
                         <span className="text-[12px] text-muted-foreground mb-0.5 block">
                           {idx === 1
                             ? `Opens Goal planning · ${meta.estimate}`
-                            : `${groups.length} quick ${groups.length === 1 ? "step" : "steps"} · ${meta.estimate}`}
+                            : `${groups.length} ${groups.length === 1 ? "step" : "steps"} · ${meta.estimate}`}
                         </span>
                       </div>
                     </div>
@@ -2102,7 +2106,7 @@ const CompleteProfile = () => {
                     ) : (
                       <>
                         Save and continue
-                        {isLastGroup ? <Check className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        <Check className="h-4 w-4" />
                       </>
                     )}
                   </button>

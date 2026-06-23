@@ -27,7 +27,7 @@ type Bucket = "equity" | "debt" | "others";
 
 const BUCKET_ORDER: Bucket[] = ["equity", "debt", "others"];
 const BUCKET_META: Record<Bucket, { label: string; color: string }> = {
-  equity: { label: "Equity", color: "hsl(215 60% 48%)" },
+  equity: { label: "Equity", color: "#2563EB" },
   debt: { label: "Debt", color: "hsl(188 52% 41%)" },
   others: { label: "Others", color: "hsl(38 64% 47%)" },
 };
@@ -95,17 +95,32 @@ function compactINR(n: number): string {
   return `${sign}₹${Math.round(a)}`;
 }
 
-function buildDriftRows(subs: RebalancingSubgroupSummary[]): DriftRow[] {
-  if (!subs.length) return [];
-  const agg: Record<Bucket, { current: number; target: number }> = {
-    equity: { current: 0, target: 0 },
-    debt: { current: 0, target: 0 },
-    others: { current: 0, target: 0 },
+function buildDriftRows(
+  subs: RebalancingSubgroupSummary[],
+  holdings: PortfolioDetail["holdings"] = [],
+): DriftRow[] {
+  if (!subs.length && !holdings.length) return [];
+  const agg: Record<Bucket, { current: number; target: number; inSubs: boolean }> = {
+    equity: { current: 0, target: 0, inSubs: false },
+    debt: { current: 0, target: 0, inSubs: false },
+    others: { current: 0, target: 0, inSubs: false },
   };
   for (const s of subs) {
     const b = toBucket(s.asset_class);
     agg[b].current += s.current_holding_inr || 0;
     agg[b].target += s.goal_target_inr || 0;
+    agg[b].inSubs = true;
+  }
+  // Show every asset class the user actually holds — even ones the rebalancing
+  // run didn't touch (no recommendation). Those fill from the live portfolio with
+  // target = current so the row reads "On target".
+  const heldByBucket: Record<Bucket, number> = { equity: 0, debt: 0, others: 0 };
+  for (const h of holdings) heldByBucket[toBucket(h.asset_class)] += h.current_value || 0;
+  for (const b of BUCKET_ORDER) {
+    if (!agg[b].inSubs && heldByBucket[b] > 0) {
+      agg[b].current = heldByBucket[b];
+      agg[b].target = heldByBucket[b];
+    }
   }
   const totalCur = BUCKET_ORDER.reduce((sum, b) => sum + agg[b].current, 0);
   const totalTgt = BUCKET_ORDER.reduce((sum, b) => sum + agg[b].target, 0);
@@ -269,8 +284,18 @@ const NEUTRAL = "hsl(var(--muted-foreground))";
 // Current vs target bars now use each asset class's own colour: Target is the
 // solid asset colour, Current is the same colour lightened. `withAlpha` turns an
 // `hsl(h s% l%)` token into a translucent version.
-const withAlpha = (color: string, a: number): string =>
-  color.startsWith("hsl") ? color.replace(/\)\s*$/, ` / ${a})`) : color;
+const withAlpha = (color: string, a: number): string => {
+  if (color.startsWith("hsl")) return color.replace(/\)\s*$/, ` / ${a})`);
+  if (color.startsWith("#")) {
+    const hex = color.slice(1);
+    const full = hex.length === 3 ? hex.split("").map((c) => c + c).join("") : hex;
+    const alpha = Math.round(Math.min(1, Math.max(0, a)) * 255)
+      .toString(16)
+      .padStart(2, "0");
+    return `#${full}${alpha}`;
+  }
+  return color;
+};
 
 /* ── Example plan ──────────────────────────────────────────────────────────
    Shown when the user hasn't supplied the inputs the engine needs yet (e.g. date
@@ -435,7 +460,10 @@ const RebalanceExplanation = () => {
     }
   }, []);
 
-  const driftRows = useMemo(() => buildDriftRows(detail?.subgroup_summaries ?? []), [detail]);
+  const driftRows = useMemo(
+    () => buildDriftRows(detail?.subgroup_summaries ?? [], portfolio?.holdings ?? []),
+    [detail, portfolio],
+  );
   const uiTrades = useMemo(() => (detail?.trades ?? []).map(mapTrade), [detail]);
   const tradeGroups = useMemo(() => groupTradesByReason(uiTrades), [uiTrades]);
   const keptFunds = useMemo(() => buildKeptFunds(portfolio, uiTrades), [portfolio, uiTrades]);
@@ -518,7 +546,7 @@ const RebalanceExplanation = () => {
         {!dataLoading && !dataError && (detail || isExample) && (
           <>
             <div className="-mb-1 flex items-center gap-2">
-              <span className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">Rebalancing plan</span>
+              <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-foreground/80">Rebalancing plan</span>
               {isExample && (
                 <span className="rounded-full border border-[#D4A868]/40 bg-[#D4A868]/10 px-2 py-0.5 text-[9.5px] font-semibold uppercase tracking-wider text-[#9A7B2E]">
                   Example
@@ -722,7 +750,6 @@ const RebalanceExplanation = () => {
                                 </span>
                                 <div className="min-w-0 flex-1">
                                   <p className="text-[13px] leading-tight font-medium text-foreground truncate">{trade.name}</p>
-                                  <p className="text-[10.5px] text-muted-foreground truncate">{trade.category}</p>
                                 </div>
                                 <p className="shrink-0 text-[14px] leading-none font-semibold tabular-nums" style={{ color: tone }}>
                                   {isSell ? "−" : "+"}{trade.amount}
@@ -748,11 +775,11 @@ const RebalanceExplanation = () => {
                   borderRadius: 16,
                 }}
               >
-                <p className="text-[10px] tracking-[0.16em] uppercase" style={{ color: "hsl(150 22% 42%)" }}>
+                <p className="text-[10px] tracking-[0.16em] uppercase" style={{ color: "hsl(var(--muted-foreground))" }}>
                   Funds you're keeping
                 </p>
                 <p className="mt-1 text-[11.5px] leading-snug text-muted-foreground">
-                  Wins or neutral — staying in your portfolio, not part of these trades.
+                  Ahead or neutral — staying in your portfolio, not part of these trades.
                 </p>
                 <div className="mt-3 divide-y divide-border">
                   {keptFundsToShow.map((f) => (
@@ -762,15 +789,15 @@ const RebalanceExplanation = () => {
                         style={{
                           backgroundColor:
                             f.tone === "well"
-                              ? "hsl(var(--wealth-green) / 0.12)"
+                              ? "rgba(99,102,241,0.12)"
                               : "hsl(var(--muted-foreground) / 0.12)",
                           color:
                             f.tone === "well"
-                              ? "hsl(var(--wealth-green))"
+                              ? "#6366F1"
                               : "hsl(var(--muted-foreground))",
                         }}
                       >
-                        {f.tone === "well" ? "Win" : "Neutral"}
+                        {f.tone === "well" ? "Ahead" : "Neutral"}
                       </span>
                       <div className="min-w-0 flex-1">
                         <p className="text-[13px] leading-tight font-medium text-foreground truncate">{f.name}</p>
@@ -817,7 +844,7 @@ const RebalanceExplanation = () => {
                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground py-3.5 text-[15px] font-semibold tracking-wide text-background transition-all active:scale-[0.98] disabled:opacity-60"
               >
                 {approving ? <Loader2 className="h-4 w-4 animate-spin" /> : isApproved ? <Check className="h-4 w-4" /> : null}
-                {isApproved ? "Plan approved" : approving ? "Approving…" : "Proceed"}
+                {isApproved ? "Plan approved" : approving ? "Approving…" : "Approve plan"}
                 {!isApproved && !approving && <ArrowRight className="h-4 w-4" />}
               </button>
             )}

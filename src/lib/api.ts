@@ -1891,6 +1891,8 @@ export interface CashflowInputValues {
   financial_assets?: number;
   equity_shares?: number;
   financial_liabilities_excl_mortgage?: number;
+  /** Desired retirement corpus, stored as a present-value figure (₹ today). */
+  target_corpus?: number;
 }
 
 /**
@@ -1918,7 +1920,10 @@ export async function saveCashflowInputs(v: CashflowInputValues): Promise<void> 
   if (v.assumed_lifespan_years != null) personal.assumed_lifespan_years = v.assumed_lifespan_years;
   if (Object.keys(personal).length > 0) await updatePersonalInfo(personal);
 
-  if (v.retirement_age != null) await updateInvestmentProfile({ retirement_age: v.retirement_age });
+  const investment: InvestmentProfilePayload = {};
+  if (v.retirement_age != null) investment.retirement_age = v.retirement_age;
+  if (v.target_corpus != null) investment.target_corpus = v.target_corpus;
+  if (Object.keys(investment).length > 0) await updateInvestmentProfile(investment);
 
   invalidateUserContextCache();
 }

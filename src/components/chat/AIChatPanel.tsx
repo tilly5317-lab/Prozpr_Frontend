@@ -834,7 +834,13 @@ const AIChatPanel = ({
       setMessages([]);
       setSessionRating(null);
       setRatingDismissed(false);
+<<<<<<< HEAD
       setRatingJustSubmitted(false);
+=======
+      setPendingRating(0);
+      setHoverRating(0);
+      setRatingComment("");
+>>>>>>> 69a1ed0d1f2f7df9074d6532b9bc1062465c0230
       setChatStartTime(formatTimestamp());
       setShowFirstUseHint(true);
       setOnboardingActive(false);
@@ -850,7 +856,13 @@ const AIChatPanel = ({
       sessionIdRef.current = sessionId;
       setSessionRating(null);
       setRatingDismissed(false);
+<<<<<<< HEAD
       setRatingJustSubmitted(false);
+=======
+      setPendingRating(0);
+      setHoverRating(0);
+      setRatingComment("");
+>>>>>>> 69a1ed0d1f2f7df9074d6532b9bc1062465c0230
       setMessages(dummyMessages.map((m) => ({ ...m })));
       setChatStartTime(formatTimestamp(new Date(dummy?.created_at ?? Date.now())));
       setShowFirstUseHint(false);
@@ -865,7 +877,13 @@ const AIChatPanel = ({
       // (and stays silent — no thanks line either, since it wasn't just rated).
       setSessionRating(session.rating ?? null);
       setRatingDismissed(false);
+<<<<<<< HEAD
       setRatingJustSubmitted(false);
+=======
+      setPendingRating(0);
+      setHoverRating(0);
+      setRatingComment("");
+>>>>>>> 69a1ed0d1f2f7df9074d6532b9bc1062465c0230
       setMessages(
         session.messages.map((m) => ({
           role: m.role === "assistant" ? ("ai" as const) : ("user" as const),
@@ -1511,19 +1529,43 @@ const AIChatPanel = ({
         return (
           <div className="mx-auto mt-2 flex w-full max-w-[90%] flex-col items-center gap-2 rounded-2xl border border-border/40 bg-muted/30 px-4 py-3">
             <p className="text-[12px] font-medium text-foreground">How is Pi doing so far?</p>
-            <div className="flex items-center gap-1">
-              {[1, 2, 3, 4, 5].map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => submitRating(n)}
-                  aria-label={`Rate ${n} out of 5`}
-                  className="rounded-full p-1 text-muted-foreground/40 transition-colors hover:text-amber-400"
-                >
-                  <Star className="h-5 w-5" />
-                </button>
-              ))}
+            <div className="flex items-center gap-1" onMouseLeave={() => setHoverRating(0)}>
+              {[1, 2, 3, 4, 5].map((n) => {
+                const filled = n <= (hoverRating || pendingRating);
+                return (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setPendingRating(n)}
+                    onMouseEnter={() => setHoverRating(n)}
+                    aria-label={`Rate ${n} out of 5`}
+                    className={`rounded-full p-1 transition-colors ${
+                      filled ? "text-amber-400" : "text-muted-foreground/40 hover:text-amber-400"
+                    }`}
+                  >
+                    <Star className="h-5 w-5" fill={filled ? "currentColor" : "none"} />
+                  </button>
+                );
+              })}
             </div>
+            {pendingRating > 0 && (
+              <div className="flex w-full flex-col items-stretch gap-2">
+                <textarea
+                  value={ratingComment}
+                  onChange={(e) => setRatingComment(e.target.value)}
+                  rows={2}
+                  placeholder="Add a comment (optional)"
+                  className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2 text-[12px] text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-accent/20"
+                />
+                <button
+                  type="button"
+                  onClick={() => submitRating(pendingRating, ratingComment.trim() || undefined)}
+                  className="w-full rounded-xl bg-foreground py-2 text-[12px] font-semibold text-background transition-opacity hover:opacity-90"
+                >
+                  Submit rating
+                </button>
+              </div>
+            )}
             <button
               type="button"
               onClick={() => setRatingDismissed(true)}
