@@ -555,7 +555,7 @@ const PortfolioDashboard = () => {
         </div>
         <div className="flex items-center gap-2">
           <a
-            href="https://wa.me/"
+            href="https://wa.me/919007016819"
             target="_blank"
             rel="noopener noreferrer"
             aria-label="Chat on WhatsApp"
