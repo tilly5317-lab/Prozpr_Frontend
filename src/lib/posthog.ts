@@ -20,6 +20,10 @@ export function initPostHog() {
     capture_pageview: false, // sent manually on each React-Router navigation
     capture_pageleave: true,
     person_profiles: "identified_only", // only persist profiles for logged-in users
+    disable_session_recording: false, // enable session replay (also turn on "Record user sessions" in PostHog → Settings → Replay)
+    session_recording: {
+      maskAllInputs: true, // never capture what users type into inputs (sensitive financial data)
+    },
   });
 }
 
