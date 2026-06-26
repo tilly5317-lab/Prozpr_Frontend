@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import WelcomeScreen from "./WelcomeScreen";
 import {
@@ -26,96 +26,37 @@ interface NewOnboardingFlowProps {
   onComplete: () => void;
 }
 
-/* ─── Drum-roll date picker ─── */
-const DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
-const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
-const currentYear = new Date().getFullYear();
-const YEARS = Array.from({ length: 80 }, (_, i) => currentYear - 18 - i);
-
-const MONTH_LABELS: Record<number, string> = {
-  1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun",
-  7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec",
+/* ─── Date of birth input (DD/MM/YYYY, slashes inserted automatically) ─── */
+// Keep only digits (cap at 8 → DDMMYYYY) and insert "/" after the day & month
+// so the user never has to type a slash themselves.
+const formatDobInput = (raw: string) => {
+  const d = raw.replace(/\D/g, "").slice(0, 8);
+  if (d.length <= 2) return d;
+  if (d.length <= 4) return `${d.slice(0, 2)}/${d.slice(2)}`;
+  return `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}`;
 };
 
-const ITEM_H = 28;
-const VISIBLE = 3;
+// Parse a complete DD/MM/YYYY string, rejecting impossible dates (e.g. 31/02).
+// Returns null until the field holds a real calendar date.
+const parseDob = (s: string): { d: number; m: number; y: number } | null => {
+  const match = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) return null;
+  const d = Number(match[1]);
+  const m = Number(match[2]);
+  const y = Number(match[3]);
+  const dt = new Date(y, m - 1, d);
+  if (dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d) {
+    return null;
+  }
+  return { d, m, y };
+};
 
-const DrumColumn = ({
-  items,
-  value,
-  onChange,
-  renderLabel,
-}: {
-  items: number[];
-  value: number;
-  onChange: (v: number) => void;
-  renderLabel?: (v: number) => string;
-}) => {
-  const ref = useRef<HTMLDivElement>(null);
-  const isSettling = useRef(false);
-  const paddingItems = Math.floor(VISIBLE / 2);
-
-  useEffect(() => {
-    if (!ref.current) return;
-    const idx = items.indexOf(value);
-    if (idx >= 0) {
-      isSettling.current = true;
-      ref.current.scrollTo({ top: idx * ITEM_H, behavior: "smooth" });
-      const timer = setTimeout(() => { isSettling.current = false; }, 400);
-      return () => clearTimeout(timer);
-    }
-  }, [value, items]);
-
-  const handleScroll = useCallback(() => {
-    if (!ref.current || isSettling.current) return;
-    const idx = Math.round(ref.current.scrollTop / ITEM_H);
-    const clamped = Math.max(0, Math.min(idx, items.length - 1));
-    if (items[clamped] !== value) {
-      onChange(items[clamped]);
-    }
-  }, [items, value, onChange]);
-
-  return (
-    <div className="relative flex-1" style={{ height: ITEM_H * VISIBLE }}>
-      {/* Centre highlight band */}
-      <div
-        className="absolute inset-x-1 pointer-events-none z-10 rounded-md bg-primary/6"
-        style={{ top: paddingItems * ITEM_H, height: ITEM_H }}
-      />
-      <div
-        ref={ref}
-        onScroll={handleScroll}
-        className="h-full overflow-y-auto snap-y snap-mandatory scrollbar-hide"
-        style={{ scrollSnapType: "y mandatory" }}
-      >
-        {/* Top padding so first item can reach centre */}
-        {Array.from({ length: paddingItems }).map((_, i) => (
-          <div key={`pad-top-${i}`} style={{ height: ITEM_H }} />
-        ))}
-        {items.map((item) => {
-          const idx = items.indexOf(item);
-          const selectedIdx = items.indexOf(value);
-          const distance = Math.abs(idx - selectedIdx);
-          const opacity = distance === 0 ? 1 : 0.15;
-          const fontSize = distance === 0 ? '13px' : '11px';
-          return (
-            <div
-              key={item}
-              className="flex items-center justify-center snap-center transition-all"
-              style={{ height: ITEM_H, opacity, fontWeight: distance === 0 ? 600 : 400, fontSize }}
-              onClick={() => onChange(item)}
-            >
-              {renderLabel ? renderLabel(item) : String(item).padStart(2, "0")}
-            </div>
-          );
-        })}
-        {/* Bottom padding so last item can reach centre */}
-        {Array.from({ length: paddingItems }).map((_, i) => (
-          <div key={`pad-bot-${i}`} style={{ height: ITEM_H }} />
-        ))}
-      </div>
-    </div>
-  );
+// A date of birth can never be today or in the future.
+const isFutureDob = ({ d, m, y }: { d: number; m: number; y: number }) => {
+  const dt = new Date(y, m - 1, d);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return dt.getTime() > today.getTime();
 };
 
 /* ─── Format INR ─── */
@@ -236,7 +177,7 @@ const QUESTION_META: Record<QuestionKey, { title: string; sub: string; Icon: typ
   goals: { title: "What are your key financial goals?", sub: "Pick any that apply — or add your own", Icon: Target },
   horizon: { title: "What's your investment horizon?", sub: "How long you expect to stay invested", Icon: Target },
   income: { title: "What's your annual income range?", sub: "A rough range is fine", Icon: Wallet },
-  expenses: { title: "And your annual expenses?", sub: "Across the whole household", Icon: Wallet },
+  expenses: { title: "And your monthly expenses?", sub: "Across the whole household", Icon: Wallet },
   risk: { title: "What is your investment view?", sub: "How you feel about market ups and downs", Icon: ShieldCheck },
 };
 
@@ -252,16 +193,14 @@ const NewOnboardingFlow = ({ onComplete }: NewOnboardingFlowProps) => {
   const [saving, setSaving] = useState(false);
 
   // Answer state
-  const [dobDay, setDobDay] = useState(15);
-  const [dobMonth, setDobMonth] = useState(6);
-  const [dobYear, setDobYear] = useState(1990);
+  const [dob, setDob] = useState(""); // DD/MM/YYYY (slashes added automatically)
   const [selectedGoals, setSelectedGoals] = useState<string[]>([]);
   const [customGoals, setCustomGoals] = useState<string[]>([]);
   const [addingGoal, setAddingGoal] = useState(false);
   const [newGoalText, setNewGoalText] = useState("");
   const [horizon, setHorizon] = useState("");
   const [incomeRange, setIncomeRange] = useState<[number, number]>([30000000, 70000000]);
-  const [expenseRange, setExpenseRange] = useState<[number, number]>([20000000, 50000000]);
+  const [monthlyExpense, setMonthlyExpense] = useState<number>(0);
   const [investmentView, setInvestmentView] = useState("");
 
   // On entering "About you": read what's already on the profile, prefill it,
@@ -286,12 +225,9 @@ const NewOnboardingFlow = ({ onComplete }: NewOnboardingFlowProps) => {
       if (cancelled) return;
 
       if (profile?.date_of_birth) {
-        const d = new Date(profile.date_of_birth);
-        if (!Number.isNaN(d.getTime())) {
-          setDobYear(d.getFullYear());
-          setDobMonth(d.getMonth() + 1);
-          setDobDay(d.getDate());
-        }
+        // Stored as YYYY-MM-DD → display as DD/MM/YYYY (parsed manually to avoid TZ shifts).
+        const m = profile.date_of_birth.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (m) setDob(`${m[3]}/${m[2]}/${m[1]}`);
       } else {
         missing.push("dob");
       }
@@ -315,8 +251,7 @@ const NewOnboardingFlow = ({ onComplete }: NewOnboardingFlowProps) => {
       }
 
       if (profile?.monthly_household_expense != null && profile.monthly_household_expense > 0) {
-        const annual = profile.monthly_household_expense * 12;
-        setExpenseRange([annual, annual]);
+        setMonthlyExpense(Math.round(profile.monthly_household_expense));
       } else {
         missing.push("expenses");
       }
@@ -361,7 +296,10 @@ const NewOnboardingFlow = ({ onComplete }: NewOnboardingFlowProps) => {
     const asked = (k: QuestionKey) => askKeys.includes(k);
     const input: PersistOnboardingInput = {};
     if (asked("dob")) {
-      input.date_of_birth = `${dobYear}-${String(dobMonth).padStart(2, "0")}-${String(dobDay).padStart(2, "0")}`;
+      const p = parseDob(dob);
+      if (p) {
+        input.date_of_birth = `${p.y}-${String(p.m).padStart(2, "0")}-${String(p.d).padStart(2, "0")}`;
+      }
     }
     if (asked("goals")) {
       input.selected_goals = selectedGoals;
@@ -373,8 +311,10 @@ const NewOnboardingFlow = ({ onComplete }: NewOnboardingFlowProps) => {
       input.annual_income_max = incomeRange[1];
     }
     if (asked("expenses")) {
-      input.annual_expense_min = expenseRange[0];
-      input.annual_expense_max = expenseRange[1];
+      // User enters a monthly figure; the backend stores an annual one, so ×12.
+      const annual = monthlyExpense * 12;
+      input.annual_expense_min = annual;
+      input.annual_expense_max = annual;
     }
     if (asked("risk") && investmentView) {
       input.risk_level = INVESTMENT_VIEW_TO_RISK_LEVEL[investmentView];
@@ -393,10 +333,10 @@ const NewOnboardingFlow = ({ onComplete }: NewOnboardingFlowProps) => {
     navigate("/link-accounts");
   };
 
-  // Compute subtexts
+  // Compute subtexts. Income is annual (range); expense is monthly → annualise to compare.
   const avgIncome = (incomeRange[0] + incomeRange[1]) / 2;
-  const avgExpense = (expenseRange[0] + expenseRange[1]) / 2;
-  const expensePct = avgIncome > 0 ? Math.round((avgExpense / avgIncome) * 100) : 0;
+  const annualExpense = monthlyExpense * 12;
+  const expensePct = avgIncome > 0 ? Math.round((annualExpense / avgIncome) * 100) : 0;
 
   /* ─── SCREEN 0: Welcome ─── */
   if (step === -1) {
@@ -460,24 +400,30 @@ const NewOnboardingFlow = ({ onComplete }: NewOnboardingFlowProps) => {
   /* ─── Per-question bodies ─── */
   const renderQuestionBody = (key: QuestionKey) => {
     switch (key) {
-      case "dob":
+      case "dob": {
+        const parsed = parseDob(dob);
+        const showError = dob.length === 10 && (!parsed || isFutureDob(parsed));
         return (
-          <div className="flex gap-1 rounded-xl overflow-hidden bg-secondary/20 p-2 max-w-[260px] mx-auto">
-            <DrumColumn items={DAYS} value={dobDay} onChange={setDobDay} />
-            <DrumColumn
-              items={MONTHS}
-              value={dobMonth}
-              onChange={setDobMonth}
-              renderLabel={(v) => MONTH_LABELS[v]}
+          <div className="space-y-2 max-w-[260px] mx-auto">
+            <input
+              type="text"
+              inputMode="numeric"
+              value={dob}
+              onChange={(e) => setDob(formatDobInput(e.target.value))}
+              placeholder="DD/MM/YYYY"
+              maxLength={10}
+              className={`w-full rounded-lg border bg-background px-4 py-3 text-center text-base tracking-[0.25em] text-foreground outline-none focus:border-primary ${
+                showError ? "border-destructive" : "border-border"
+              }`}
             />
-            <DrumColumn
-              items={YEARS}
-              value={dobYear}
-              onChange={setDobYear}
-              renderLabel={(v) => String(v)}
-            />
+            {showError && (
+              <p className="text-[11px] text-center text-destructive">
+                {parsed ? "Date of birth can't be in the future" : "Please enter a valid date"}
+              </p>
+            )}
           </div>
         );
+      }
       case "goals":
         return (
           <div className="flex flex-wrap gap-2">
@@ -570,12 +516,29 @@ const NewOnboardingFlow = ({ onComplete }: NewOnboardingFlowProps) => {
         );
       case "expenses":
         return (
-          <DualRangeSlider
-            label="Annual Expenses Range (₹)"
-            range={expenseRange}
-            onChange={setExpenseRange}
-            subtext={`That's roughly ${expensePct}% of your income range`}
-          />
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-muted-foreground">
+              Monthly Expenses (₹)
+            </label>
+            <div className="flex items-center rounded-lg border border-border bg-background px-3 focus-within:border-primary">
+              <span className="text-sm text-muted-foreground">₹</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={monthlyExpense > 0 ? monthlyExpense.toLocaleString("en-IN") : ""}
+                onChange={(e) =>
+                  setMonthlyExpense(Number(e.target.value.replace(/[^\d]/g, "")) || 0)
+                }
+                placeholder="e.g. 80,000"
+                className="flex-1 bg-transparent px-2 py-3 text-base text-foreground outline-none"
+              />
+            </div>
+            {monthlyExpense > 0 && expensePct > 0 && (
+              <p className="text-[11px] text-muted-foreground italic">
+                That's roughly {expensePct}% of your annual income
+              </p>
+            )}
+          </div>
         );
       case "risk":
         return (
@@ -605,6 +568,11 @@ const NewOnboardingFlow = ({ onComplete }: NewOnboardingFlowProps) => {
   const currentKey = askKeys && totalQ > 0 ? askKeys[Math.min(qIndex, totalQ - 1)] : null;
   const isLast = qIndex >= totalQ - 1;
   const meta = currentKey ? QUESTION_META[currentKey] : null;
+
+  // Block advancing past the DOB question until a valid, non-future date is entered.
+  const dobParsed = parseDob(dob);
+  const dobValid = !!dobParsed && !isFutureDob(dobParsed);
+  const canAdvance = currentKey !== "dob" || dobValid;
 
   return (
     <div className="mobile-container flex flex-col bg-background min-h-screen">
@@ -681,7 +649,7 @@ const NewOnboardingFlow = ({ onComplete }: NewOnboardingFlowProps) => {
               )}
               <button
                 onClick={() => (isLast ? void handleFinish() : setQIndex((i) => i + 1))}
-                disabled={saving}
+                disabled={saving || !canAdvance}
                 className="flex flex-1 items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold text-primary-foreground tracking-wide transition-all active:scale-[0.98] disabled:opacity-60"
               >
                 {saving ? (

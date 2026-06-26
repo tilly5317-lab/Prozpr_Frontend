@@ -855,6 +855,8 @@ export interface RiskProfilePayload {
   risk_level?: number | null;
   risk_capacity?: string | null;
   investment_experience?: string | null;
+  /** Behavioural "investment focus" answer (capital-preservation … maximise-growth). */
+  investment_focus?: string | null;
   investment_horizon?: string | null;
   drop_reaction?: string | null;
   max_drawdown?: number | null;
@@ -1327,27 +1329,38 @@ export async function getAboutYouStatus(): Promise<AboutYouStatus> {
 
   const confirmed = [false, false, false, false];
 
-  // 0) Financial picture — investable assets, or any onboarding finance answer.
-  const inv = profile?.investment_profile;
-  if (inv?.investable_assets != null) confirmed[0] = true;
+  // 0) Financial picture — all required finance answers: income, expense, cash & debt.
   if (
     onboarding &&
-    (onboarding.annual_income != null ||
-      onboarding.financial_assets != null ||
-      onboarding.monthly_household_expense != null)
+    onboarding.annual_income != null &&
+    onboarding.monthly_household_expense != null &&
+    onboarding.financial_assets != null
   ) {
     confirmed[0] = true;
   }
 
   // 1) Goals — saved objectives, or at least one goal in the goal planner.
+  const inv = profile?.investment_profile;
   if (inv?.objectives?.length) confirmed[1] = true;
   if (goals.length > 0) confirmed[1] = true;
 
-  // 2) Risk — a chosen risk level.
-  if (profile?.risk_profile?.risk_level != null) confirmed[2] = true;
+  // 2) Risk — investment horizon plus all three behavioural answers.
+  const risk = profile?.risk_profile;
+  if (
+    risk &&
+    risk.investment_horizon &&
+    risk.investment_experience &&
+    risk.investment_focus &&
+    risk.drop_reaction
+  ) {
+    confirmed[2] = true;
+  }
 
-  // 3) Tax — a marginal income-tax rate.
-  if (profile?.tax_profile?.income_tax_rate != null) confirmed[3] = true;
+  // 3) Tax — a marginal income-tax rate and a chosen regime.
+  const tax = profile?.tax_profile;
+  if (tax?.income_tax_rate != null && (tax.tax_regime === "old" || tax.tax_regime === "new")) {
+    confirmed[3] = true;
+  }
 
   const confirmedCount = confirmed.filter(Boolean).length;
   return { confirmedCount, allConfirmed: confirmedCount === 4 };
