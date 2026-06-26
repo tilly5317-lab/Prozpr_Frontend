@@ -618,7 +618,6 @@ const CompleteProfile = () => {
   // Section 3 — How much risk?
   const [riskLevelIdx, setRiskLevelIdx] = useState(2);
   const [riskCapacity, setRiskCapacity] = useState("");
-  const [investmentExperience, setInvestmentExperience] = useState("");
   const [investmentHorizon, setInvestmentHorizon] = useState("");
   const [investmentPref, setInvestmentPref] = useState("");
   const [behavQ1, setBehavQ1] = useState("");
@@ -704,7 +703,8 @@ const CompleteProfile = () => {
           // save writes to) — not from the legacy investment_profile aggregate.
           setEmergencyFund(parseNum(ip.emergency_fund?.toString()));
           if (ip.emergency_fund_months) setEmergencyTimeframe(ip.emergency_fund_months);
-          if (ip.investable_assets != null) newStatuses[0] = "confirmed";
+          // Section 0 completion is decided by the required onboarding-finance answers
+          // below (income + expense + cash & debt), not this legacy aggregate alone.
           if (ip.objectives?.length) {
             setSelectedObjectives(ip.objectives);
             newStatuses[1] = "confirmed";
@@ -715,12 +715,25 @@ const CompleteProfile = () => {
         if (p.risk_profile) {
           const rp = p.risk_profile;
           if (rp.risk_level != null) setRiskLevelIdx(rp.risk_level);
-          if (rp.risk_capacity) setRiskCapacity(rp.risk_capacity);
-          if (rp.investment_experience) setInvestmentExperience(rp.investment_experience);
           if (rp.investment_horizon) setInvestmentHorizon(rp.investment_horizon);
+          // The three behavioural questions round-trip to their own columns:
+          // Q1 → investment_experience, Q2 → investment_focus, Q3 → drop_reaction.
+          if (rp.investment_experience) setBehavQ1(rp.investment_experience);
+          if (rp.investment_focus) setBehavQ2(rp.investment_focus);
+          if (rp.drop_reaction) setBehavQ3(rp.drop_reaction);
+          // Carried-through fields with no dedicated UI yet (kept so they round-trip).
+          if (rp.risk_capacity) setRiskCapacity(rp.risk_capacity);
           if (rp.max_drawdown != null) setMaxDrawdown(String(rp.max_drawdown));
           if (rp.comfort_assets) setComfortAssets(rp.comfort_assets);
-          if (rp.risk_level != null) newStatuses[2] = "confirmed";
+          // Section is complete only with horizon + all three behavioural answers.
+          if (
+            rp.investment_horizon &&
+            rp.investment_experience &&
+            rp.investment_focus &&
+            rp.drop_reaction
+          ) {
+            newStatuses[2] = "confirmed";
+          }
         }
 
         // Section 3 — tax details
@@ -738,7 +751,12 @@ const CompleteProfile = () => {
           }
           // Keep any genuine free-form note (not the legacy regime marker).
           if (tp.notes && !/regime:/i.test(tp.notes)) setTaxNotes(tp.notes);
-          if (tp.income_tax_rate != null) newStatuses[3] = "confirmed";
+          // Section is complete only with both the marginal rate and a chosen regime.
+          const hasRegime =
+            tp.tax_regime === "old" ||
+            tp.tax_regime === "new" ||
+            (!!tp.notes && /regime:\s*(old|new)/i.test(tp.notes));
+          if (tp.income_tax_rate != null && hasRegime) newStatuses[3] = "confirmed";
         }
 
         // Load review preference data
@@ -813,12 +831,12 @@ const CompleteProfile = () => {
             if (m) setDobMonth(String(Number(m)));
             if (d) setDobDay(String(Number(d)));
           }
-          // The user answered the core financial picture during onboarding —
-          // reflect that on the section card.
+          // Section 0 is complete only with all required finance answers:
+          // income, expense and cash & debt.
           if (
-            op.annual_income != null ||
-            op.financial_assets != null ||
-            op.monthly_household_expense != null
+            op.annual_income != null &&
+            op.monthly_household_expense != null &&
+            op.financial_assets != null
           ) {
             newStatuses[0] = "confirmed";
           }
@@ -941,7 +959,7 @@ const CompleteProfile = () => {
     } else if (sectionIdx === 2) {
       switch (groupIdx) {
         case 0: return JSON.stringify([investmentHorizon]);
-        case 1: return JSON.stringify([riskLevelIdx, riskCapacity, investmentExperience, behavQ1, maxDrawdown, comfortAssets]);
+        case 1: return JSON.stringify([riskLevelIdx, riskCapacity, behavQ1, behavQ2, behavQ3, maxDrawdown, comfortAssets]);
       }
     } else if (sectionIdx === 3) {
       switch (groupIdx) {
@@ -965,6 +983,27 @@ const CompleteProfile = () => {
     }
   };
 
+  // A section is only "complete" once its genuinely-required fields are filled.
+  // Inherently-optional groups (property, planned expenses, expected income, other
+  // assets) are deliberately NOT required. Section 1 (goals) is managed in the goal
+  // planner, so it isn't gated here.
+  const sectionRequirementsMet = (idx: number): boolean => {
+    switch (idx) {
+      case 0:
+        return (
+          toNum(annualIncome) != null &&
+          toNum(annualExpense) != null &&
+          toNum(investableAssets) != null
+        );
+      case 2:
+        return !!investmentHorizon && !!behavQ1 && !!behavQ2 && !!behavQ3;
+      case 3:
+        return !!incomeTaxRate && !!taxRegime;
+      default:
+        return true;
+    }
+  };
+
   // Confirm the section: the per-step saves already ran on each "Next"; here we
   // persist only the final step (if edited) and mark the section confirmed.
   const confirmSection = async (idx: number, lastGroupIdx: number) => {
@@ -976,6 +1015,12 @@ const CompleteProfile = () => {
       setSaving(false);
     }
     if (!ok) return;
+
+    // Don't mark a section complete until all its required fields are answered.
+    if (!sectionRequirementsMet(idx)) {
+      toast.error("Please answer all required questions in this section first.");
+      return;
+    }
 
     const nextStatuses = [...statuses];
     nextStatuses[idx] = "confirmed";
@@ -1086,12 +1131,13 @@ const CompleteProfile = () => {
           case 0: // Investment horizon
             await updateRiskProfile({ investment_horizon: investmentHorizon || null });
             break;
-          case 1: // Behavioural risk
+          case 1: // Behavioural risk — persist all three questions to their own columns.
             await updateRiskProfile({
               risk_level: riskLevelIdx,
+              investment_experience: behavQ1 || null, // Q1: investment experience
+              investment_focus: behavQ2 || null,      // Q2: investment focus
+              drop_reaction: behavQ3 || null,          // Q3: reaction to a ~20% decline
               risk_capacity: riskCapacity || null,
-              investment_experience: investmentExperience || null,
-              drop_reaction: behavQ1 || null,
               max_drawdown: maxDrawdown ? Number(maxDrawdown) : null,
               comfort_assets: comfortAssets.length ? comfortAssets : null,
             });
@@ -1242,9 +1288,20 @@ const CompleteProfile = () => {
               <TextInput value={annualIncome} onChange={setAnnualIncome} prefix="₹" placeholder="e.g. 50,00,000" />
             </div>
             <div>
-              <FieldLabel>Annual expense</FieldLabel>
+              <FieldLabel>Monthly expense</FieldLabel>
               <p className="text-[12.5px] text-muted-foreground -mt-0.5 mb-2 leading-snug">Excludes all debt obligations (e.g. loans)</p>
-              <TextInput value={annualExpense} onChange={setAnnualExpense} prefix="₹" placeholder="e.g. 30,00,000" />
+              {/* Shown/entered as a MONTHLY figure, but stored annually: the state
+                  (annualExpense) stays the yearly amount, so the ×12 happens here on
+                  input and the existing ÷12 at save derives monthly_household_expense. */}
+              <TextInput
+                value={annualExpense ? parseNum(String(Math.round((toNum(annualExpense) ?? 0) / 12))) : ""}
+                onChange={(v) => {
+                  const m = toNum(v);
+                  setAnnualExpense(m != null ? parseNum(String(m * 12)) : "");
+                }}
+                prefix="₹"
+                placeholder="e.g. 80,000"
+              />
             </div>
            </div>
           ) },

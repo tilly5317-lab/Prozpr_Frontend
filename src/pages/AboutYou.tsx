@@ -1,5 +1,5 @@
 import type React from "react";
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowRight, Briefcase, Calendar, Check, Plus, Target, Wallet, X, ShieldCheck, ChevronDown, Loader2 } from "lucide-react";
@@ -11,68 +11,37 @@ interface Props {
   onBack: () => void;
 }
 
-/* ─── Drum-roll date picker ─── */
-const DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
-const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
-const currentYear = new Date().getFullYear();
-const YEARS = Array.from({ length: 80 }, (_, i) => currentYear - 18 - i);
-
-const MONTH_LABELS: Record<number, string> = {
-  1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun",
-  7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec",
+/* ─── Date of birth input (DD/MM/YYYY, slashes inserted automatically) ─── */
+// Keep only digits (cap at 8 → DDMMYYYY) and insert "/" after the day & month
+// so the user never has to type a slash themselves.
+const formatDobInput = (raw: string) => {
+  const d = raw.replace(/\D/g, "").slice(0, 8);
+  if (d.length <= 2) return d;
+  if (d.length <= 4) return `${d.slice(0, 2)}/${d.slice(2)}`;
+  return `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}`;
 };
 
-const ITEM_H = 28;
-const VISIBLE = 3;
+// Parse a complete DD/MM/YYYY string, rejecting impossible dates (e.g. 31/02).
+// Returns null until the field holds a real calendar date.
+const parseDob = (s: string): { d: number; m: number; y: number } | null => {
+  const match = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) return null;
+  const d = Number(match[1]);
+  const m = Number(match[2]);
+  const y = Number(match[3]);
+  const dt = new Date(y, m - 1, d);
+  if (dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d) {
+    return null;
+  }
+  return { d, m, y };
+};
 
-const DrumColumn = ({
-  items, value, onChange, renderLabel,
-}: {
-  items: number[]; value: number; onChange: (v: number) => void; renderLabel?: (v: number) => string;
-}) => {
-  const ref = useRef<HTMLDivElement>(null);
-  const isSettling = useRef(false);
-  const paddingItems = Math.floor(VISIBLE / 2);
-
-  useEffect(() => {
-    if (!ref.current) return;
-    const idx = items.indexOf(value);
-    if (idx >= 0) {
-      isSettling.current = true;
-      ref.current.scrollTo({ top: idx * ITEM_H, behavior: "smooth" });
-      const timer = setTimeout(() => { isSettling.current = false; }, 400);
-      return () => clearTimeout(timer);
-    }
-  }, [value, items]);
-
-  const handleScroll = useCallback(() => {
-    if (!ref.current || isSettling.current) return;
-    const idx = Math.round(ref.current.scrollTop / ITEM_H);
-    const clamped = Math.max(0, Math.min(idx, items.length - 1));
-    if (items[clamped] !== value) onChange(items[clamped]);
-  }, [items, value, onChange]);
-
-  return (
-    <div className="relative flex-1" style={{ height: ITEM_H * VISIBLE }}>
-      <div className="absolute inset-x-1 pointer-events-none z-10 rounded-md bg-primary/6" style={{ top: Math.floor(VISIBLE / 2) * ITEM_H, height: ITEM_H }} />
-      <div ref={ref} onScroll={handleScroll} className="h-full overflow-y-auto snap-y snap-mandatory scrollbar-hide" style={{ scrollSnapType: "y mandatory" }}>
-        {Array.from({ length: paddingItems }).map((_, i) => (<div key={`pad-top-${i}`} style={{ height: ITEM_H }} />))}
-        {items.map((item) => {
-          const idx = items.indexOf(item);
-          const selectedIdx = items.indexOf(value);
-          const distance = Math.abs(idx - selectedIdx);
-          const opacity = distance === 0 ? 1 : 0.15;
-          const fontSize = distance === 0 ? "13px" : "11px";
-          return (
-            <div key={item} className="flex items-center justify-center snap-center transition-all" style={{ height: ITEM_H, opacity, fontWeight: distance === 0 ? 600 : 400, fontSize }} onClick={() => onChange(item)}>
-              {renderLabel ? renderLabel(item) : String(item).padStart(2, "0")}
-            </div>
-          );
-        })}
-        {Array.from({ length: paddingItems }).map((_, i) => (<div key={`pad-bot-${i}`} style={{ height: ITEM_H }} />))}
-      </div>
-    </div>
-  );
+// A date of birth can never be today or in the future.
+const isFutureDob = ({ d, m, y }: { d: number; m: number; y: number }) => {
+  const dt = new Date(y, m - 1, d);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return dt.getTime() > today.getTime();
 };
 
 /* ─── Format INR ─── */
@@ -139,16 +108,14 @@ type SectionId = "basic" | "goals" | "income" | "risk";
 const SECTION_ORDER: SectionId[] = ["basic", "goals", "income", "risk"];
 
 const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
-  const [dobDay, setDobDay] = useState(15);
-  const [dobMonth, setDobMonth] = useState(6);
-  const [dobYear, setDobYear] = useState(1990);
+  const [dob, setDob] = useState(""); // DD/MM/YYYY (slashes added automatically)
   const [selectedGoals, setSelectedGoals] = useState<string[]>([]);
   const [customGoals, setCustomGoals] = useState<string[]>([]);
   const [addingGoal, setAddingGoal] = useState(false);
   const [newGoalText, setNewGoalText] = useState("");
   const [horizon, setHorizon] = useState("");
   const [income, setIncome] = useState<number>(0);
-  const [expense, setExpense] = useState<number>(0);
+  const [monthlyExpense, setMonthlyExpense] = useState<number>(0);
   const [investmentView, setInvestmentView] = useState("");
   const [occupation, setOccupation] = useState("");
   const [occupationOther, setOccupationOther] = useState("");
@@ -159,11 +126,21 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
   // under manual control — reopening it won't auto-close.
   const autoAdvancedRef = useRef<Set<SectionId>>(new Set());
 
+  // Date-of-birth validity (must be a real, non-future date before we let the user move on).
+  const dobParsed = parseDob(dob);
+  const dobValid = !!dobParsed && !isFutureDob(dobParsed);
+  const dobError =
+    dob.length === 10 && !dobValid
+      ? dobParsed
+        ? "Date of birth can't be in the future"
+        : "Please enter a valid date"
+      : null;
+
   const isSectionComplete = (id: SectionId): boolean => {
     switch (id) {
-      case "basic": return occupation !== "" && (occupation !== "Other" || occupationOther.trim() !== "");
+      case "basic": return dobValid && occupation !== "" && (occupation !== "Other" || occupationOther.trim() !== "");
       case "goals": return selectedGoals.length > 0 && horizon !== "";
-      case "income": return income > 0 && expense > 0;
+      case "income": return income > 0 && monthlyExpense > 0;
       case "risk": return investmentView !== "";
     }
   };
@@ -188,7 +165,7 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
         return () => clearTimeout(timer);
       }
     }
-  }, [occupation, occupationOther, selectedGoals, horizon, income, expense, investmentView, openSection]);
+  }, [dob, occupation, occupationOther, selectedGoals, horizon, income, monthlyExpense, investmentView, openSection]);
 
   const toggleGoal = (g: string) =>
     setSelectedGoals((prev) => (prev.includes(g) ? prev.filter((x) => x !== g) : [...prev, g]));
@@ -204,21 +181,24 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
 
   const handleSaveAndContinue = async () => {
     if (submitting) return;
-    const dob = `${dobYear}-${String(dobMonth).padStart(2, "0")}-${String(dobDay).padStart(2, "0")}`;
+    if (!dobParsed) return; // guarded by allComplete, but keep TS + runtime safe
+    const dobIso = `${dobParsed.y}-${String(dobParsed.m).padStart(2, "0")}-${String(dobParsed.d).padStart(2, "0")}`;
     const occupationLabel =
       occupation === "Other" ? occupationOther.trim() : occupation;
+    // User enters a monthly figure; the backend stores an annual one, so ×12.
+    const annualExpense = monthlyExpense * 12;
     setSubmitting(true);
     try {
       await persistOnboardingProfile({
-        date_of_birth: dob,
+        date_of_birth: dobIso,
         occupation: occupationLabel || undefined,
         selected_goals: selectedGoals,
         custom_goals: customGoals,
         investment_horizon: horizon || undefined,
         annual_income_min: income,
         annual_income_max: income,
-        annual_expense_min: expense,
-        annual_expense_max: expense,
+        annual_expense_min: annualExpense,
+        annual_expense_max: annualExpense,
         risk_choice_letter: investmentView || undefined,
       });
       await markOnboardingComplete();
@@ -231,8 +211,10 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
     onComplete();
   };
 
-  const estSavings = Math.max(0, income - expense);
-  const expensePct = income > 0 ? Math.round((expense / income) * 100) : 0;
+  // Income is annual; expense is monthly → annualise it to compare against income.
+  const annualExpense = monthlyExpense * 12;
+  const estSavings = Math.max(0, income - annualExpense);
+  const expensePct = income > 0 ? Math.round((annualExpense / income) * 100) : 0;
 
   const toggleSection = (id: SectionId) => {
     setOpenSection((prev) => (prev === id ? null : id));
@@ -303,12 +285,21 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
                 >
                   <div className="px-4 pb-4 space-y-5">
                     <div>
-                      <p className="text-xs font-medium text-muted-foreground mb-2.5">Age</p>
-                      <div className="flex gap-1 rounded-xl overflow-hidden bg-secondary/20 p-2 max-w-[260px] mx-auto">
-                        <DrumColumn items={DAYS} value={dobDay} onChange={setDobDay} />
-                        <DrumColumn items={MONTHS} value={dobMonth} onChange={setDobMonth} renderLabel={(v) => MONTH_LABELS[v]} />
-                        <DrumColumn items={YEARS} value={dobYear} onChange={setDobYear} renderLabel={(v) => String(v)} />
-                      </div>
+                      <p className="text-xs font-medium text-muted-foreground mb-2.5">Date of birth</p>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={dob}
+                        onChange={(e) => setDob(formatDobInput(e.target.value))}
+                        placeholder="DD/MM/YYYY"
+                        maxLength={10}
+                        className={`w-full rounded-xl border bg-card px-3 py-2.5 text-sm text-foreground outline-none focus:border-primary transition-colors tracking-[0.2em] tabular-nums ${
+                          dobError ? "border-destructive" : "border-border"
+                        }`}
+                      />
+                      {dobError && (
+                        <p className="text-[11px] mt-1.5 text-destructive">{dobError}</p>
+                      )}
                     </div>
                     <div>
                       <p className="text-xs font-medium text-muted-foreground mb-2.5">Occupation</p>
@@ -434,15 +425,15 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
                       value={income}
                       onChange={setIncome}
                       placeholder="e.g. 5000000"
-                      subtext={income > 0 && expense > 0 ? `Estimated savings: ${formatINR(estSavings)} / year` : undefined}
+                      subtext={income > 0 && monthlyExpense > 0 ? `Estimated savings: ${formatINR(estSavings)} / year` : undefined}
                     />
                     <NumberInputINR
-                      label="Annual expense"
+                      label="Monthly expense"
                       description="Excludes all debt obligations (e.g. loans)"
-                      value={expense}
-                      onChange={setExpense}
-                      placeholder="e.g. 1200000"
-                      subtext={income > 0 && expense > 0 ? `That's roughly ${expensePct}% of your income` : undefined}
+                      value={monthlyExpense}
+                      onChange={setMonthlyExpense}
+                      placeholder="e.g. 80000"
+                      subtext={income > 0 && monthlyExpense > 0 ? `That's roughly ${expensePct}% of your annual income` : undefined}
                     />
                   </div>
                 </motion.div>
