@@ -2320,11 +2320,32 @@ export interface RebalancingRunListItem {
   updated_at: string;
 }
 
+/** One Equity/Debt/Others row of the backend-computed Current-vs-Target bars. */
+export interface AssetClassBreakdownRow {
+  asset_class: string; // "Equity" | "Debt" | "Others"
+  current_inr: number;
+  target_inr: number;
+}
+
+/** Multi-asset-aware asset-class split for the Invest "Current vs Target" view.
+ *  Blended funds are split per-category on the backend, so the frontend renders
+ *  these numbers directly without any client-side classification. */
+export interface RebalancingAssetClassBreakdown {
+  rows: AssetClassBreakdownRow[];
+  current_total_inr: number;
+  target_total_inr: number;
+}
+
 export interface RebalancingRunDetail extends RebalancingRunListItem {
   totals: RebalancingTotals | null;
   subgroup_summaries: RebalancingSubgroupSummary[];
   trades: RebalancingTrade[];
   warnings: { code: string; message: string; affected_isins: string[] }[];
+  /** Plan-aware headline computed by the backend; absent on older runs. */
+  summary?: { title: string; subtitle: string; reason?: string | null } | null;
+  /** Backend-computed asset-class split (multi-asset look-through) for the
+   *  Current-vs-Target bars; absent on older runs (fall back to local rollup). */
+  asset_class_breakdown?: RebalancingAssetClassBreakdown | null;
 }
 
 /** Latest-first list of the user's rebalancing runs. */

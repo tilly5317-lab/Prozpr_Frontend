@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Send, Mic, MicOff, AlertCircle, Loader2, Sparkles, Check, Square, ChevronDown, ChevronUp, Pencil, ArrowRight, Plus, Trash2, MessageSquare, Menu, Star } from "lucide-react";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { formatInrMillions } from "@/lib/utils";
+import { formatInrCompact } from "@/lib/utils";
 import {
   createChatSession,
   sendChatMessage,
@@ -1025,7 +1025,7 @@ const AIChatPanel = ({
     if (!p || p.total_value <= 0) {
       return "Your profile is set up. Add holdings or sync to see portfolio-level insights.";
     }
-    const fmt = (n: number) => formatInrMillions(n);
+    const fmt = (n: number) => formatInrCompact(n);
     if (!p.allocations.length) {
       return `Your portfolio is valued at ${fmt(p.total_value)}. Add allocation details for richer guidance.`;
     }

@@ -1792,7 +1792,13 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
         (m) => p.endNav >= m.value && !unlocked.has(m.value),
       );
       if (crossed.length > 0) {
-        map.set(p.year, crossed);
+        // Only one tag per year: keep the highest-value milestone crossed this
+        // year. Lower ones crossed the same year are still marked unlocked so
+        // they don't reappear in a later year.
+        const maxMilestone = crossed.reduce((max, m) =>
+          m.value > max.value ? m : max,
+        );
+        map.set(p.year, [maxMilestone]);
         for (const m of crossed) unlocked.add(m.value);
       }
     }
