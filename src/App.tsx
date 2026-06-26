@@ -1,11 +1,40 @@
+import { useEffect, useRef } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { AuthProvider } from "@/context/AuthContext";
+import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { FamilyProvider } from "@/context/FamilyContext";
 import { ThemeProvider } from "@/context/ThemeContext";
+import { capturePageview, identifyUser, resetUser } from "@/lib/posthog";
+
+/** Emit a PostHog pageview on every client-side route change. */
+function PostHogPageView() {
+  const location = useLocation();
+  useEffect(() => {
+    capturePageview();
+  }, [location]);
+  return null;
+}
+
+/** Keep the PostHog identity in sync with the authenticated user. */
+function PostHogIdentify() {
+  const { user } = useAuth();
+  const lastIdentified = useRef<string | null>(null);
+  useEffect(() => {
+    if (user) {
+      if (lastIdentified.current !== user.id) {
+        identifyUser(user);
+        lastIdentified.current = user.id;
+      }
+    } else if (lastIdentified.current) {
+      resetUser(); // user signed out
+      lastIdentified.current = null;
+    }
+  }, [user]);
+  return null;
+}
 import BetaBanner from "@/components/BetaBanner";
 import ReportIssueFab from "@/components/ReportIssueFab";
 import Index from "./pages/Index";
@@ -50,6 +79,8 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
+          <PostHogPageView />
+          <PostHogIdentify />
           <BetaBanner />
           <ReportIssueFab />
           <Routes>
