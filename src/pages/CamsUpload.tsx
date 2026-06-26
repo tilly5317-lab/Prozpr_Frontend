@@ -269,14 +269,18 @@ const CamsUpload = () => {
         </motion.button>
       )}
 
-      <button
-        type="button"
-        onClick={() => navigate(exitRoute)}
-        disabled={uploading}
-        className="mt-3 w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
-      >
-        {fromProfile ? "Cancel — back to profile" : "Skip for now — I'll add it later"}
-      </button>
+      {/* CAMS is compulsory during onboarding — only the profile "Update
+          Holdings" entry point may cancel without importing. */}
+      {fromProfile && (
+        <button
+          type="button"
+          onClick={() => navigate(exitRoute)}
+          disabled={uploading}
+          className="mt-3 w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
+        >
+          Cancel — back to profile
+        </button>
+      )}
     </div>
   );
 };

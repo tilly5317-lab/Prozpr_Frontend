@@ -4,6 +4,12 @@ import { motion } from "framer-motion";
 import { ArrowRight, Check, Loader2, Sparkles } from "lucide-react";
 import BottomNav from "@/components/BottomNav";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import RebalanceGate from "@/components/invest/RebalanceGate";
 import TradeFundDetailView from "@/components/fund/TradeFundDetailView";
 import { toast } from "@/hooks/use-toast";
@@ -14,6 +20,7 @@ import {
   runRebalancing,
   updateRebalancingStatus,
   type PortfolioDetail,
+  type RebalancingAssetClassBreakdown,
   type RebalancingRunDetail,
   type RebalancingSubgroupSummary,
   type RebalancingTrade,
@@ -108,7 +115,10 @@ function buildDriftRows(
   for (const s of subs) {
     const b = toBucket(s.asset_class);
     agg[b].current += s.current_holding_inr || 0;
-    agg[b].target += s.goal_target_inr || 0;
+    // "Target" here = where THIS PLAN lands (suggested_final_holding_inr), not the
+    // unconstrained goal ideal (goal_target_inr). This keeps the bars consistent
+    // with the trades: a class the plan sells reads as overweight (current > target).
+    agg[b].target += s.suggested_final_holding_inr || 0;
     agg[b].inSubs = true;
   }
   // Show every asset class the user actually holds — even ones the rebalancing
@@ -122,6 +132,13 @@ function buildDriftRows(
       agg[b].target = heldByBucket[b];
     }
   }
+  return formatDriftRows(agg);
+}
+
+/* Shared formatter: turn per-bucket current/target ₹ into rendered DriftRows
+   (percentages + overweight/underweight caption). Used by both the backend
+   breakdown path and the legacy subgroup-rollup fallback. */
+function formatDriftRows(agg: Record<Bucket, { current: number; target: number }>): DriftRow[] {
   const totalCur = BUCKET_ORDER.reduce((sum, b) => sum + agg[b].current, 0);
   const totalTgt = BUCKET_ORDER.reduce((sum, b) => sum + agg[b].target, 0);
 
@@ -129,7 +146,10 @@ function buildDriftRows(
     const currentPct = totalCur > 0 ? (agg[b].current / totalCur) * 100 : 0;
     const targetPct = totalTgt > 0 ? (agg[b].target / totalTgt) * 100 : 0;
     const drift = currentPct - targetPct;
-    const diffInr = agg[b].current - agg[b].target;
+    // Signed by the action the plan takes: overweight → selling (negative),
+    // underweight → buying (positive). i.e. target − current, the change to make —
+    // not current − target (the excess), which carries the opposite sign.
+    const diffInr = agg[b].target - agg[b].current;
     const amountText =
       Math.abs(drift) < 0.5
         ? "On target"
@@ -145,6 +165,23 @@ function buildDriftRows(
       amountText,
     };
   });
+}
+
+/* Preferred path: render the backend's multi-asset-aware breakdown directly.
+   Blended funds are already split per-category server-side, so there's no
+   client-side classification here — just a bucket key + ₹ passthrough. */
+function driftRowsFromBreakdown(breakdown: RebalancingAssetClassBreakdown): DriftRow[] {
+  const agg: Record<Bucket, { current: number; target: number }> = {
+    equity: { current: 0, target: 0 },
+    debt: { current: 0, target: 0 },
+    others: { current: 0, target: 0 },
+  };
+  for (const row of breakdown.rows) {
+    const b = toBucket(row.asset_class);
+    agg[b].current += row.current_inr || 0;
+    agg[b].target += row.target_inr || 0;
+  }
+  return formatDriftRows(agg);
 }
 
 /** Unsigned compact ₹ for axis ticks (e.g. ₹2L, ₹4.5L, ₹1.2Cr). */
@@ -312,7 +349,7 @@ const EXAMPLE_DRIFT_ROWS: DriftRow[] = [
     target: 55,
     currentInr: 3_100_000,
     targetInr: 2_750_000,
-    amountText: "7% overweight · +₹3.5L",
+    amountText: "7% overweight · -₹3.5L",
   },
   {
     key: "debt",
@@ -322,7 +359,7 @@ const EXAMPLE_DRIFT_ROWS: DriftRow[] = [
     target: 35,
     currentInr: 1_400_000,
     targetInr: 1_750_000,
-    amountText: "7% underweight · -₹3.5L",
+    amountText: "7% underweight · +₹3.5L",
   },
   {
     key: "others",
@@ -394,6 +431,26 @@ const EXAMPLE_KEPT_FUNDS: KeptFund[] = [
   },
 ];
 
+/* Hero headline for the "Prozpr insight" card. The backend computes a plan-aware
+   `summary` per run; we fall back to the original static copy when it's absent
+   (older runs) and show a representative one for the example plan. */
+type HeadlineCopy = { title: string; subtitle: string; reason?: string | null };
+
+const DEFAULT_SUMMARY: HeadlineCopy = {
+  title: "Time to fine-tune your mix.",
+  reason: "Your mix has drifted from what your goals call for.",
+  subtitle:
+    "Here's how to glide back to your target allocation. Prozpr picked units with the lowest capital gains to limit the tax you pay while rebalancing.",
+};
+
+const EXAMPLE_SUMMARY: HeadlineCopy = {
+  title: "Trimming your Equity back to target",
+  reason:
+    "That's more market risk than your goals call for — a downturn now would set them back.",
+  subtitle:
+    "Reducing your equity weightage by 7% — Prozpr picked the lowest-tax units (₹12,400 est.).",
+};
+
 const RebalanceExplanation = () => {
   const navigate = useNavigate();
   const [detail, setDetail] = useState<RebalancingRunDetail | null>(null);
@@ -460,10 +517,14 @@ const RebalanceExplanation = () => {
     }
   }, []);
 
-  const driftRows = useMemo(
-    () => buildDriftRows(detail?.subgroup_summaries ?? [], portfolio?.holdings ?? []),
-    [detail, portfolio],
-  );
+  const driftRows = useMemo(() => {
+    // Prefer the backend's multi-asset-aware breakdown; fall back to the local
+    // subgroup rollup for older runs that predate the field.
+    if (detail?.asset_class_breakdown) {
+      return driftRowsFromBreakdown(detail.asset_class_breakdown);
+    }
+    return buildDriftRows(detail?.subgroup_summaries ?? [], portfolio?.holdings ?? []);
+  }, [detail, portfolio]);
   const uiTrades = useMemo(() => (detail?.trades ?? []).map(mapTrade), [detail]);
   const tradeGroups = useMemo(() => groupTradesByReason(uiTrades), [uiTrades]);
   const keptFunds = useMemo(() => buildKeptFunds(portfolio, uiTrades), [portfolio, uiTrades]);
@@ -484,6 +545,9 @@ const RebalanceExplanation = () => {
     : uiTrades.length;
   const keptFundsToShow = isExample ? EXAMPLE_KEPT_FUNDS : keptFunds;
   const taxTextToShow = isExample ? "Tax impact · ₹12,400 est." : taxText;
+  const summaryToShow: HeadlineCopy = isExample
+    ? EXAMPLE_SUMMARY
+    : detail?.summary ?? DEFAULT_SUMMARY;
 
   const proceed = useCallback(async () => {
     if (!detail) return;
@@ -597,11 +661,15 @@ const RebalanceExplanation = () => {
                 </span>
               </div>
               <h1 className="mt-3 text-[21px] leading-tight font-semibold tracking-tight text-foreground">
-                Time to fine-tune your mix.
+                {summaryToShow.title}
               </h1>
-              <p className="mt-2.5 text-[12.5px] leading-5 text-muted-foreground">
-                Here's how to glide back to your target allocation. Prozpr picked units with the
-                lowest capital gains to limit the tax you pay while rebalancing.
+              {summaryToShow.reason && (
+                <p className="mt-2 text-[13.5px] leading-snug font-medium text-foreground/90">
+                  {summaryToShow.reason}
+                </p>
+              )}
+              <p className="mt-1.5 text-[12px] leading-5 text-muted-foreground">
+                {summaryToShow.subtitle}
               </p>
             </motion.section>
 
@@ -627,50 +695,74 @@ const RebalanceExplanation = () => {
                       </span>
                     </div>
                   </div>
-                  <div className="mt-4 space-y-4">
-                    {driftRowsToShow.map((row) => {
-                      const drift = row.current - row.target;
-                      const curWidth = (row.currentInr / axisMax) * 100;
-                      const tgtWidth = (row.targetInr / axisMax) * 100;
-                      return (
-                        <div key={row.key}>
-                          <div className="mb-1.5 flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2">
-                              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: row.color }} />
-                              <span className="text-[13px] text-foreground">{row.label}</span>
-                            </div>
-                            <span
-                              className="text-[11px]"
-                              style={{ color: drift > 0 ? OVERWEIGHT : drift < 0 ? UNDERWEIGHT : NEUTRAL }}
-                            >
-                              {row.amountText}
-                            </span>
-                          </div>
+                  <TooltipProvider delayDuration={100}>
+                    <div className="mt-4 space-y-4">
+                      {driftRowsToShow.map((row) => {
+                        const drift = row.current - row.target;
+                        const curWidth = (row.currentInr / axisMax) * 100;
+                        const tgtWidth = (row.targetInr / axisMax) * 100;
+                        return (
+                          <Tooltip key={row.key}>
+                            <TooltipTrigger asChild>
+                              <div className="cursor-default">
+                                <div className="mb-1.5 flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: row.color }} />
+                                    <span className="text-[13px] text-foreground">{row.label}</span>
+                                  </div>
+                                  <span
+                                    className="text-[11px]"
+                                    style={{ color: drift > 0 ? OVERWEIGHT : drift < 0 ? UNDERWEIGHT : NEUTRAL }}
+                                  >
+                                    {row.amountText}
+                                  </span>
+                                </div>
 
-                          {/* Current (top) + Target (bottom) — flush, no gap between them.
-                              Current = the asset colour lightened, Target = solid asset colour. */}
-                          <div className="overflow-hidden rounded-[3px] bg-muted">
-                            <div
-                              className="h-3.5"
-                              style={{
-                                width: `${Math.max(curWidth, 0.5)}%`,
-                                background: withAlpha(row.color, 0.3),
-                              }}
-                              title={`Current · ${axisINR(row.currentInr)}`}
-                            />
-                            <div
-                              className="h-3.5"
-                              style={{
-                                width: `${Math.max(tgtWidth, 0.5)}%`,
-                                background: row.color,
-                              }}
-                              title={`Target · ${axisINR(row.targetInr)}`}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                                {/* Current (top) + Target (bottom) — flush, no gap between them.
+                                    Current = the asset colour lightened, Target = solid asset colour. */}
+                                <div className="overflow-hidden rounded-[3px] bg-muted">
+                                  <div
+                                    className="h-3.5"
+                                    style={{
+                                      width: `${Math.max(curWidth, 0.5)}%`,
+                                      background: withAlpha(row.color, 0.3),
+                                    }}
+                                  />
+                                  <div
+                                    className="h-3.5"
+                                    style={{
+                                      width: `${Math.max(tgtWidth, 0.5)}%`,
+                                      background: row.color,
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="px-3 py-2">
+                              <div className="mb-1 flex items-center gap-1.5">
+                                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: row.color }} />
+                                <span className="text-[11px] font-semibold">{row.label}</span>
+                              </div>
+                              <div className="space-y-0.5 text-[11px]">
+                                <div className="flex items-center justify-between gap-5">
+                                  <span className="text-muted-foreground">Current</span>
+                                  <span className="font-medium tabular-nums">
+                                    {row.current}% · {axisINR(row.currentInr)}
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-between gap-5">
+                                  <span className="text-muted-foreground">Target</span>
+                                  <span className="font-medium tabular-nums">
+                                    {row.target}% · {axisINR(row.targetInr)}
+                                  </span>
+                                </div>
+                              </div>
+                            </TooltipContent>
+                          </Tooltip>
+                        );
+                      })}
+                    </div>
+                  </TooltipProvider>
 
                   {/* Shared ₹ x-axis */}
                   <div className="relative mt-2 h-4">

@@ -81,6 +81,14 @@ const LinkAccounts = () => {
     [linkedAccounts, portfolio]
   );
 
+  // CAMS is compulsory during onboarding: the user can't continue until their
+  // statement is imported. We also honour the just-uploaded session flag so a
+  // brief portfolio-refresh lag right after upload doesn't block them.
+  const camsImportedThisSession =
+    typeof window !== "undefined" &&
+    sessionStorage.getItem("camsStatementImported") === "true";
+  const camsConnected = hasMF || camsImportedThisSession;
+
   return (
     <div className="min-h-screen bg-background flex flex-col items-center px-4 pt-8 pb-6">
       {/* Stepper — Accounts active, About you inactive */}
@@ -161,7 +169,7 @@ const LinkAccounts = () => {
         </motion.div>
 
         {/* Re-upload / add CAMS if it wasn't imported yet */}
-        {!linkedLoading && !hasMF && (
+        {!linkedLoading && !camsConnected && (
           <button
             type="button"
             onClick={() => navigate("/cams-upload")}
@@ -210,12 +218,22 @@ const LinkAccounts = () => {
           <ArrowLeft className="h-3.5 w-3.5" />
           Back
         </button>
+        {!linkedLoading && !camsConnected && (
+          <p className="text-[11px] text-muted-foreground text-center">
+            Upload your CAMS statement to continue.
+          </p>
+        )}
         <button
           onClick={() => {
+            if (!camsConnected) {
+              navigate("/cams-upload");
+              return;
+            }
             sessionStorage.setItem("completedLinkAccounts", "true");
             navigate("/about-you");
           }}
-          className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-foreground px-5 py-3.5 text-[15px] font-semibold text-background"
+          disabled={linkedLoading || !camsConnected}
+          className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-foreground px-5 py-3.5 text-[15px] font-semibold text-background disabled:opacity-40 disabled:pointer-events-none"
         >
           Continue
           <ArrowRight className="h-4 w-4" />
