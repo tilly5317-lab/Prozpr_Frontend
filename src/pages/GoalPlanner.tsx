@@ -6,6 +6,7 @@ import confetti from "canvas-confetti";
 import { useNavigate } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
 import BottomNav from "@/components/BottomNav";
+import { formatMoneyInput } from "@/lib/utils";
 import { queueChatBootstrapMessage } from "@/components/chat/AIChatPanel";
 import {
   listGoals,
@@ -288,7 +289,7 @@ function suggestInflationForGoal(name: string): { rate: number; reason: string }
 }
 
 function parseMoneyInput(raw: string): { ok: true; value: number } | { ok: false; message: string } {
-  const t = raw.trim();
+  const t = raw.replace(/,/g, "").trim();
   if (t === "") return { ok: false, message: "Amount is required." };
   const n = Number(t);
   if (!Number.isFinite(n)) return { ok: false, message: "Enter a valid number." };
@@ -704,7 +705,7 @@ function SipEditor({ currentMonthly, onSaved }: { currentMonthly: number; onSave
   const [saving, setSaving] = useState(false);
 
   const begin = () => {
-    setDraft(currentMonthly > 0 ? String(Math.round(currentMonthly)) : "");
+    setDraft(currentMonthly > 0 ? formatMoneyInput(String(Math.round(currentMonthly))) : "");
     setOpen(true);
   };
 
@@ -746,10 +747,10 @@ function SipEditor({ currentMonthly, onSaved }: { currentMonthly: number; onSave
       <span className="text-[11px] text-muted-foreground">₹</span>
       <input
         autoFocus
-        type="number"
-        inputMode="decimal"
+        type="text"
+        inputMode="numeric"
         value={draft}
-        onChange={(e) => setDraft(e.target.value)}
+        onChange={(e) => setDraft(formatMoneyInput(e.target.value))}
         onKeyDown={(e) => {
           if (e.key === "Enter") void save();
           if (e.key === "Escape") setOpen(false);
@@ -901,13 +902,13 @@ const GoalPlanner = () => {
   const openEdit = useCallback((goal: Goal) => {
     setEditGoal(goal);
     setEditName(goal.label);
-    setEditTarget(String(goal.targetAmount));
+    setEditTarget(formatMoneyInput(String(goal.targetAmount)));
     const { month, year } = parseTargetDateParts(goal.targetDate);
     setEditMonth(month);
     setEditYear(year);
-    setEditSavings(String(goal.investedAmount));
-    setEditCurrent(String(goal.currentValue));
-    setEditMonthly(String(goal.monthlyContribution));
+    setEditSavings(formatMoneyInput(String(goal.investedAmount)));
+    setEditCurrent(formatMoneyInput(String(goal.currentValue)));
+    setEditMonthly(formatMoneyInput(String(goal.monthlyContribution)));
     setEditPriority(goal.priority);
     setEditAmountKind("future");
     setEditInflation("");
@@ -1518,10 +1519,10 @@ const GoalPlanner = () => {
 
                 <label className="mt-4 block text-xs font-medium text-muted-foreground">Target amount (₹)</label>
                 <input
-                  type="number"
-                  inputMode="decimal"
+                  type="text"
+                  inputMode="numeric"
                   value={editTarget}
-                  onChange={(e) => setEditTarget(e.target.value)}
+                  onChange={(e) => setEditTarget(formatMoneyInput(e.target.value))}
                   className={`${sheetInputClass} mt-1.5`}
                 />
 
@@ -1617,10 +1618,10 @@ const GoalPlanner = () => {
 
                 <label className="mt-4 block text-xs font-medium text-muted-foreground">Invested / allocated (₹)</label>
                 <input
-                  type="number"
-                  inputMode="decimal"
+                  type="text"
+                  inputMode="numeric"
                   value={editSavings}
-                  onChange={(e) => setEditSavings(e.target.value)}
+                  onChange={(e) => setEditSavings(formatMoneyInput(e.target.value))}
                   className={`${sheetInputClass} mt-1.5`}
                 />
 
@@ -1629,19 +1630,19 @@ const GoalPlanner = () => {
                   When this reaches the target, the goal is marked complete and its target is excluded from your active total.
                 </p>
                 <input
-                  type="number"
-                  inputMode="decimal"
+                  type="text"
+                  inputMode="numeric"
                   value={editCurrent}
-                  onChange={(e) => setEditCurrent(e.target.value)}
+                  onChange={(e) => setEditCurrent(formatMoneyInput(e.target.value))}
                   className={`${sheetInputClass} mt-1.5`}
                 />
 
                 <label className="mt-4 block text-xs font-medium text-muted-foreground">Monthly contribution (₹)</label>
                 <input
-                  type="number"
-                  inputMode="decimal"
+                  type="text"
+                  inputMode="numeric"
                   value={editMonthly}
-                  onChange={(e) => setEditMonthly(e.target.value)}
+                  onChange={(e) => setEditMonthly(formatMoneyInput(e.target.value))}
                   className={`${sheetInputClass} mt-1.5`}
                 />
 
@@ -1742,11 +1743,11 @@ const GoalPlanner = () => {
 
                 <label className="mt-4 block text-xs font-medium text-muted-foreground">Target corpus (₹)</label>
                 <input
-                  type="number"
-                  inputMode="decimal"
+                  type="text"
+                  inputMode="numeric"
                   value={addTarget}
-                  onChange={(e) => setAddTarget(e.target.value)}
-                  placeholder="500000"
+                  onChange={(e) => setAddTarget(formatMoneyInput(e.target.value))}
+                  placeholder="5,00,000"
                   className={`${sheetInputClass} mt-1.5`}
                 />
 
@@ -1835,10 +1836,10 @@ const GoalPlanner = () => {
                 <label className="mt-4 block text-xs font-medium text-muted-foreground">Monthly contribution (₹)</label>
                 <p className="mt-1 text-[11px] text-muted-foreground">Used to estimate how long it will take to fund remaining gaps.</p>
                 <input
-                  type="number"
-                  inputMode="decimal"
+                  type="text"
+                  inputMode="numeric"
                   value={addMonthly}
-                  onChange={(e) => setAddMonthly(e.target.value)}
+                  onChange={(e) => setAddMonthly(formatMoneyInput(e.target.value))}
                   placeholder="0"
                   className={`${sheetInputClass} mt-1.5`}
                 />

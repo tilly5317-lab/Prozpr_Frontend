@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { formatMoneyInput } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Bar,
@@ -545,7 +546,7 @@ function AddGoalSheet({
                     <input
                       id="timeline-goal-property-value"
                       value={propertyValue}
-                      onChange={(e) => setPropertyValue(e.target.value)}
+                      onChange={(e) => setPropertyValue(formatMoneyInput(e.target.value))}
                       onBlur={() => {
                         const n = parsePropertyAmount(propertyValue);
                         setPropertyValue(formatPropertyAmount(n));

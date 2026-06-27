@@ -5,6 +5,22 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/**
+ * Live Indian comma-grouping for a money input *as the user types*
+ * (e.g. "1234567" → "12,34,567"). Leaves free-form shorthand like "1.2 Cr"
+ * untouched so that style of entry still works, and preserves an in-progress
+ * trailing decimal (e.g. "12,345." while typing). Use in an input's onChange:
+ *   onChange={(e) => setValue(formatMoneyInput(e.target.value))}
+ * Strip commas with `value.replace(/,/g, "")` before parsing to a number.
+ */
+export function formatMoneyInput(raw: string): string {
+  const noCommas = raw.replace(/,/g, "");
+  if (!/^\d+(\.\d*)?$/.test(noCommas)) return raw;
+  const [int, dec] = noCommas.split(".");
+  const grouped = int === "" ? "" : Number(int).toLocaleString("en-IN");
+  return dec !== undefined ? `${grouped}.${dec}` : grouped;
+}
+
 /** Full rupee amount with Indian grouping and two decimal places (paisa). */
 export function formatInrPaisa(n: number): string {
   return `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

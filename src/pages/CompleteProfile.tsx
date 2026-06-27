@@ -4,6 +4,7 @@ import { ArrowLeft, Check, ChevronLeft, ChevronRight, Plus, X, Info, AlertTriang
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Slider } from "@/components/ui/slider";
+import { formatMoneyInput } from "@/lib/utils";
 import {
   getFullProfile,
   getOnboardingProfile,
@@ -208,16 +209,6 @@ const INVEST_PREF_OPTIONS = [
 const FieldLabel = ({ children }: { children: React.ReactNode }) => (
   <label className="block text-[15px] font-medium text-foreground mb-1.5 leading-snug">{children}</label>
 );
-
-/** Live Indian comma-grouping for plain numeric entry (12,34,567). Leaves
-    free-form entries like "1.2 Cr" untouched so shorthand still works. */
-const formatMoneyInput = (raw: string): string => {
-  const noCommas = raw.replace(/,/g, "");
-  if (!/^\d+(\.\d*)?$/.test(noCommas)) return raw;
-  const [int, dec] = noCommas.split(".");
-  const grouped = int === "" ? "" : Number(int).toLocaleString("en-IN");
-  return dec !== undefined ? `${grouped}.${dec}` : grouped;
-};
 
 const TextInput = ({ value, onChange, placeholder, prefix, onFocus, onBlur }: { value: string; onChange: (v: string) => void; placeholder?: string; prefix?: string; onFocus?: () => void; onBlur?: () => void }) => (
   <div className="relative">
@@ -1334,7 +1325,7 @@ const CompleteProfile = () => {
           { label: "Assets & liabilities", body: (
            <div className="space-y-3">
             <div>
-              <FieldLabel>Cash &amp; debt</FieldLabel>
+              <FieldLabel>Cash &amp; Deposits</FieldLabel>
               <p className="text-[12.5px] text-muted-foreground -mt-0.5 mb-2 leading-snug">Bank balance, fixed deposits and bonds.</p>
               <TextInput value={investableAssets} onChange={setInvestableAssets} prefix="₹" placeholder="e.g. 42,00,000" />
             </div>
@@ -1403,7 +1394,7 @@ const CompleteProfile = () => {
             </div>
             <div>
               <FieldLabel>Liabilities / debts</FieldLabel>
-              <p className="text-[12.5px] text-muted-foreground -mt-0.5 mb-2 leading-snug">Excludes mortgage repayment</p>
+              <p className="text-[12.5px] text-muted-foreground -mt-0.5 mb-2 leading-snug">Exclude mortgage / house loan payment</p>
               <TextInput value={liabilities} onChange={setLiabilities} prefix="₹" placeholder="e.g. 5,00,000" />
             </div>
            </div>
@@ -1444,7 +1435,7 @@ const CompleteProfile = () => {
                       <div className="space-y-3">
                         <div>
                           <label className="text-[10px] uppercase tracking-wide text-muted-foreground">Current market value</label>
-                          <TextInput value={prop.value} onChange={(v) => updateProp("value", v)} prefix="₹" placeholder="e.g. 1.20 Cr" />
+                          <TextInput value={prop.value} onChange={(v) => updateProp("value", v)} prefix="₹" placeholder="e.g. 1,20,00,000" />
                         </div>
 
                         {/* Mortgage sub-group */}
