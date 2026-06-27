@@ -771,6 +771,8 @@ const AIChatPanel = ({
   const kudosCounterRef = useRef(0);
 
   const [historyOpen, setHistoryOpen] = useState(false);
+  // Shows the floating "jump to latest" arrow when scrolled away from the newest message.
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
 
   const [demoCheckpoint, setDemoCheckpoint] = useState(0);
   const [demoIncome, setDemoIncome] = useState(100000);
@@ -896,11 +898,33 @@ const AIChatPanel = ({
     } catch { /* ignore */ }
   }, []);
 
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior });
+    setShowJumpToLatest(false);
+  }, []);
+
+  // Callback ref for the scroll container. The messages area only mounts once a
+  // conversation has content (and a beat after, because of the enter/exit
+  // crossfade), so jump straight to the newest message the moment it appears —
+  // this is what makes an opened chat start at the latest message.
+  const setScrollNode = useCallback((node: HTMLDivElement | null) => {
+    scrollRef.current = node;
+    if (node) node.scrollTop = node.scrollHeight;
+  }, []);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setShowJumpToLatest(distanceFromBottom > 120);
+  }, []);
+
+  // Keep the view pinned to the newest message as content streams in.
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages, isTyping, interimTranscript]);
+    scrollToBottom("auto");
+  }, [messages, isTyping, interimTranscript, scrollToBottom]);
 
   const showVoiceOnboardingChips = useMemo(() => {
     if (!clientContext?.user) return true;
@@ -1666,15 +1690,34 @@ const AIChatPanel = ({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.25 }}
-              className="flex min-h-0 flex-1 flex-col"
+              className="relative flex min-h-0 flex-1 flex-col"
             >
               <div
-                ref={scrollRef}
+                ref={setScrollNode}
+                onScroll={handleScroll}
                 className="flex-1 space-y-2 overflow-y-auto px-4 pb-4"
                 style={{ paddingTop: goalPlanningDemo ? 12 : 48 }}
               >
                 {renderMessages()}
               </div>
+
+              {/* Jump-to-latest — appears only when scrolled up away from the newest message */}
+              <AnimatePresence>
+                {showJumpToLatest && (
+                  <motion.button
+                    type="button"
+                    initial={{ opacity: 0, scale: 0.85, y: 6 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.85, y: 6 }}
+                    transition={{ duration: 0.15 }}
+                    onClick={() => scrollToBottom("smooth")}
+                    aria-label="Jump to latest message"
+                    className="absolute bottom-3 right-4 z-10 flex h-9 w-9 items-center justify-center rounded-full border border-border/60 bg-card/95 text-foreground shadow-lg backdrop-blur transition-colors hover:bg-muted"
+                  >
+                    <ChevronDown className="h-4 w-4" />
+                  </motion.button>
+                )}
+              </AnimatePresence>
             </motion.div>
           )}
         </AnimatePresence>
