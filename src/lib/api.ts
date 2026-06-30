@@ -1,3 +1,8 @@
+import { ApiError, BackendOfflineError, type ApiErrorKind } from "@/lib/errors";
+
+// Re-export so existing `import { BackendOfflineError } from "@/lib/api"` keeps working.
+export { ApiError, BackendOfflineError } from "@/lib/errors";
+
 /**
  * Single backend origin for all API modules (auth, portfolio, goals, chat, …).
  * - Empty base → same-origin `/api/v1` (Vite dev proxy or nginx on production).
@@ -103,14 +108,6 @@ export function setActiveFamilyMemberId(id: string | null) {
   invalidateUserContextCache();
 }
 
-//need to remove
-export class BackendOfflineError extends Error {
-  constructor(message = "Backend is not active") {
-    super(message);
-    this.name = "BackendOfflineError";
-  }
-}
-
 let backendOfflineUntil = 0;
 const OFFLINE_RETRY_MS = 15_000;
 /** Default for most API calls */
@@ -119,7 +116,53 @@ const REQUEST_TIMEOUT_MS = 45_000;
 const CHAT_REQUEST_TIMEOUT_MS = 120_000;
 /** Issue reporting blocks a user-facing submit button — keep it snappy and bounded. */
 const ISSUE_REQUEST_TIMEOUT_MS = 20_000;
-// till this
+
+/**
+ * Turn a failed `Response` into a typed {@link ApiError} (or
+ * {@link BackendOfflineError} for gateway statuses). Critically: a server (5xx)
+ * body or any unparseable payload is NEVER folded into the user-facing message —
+ * it is kept on `.raw` for bug reports while `.message` stays a safe placeholder.
+ * Clean 4xx detail strings are preserved so genuine, actionable messages still
+ * reach the user (e.g. "Incorrect password", "Statement is a summary…").
+ */
+function buildApiError(status: number, rawText: string): ApiError {
+  let detail: string | undefined;
+  let raw = rawText;
+  try {
+    const body = JSON.parse(rawText) as unknown;
+    raw = JSON.stringify(body);
+    let d: unknown;
+    if (body && typeof body === "object" && "detail" in body) {
+      d = (body as { detail?: unknown }).detail;
+    }
+    if (typeof d === "string") {
+      detail = d;
+    } else if (Array.isArray(d)) {
+      // FastAPI validation errors: [{ loc, msg, type }, …] — surface the first msg.
+      const first = d.find(
+        (item) => item && typeof item === "object" && "msg" in item,
+      ) as { msg?: unknown } | undefined;
+      if (typeof first?.msg === "string") detail = first.msg;
+    } else if (d && typeof d === "object" && typeof (d as { message?: unknown }).message === "string") {
+      detail = (d as { message: string }).message;
+    }
+  } catch {
+    // Non-JSON (HTML gateway page, plain text) — leave detail undefined.
+  }
+
+  if ([502, 503, 504].includes(status)) {
+    backendOfflineUntil = Date.now() + OFFLINE_RETRY_MS;
+    return new BackendOfflineError(detail || "Backend unavailable");
+  }
+
+  const isServer = status >= 500;
+  const kind: ApiErrorKind = isServer ? "server" : "client";
+  // For 5xx never trust the body; for 4xx keep the clean detail when present.
+  const message = isServer
+    ? `Request failed (${status})`
+    : detail?.trim() || `Request failed (${status})`;
+  return new ApiError(message, { status, kind, raw });
+}
 
 async function request<T>(
   path: string,
@@ -151,7 +194,7 @@ async function request<T>(
   } catch (err) {
     // Abort usually means request timeout for long-running AI endpoints, not true offline mode.
     if (err instanceof DOMException && err.name === "AbortError") {
-      throw new Error("Request timed out. Please try again.");
+      throw new ApiError("Request timed out. Please try again.", { kind: "timeout" });
     }
     backendOfflineUntil = Date.now() + OFFLINE_RETRY_MS;
     throw new BackendOfflineError("Backend is unreachable");
@@ -162,31 +205,7 @@ async function request<T>(
   if (!res.ok) {
     // Read body once: `res.json()` consumes the stream; calling `res.text()` in a catch
     // after a failed JSON parse hits "body stream already read".
-    const text = await res.text();
-    let msg: string;
-    try {
-      const body = JSON.parse(text) as unknown;
-      let detail: unknown = undefined;
-      if (body && typeof body === "object" && "detail" in body) {
-        detail = (body as { detail?: unknown }).detail;
-      }
-      if (typeof detail === "string") {
-        msg = detail;
-      } else if (detail != null) {
-        // FastAPI sometimes returns structured objects inside `detail`.
-        msg = JSON.stringify(detail);
-      } else {
-        msg = JSON.stringify(body);
-      }
-    } catch {
-      msg = text.trim() || `Request failed (${res.status})`;
-    }
-    // Treat common gateway/unavailable statuses as "offline" to avoid noisy errors.
-    if ([502, 503, 504].includes(res.status)) {
-      backendOfflineUntil = Date.now() + OFFLINE_RETRY_MS;
-      throw new BackendOfflineError(msg || "Backend unavailable");
-    }
-    throw new Error(msg || `Request failed (${res.status})`);
+    throw buildApiError(res.status, await res.text());
   }
   if (res.status === 204 || res.status === 205) {
     const method = (init?.method ?? "GET").toUpperCase();
@@ -573,7 +592,7 @@ export async function uploadCamsStatement(
     });
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError") {
-      throw new Error("Upload timed out. Please try again.");
+      throw new ApiError("Upload timed out. Please try again.", { kind: "timeout" });
     }
     backendOfflineUntil = Date.now() + OFFLINE_RETRY_MS;
     throw new BackendOfflineError("Backend is unreachable");
@@ -583,18 +602,7 @@ export async function uploadCamsStatement(
 
   const text = await res.text();
   if (!res.ok) {
-    let msg: string;
-    try {
-      const body = JSON.parse(text) as { detail?: unknown };
-      msg = typeof body?.detail === "string" ? body.detail : JSON.stringify(body);
-    } catch {
-      msg = text.trim() || `Upload failed (${res.status})`;
-    }
-    if ([502, 503, 504].includes(res.status)) {
-      backendOfflineUntil = Date.now() + OFFLINE_RETRY_MS;
-      throw new BackendOfflineError(msg || "Backend unavailable");
-    }
-    throw new Error(msg || `Upload failed (${res.status})`);
+    throw buildApiError(res.status, text);
   }
   // A successful ingest changes portfolio + linked accounts — drop the cached user context.
   invalidateUserContextCache();
