@@ -161,6 +161,15 @@ const CamsUploadModal = ({ open, onClose, onUploaded, replaceExisting = false }:
               Add a CAMS / KFintech Consolidated Account Statement (CAS) PDF. We&apos;ll read your
               folios, holdings and transactions and update your portfolio.
             </p>
+            {replaceExisting && !done && (
+              <p
+                className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-amber-800"
+                style={{ fontSize: 11 }}
+              >
+                This statement replaces your existing one — we&apos;ll rebuild your
+                holdings and net-worth history from this upload alone.
+              </p>
+            )}
 
             {!done && (
               <>

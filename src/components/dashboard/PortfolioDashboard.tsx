@@ -120,7 +120,6 @@ function PortfolioMainPanel({
 
         {useNavChart ? (
           <PortfolioNavChart
-            fallbackValues={sparkline}
             camsMissing={camsMissing}
             onUploadCams={onUploadCams}
           />
@@ -702,11 +701,15 @@ const PortfolioDashboard = () => {
 
       {/* Inline CAMS upload — same flow as /cams-upload (instructions + file +
           password). Opened from the chart option or the once-per-session popup;
-          on success we re-pull the portfolio so the user stays right here. */}
+          on success we re-pull the portfolio so the user stays right here.
+          replaceExisting: a statement uploaded here is treated as the new source of
+          truth — the backend wipes prior CAMS data (transactions, holdings,
+          allocations, net-worth history) and recomputes the full series from it. */}
       <CamsUploadModal
         open={camsOpen}
         onClose={() => setCamsOpen(false)}
         onUploaded={handleCamsUploaded}
+        replaceExisting
       />
 
       <BottomNav />

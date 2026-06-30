@@ -80,15 +80,13 @@ function ChartTooltip({
 }
 
 interface PortfolioNavChartProps {
-  /** Optional fallback used while the API is unreachable. */
-  fallbackValues?: number[];
   /** True when the user has no mutual-fund holdings (no CAMS imported yet). */
   camsMissing?: boolean;
   /** Open the CAMS upload popup — wired only when `camsMissing`. */
   onUploadCams?: () => void;
 }
 
-const PortfolioNavChart = ({ fallbackValues, camsMissing, onUploadCams }: PortfolioNavChartProps) => {
+const PortfolioNavChart = ({ camsMissing, onUploadCams }: PortfolioNavChartProps) => {
   const [horizon, setHorizon] = useState<PortfolioNavHorizon>("3Y");
   const [points, setPoints] = useState<PortfolioNavHistoryPoint[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -225,33 +223,20 @@ const PortfolioNavChart = ({ fallbackValues, camsMissing, onUploadCams }: Portfo
     }
   }, [loading, hasPoints, errored, job, starting, startBuild]);
 
+  // The chart is sourced ONLY from the live backend net-worth series, which the
+  // backend builds from the user's real transactions (mf_transaction × mf_nav_history;
+  // see networth_history_service). There is deliberately no synthetic/example
+  // fallback: when the series isn't available yet the build/CTA/loading states below
+  // take over (and the build itself derives the series from transactions), so the
+  // "Invested" line is never fabricated to equal the value line.
   const chartData = useMemo(() => {
-    if (points && points.length) {
-      return points.map((p, i) => ({
-        ...p,
-        x: formatXLabel(p.recorded_date, horizon),
-        idx: i,
-      }));
-    }
-    if (fallbackValues && fallbackValues.length) {
-      // Map fallback bare numbers to the same shape so the chart still renders.
-      const today = new Date();
-      return fallbackValues.map((v, i) => {
-        const d = new Date(today);
-        d.setDate(today.getDate() - (fallbackValues.length - 1 - i));
-        const iso = d.toISOString().slice(0, 10);
-        return {
-          recorded_date: iso,
-          total_value: v * 100000,
-          total_invested: v * 100000,
-          gain_percentage: 0,
-          x: formatXLabel(iso, horizon),
-          idx: i,
-        };
-      });
-    }
-    return [];
-  }, [points, horizon, fallbackValues]);
+    if (!points || !points.length) return [];
+    return points.map((p, i) => ({
+      ...p,
+      x: formatXLabel(p.recorded_date, horizon),
+      idx: i,
+    }));
+  }, [points, horizon]);
 
   const tickCount = 5;
 
