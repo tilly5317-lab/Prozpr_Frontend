@@ -9,6 +9,7 @@ import {
   type LinkAccountInfo,
   type PortfolioDetail,
 } from "@/lib/api";
+import { useOnboardingStep } from "@/hooks/useOnboardingStep";
 
 function isActiveLinked(a: LinkAccountInfo): boolean {
   return a.status === "active";
@@ -41,6 +42,7 @@ function hasMutualFundExposure(linked: LinkAccountInfo[], portfolio: PortfolioDe
  */
 const LinkAccounts = () => {
   const navigate = useNavigate();
+  const { completeStep } = useOnboardingStep("link_accounts");
   const [linkedAccounts, setLinkedAccounts] = useState<LinkAccountInfo[]>([]);
   const [portfolio, setPortfolio] = useState<PortfolioDetail | null>(null);
   const [linkedLoading, setLinkedLoading] = useState(true);
@@ -229,6 +231,7 @@ const LinkAccounts = () => {
               navigate("/cams-upload");
               return;
             }
+            completeStep({ has_mf: hasMF });
             sessionStorage.setItem("completedLinkAccounts", "true");
             navigate("/about-you");
           }}

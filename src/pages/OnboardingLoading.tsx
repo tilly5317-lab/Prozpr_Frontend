@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { useOnboardingStep } from "@/hooks/useOnboardingStep";
 
 const OnboardingLoading = () => {
   const navigate = useNavigate();
   const { refresh } = useAuth();
+  const { completeStep } = useOnboardingStep("profile_generation");
   const [progress, setProgress] = useState(0);
 
   useEffect(() => {
@@ -21,6 +23,7 @@ const OnboardingLoading = () => {
 
     const t2 = window.setTimeout(() => {
       setProgress(100);
+      completeStep();
       navigate("/chat");
     }, 3500);
 
@@ -28,7 +31,7 @@ const OnboardingLoading = () => {
       if (t1) window.clearInterval(t1);
       if (t2) window.clearTimeout(t2);
     };
-  }, [navigate, refresh]);
+  }, [navigate, refresh, completeStep]);
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center px-6">
