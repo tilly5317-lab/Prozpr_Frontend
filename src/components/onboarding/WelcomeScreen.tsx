@@ -1,10 +1,14 @@
-﻿import { useState, useRef } from "react";
+﻿import { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight, Shield, TrendingUp, Sparkles, ChevronDown, ArrowLeft, Loader2, FileText, UploadCloud } from "lucide-react";
 import CamsStatementPasswordModal from "./CamsStatementPasswordModal";
 import prozprLogo from "@/assets/prozpr-logo-v2.png";
 import { signup, login, getMe, updateMe, checkMobileStatus } from "@/lib/api";
+import {
+  trackOnboardingStepViewed,
+  trackOnboardingStepCompleted,
+} from "@/lib/onboardingAnalytics";
 import { useAuth } from "@/context/AuthContext";
 import {
   InputOTP,
@@ -68,6 +72,14 @@ const WelcomeScreen = ({ onExistingUserLogin }: WelcomeScreenProps) => {
 
   const isValid = phone.replace(/\s/g, "").length >= 7;
 
+  // WelcomeScreen is a single component that swaps between internal sub-steps,
+  // so the onboarding "viewed" events are emitted here on each sub-step change
+  // rather than via useOnboardingStep (which is for route-mounted screens).
+  useEffect(() => {
+    if (step === "phone") trackOnboardingStepViewed("phone_entry");
+    else if (step === "setup") trackOnboardingStepViewed("account_setup");
+  }, [step]);
+
   const handlePhoneSubmit = async () => {
     if (!isValid || loading) return;
     setLoading(true);
@@ -88,6 +100,9 @@ const WelcomeScreen = ({ onExistingUserLogin }: WelcomeScreenProps) => {
     }
 
     setLoading(false);
+    trackOnboardingStepCompleted("phone_entry", {
+      user_type: exists ? "returning" : "new",
+    });
     // Returning users go straight to the PIN prompt; new users set up their
     // account (name + PIN + confirm + email) on one page before onboarding.
     setStep(exists ? "pin" : "setup");
@@ -222,6 +237,7 @@ const WelcomeScreen = ({ onExistingUserLogin }: WelcomeScreenProps) => {
 
     await refresh();
     setLoading(false);
+    trackOnboardingStepCompleted("account_setup");
     // First onboarding step after account setup: upload the CAMS statement.
     navigate("/cams-upload");
   };

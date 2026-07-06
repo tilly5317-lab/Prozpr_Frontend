@@ -18,6 +18,7 @@ import {
 } from "@/lib/api";
 import { formatInrCompact } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
+import { useOnboardingStep } from "@/hooks/useOnboardingStep";
 import CamsStatementGuide from "@/components/onboarding/CamsStatementGuide";
 
 const MAX_PDF_BYTES = 20 * 1024 * 1024;
@@ -34,6 +35,9 @@ const CamsUpload = () => {
   const [searchParams] = useSearchParams();
   const fromProfile = searchParams.get("from") === "profile";
   const exitRoute = fromProfile ? "/profile" : "/link-accounts";
+  // Track as an onboarding step only during first-run onboarding — not when the
+  // page is reused from Profile → "Update Holdings".
+  const { completeStep } = useOnboardingStep("cams_upload", { enabled: !fromProfile });
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [password, setPassword] = useState("");
@@ -239,7 +243,13 @@ const CamsUpload = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
           type="button"
-          onClick={() => navigate(exitRoute)}
+          onClick={() => {
+            completeStep({
+              schemes: result?.schemes,
+              folios: result?.folios,
+            });
+            navigate(exitRoute);
+          }}
           className="flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold text-primary-foreground tracking-wide transition-all active:scale-[0.98]"
         >
           {fromProfile ? "Done — back to profile" : "Continue"}

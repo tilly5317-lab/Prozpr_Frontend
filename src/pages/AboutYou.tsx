@@ -5,6 +5,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ArrowRight, Briefcase, Calendar, Check, Plus, Target, Wallet, X, ShieldCheck, ChevronDown, Loader2 } from "lucide-react";
 import { persistOnboardingProfile, markOnboardingComplete } from "@/lib/api";
 import { toast } from "@/hooks/use-toast";
+import { useOnboardingStep } from "@/hooks/useOnboardingStep";
+import { trackOnboardingCompleted } from "@/lib/onboardingAnalytics";
 
 interface Props {
   onComplete: () => void;
@@ -108,6 +110,7 @@ type SectionId = "basic" | "goals" | "income" | "risk";
 const SECTION_ORDER: SectionId[] = ["basic", "goals", "income", "risk"];
 
 const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
+  const { completeStep } = useOnboardingStep("about_you");
   const [dob, setDob] = useState(""); // DD/MM/YYYY (slashes added automatically)
   const [selectedGoals, setSelectedGoals] = useState<string[]>([]);
   const [customGoals, setCustomGoals] = useState<string[]>([]);
@@ -208,6 +211,15 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
       setSubmitting(false);
       return;
     }
+    // Profile saved & backend marked onboarding complete → this is the funnel's
+    // finish line. completeStep first so the "about_you" step isn't logged as
+    // abandoned when the route unmounts on navigation.
+    completeStep();
+    trackOnboardingCompleted({
+      occupation: occupationLabel || undefined,
+      goals_count: selectedGoals.length,
+      investment_horizon: horizon || undefined,
+    });
     onComplete();
   };
 

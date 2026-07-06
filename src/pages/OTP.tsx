@@ -7,6 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
 import { getMe } from "@/lib/api";
+import { trackOnboardingCompleted } from "@/lib/onboardingAnalytics";
 
 type Screen = "onboarding" | "dashboard";
 
@@ -48,6 +49,7 @@ const OTP = () => {
 
   const handleOnboardingComplete = () => {
     sessionStorage.setItem("onboardingComplete", "true");
+    trackOnboardingCompleted();
     setScreen("dashboard");
   };
 

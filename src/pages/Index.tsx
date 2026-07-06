@@ -6,6 +6,7 @@ import NewOnboardingFlow from "@/components/onboarding/NewOnboardingFlow";
 import PortfolioDashboard from "@/components/dashboard/PortfolioDashboard";
 import { useAuth } from "@/context/AuthContext";
 import { markOnboardingComplete } from "@/lib/api";
+import { trackOnboardingCompleted } from "@/lib/onboardingAnalytics";
 
 type Screen = "onboarding" | "dashboard";
 
@@ -34,6 +35,7 @@ const Index = () => {
     } catch {
       sessionStorage.setItem("onboardingComplete", "true");
     }
+    trackOnboardingCompleted();
     setScreen("dashboard");
   };
 
