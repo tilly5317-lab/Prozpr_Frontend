@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { FamilyProvider } from "@/context/FamilyContext";
 import { ThemeProvider } from "@/context/ThemeContext";
@@ -45,26 +45,22 @@ import Profile from "./pages/Profile";
 import Chat from "./pages/Chat";
 import MeetingNotes from "./pages/MeetingNotes";
 import MeetingNotesIndex from "./pages/MeetingNotesIndex";
-import Rebalancing from "./pages/Rebalancing";
 import GoalPlanner from "./pages/GoalPlanner";
 import GoalsTimeline from "./pages/GoalsTimeline";
-import Invest from "./pages/Invest";
+import SipPlanner from "./pages/SipPlanner";
+import InvestLayout from "@/components/invest/InvestLayout";
 import Execute from "./pages/Execute";
 import RebalanceExplanation from "./pages/RebalanceExplanation";
-import RebalanceTradeDetail from "./pages/RebalanceTradeDetail";
 import Discovery from "./pages/Discovery";
 import MfAllFunds from "./pages/MfAllFunds";
 import MfCompare from "./pages/MfCompare";
 import MfFundDetail from "./pages/MfFundDetail";
 import AdvisorMeetings from "./pages/AdvisorMeetings";
-import OTP from "./pages/OTP";
 import CamsUpload from "./pages/CamsUpload";
 import LinkAccounts from "./pages/LinkAccounts";
 import AboutYou from "./pages/AboutYou";
 import Portfolio from "./pages/Portfolio";
 import PortfolioFundDetail from "./pages/PortfolioFundDetail";
-import PortfolioPopup from "./pages/PortfolioPopup";
-import VoiceOnboarding from "./pages/VoiceOnboarding";
 import OnboardingLoading from "./pages/OnboardingLoading";
 import FamilyMembers from "./pages/FamilyMembers";
 
@@ -87,9 +83,6 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/portfolio" element={<Portfolio />} />
             <Route path="/portfolio/fund/:schemeCode" element={<PortfolioFundDetail />} />
-            <Route path="/portfolio-popup" element={<PortfolioPopup />} />
-            <Route path="/voice-onboarding" element={<VoiceOnboarding />} />
-            <Route path="/otp" element={<OTP />} />
             <Route path="/cams-upload" element={<CamsUpload />} />
             <Route path="/link-accounts" element={<LinkAccounts />} />
             <Route path="/onboarding-loading" element={<OnboardingLoading />} />
@@ -97,11 +90,18 @@ const App = () => (
             <Route path="/profile" element={<Profile />} />
             <Route path="/chat" element={<Chat />} />
             <Route path="/notifications" element={<Notifications />} />
-            <Route path="/invest" element={<Invest />} />
+            {/* Invest section — layout route so the top toggle (InvestTabs)
+                persists across Rebalancing ↔ SIP (enables the sliding pill). */}
+            <Route path="/invest" element={<InvestLayout />}>
+              <Route index element={<Navigate to="/invest/rebalance-explanation" replace />} />
+              <Route path="rebalance-explanation" element={<RebalanceExplanation />} />
+              <Route path="sip" element={<SipPlanner />} />
+            </Route>
             <Route path="/execute" element={<Execute />} />
             <Route path="/excecute" element={<Execute />} />
-            <Route path="/rebalance-explanation" element={<RebalanceExplanation />} />
-            <Route path="/rebalance-explanation/trade/:tradeId" element={<RebalanceTradeDetail />} />
+            {/* Back-compat: old flat rebalancing URLs redirect into the invest section */}
+            <Route path="/rebalance-explanation" element={<Navigate to="/invest/rebalance-explanation" replace />} />
+            <Route path="/rebalance-explanation/trade/:tradeId" element={<Navigate to="/invest/rebalance-explanation" replace />} />
             <Route path="/discovery/compare" element={<MfCompare />} />
             <Route path="/discovery/mf/:schemeCode" element={<MfFundDetail />} />
             <Route path="/discovery/mf" element={<MfAllFunds />} />
