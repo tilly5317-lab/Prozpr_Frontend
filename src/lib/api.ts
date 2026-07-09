@@ -1283,15 +1283,23 @@ export async function getMyLumpSumPlan(): Promise<SipPlanResponse> {
   return request<SipPlanResponse>("/additional-investment/lumpsum");
 }
 
+/** Whether a lump-sum plan deploys fresh money (``add``) or raises cash by
+ * redeeming holdings (``withdraw``). */
+export type LumpSumAction = "add" | "withdraw";
+
 /**
- * Plan (or refresh) a one-time lump-sum deployment for ``amountInr``: runs the
- * additional-investment engine with ``cadence=lumpsum`` and returns the fresh
- * plan. Throws with a customer-facing message when the engine can't plan yet.
+ * Plan (or refresh) a one-time lump sum for ``amountInr``. ``action="add"`` runs
+ * the additional-investment engine (``cadence=lumpsum``) to deploy the amount
+ * across funds; ``action="withdraw"`` plans which holdings to redeem to raise it.
+ * Throws with a customer-facing message when the engine can't plan yet.
  */
-export async function createLumpSumPlan(amountInr: number): Promise<SipPlanResponse> {
+export async function createLumpSumPlan(
+  amountInr: number,
+  action: LumpSumAction = "add",
+): Promise<SipPlanResponse> {
   return request<SipPlanResponse>("/additional-investment/lumpsum", {
     method: "POST",
-    body: JSON.stringify({ amount_inr: amountInr }),
+    body: JSON.stringify({ amount_inr: amountInr, action }),
   });
 }
 
