@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, useEffect, useRef, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, Check, ChevronLeft, ChevronRight, Plus, X, Info, AlertTriangle, Lock, Wallet, Target, TrendingUp, Landmark } from "lucide-react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Slider } from "@/components/ui/slider";
 import { formatMoneyInput } from "@/lib/utils";
@@ -115,6 +115,21 @@ const SECTION_TITLES = [
   "Your investment preference and focus",
   "Tax details",
 ];
+
+// Each section gets its own URL so onboarding steps are linkable; the section
+// card list stays at /profile/complete. Index here matches SECTION_TITLES.
+const SECTION_SLUGS = [
+  "financial-picture",
+  "goals",
+  "investment-preferences",
+  "tax-details",
+];
+const CARDS_PATH = "/profile/complete";
+const pathForSection = (idx: number): string =>
+  idx >= 0 && idx < SECTION_SLUGS.length ? `/profile/${SECTION_SLUGS[idx]}` : CARDS_PATH;
+/** Section index for a pathname, or -1 for the card list / anything else. */
+const sectionForPath = (pathname: string): number =>
+  SECTION_SLUGS.indexOf(pathname.replace(/^\/profile\//, "").replace(/\/+$/, ""));
 
 /** Card meta for the section list — icon, one-line description, time estimate. */
 const SECTION_META: { Icon: typeof Wallet; description: string; estimate: string }[] = [
@@ -548,6 +563,7 @@ const IncomeExpenseSlider = ({ label, range, onChange }: {
 
 const CompleteProfile = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   // -1 = section-card carousel; otherwise the open section, stepping through
   // its question groups one at a time via groupIndex.
   const [openSection, setOpenSection] = useState(-1);
@@ -1017,7 +1033,7 @@ const CompleteProfile = () => {
     nextStatuses[idx] = "confirmed";
     setStatuses(nextStatuses);
     // Back to the section cards — the next card to tackle is visible there.
-    setOpenSection(-1);
+    navigate(CARDS_PATH);
     setGroupIndex(0);
     toast.success(`Section ${idx + 1} confirmed ✓`);
   };
@@ -1169,6 +1185,9 @@ const CompleteProfile = () => {
     });
   }, []);
 
+  // Opening a section = navigating to its URL. The pathname-sync effect below
+  // does the real work (snapshot signatures, set the open section), so the
+  // address bar and the visible section stay in lock-step.
   const openSectionCard = (idx: number) => {
     // "What are you trying to achieve?" lives in Goal planning — send the user
     // there to set goals and complete the cashflow inputs in one place.
@@ -1176,33 +1195,57 @@ const CompleteProfile = () => {
       navigate("/goal-planner?inputs=1");
       return;
     }
-    // Baseline the steps' signatures as they are now, so a step the user never
-    // touches won't trigger a save when they click through.
-    snapshotSectionSignatures(idx);
-    setOpenSection(idx);
-    setGroupIndex(0);
-    markInProgress(idx);
+    navigate(pathForSection(idx));
   };
 
-  // Deep-link from the portfolio "Unlock" circles: ?section=N opens that section
-  // directly once the profile has loaded (runs once).
   const [searchParams, setSearchParams] = useSearchParams();
-  const deepLinkedRef = useRef(false);
+
+  // Back-compat: the portfolio "Unlock" circles link to /profile/complete?section=N.
+  // Rewrite that once to the section's named URL so there's a single URL scheme;
+  // the pathname effect below then opens it.
   useEffect(() => {
-    if (deepLinkedRef.current || !profileLoaded) return;
     const raw = searchParams.get("section");
     if (raw == null) return;
-    deepLinkedRef.current = true;
     const idx = Number(raw);
-    if (Number.isInteger(idx) && idx >= 0 && idx < SECTION_TITLES.length) {
-      openSectionCard(idx);
-    }
-    // Clear the param so a refresh/back doesn't re-trigger it.
     const next = new URLSearchParams(searchParams);
     next.delete("section");
     setSearchParams(next, { replace: true });
+    if (Number.isInteger(idx) && idx >= 0 && idx < SECTION_SLUGS.length) {
+      navigate(pathForSection(idx), { replace: true });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profileLoaded]);
+  }, []);
+
+  // The URL is the source of truth for which section is open. Opening/closing a
+  // section, browser back/forward, and direct deep-links all flow through here,
+  // so the address bar and the visible step never drift apart. Waits for the
+  // profile to load because opening a section snapshots its saved field values.
+  useEffect(() => {
+    if (!profileLoaded) return;
+    const idx = sectionForPath(location.pathname);
+    if (idx === 1) {
+      // Goals inputs live in Goal planning; /profile/goals just forwards there.
+      navigate("/goal-planner?inputs=1", { replace: true });
+      return;
+    }
+    if (idx < 0) {
+      // Card list (/profile/complete or any non-section path).
+      if (openSection !== -1) {
+        setOpenSection(-1);
+        setGroupIndex(0);
+      }
+      return;
+    }
+    if (idx !== openSection) {
+      // Baseline the steps' signatures as they are now, so a step the user never
+      // touches won't trigger a save when they click through.
+      snapshotSectionSignatures(idx);
+      setOpenSection(idx);
+      setGroupIndex(0);
+      markInProgress(idx);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, profileLoaded]);
 
   const toggleChipArray = (arr: string[], item: string, setter: (v: string[]) => void) => {
     setter(arr.includes(item) ? arr.filter((x) => x !== item) : [...arr, item]);
@@ -2058,7 +2101,7 @@ const CompleteProfile = () => {
               {/* Section identity */}
               <div className="pt-3 pb-3 flex items-center gap-3">
                 <button
-                  onClick={() => { setOpenSection(-1); setGroupIndex(0); }}
+                  onClick={() => navigate(CARDS_PATH)}
                   className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted hover:bg-muted/80 transition-colors"
                   aria-label="Back to sections"
                 >

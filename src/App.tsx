@@ -107,7 +107,16 @@ const App = () => (
             <Route path="/discovery/mf" element={<MfAllFunds />} />
             <Route path="/discovery" element={<Discovery />} />
             <Route path="/advisor-meetings" element={<AdvisorMeetings />} />
-            <Route path="/profile/complete" element={<CompleteProfile />} />
+            {/* Profile-completion onboarding: one mounted page (pathless layout
+                route) whose URL names the open section, so each step is linkable
+                and survives browser back/forward without reloading the page. */}
+            <Route element={<CompleteProfile />}>
+              <Route path="/profile/complete" element={null} />
+              <Route path="/profile/financial-picture" element={null} />
+              <Route path="/profile/goals" element={null} />
+              <Route path="/profile/investment-preferences" element={null} />
+              <Route path="/profile/tax-details" element={null} />
+            </Route>
             <Route path="/meeting-notes" element={<MeetingNotesIndex />} />
             <Route path="/meeting-notes/detail" element={<MeetingNotes />} />
             <Route path="/rebalancing" element={<Execute />} />
