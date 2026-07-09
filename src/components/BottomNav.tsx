@@ -7,7 +7,7 @@ import { listNotifications } from "@/lib/api";
 const tabs = [
   { icon: MessageSquare, label: "Chat", path: "/chat" },
   { icon: Home, label: "Portfolio", path: "/portfolio" },
-  { icon: Compass, label: "Invest", path: "/rebalance-explanation" },
+  { icon: Compass, label: "Invest", path: "/invest/rebalance-explanation" },
   { icon: Target, label: "Goals", path: "/goal-planner" },
   { icon: Bell, label: "Alerts", path: "/notifications" },
 ];
@@ -47,8 +47,10 @@ const BottomNav = () => {
         {tabs.map((tab) => {
           const isActive =
             location.pathname === tab.path ||
-            (tab.path === "/rebalance-explanation" &&
-              (location.pathname === "/execute" || location.pathname.startsWith("/rebalance")));
+            (tab.path === "/invest/rebalance-explanation" &&
+              (location.pathname.startsWith("/invest") ||
+                location.pathname === "/execute" ||
+                location.pathname.startsWith("/rebalance")));
           // Only the Alerts tab carries a badge, and only when there are unread items.
           const badge = tab.path === "/notifications" ? unreadCount : 0;
           return (

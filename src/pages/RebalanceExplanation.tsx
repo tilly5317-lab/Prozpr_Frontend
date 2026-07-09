@@ -583,7 +583,7 @@ const RebalanceExplanation = () => {
           when ready it loads the real plan via onReady. */}
       <RebalanceGate onReady={loadData} onResolved={setGateReady} editSignal={gateEditSignal} />
 
-      <div className="px-5 pt-10 pb-2 space-y-3">
+      <div className="px-5 pt-2 pb-2 space-y-3">
         {dataLoading && (
           <div className="space-y-3" aria-busy="true" aria-label="Loading your plan">
             <div className="flex items-center gap-2 text-muted-foreground">
