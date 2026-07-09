@@ -1,8 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Loader2, Repeat, Pencil, ChevronRight, Check, ArrowRight } from "lucide-react";
 import BottomNav from "@/components/BottomNav";
-import { getMySipPlan, createSipPlan, type SipPlanResponse } from "@/lib/api";
+import {
+  getMySipPlan,
+  createSipPlan,
+  getOnboardingProfile,
+  getRebalancingRunDetail,
+  listRebalancingRuns,
+  type RebalancingSubgroupSummary,
+  type SipPlanResponse,
+} from "@/lib/api";
+import { CurrentVsTargetChart } from "@/components/invest/CurrentVsTargetChart";
+import { buildSipTargetRows, type DriftRow } from "@/lib/driftRows";
 import { formatInr0, formatMoneyInput } from "@/lib/utils";
 
 /** Shown when the SIP fetch fails or returns nothing — renders the set-up prompt. */
@@ -52,9 +62,13 @@ const toInput = (inr: number) => formatMoneyInput(String(Math.round(inr)));
 function SipPlanCard({
   sip,
   onCreated,
+  driftRows,
+  monthlyIncome,
 }: {
   sip: SipPlanResponse;
   onCreated: (plan: SipPlanResponse) => void;
+  driftRows: DriftRow[];
+  monthlyIncome: number | null;
 }) {
   const navigate = useNavigate();
   const hasPlan = sip.has_plan && sip.buys.length > 0;
@@ -170,6 +184,11 @@ function SipPlanCard({
 
   // ── Existing plan ──
   const bucketLabel = sip.target_bucket ? SIP_BUCKET_LABEL[sip.target_bucket] : null;
+  // What share of monthly income this SIP represents (savings rate).
+  const savingsPct =
+    monthlyIncome && monthlyIncome > 0
+      ? Math.round((sip.monthly_amount_inr / monthlyIncome) * 100)
+      : null;
 
   return (
     <>
@@ -194,6 +213,11 @@ function SipPlanCard({
             Edit
           </button>
         </div>
+        {savingsPct != null && (
+          <p className="mt-1 text-[14px] font-semibold text-wealth-green">
+            {savingsPct}% savings
+          </p>
+        )}
         {bucketLabel && (
           <p className="mt-1 text-[11px] leading-snug text-muted-foreground">{bucketLabel}</p>
         )}
@@ -216,6 +240,14 @@ function SipPlanCard({
           </div>
         )}
       </div>
+
+      {/* Proposed Target — the SIP's recommended split across asset classes,
+          right under the monthly SIP amount. */}
+      {driftRows.length > 0 && (
+        <div className="mb-3">
+          <CurrentVsTargetChart rows={driftRows} bars={["target"]} title="Proposed Target" />
+        </div>
+      )}
 
       {/* Suggested funds card — each row opens that fund's detail page */}
       <div className="mb-3 rounded-2xl border border-border bg-card p-4">
@@ -271,12 +303,47 @@ const SipPlanner = () => {
   const [sip, setSip] = useState<SipPlanResponse | null>(null);
   const [accepting, setAccepting] = useState(false);
   const [accepted, setAccepted] = useState(false);
+  const [subgroupSummaries, setSubgroupSummaries] = useState<RebalancingSubgroupSummary[]>([]);
+  const [monthlyIncome, setMonthlyIncome] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     getMySipPlan()
       .then((s) => !cancelled && setSip(s))
       .catch(() => !cancelled && setSip(EMPTY_SIP));
+    return () => { cancelled = true; };
+  }, []);
+
+  // Latest rebalancing run's subgroup summaries — used only as a backend
+  // asset_subgroup → asset_class map to classify the SIP's own buys (the amounts
+  // are the SIP's, not the rebalancing numbers). Read-only; empty if no run.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const run = (await listRebalancingRuns())[0];
+        if (!run) return;
+        const detail = await getRebalancingRunDetail(run.id);
+        if (!cancelled) setSubgroupSummaries(detail.subgroup_summaries ?? []);
+      } catch {
+        /* no run — the chart just stays hidden */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Monthly income → the SIP's savings rate (% of income).
+  useEffect(() => {
+    let cancelled = false;
+    getOnboardingProfile()
+      .then((p) => {
+        if (!cancelled && p.annual_income != null && p.annual_income > 0) {
+          setMonthlyIncome(p.annual_income / 12);
+        }
+      })
+      .catch(() => { /* no income on file — the savings % just hides */ });
     return () => { cancelled = true; };
   }, []);
 
@@ -287,6 +354,12 @@ const SipPlanner = () => {
   };
 
   const hasPlan = !!sip?.has_plan && (sip?.buys.length ?? 0) > 0;
+  // The SIP's recommended allocation (Equity / Debt / Others), classified from
+  // the backend subgroup map and summed from the SIP's own monthly buys.
+  const driftRows = useMemo(
+    () => buildSipTargetRows(sip?.buys ?? [], subgroupSummaries),
+    [sip, subgroupSummaries],
+  );
   // Accept the goal plan's newer figure when this plan drifted out of sync,
   // otherwise (re)commit the amount already shown.
   const newAmount =
@@ -316,7 +389,12 @@ const SipPlanner = () => {
           across the right funds for your goals — the same plan you&apos;d get in chat.
         </p>
         {sip ? (
-          <SipPlanCard sip={sip} onCreated={handleCreated} />
+          <SipPlanCard
+            sip={sip}
+            onCreated={handleCreated}
+            driftRows={driftRows}
+            monthlyIncome={monthlyIncome}
+          />
         ) : (
           <div className="flex items-center justify-center gap-2 pt-16 text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
