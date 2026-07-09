@@ -48,6 +48,7 @@ import MeetingNotesIndex from "./pages/MeetingNotesIndex";
 import GoalPlanner from "./pages/GoalPlanner";
 import GoalsTimeline from "./pages/GoalsTimeline";
 import SipPlanner from "./pages/SipPlanner";
+import LumpSumPlanner from "./pages/LumpSumPlanner";
 import InvestLayout from "@/components/invest/InvestLayout";
 import Execute from "./pages/Execute";
 import RebalanceExplanation from "./pages/RebalanceExplanation";
@@ -96,6 +97,7 @@ const App = () => (
               <Route index element={<Navigate to="/invest/rebalance-explanation" replace />} />
               <Route path="rebalance-explanation" element={<RebalanceExplanation />} />
               <Route path="sip" element={<SipPlanner />} />
+              <Route path="lumpsum" element={<LumpSumPlanner />} />
             </Route>
             <Route path="/execute" element={<Execute />} />
             <Route path="/excecute" element={<Execute />} />
