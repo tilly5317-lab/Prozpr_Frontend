@@ -1273,6 +1273,28 @@ export async function createSipPlan(monthlyAmountInr: number): Promise<SipPlanRe
   });
 }
 
+/**
+ * The user's latest one-time lump-sum deployment plan (additional-investment
+ * engine, ``cadence=lumpsum``). Shares the SIP read shape — ``monthly_amount_inr``
+ * / ``buys[].monthly_amount_inr`` carry the one-time amounts. ``has_plan`` is
+ * false when they haven't planned one yet.
+ */
+export async function getMyLumpSumPlan(): Promise<SipPlanResponse> {
+  return request<SipPlanResponse>("/additional-investment/lumpsum");
+}
+
+/**
+ * Plan (or refresh) a one-time lump-sum deployment for ``amountInr``: runs the
+ * additional-investment engine with ``cadence=lumpsum`` and returns the fresh
+ * plan. Throws with a customer-facing message when the engine can't plan yet.
+ */
+export async function createLumpSumPlan(amountInr: number): Promise<SipPlanResponse> {
+  return request<SipPlanResponse>("/additional-investment/lumpsum", {
+    method: "POST",
+    body: JSON.stringify({ amount_inr: amountInr }),
+  });
+}
+
 /** NAV point for MF holding-detail chart (`mf_nav_history`). */
 export interface MfHoldingNavPoint {
   nav_date: string;
