@@ -39,16 +39,6 @@ const BUCKET_META: Record<Bucket, { label: string; color: string }> = {
   others: { label: "Others", color: "hsl(38 64% 47%)" },
 };
 
-// Illustrative SIP-vs-lumpsum split of each asset class's TARGET allocation.
-// Frontend-only: the rebalancing engine doesn't return an SIP breakdown yet, so
-// the drift card's "SIP split" toggle uses these fixed fractions (the share of a
-// class's target assumed to be built via monthly SIP) purely to show the layout.
-const SIP_TARGET_SPLIT: Record<Bucket, number> = {
-  equity: 0.68,
-  debt: 0.45,
-  others: 0.3,
-};
-
 // Normalize the backend's canonical asset_class ("Equity" / "Debt" / "Others")
 // to our internal lowercase Bucket key. Unknown / null → "others".
 function toBucket(assetClass: string | null | undefined): Bucket {
@@ -475,9 +465,6 @@ const RebalanceExplanation = () => {
   // Bumped to open the gate's inputs form on demand (e.g. from the example plan's
   // CTA) — so the user can add their details even after dismissing the prompt.
   const [gateEditSignal, setGateEditSignal] = useState(0);
-  // Drift card view: "target" = the current-vs-target ₹ bars; "sip" = a
-  // frontend-only SIP/lumpsum split of each class's target (see SIP_TARGET_SPLIT).
-  const [driftView, setDriftView] = useState<"target" | "sip">("target");
 
   // Open the full fund-detail page (same screen as a portfolio holding), passing
   // the trade's rationale so it can render a "Why this trade" card on top. The
@@ -693,75 +680,22 @@ const RebalanceExplanation = () => {
               const rawMax = Math.max(1, ...driftRowsToShow.flatMap((r) => [r.currentInr, r.targetInr]));
               const axisMax = niceCeil(rawMax);
               const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * axisMax);
-              // In SIP mode bars are drawn in %; scale to the largest target so the
-              // biggest class fills the track, mirroring the ₹ view's shared axis.
-              const sipAxisMax = Math.max(1, ...driftRowsToShow.map((r) => r.target));
-              const isSip = driftView === "sip";
               const barEase = [0.22, 1, 0.36, 1] as const;
               return (
                 <section style={cardStyle} className="px-4 py-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-[11px] tracking-[0.16em] uppercase text-muted-foreground">
-                      {isSip ? "Target SIP split" : "Current vs target"}
-                    </p>
-                    {/* Toggle: current-vs-target ↔ SIP breakdown (frontend-only). The
-                        sliding pill uses a shared layoutId so it animates between tabs. */}
-                    <div className="inline-flex shrink-0 rounded-full border border-border bg-muted/50 p-0.5">
-                      {([
-                        { key: "target", label: "Target" },
-                        { key: "sip", label: "SIP split" },
-                      ] as const).map((opt) => {
-                        const active = driftView === opt.key;
-                        return (
-                          <button
-                            key={opt.key}
-                            type="button"
-                            onClick={() => setDriftView(opt.key)}
-                            className="relative select-none rounded-full px-2.5 py-1 text-[10px] font-semibold outline-none transition-colors focus:outline-none focus-visible:outline-none"
-                            style={{
-                              color: active ? "hsl(var(--foreground))" : "hsl(var(--muted-foreground))",
-                              WebkitTapHighlightColor: "transparent",
-                            }}
-                          >
-                            {active && (
-                              <motion.span
-                                layoutId="driftViewPill"
-                                className="absolute inset-0 rounded-full bg-card shadow-sm"
-                                transition={{ type: "spring", stiffness: 240, damping: 26, mass: 0.9 }}
-                              />
-                            )}
-                            <span className="relative">{opt.label}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
+                  <p className="text-[11px] tracking-[0.16em] uppercase text-muted-foreground">
+                    Current vs target
+                  </p>
 
-                  {/* Legend — switches with the active view. */}
                   <div className="mt-1.5 flex items-center gap-3 text-[10px] text-muted-foreground">
-                    {isSip ? (
-                      <>
-                        <span className="inline-flex items-center gap-1">
-                          <span className="h-2 w-3.5 rounded-sm bg-muted-foreground" />
-                          SIP
-                        </span>
-                        <span className="inline-flex items-center gap-1">
-                          <span className="h-2 w-3.5 rounded-sm" style={{ background: withAlpha("hsl(var(--muted-foreground))", 0.4) }} />
-                          Lumpsum
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="inline-flex items-center gap-1">
-                          <span className="h-2 w-3.5 rounded-sm" style={{ background: withAlpha("hsl(var(--muted-foreground))", 0.3) }} />
-                          Current
-                        </span>
-                        <span className="inline-flex items-center gap-1">
-                          <span className="h-2 w-3.5 rounded-sm bg-muted-foreground" />
-                          Target
-                        </span>
-                      </>
-                    )}
+                    <span className="inline-flex items-center gap-1">
+                      <span className="h-2 w-3.5 rounded-sm" style={{ background: withAlpha("hsl(var(--muted-foreground))", 0.3) }} />
+                      Current
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <span className="h-2 w-3.5 rounded-sm bg-muted-foreground" />
+                      Target
+                    </span>
                   </div>
 
                   <TooltipProvider delayDuration={100}>
@@ -770,12 +704,6 @@ const RebalanceExplanation = () => {
                         const drift = row.current - row.target;
                         const curWidth = (row.currentInr / axisMax) * 100;
                         const tgtWidth = (row.targetInr / axisMax) * 100;
-                        // SIP split (frontend-only): break the class's target % into an
-                        // assumed SIP vs lumpsum share; the two-tone bar spans the target.
-                        const sipFrac = SIP_TARGET_SPLIT[row.key] ?? 0.5;
-                        const sipPct = row.target * sipFrac;
-                        const lumpPct = row.target - sipPct;
-                        const sipBarWidth = (row.target / sipAxisMax) * 100;
                         const delay = i * 0.09;
                         return (
                           <Tooltip key={row.key}>
@@ -786,58 +714,34 @@ const RebalanceExplanation = () => {
                                     <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: row.color }} />
                                     <span className="text-[13px] text-foreground">{row.label}</span>
                                   </div>
-                                  {isSip ? (
-                                    <span className="text-[11px] tabular-nums text-muted-foreground">
-                                      {row.target}% target
-                                    </span>
-                                  ) : (
-                                    <span
-                                      className="text-[11px]"
-                                      style={{ color: drift > 0 ? OVERWEIGHT : drift < 0 ? UNDERWEIGHT : NEUTRAL }}
-                                    >
-                                      {row.amountText}
-                                    </span>
-                                  )}
+                                  <span
+                                    className="text-[11px]"
+                                    style={{ color: drift > 0 ? OVERWEIGHT : drift < 0 ? UNDERWEIGHT : NEUTRAL }}
+                                  >
+                                    {row.amountText}
+                                  </span>
                                 </div>
 
-                                {isSip ? (
-                                  /* One target bar in two shades of the class colour:
-                                     solid = SIP, lightened = lumpsum. The whole two-tone
-                                     bar grows 0 → its width so both shades reveal together. */
-                                  <div className="overflow-hidden rounded-[3px] bg-muted">
-                                    <motion.div
-                                      key={`sip-${row.key}`}
-                                      className="flex h-3.5"
-                                      initial={{ width: 0 }}
-                                      animate={{ width: `${Math.max(sipBarWidth, 1)}%` }}
-                                      transition={{ duration: 0.85, ease: barEase, delay }}
-                                    >
-                                      <div className="h-full" style={{ width: `${sipFrac * 100}%`, background: row.color }} />
-                                      <div className="h-full" style={{ width: `${(1 - sipFrac) * 100}%`, background: withAlpha(row.color, 0.4) }} />
-                                    </motion.div>
-                                  </div>
-                                ) : (
-                                  /* Current (top) + Target (bottom) — flush, no gap between
-                                     them. Each bar grows 0 → its width for a smooth reveal. */
-                                  <div className="overflow-hidden rounded-[3px] bg-muted">
-                                    <motion.div
-                                      key={`cur-${row.key}`}
-                                      className="h-3.5"
-                                      style={{ background: withAlpha(row.color, 0.3) }}
-                                      initial={{ width: 0 }}
-                                      animate={{ width: `${Math.max(curWidth, 0.5)}%` }}
-                                      transition={{ duration: 0.85, ease: barEase, delay }}
-                                    />
-                                    <motion.div
-                                      key={`tgt-${row.key}`}
-                                      className="h-3.5"
-                                      style={{ background: row.color }}
-                                      initial={{ width: 0 }}
-                                      animate={{ width: `${Math.max(tgtWidth, 0.5)}%` }}
-                                      transition={{ duration: 0.85, ease: barEase, delay: delay + 0.06 }}
-                                    />
-                                  </div>
-                                )}
+                                {/* Current (top) + Target (bottom) — flush, no gap between
+                                    them. Each bar grows 0 → its width for a smooth reveal. */}
+                                <div className="overflow-hidden rounded-[3px] bg-muted">
+                                  <motion.div
+                                    key={`cur-${row.key}`}
+                                    className="h-3.5"
+                                    style={{ background: withAlpha(row.color, 0.3) }}
+                                    initial={{ width: 0 }}
+                                    animate={{ width: `${Math.max(curWidth, 0.5)}%` }}
+                                    transition={{ duration: 0.85, ease: barEase, delay }}
+                                  />
+                                  <motion.div
+                                    key={`tgt-${row.key}`}
+                                    className="h-3.5"
+                                    style={{ background: row.color }}
+                                    initial={{ width: 0 }}
+                                    animate={{ width: `${Math.max(tgtWidth, 0.5)}%` }}
+                                    transition={{ duration: 0.85, ease: barEase, delay: delay + 0.06 }}
+                                  />
+                                </div>
                               </div>
                             </TooltipTrigger>
                             <TooltipContent side="top" className="px-3 py-2">
@@ -845,43 +749,20 @@ const RebalanceExplanation = () => {
                                 <span className="h-2 w-2 rounded-full" style={{ backgroundColor: row.color }} />
                                 <span className="text-[11px] font-semibold">{row.label}</span>
                               </div>
-                              {isSip ? (
-                                <div className="space-y-0.5 text-[11px]">
-                                  <div className="flex items-center justify-between gap-5">
-                                    <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-                                      <span className="h-2 w-2 rounded-sm" style={{ background: row.color }} />
-                                      SIP
-                                    </span>
-                                    <span className="font-medium tabular-nums">{sipPct.toFixed(1)}%</span>
-                                  </div>
-                                  <div className="flex items-center justify-between gap-5">
-                                    <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-                                      <span className="h-2 w-2 rounded-sm" style={{ background: withAlpha(row.color, 0.4) }} />
-                                      Lumpsum
-                                    </span>
-                                    <span className="font-medium tabular-nums">{lumpPct.toFixed(1)}%</span>
-                                  </div>
-                                  <div className="mt-0.5 flex items-center justify-between gap-5 border-t border-border pt-0.5">
-                                    <span className="text-muted-foreground">Target</span>
-                                    <span className="font-medium tabular-nums">{row.target}%</span>
-                                  </div>
+                              <div className="space-y-0.5 text-[11px]">
+                                <div className="flex items-center justify-between gap-5">
+                                  <span className="text-muted-foreground">Current</span>
+                                  <span className="font-medium tabular-nums">
+                                    {row.current}% · {axisINR(row.currentInr)}
+                                  </span>
                                 </div>
-                              ) : (
-                                <div className="space-y-0.5 text-[11px]">
-                                  <div className="flex items-center justify-between gap-5">
-                                    <span className="text-muted-foreground">Current</span>
-                                    <span className="font-medium tabular-nums">
-                                      {row.current}% · {axisINR(row.currentInr)}
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center justify-between gap-5">
-                                    <span className="text-muted-foreground">Target</span>
-                                    <span className="font-medium tabular-nums">
-                                      {row.target}% · {axisINR(row.targetInr)}
-                                    </span>
-                                  </div>
+                                <div className="flex items-center justify-between gap-5">
+                                  <span className="text-muted-foreground">Target</span>
+                                  <span className="font-medium tabular-nums">
+                                    {row.target}% · {axisINR(row.targetInr)}
+                                  </span>
                                 </div>
-                              )}
+                              </div>
                             </TooltipContent>
                           </Tooltip>
                         );
@@ -889,28 +770,22 @@ const RebalanceExplanation = () => {
                     </div>
                   </TooltipProvider>
 
-                  {isSip ? (
-                    <p className="mt-3 text-[9.5px] leading-snug text-muted-foreground/80">
-                      Illustrative split of each class's target allocation between monthly SIP and one-time lumpsum.
-                    </p>
-                  ) : (
-                    /* Shared ₹ x-axis */
-                    <div className="relative mt-2 h-4">
-                      {ticks.map((t, i) => (
-                        <span
-                          key={t}
-                          className="absolute top-0 text-[9px] tabular-nums text-muted-foreground"
-                          style={{
-                            left: `${i * 25}%`,
-                            transform:
-                              i === 0 ? "none" : i === ticks.length - 1 ? "translateX(-100%)" : "translateX(-50%)",
-                          }}
-                        >
-                          {axisINR(t)}
-                        </span>
-                      ))}
-                    </div>
-                  )}
+                  {/* Shared ₹ x-axis */}
+                  <div className="relative mt-2 h-4">
+                    {ticks.map((t, i) => (
+                      <span
+                        key={t}
+                        className="absolute top-0 text-[9px] tabular-nums text-muted-foreground"
+                        style={{
+                          left: `${i * 25}%`,
+                          transform:
+                            i === 0 ? "none" : i === ticks.length - 1 ? "translateX(-100%)" : "translateX(-50%)",
+                        }}
+                      >
+                        {axisINR(t)}
+                      </span>
+                    ))}
+                  </div>
                 </section>
               );
             })()}

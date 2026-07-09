@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, Repeat, Target, Check, Pencil, ChevronRight } from "lucide-react";
+import { Loader2, Repeat, Pencil, ChevronRight } from "lucide-react";
 import BottomNav from "@/components/BottomNav";
-import { getMySipPlan, createSipPlan, updatePersonalFinance, type SipPlanResponse } from "@/lib/api";
+import { getMySipPlan, createSipPlan, type SipPlanResponse } from "@/lib/api";
 import { formatInr0, formatMoneyInput } from "@/lib/utils";
 
 /** Shown when the SIP fetch fails or returns nothing — renders the set-up prompt. */
@@ -36,12 +36,18 @@ function plainName(raw: string): string {
     .trim() || raw;
 }
 
+/** Rupee amount → the grouped string the amount input expects. */
+const toInput = (inr: number) => formatMoneyInput(String(Math.round(inr)));
+
 /**
  * Monthly SIP plan — the additional-investment engine's `sip_monthly` output.
  * Renders the per-month total + each fund's slice, or an inline set-up form that
  * calls the engine directly (`createSipPlan`) when no plan exists / when adjusting.
  * Amount + suggested funds render as two separate cards; each fund row opens
  * that fund's detail page.
+ *
+ * Submitting also writes the canonical `starting_monthly_investment` (the backend
+ * does it in the same transaction), so a SIP set here reaches the goal planner.
  */
 function SipPlanCard({
   sip,
@@ -52,16 +58,29 @@ function SipPlanCard({
 }) {
   const navigate = useNavigate();
   const hasPlan = sip.has_plan && sip.buys.length > 0;
+  // The canonical SIP the customer may have already set elsewhere (onboarding /
+  // goal planner). With no plan yet we pre-fill the form with it rather than
+  // asking for an amount they have already given us.
+  const canonicalSip = sip.goal_plan_monthly_investment_inr;
   const [editing, setEditing] = useState(!hasPlan);
-  const [amount, setAmount] = useState("");
+  const [amount, setAmount] = useState(
+    !hasPlan && canonicalSip != null && canonicalSip > 0 ? toInput(canonicalSip) : "",
+  );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const parsed = Number(amount.replace(/,/g, ""));
   const valid = Number.isFinite(parsed) && parsed > 0;
 
-  const openEdit = () => {
-    setAmount(hasPlan ? formatMoneyInput(String(Math.round(sip.monthly_amount_inr))) : "");
+  // The plan's split was computed for an amount the canonical SIP no longer
+  // matches — it moved on another surface after this plan was built.
+  const staleAmount =
+    hasPlan && !sip.goal_plan_in_sync && canonicalSip != null && canonicalSip > 0
+      ? canonicalSip
+      : null;
+
+  const openEdit = (prefill: number | null = null) => {
+    setAmount(prefill != null ? toInput(prefill) : hasPlan ? toInput(sip.monthly_amount_inr) : "");
     setError(null);
     setEditing(true);
   };
@@ -94,6 +113,12 @@ function SipPlanCard({
         <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
           How much do you want to invest each month? Pi splits it across the right funds for your goals.
         </p>
+        {!hasPlan && canonicalSip != null && canonicalSip > 0 && (
+          <p className="mt-1 text-[10.5px] leading-snug text-muted-foreground">
+            Pre-filled with the <b className="text-foreground">{formatInr0(canonicalSip)}/month</b> from your
+            goal plan. Change it here and your goal plan updates too.
+          </p>
+        )}
 
         <form
           onSubmit={(e) => {
@@ -161,7 +186,7 @@ function SipPlanCard({
           </p>
           <button
             type="button"
-            onClick={openEdit}
+            onClick={() => openEdit()}
             aria-label="Edit SIP amount"
             className="flex shrink-0 items-center gap-1 rounded-full border border-border px-3 py-1.5 text-[11.5px] font-semibold text-foreground transition-colors hover:bg-muted/50"
           >
@@ -171,6 +196,24 @@ function SipPlanCard({
         </div>
         {bucketLabel && (
           <p className="mt-1 text-[10.5px] leading-snug text-muted-foreground">{bucketLabel}</p>
+        )}
+
+        {/* The canonical SIP changed elsewhere — these funds still split the old
+            amount. One tap recomputes the plan at the canonical figure. */}
+        {staleAmount != null && (
+          <div className="mt-3 rounded-xl border border-[#D4A868]/40 bg-[#D4A868]/10 p-2.5">
+            <p className="text-[11px] leading-snug text-foreground">
+              Your goal plan now invests <b>{formatInr0(staleAmount)}/month</b>. These funds still split{" "}
+              {formatInr0(sip.monthly_amount_inr)}/month.
+            </p>
+            <button
+              type="button"
+              onClick={() => openEdit(staleAmount)}
+              className="mt-2 rounded-full border border-border bg-card px-3 py-1.5 text-[11.5px] font-semibold text-foreground transition-colors hover:bg-muted/50"
+            >
+              Update plan to {formatInr0(staleAmount)}
+            </button>
+          </div>
         )}
       </div>
 
@@ -217,113 +260,12 @@ function SipPlanCard({
 }
 
 /**
- * After a SIP is set up / adjusted, if the goal-planning SIP
- * (starting_monthly_investment) differs from this SIP, offer to sync the two.
- * Confirming writes the new amount via PUT /profile/personal-finance — the
- * single field the cashflow / goal-planning engine reads everywhere.
- */
-function GoalPlanNudge({ sip, onSynced }: { sip: SipPlanResponse; onSynced: () => void }) {
-  const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState(false);
-  const [hidden, setHidden] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const target = sip.monthly_amount_inr;
-  const current = sip.goal_plan_monthly_investment_inr;
-
-  // Show the popup while the goal plan is out of sync, or briefly on success.
-  const outOfSync = sip.has_plan && !sip.goal_plan_in_sync;
-  if (hidden || (!outOfSync && !done)) return null;
-
-  const sync = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      await updatePersonalFinance({ starting_monthly_investment: target });
-      setDone(true);
-      onSynced();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't update your goal plan. Please try again.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  // Centered modal popup over the page (backdrop click / "Not now" dismisses).
-  return (
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center px-6 bg-black/50 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
-      onClick={() => { if (!busy) setHidden(true); }}
-    >
-      <div
-        className="w-full max-w-sm rounded-2xl border border-[#D4A868]/30 bg-card p-5 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {done ? (
-          <>
-            <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-[#0f8a5f]/15 text-[#0f8a5f]">
-              <Check className="h-5 w-5" />
-            </span>
-            <p className="text-[15px] font-semibold text-foreground">Goal plan updated</p>
-            <p className="mt-1 text-[12.5px] leading-snug text-muted-foreground">
-              Your plan now invests <b className="text-foreground">{formatInr0(target)}/month</b> toward your goals.
-            </p>
-            <button
-              type="button"
-              onClick={() => setHidden(true)}
-              className="mt-4 w-full rounded-full px-4 py-2.5 text-[13px] font-semibold text-primary-foreground transition-opacity hover:opacity-90"
-              style={{ backgroundColor: "hsl(var(--wealth-navy))" }}
-            >
-              Done
-            </button>
-          </>
-        ) : (
-          <>
-            <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-[#D4A868]/15 text-[#B07E22] dark:text-[#D4A868]">
-              <Target className="h-5 w-5" />
-            </span>
-            <p className="text-[15px] font-semibold text-foreground">Update your goal plan?</p>
-            <p className="mt-1 text-[12.5px] leading-snug text-muted-foreground">
-              {current != null && current > 0 ? (
-                <>Your goal plan invests <b className="text-foreground">{formatInr0(current)}/month</b>. Update it to <b className="text-foreground">{formatInr0(target)}/month</b> so your goals reflect this SIP.</>
-              ) : (
-                <>Your goal plan has no monthly SIP set. Add <b className="text-foreground">{formatInr0(target)}/month</b> so your goals reflect this SIP.</>
-              )}
-            </p>
-            {error && <p className="mt-2 text-[12px] leading-snug text-[#C24C3A]">{error}</p>}
-            <div className="mt-4 flex flex-col gap-2">
-              <button
-                type="button"
-                onClick={sync}
-                disabled={busy}
-                className="flex w-full items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-[13px] font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
-                style={{ backgroundColor: "hsl(var(--wealth-navy))" }}
-              >
-                {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-                {busy ? "Updating…" : "Update goal plan"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setHidden(true)}
-                disabled={busy}
-                className="w-full rounded-full border border-border px-4 py-2.5 text-[13px] font-semibold text-foreground transition-colors hover:bg-muted/50 disabled:opacity-50"
-              >
-                Not now
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/**
  * SIP planner — the "SIP" tab of the Invest section (`/invest/sip`). Set a
  * monthly amount → the additional-investment engine runs → recommended funds
- * appear → offer to sync the goal plan. Toggle at top switches to Rebalancing.
+ * appear. The amount IS the customer's canonical monthly SIP
+ * (`starting_monthly_investment`): it pre-fills from whatever they set on any
+ * other surface, and saving here updates the goal planner. Toggle at top
+ * switches to Rebalancing.
  */
 const SipPlanner = () => {
   const [sip, setSip] = useState<SipPlanResponse | null>(null);
@@ -336,11 +278,6 @@ const SipPlanner = () => {
     return () => { cancelled = true; };
   }, []);
 
-  // Re-pull the SIP plan after a goal-plan sync so goal_plan_in_sync refreshes.
-  const refetchSip = () => {
-    getMySipPlan().then(setSip).catch(() => setSip(EMPTY_SIP));
-  };
-
   return (
     <div className="mobile-container bg-background min-h-screen pb-24">
       <div className="px-5 pt-2">
@@ -349,10 +286,7 @@ const SipPlanner = () => {
           across the right funds for your goals — the same plan you&apos;d get in chat.
         </p>
         {sip ? (
-          <>
-            <SipPlanCard sip={sip} onCreated={setSip} />
-            <GoalPlanNudge sip={sip} onSynced={refetchSip} />
-          </>
+          <SipPlanCard sip={sip} onCreated={setSip} />
         ) : (
           <div className="flex items-center justify-center gap-2 pt-16 text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
