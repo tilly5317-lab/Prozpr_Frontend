@@ -3,13 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ArrowRight, Check, Loader2, Sparkles } from "lucide-react";
 import BottomNav from "@/components/BottomNav";
+import { CurrentVsTargetChart } from "@/components/invest/CurrentVsTargetChart";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import RebalanceGate from "@/components/invest/RebalanceGate";
 import TradeFundDetailView from "@/components/fund/TradeFundDetailView";
 import { toast } from "@/hooks/use-toast";
@@ -303,11 +298,6 @@ const cardStyle: CSSProperties = {
   border: "1px solid hsl(var(--border))",
   borderRadius: 16,
 };
-
-// Drift caption colours — semantic so they track the active light/dark theme.
-const OVERWEIGHT = "hsl(var(--destructive))";
-const UNDERWEIGHT = "hsl(var(--wealth-green))";
-const NEUTRAL = "hsl(var(--muted-foreground))";
 
 /* ── Example plan ──────────────────────────────────────────────────────────
    Shown when the user hasn't supplied the inputs the engine needs yet (e.g. date
@@ -648,151 +638,9 @@ const RebalanceExplanation = () => {
               </p>
             </motion.section>
 
-            {/* Current vs target — one stacked ₹ bar per state. Equity, Debt and
-                Others are combined into a single Current bar and a single Target
-                bar (segments coloured per asset class) that share one ₹ x-axis,
-                so the allocation mix and the drift read in one row. */}
-            {driftRowsToShow.length > 0 && (() => {
-              const barEase = [0.22, 1, 0.36, 1] as const;
-              // Axis max = the (larger) portfolio total, so each 100%-allocation
-              // bar fills the full width with no trailing gap, while the ₹ axis
-              // still reads real amounts. Rebalancing preserves the total, so the
-              // Current and Target totals match and both bars fill.
-              const totalCurInr = driftRowsToShow.reduce((s, r) => s + r.currentInr, 0);
-              const totalTgtInr = driftRowsToShow.reduce((s, r) => s + r.targetInr, 0);
-              const axisMax = Math.max(1, totalCurInr, totalTgtInr);
-              const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * axisMax);
-              // Whole-number percentages that sum to exactly 100 per bar
-              // (largest-remainder rounding), so the segment labels add up
-              // instead of drifting to 99/101 from independent rounding.
-              const pctsTo100 = (values: number[]): number[] => {
-                const total = values.reduce((s, v) => s + v, 0);
-                if (total <= 0) return values.map(() => 0);
-                const raw = values.map((v) => (v / total) * 100);
-                const out = raw.map((r) => Math.floor(r));
-                let left = 100 - out.reduce((s, v) => s + v, 0);
-                raw
-                  .map((r, i) => ({ i, frac: r - Math.floor(r) }))
-                  .sort((a, b) => b.frac - a.frac)
-                  .forEach(({ i }) => {
-                    if (left > 0) {
-                      out[i] += 1;
-                      left -= 1;
-                    }
-                  });
-                return out;
-              };
-              const curPcts = pctsTo100(driftRowsToShow.map((r) => r.currentInr));
-              const tgtPcts = pctsTo100(driftRowsToShow.map((r) => r.targetInr));
-              const bars = [
-                { which: "current" as const, label: "Current" },
-                { which: "target" as const, label: "Target" },
-              ];
-              return (
-                <section style={cardStyle} className="px-4 py-4">
-                  <p className="text-[11px] tracking-[0.16em] uppercase text-muted-foreground">
-                    Current vs target
-                  </p>
-
-                  {/* Legend — colour identifies the asset class. */}
-                  <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-                    {driftRowsToShow.map((row) => (
-                      <span key={row.key} className="inline-flex items-center gap-1">
-                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: row.color }} />
-                        {row.label}
-                      </span>
-                    ))}
-                  </div>
-
-                  <TooltipProvider delayDuration={100}>
-                    <div className="mt-4 space-y-2.5">
-                      {bars.map(({ which, label }, bi) => (
-                        <div key={which} className="flex items-center gap-2.5">
-                          <span className="w-14 shrink-0 text-[11px] text-muted-foreground">{label}</span>
-                          <div className="flex h-5 flex-1 overflow-hidden rounded-[3px] bg-muted">
-                            {driftRowsToShow.map((row, i) => {
-                              const curPct = curPcts[i];
-                              const tgtPct = tgtPcts[i];
-                              const pct = which === "current" ? curPct : tgtPct;
-                              const inr = which === "current" ? row.currentInr : row.targetInr;
-                              const w = (inr / axisMax) * 100;
-                              if (w <= 0) return null;
-                              const drift = curPct - tgtPct;
-                              return (
-                                <Tooltip key={`${which}-${row.key}`}>
-                                  <TooltipTrigger asChild>
-                                    <motion.div
-                                      className="flex h-full cursor-default items-center justify-center"
-                                      style={{ background: row.color, flexShrink: 0 }}
-                                      initial={{ width: 0 }}
-                                      animate={{ width: `${w}%` }}
-                                      transition={{ duration: 0.85, ease: barEase, delay: bi * 0.12 + i * 0.06 }}
-                                    >
-                                      {pct > 0 && (
-                                        <span className="px-0.5 text-[9px] font-semibold leading-none tabular-nums text-white/95">
-                                          {pct}%
-                                        </span>
-                                      )}
-                                    </motion.div>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="top" className="px-3 py-2">
-                                    <div className="mb-1 flex items-center gap-1.5">
-                                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: row.color }} />
-                                      <span className="text-[11px] font-semibold">{row.label}</span>
-                                    </div>
-                                    <div className="space-y-0.5 text-[11px]">
-                                      <div className="flex items-center justify-between gap-5">
-                                        <span className="text-muted-foreground">Current</span>
-                                        <span className="font-medium tabular-nums">
-                                          {curPct}% · {axisINR(row.currentInr)}
-                                        </span>
-                                      </div>
-                                      <div className="flex items-center justify-between gap-5">
-                                        <span className="text-muted-foreground">Target</span>
-                                        <span className="font-medium tabular-nums">
-                                          {tgtPct}% · {axisINR(row.targetInr)}
-                                        </span>
-                                      </div>
-                                      <div
-                                        className="pt-0.5 font-medium"
-                                        style={{ color: drift > 0 ? OVERWEIGHT : drift < 0 ? UNDERWEIGHT : NEUTRAL }}
-                                      >
-                                        {row.amountText}
-                                      </div>
-                                    </div>
-                                  </TooltipContent>
-                                </Tooltip>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </TooltipProvider>
-
-                  {/* Shared ₹ x-axis — aligned with the bar area (past the
-                      Current / Target label column). */}
-                  <div className="mt-2 flex items-start gap-2.5">
-                    <span className="w-14 shrink-0" />
-                    <div className="relative h-4 flex-1">
-                      {ticks.map((t, i) => (
-                        <span
-                          key={t}
-                          className="absolute top-0 text-[10px] tabular-nums text-muted-foreground"
-                          style={{
-                            left: `${i * 25}%`,
-                            transform:
-                              i === 0 ? "none" : i === ticks.length - 1 ? "translateX(-100%)" : "translateX(-50%)",
-                          }}
-                        >
-                          {axisINR(t)}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </section>
-              );
-            })()}
+            {/* Current vs target — combined Current / Target stacked ₹ bars
+                (shared component; also used on the SIP tab). */}
+            <CurrentVsTargetChart rows={driftRowsToShow} />
 
             {/* Proposed trades — the real BUY / SELL actions grouped by bucket
                 (sample trades when this is an example plan). */}
