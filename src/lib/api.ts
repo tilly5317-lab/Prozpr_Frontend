@@ -1234,9 +1234,17 @@ export interface SipPlanResponse {
   target_bucket: "short_term" | "medium_term" | "long_term" | null;
   fund_count: number;
   buys: SipFundBuy[];
-  /** Monthly SIP the goal-planning engine uses (starting_monthly_investment); null if unset. */
+  /**
+   * The customer's canonical monthly SIP (`starting_monthly_investment`) — the
+   * single source of truth shared with the goal planner, goals timeline and IPS;
+   * null if they've never set one. Use it to pre-fill the set-up form.
+   */
   goal_plan_monthly_investment_inr: number | null;
-  /** False when the goal-plan SIP differs from (or is missing vs) this SIP — offer to sync. */
+  /**
+   * False when this plan's fund split is STALE — the canonical SIP was changed on
+   * another surface after the plan was computed, so the per-fund amounts no
+   * longer add up to it. Offer to recompute at `goal_plan_monthly_investment_inr`.
+   */
   goal_plan_in_sync: boolean;
 }
 
@@ -1254,6 +1262,9 @@ export async function getMySipPlan(): Promise<SipPlanResponse> {
  * additional-investment engine for `monthlyAmountInr` and returns the fresh
  * plan. Throws with a customer-facing message (e.g. complete your profile) when
  * the engine can't plan yet.
+ *
+ * Also writes `monthlyAmountInr` to the canonical `starting_monthly_investment`
+ * (server-side, same transaction) — no follow-up `updatePersonalFinance` needed.
  */
 export async function createSipPlan(monthlyAmountInr: number): Promise<SipPlanResponse> {
   return request<SipPlanResponse>("/additional-investment/sip", {
