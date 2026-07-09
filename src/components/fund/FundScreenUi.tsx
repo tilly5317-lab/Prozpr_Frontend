@@ -210,7 +210,7 @@ export function ProzprRatingCard() {
     >
       <div className="flex items-center justify-between gap-2">
         <p
-          className="text-[10px] uppercase tracking-[1.4px]"
+          className="text-[11px] uppercase tracking-[1.4px]"
           style={{ color: "#5C4313", fontWeight: 700 }}
         >
           Prozpr rating
@@ -437,16 +437,16 @@ export function NavChart({
           />
         </svg>
       </motion.div>
-      <div className="pointer-events-none absolute left-1 top-1 text-[10px] tabular-nums text-muted-foreground/80">
+      <div className="pointer-events-none absolute left-1 top-1 text-[11px] tabular-nums text-muted-foreground/80">
         ₹{hi.toFixed(2)}
       </div>
-      <div className="pointer-events-none absolute right-1 top-1 text-[10px] tabular-nums text-muted-foreground/80">
+      <div className="pointer-events-none absolute right-1 top-1 text-[11px] tabular-nums text-muted-foreground/80">
         ₹{lo.toFixed(2)}
       </div>
-      <div className="pointer-events-none absolute bottom-1 left-1 text-[10px] text-muted-foreground/80">
+      <div className="pointer-events-none absolute bottom-1 left-1 text-[11px] text-muted-foreground/80">
         {formatDate(sampled[0]!.date)}
       </div>
-      <div className="pointer-events-none absolute bottom-1 right-1 text-[10px] text-muted-foreground/80">
+      <div className="pointer-events-none absolute bottom-1 right-1 text-[11px] text-muted-foreground/80">
         {formatDate(sampled[sampled.length - 1]!.date)}
       </div>
 
@@ -476,7 +476,7 @@ export function NavChart({
             className="pointer-events-none absolute top-1 z-20 -translate-x-1/2 whitespace-nowrap rounded-md border border-border/70 bg-card px-2 py-1 text-center shadow-sm"
             style={{ left: `${Math.min(82, Math.max(18, hoverXPct))}%` }}
           >
-            <p className="text-[10px] text-muted-foreground">{formatDate(active.date)}</p>
+            <p className="text-[11px] text-muted-foreground">{formatDate(active.date)}</p>
             <p className="text-[12px] font-semibold tabular-nums text-foreground">
               ₹{formatNav(active.nav)}
             </p>
@@ -500,7 +500,7 @@ export function StatBlock({
 }) {
   return (
     <div className="rounded-xl border border-border/70 bg-card p-3">
-      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
       <p
         className="mt-1 text-[14px] font-semibold tabular-nums"
         style={{
@@ -510,7 +510,7 @@ export function StatBlock({
       >
         {value}
       </p>
-      {hint && <p className="mt-0.5 text-[10px] text-muted-foreground">{hint}</p>}
+      {hint && <p className="mt-0.5 text-[11px] text-muted-foreground">{hint}</p>}
     </div>
   );
 }

@@ -145,7 +145,7 @@ export default function TradeFundDetailView({
     <div className="space-y-3">
       {/* Header — mirrors the fund-detail page's title block. */}
       <div>
-        <p className="text-[9.5px] uppercase tracking-wide text-muted-foreground">Mutual fund</p>
+        <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Mutual fund</p>
         <h1 className="text-[15px] font-semibold leading-tight text-foreground">
           {data?.scheme_name ?? name}
         </h1>
@@ -156,15 +156,15 @@ export default function TradeFundDetailView({
         )}
         <div className="mt-1.5 flex flex-wrap gap-1.5">
           <span
-            className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide ${tradePillClass(type)}`}
+            className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold tracking-wide ${tradePillClass(type)}`}
           >
             {type}
           </span>
-          <span className="inline-flex rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-muted-foreground">
+          <span className="inline-flex rounded-full bg-muted/60 px-2 py-0.5 text-[11px] font-semibold tracking-wide text-muted-foreground">
             {bucketLabel.toUpperCase()}
           </span>
           {(data?.category || category) && (
-            <span className="inline-flex rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-muted-foreground">
+            <span className="inline-flex rounded-full bg-muted/60 px-2 py-0.5 text-[11px] font-semibold tracking-wide text-muted-foreground">
               {(data?.category ?? category).toUpperCase()}
             </span>
           )}
@@ -194,7 +194,7 @@ export default function TradeFundDetailView({
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="text-[10px] text-muted-foreground">{range} change</p>
+                  <p className="text-[11px] text-muted-foreground">{range} change</p>
                   <p
                     className="text-[13px] font-semibold tabular-nums"
                     style={{ color: isUp ? NAV_UP_COLOR : NAV_DOWN_COLOR }}
@@ -221,7 +221,7 @@ export default function TradeFundDetailView({
           {hasChart && (
             <section className="rounded-2xl border border-border/70 bg-card p-4">
               <p className="text-[12px] font-semibold text-foreground">Trailing NAV returns</p>
-              <p className="mt-0.5 text-[10.5px] text-muted-foreground">
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
                 Total return on the NAV through {latestNavDate ? formatDate(latestNavDate) : "—"}.
               </p>
               <div className="mt-3 grid grid-cols-4 gap-1.5">
@@ -229,7 +229,7 @@ export default function TradeFundDetailView({
                   const positive = value != null && value >= 0;
                   return (
                     <div key={label} className="rounded-lg bg-muted/30 px-1.5 py-2 text-center">
-                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
                       <p
                         className="mt-0.5 text-[11.5px] font-semibold tabular-nums"
                         style={{
@@ -268,7 +268,7 @@ export default function TradeFundDetailView({
               <Wallet className="h-3.5 w-3.5 text-muted-foreground" />
               <p className="text-[12px] font-semibold text-foreground">This trade</p>
             </div>
-            <p className="mt-0.5 text-[10.5px] text-muted-foreground">
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
               Proposed by Prozpr to glide your {bucketLabel.toLowerCase()} sleeve back to target.
             </p>
             <div className="mt-3 grid grid-cols-2 gap-2">

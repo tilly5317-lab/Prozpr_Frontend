@@ -81,13 +81,13 @@ const LiveEventBanner = () => {
           <div className="flex items-center gap-1.5 mb-2">
             <Crown className="h-3.5 w-3.5 shrink-0" style={{ color: GOLD }} />
             <span
-              className="text-[9px] uppercase font-semibold"
+              className="text-[10px] uppercase font-semibold"
               style={{ letterSpacing: "1.5px", color: GOLD }}
             >
               Gold tier · Exclusive
             </span>
             <span
-              className="ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold text-white/80"
+              className="ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold text-white/80"
               style={{
                 backgroundColor: "rgba(255, 255, 255, 0.06)",
                 border: "1px solid rgba(255, 255, 255, 0.08)",
@@ -105,7 +105,7 @@ const LiveEventBanner = () => {
           </p>
 
           <div className="mt-2.5 flex items-center justify-between gap-2">
-            <span className="text-[10px] text-white/45">{TOTAL_ATTENDING} members interested</span>
+            <span className="text-[11px] text-white/45">{TOTAL_ATTENDING} members interested</span>
             <span
               className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold"
               style={{
@@ -178,7 +178,7 @@ const ReserveSheet = ({ onClose }: { onClose: () => void }) => {
             <div className="flex items-center gap-1.5 mb-2.5">
               <Crown className="h-3.5 w-3.5" style={{ color: GOLD }} />
               <span
-                className="text-[9px] uppercase font-semibold"
+                className="text-[10px] uppercase font-semibold"
                 style={{ letterSpacing: "2px", color: GOLD }}
               >
                 Members invitation · Gold
@@ -218,7 +218,7 @@ const ReserveSheet = ({ onClose }: { onClose: () => void }) => {
           <div className="px-5 pt-4 pb-3 overflow-y-auto" style={{ flex: 1 }}>
             <div className="flex items-baseline justify-between mb-2.5">
               <p
-                className="text-[10px] uppercase font-semibold"
+                className="text-[11px] uppercase font-semibold"
                 style={{ letterSpacing: "1.6px", color: "#5c5247" }}
               >
                 Members interested
@@ -237,7 +237,7 @@ const ReserveSheet = ({ onClose }: { onClose: () => void }) => {
                 {ATTENDEES.slice(0, 5).map((a) => (
                   <div
                     key={a.name}
-                    className="flex h-8 w-8 items-center justify-center rounded-full text-[10px] font-bold text-white"
+                    className="flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-bold text-white"
                     style={{
                       backgroundColor: a.color,
                       border: "2px solid #f5efe3",
@@ -248,7 +248,7 @@ const ReserveSheet = ({ onClose }: { onClose: () => void }) => {
                   </div>
                 ))}
                 <div
-                  className="flex h-8 w-8 items-center justify-center rounded-full text-[10px] font-semibold"
+                  className="flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-semibold"
                   style={{
                     backgroundColor: "#e6dcc6",
                     color: "#5c5247",
@@ -283,7 +283,7 @@ const ReserveSheet = ({ onClose }: { onClose: () => void }) => {
                     <p className="text-[13px] font-semibold leading-tight" style={{ color: "#27241f" }}>
                       {a.name}
                     </p>
-                    <p className="text-[10.5px] leading-tight mt-0.5" style={{ color: "#7a6d5e" }}>
+                    <p className="text-[11px] leading-tight mt-0.5" style={{ color: "#7a6d5e" }}>
                       {a.tagline}
                     </p>
                   </div>

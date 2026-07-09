@@ -144,7 +144,7 @@ const CamsStatementPasswordModal = ({
                     disabled={uploading}
                     className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground/50 disabled:opacity-60"
                   />
-                  <p className="mt-1 text-[10px] text-muted-foreground/80">
+                  <p className="mt-1 text-[11px] text-muted-foreground/80">
                     Used only to decrypt the PDF on the server — not stored.
                   </p>
                 </div>

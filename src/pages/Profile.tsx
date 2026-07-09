@@ -23,14 +23,14 @@ import {
 /* ── tiny helpers ── */
 
 const EmptyHint = ({ label }: { label: string }) => (
-  <span className="text-[10px] italic text-muted-foreground/60">
+  <span className="text-[11px] italic text-muted-foreground/60">
     {label} — tap edit to add
   </span>
 );
 
 const FieldRow = ({ label, value }: { label: string; value: string | null | undefined }) => (
   <div>
-    <p className="text-[9px] uppercase tracking-wider text-muted-foreground mb-0.5">{label}</p>
+    <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">{label}</p>
     {value ? (
       <p className="text-xs text-foreground">{value}</p>
     ) : (
@@ -72,11 +72,11 @@ const SectionCard = ({
                 style={{ width: `${completeness}%` }}
               />
             </div>
-            <span className="text-[9px] text-muted-foreground">{completeness}%</span>
+            <span className="text-[10px] text-muted-foreground">{completeness}%</span>
           </div>
         )}
         {completeness === 100 && (
-          <span className="text-[9px] font-medium text-[hsl(160,50%,38%)]">Complete</span>
+          <span className="text-[10px] font-medium text-[hsl(160,50%,38%)]">Complete</span>
         )}
       </div>
       <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground shrink-0 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`} />
@@ -102,7 +102,7 @@ const SectionCard = ({
 /* ── reusable sub-components (outside Profile to preserve identity across renders) ── */
 const ProfileInput = ({ value, onChange, placeholder, prefix }: { value: string; onChange: (v: string) => void; placeholder?: string; prefix?: string }) => (
   <div className="relative">
-    {prefix && <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">{prefix}</span>}
+    {prefix && <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">{prefix}</span>}
     <input
       value={value}
       onChange={(e) => onChange(e.target.value)}
@@ -115,7 +115,7 @@ const ProfileInput = ({ value, onChange, placeholder, prefix }: { value: string;
 const ProfileChip = ({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) => (
   <button
     onClick={onClick}
-    className={`rounded-full px-2.5 py-1 text-[10px] font-medium border transition-all ${active ? "bg-accent text-accent-foreground border-accent" : "bg-card text-muted-foreground border-border hover:border-accent/40"}`}
+    className={`rounded-full px-2.5 py-1 text-[11px] font-medium border transition-all ${active ? "bg-accent text-accent-foreground border-accent" : "bg-card text-muted-foreground border-border hover:border-accent/40"}`}
   >
     {label}
   </button>
@@ -124,7 +124,7 @@ const ProfileChip = ({ label, active, onClick }: { label: string; active: boolea
 const EditSaveBtn = ({ editing, onEdit, onSave }: { editing: boolean; onEdit: () => void; onSave: () => void }) => (
   <button
     onClick={editing ? onSave : onEdit}
-    className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+    className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
   >
     {editing ? <Check className="h-3 w-3" /> : <Pencil className="h-3 w-3" />}
     {editing ? "Save" : "Edit"}
@@ -314,7 +314,7 @@ const Profile = () => {
             </div>
             <button
               onClick={() => navigate("/profile/complete")}
-              className="text-[10px] font-semibold text-[hsl(38,80%,38%)] hover:underline shrink-0"
+              className="text-[11px] font-semibold text-[hsl(38,80%,38%)] hover:underline shrink-0"
             >
               Complete →
             </button>
@@ -334,20 +334,20 @@ const Profile = () => {
               <>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <p className="text-[9px] uppercase tracking-wider text-muted-foreground mb-0.5">First Name</p>
+                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">First Name</p>
                     <ProfileInput value={contactDraft.first_name} onChange={(v) => setContactDraft((d) => ({ ...d, first_name: v }))} placeholder="First name" />
                   </div>
                   <div>
-                    <p className="text-[9px] uppercase tracking-wider text-muted-foreground mb-0.5">Last Name</p>
+                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">Last Name</p>
                     <ProfileInput value={contactDraft.last_name} onChange={(v) => setContactDraft((d) => ({ ...d, last_name: v }))} placeholder="Last name" />
                   </div>
                 </div>
                 <div>
-                  <p className="text-[9px] uppercase tracking-wider text-muted-foreground mb-0.5">Email</p>
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">Email</p>
                   <ProfileInput value={contactDraft.email} onChange={(v) => setContactDraft((d) => ({ ...d, email: v }))} placeholder="email@example.com" />
                 </div>
                 <div>
-                  <p className="text-[9px] uppercase tracking-wider text-muted-foreground mb-0.5">Phone</p>
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">Phone</p>
                   <p className="text-xs text-muted-foreground">{displayPhone || "Not set"}</p>
                 </div>
               </>
@@ -378,7 +378,7 @@ const Profile = () => {
             </div>
             <div className="flex-1 min-w-0">
               <h3 className="text-xs font-semibold text-foreground">{item.title}</h3>
-              <p className="text-[10px] text-muted-foreground">{item.sub}</p>
+              <p className="text-[11px] text-muted-foreground">{item.sub}</p>
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
               {item.showDot && (
@@ -399,7 +399,7 @@ const Profile = () => {
             </div>
             <div className="flex-1 min-w-0">
               <h3 className="text-xs font-semibold text-foreground">Report an Issue</h3>
-              <p className="text-[10px] text-muted-foreground">Something broken or off? Tell us</p>
+              <p className="text-[11px] text-muted-foreground">Something broken or off? Tell us</p>
             </div>
             <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
           </button>
@@ -419,9 +419,9 @@ const Profile = () => {
             </div>
             <div className="flex-1 min-w-0">
               <h3 className="text-xs font-semibold text-foreground">{item.title}</h3>
-              {item.sub && <p className="text-[10px] text-muted-foreground">{item.sub}</p>}
+              {item.sub && <p className="text-[11px] text-muted-foreground">{item.sub}</p>}
             </div>
-            <Badge variant="secondary" className="text-[9px] font-medium shrink-0">Coming Soon</Badge>
+            <Badge variant="secondary" className="text-[10px] font-medium shrink-0">Coming Soon</Badge>
           </div>
         </div>
       ))}

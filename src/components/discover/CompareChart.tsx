@@ -141,16 +141,16 @@ export function CompareChart({ series }: { series: CompareSeries[] }) {
         </g>
       </svg>
 
-      <div className="pointer-events-none absolute left-1 top-1 rounded bg-background/70 px-1 text-[10px] tabular-nums text-muted-foreground/80">
+      <div className="pointer-events-none absolute left-1 top-1 rounded bg-background/70 px-1 text-[11px] tabular-nums text-muted-foreground/80">
         {pct(hi)}
       </div>
-      <div className="pointer-events-none absolute bottom-6 left-1 rounded bg-background/70 px-1 text-[10px] tabular-nums text-muted-foreground/80">
+      <div className="pointer-events-none absolute bottom-6 left-1 rounded bg-background/70 px-1 text-[11px] tabular-nums text-muted-foreground/80">
         {pct(lo)}
       </div>
-      <div className="pointer-events-none absolute bottom-1 left-1 text-[10px] text-muted-foreground/80">
+      <div className="pointer-events-none absolute bottom-1 left-1 text-[11px] text-muted-foreground/80">
         {startLabel}
       </div>
-      <div className="pointer-events-none absolute bottom-1 right-1 text-[10px] text-muted-foreground/80">
+      <div className="pointer-events-none absolute bottom-1 right-1 text-[11px] text-muted-foreground/80">
         {endLabel}
       </div>
     </div>

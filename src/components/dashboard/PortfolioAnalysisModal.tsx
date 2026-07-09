@@ -388,7 +388,7 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
                             key={r}
                             type="button"
                             onClick={() => setRange(r)}
-                            className={`rounded-full px-2.5 py-1 text-[10px] font-semibold transition-colors ${
+                            className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors ${
                               active
                                 ? "bg-primary/10 text-primary"
                                 : "bg-muted/60 text-muted-foreground/70 hover:text-foreground"
@@ -420,7 +420,7 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
                             <div className="grid grid-cols-3 gap-2">
                               <div className="rounded-xl p-2.5" style={{ border: `1px solid ${HAIRLINE}` }}>
                                 <div className="flex items-center gap-1 mb-0.5">
-                                  <p className="text-[9px] tracking-wide text-muted-foreground leading-tight">TWR: Portfolio</p>
+                                  <p className="text-[10px] tracking-wide text-muted-foreground leading-tight">TWR: Portfolio</p>
                                   <button
                                     type="button"
                                     onClick={() => setInfoOpen((o) => (o === "twr" ? null : "twr"))}
@@ -442,7 +442,7 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
                               </div>
                               <div className="rounded-xl p-2.5" style={{ border: `1px solid ${HAIRLINE}` }}>
                                 <div className="flex items-center gap-1 mb-0.5">
-                                  <p className="text-[9px] uppercase tracking-wide text-muted-foreground leading-tight">XIRR</p>
+                                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground leading-tight">XIRR</p>
                                   <button
                                     type="button"
                                     onClick={() => setInfoOpen((o) => (o === "mwr" ? null : "mwr"))}
@@ -461,11 +461,11 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
                                 >
                                   {xirrPct == null ? "—" : fmtPct(xirrPct)}
                                 </p>
-                                <p className="text-[9px] text-muted-foreground mt-0.5 leading-tight">p.a.</p>
+                                <p className="text-[10px] text-muted-foreground mt-0.5 leading-tight">p.a.</p>
                               </div>
                               <div className="rounded-xl p-2.5" style={{ border: `1px solid ${HAIRLINE}` }}>
                                 <div className="flex items-center gap-1 mb-0.5">
-                                  <p className="text-[9px] uppercase tracking-wide text-muted-foreground leading-tight">
+                                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground leading-tight">
                                     {NIFTY.fullName}
                                   </p>
                                   <button
@@ -526,7 +526,7 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
                               </div>
                             )}
 
-                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground mt-4 mb-1.5">
+                            <p className="text-[11px] uppercase tracking-wide text-muted-foreground mt-4 mb-1.5">
                               TWR Benchmarking
                             </p>
                             <div className="h-[180px] w-full">
@@ -608,7 +608,7 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
                               )}
                             </div>
 
-                            <p className="text-[9px] text-muted-foreground mt-3">
+                            <p className="text-[10px] text-muted-foreground mt-3">
                               All figures shown cover your mutual-fund holdings only.
                             </p>
                           </>
@@ -720,7 +720,7 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
                           </ResponsiveContainer>
                         </div>
 
-                        <p className="text-[10px] tracking-wide text-muted-foreground mt-4 mb-1.5">
+                        <p className="text-[11px] tracking-wide text-muted-foreground mt-4 mb-1.5">
                           Breakdown
                         </p>
                         <div

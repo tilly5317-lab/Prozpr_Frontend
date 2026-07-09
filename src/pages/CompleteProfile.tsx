@@ -481,7 +481,7 @@ const RiskDial = ({ level, onChangeLevel }: { level: number; onChangeLevel: (l: 
       </svg>
       <div className="relative -mt-[98px] mb-[21px] flex flex-col items-center text-center pointer-events-none" style={{ width: size }}>
         <p className="text-xs font-bold text-foreground">{displayLabel}</p>
-        <p className="text-[10px] italic text-muted-foreground mt-0.5 px-4">{displayTagline}</p>
+        <p className="text-[11px] italic text-muted-foreground mt-0.5 px-4">{displayTagline}</p>
       </div>
     </div>
   );
@@ -553,7 +553,7 @@ const IncomeExpenseSlider = ({ label, range, onChange }: {
           className="absolute inset-0 w-full h-full appearance-none bg-transparent cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-accent [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-card [&::-webkit-slider-thumb]:shadow-md pointer-events-none [&::-webkit-slider-thumb]:pointer-events-auto" />
       </div>
       <div className="flex justify-between">
-        {IE_SLIDER_TICKS.map((t) => (<span key={t.value} className="text-[9px] text-muted-foreground/50">{t.label}</span>))}
+        {IE_SLIDER_TICKS.map((t) => (<span key={t.value} className="text-[10px] text-muted-foreground/50">{t.label}</span>))}
       </div>
     </div>
   );
@@ -1426,7 +1426,7 @@ const CompleteProfile = () => {
                       <div><label className="text-[12px] text-muted-foreground mb-0.5 block">Amount</label><TextInput value={asset.value} onChange={(v) => updateOtherAsset(idx, "value", v)} prefix="₹" placeholder="e.g. 10,00,000" /></div>
                     </div>
                     {otherAssets.length > 1 && (
-                      <button onClick={() => removeOtherAsset(idx)} className="mt-1 text-[10px] text-destructive hover:underline">Remove</button>
+                      <button onClick={() => removeOtherAsset(idx)} className="mt-1 text-[11px] text-destructive hover:underline">Remove</button>
                     )}
                   </div>
                 );
@@ -1446,7 +1446,7 @@ const CompleteProfile = () => {
            <div className="space-y-4">
             <div>
               <FieldLabel>Do you own a home?</FieldLabel>
-              <p className="text-[10px] text-muted-foreground -mt-0.5 mb-2">
+              <p className="text-[11px] text-muted-foreground -mt-0.5 mb-2">
                 Any residential property you own. Used for your net worth and to plan around your mortgage.
               </p>
               <Toggle value={ownsHome} onChange={setOwnsHome} labelA="No" labelB="Yes" />
@@ -1477,14 +1477,14 @@ const CompleteProfile = () => {
 
                       <div className="space-y-3">
                         <div>
-                          <label className="text-[10px] uppercase tracking-wide text-muted-foreground">Current market value</label>
+                          <label className="text-[11px] uppercase tracking-wide text-muted-foreground">Current market value</label>
                           <TextInput value={prop.value} onChange={(v) => updateProp("value", v)} prefix="₹" placeholder="e.g. 1,20,00,000" />
                         </div>
 
                         {/* Mortgage sub-group */}
                         <div className="rounded-lg bg-muted/30 p-3">
-                          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Home loan</p>
-                          <p className="mb-2 text-[10px] text-muted-foreground">Leave blank if it's fully paid off.</p>
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Home loan</p>
+                          <p className="mb-2 text-[11px] text-muted-foreground">Leave blank if it's fully paid off.</p>
                           <div className="space-y-3">
                             <div>
                               <label className="text-[12px] text-muted-foreground mb-0.5 block">Outstanding balance</label>
@@ -1537,7 +1537,7 @@ const CompleteProfile = () => {
                   </div>
                   {expense.description.trim() && (
                     <div className="mt-2 rounded-lg border border-border bg-card/50 px-3 py-2">
-                      <p className="text-[10px] text-muted-foreground mb-1">Would you like to add this as a goal so we can plan for it?</p>
+                      <p className="text-[11px] text-muted-foreground mb-1">Would you like to add this as a goal so we can plan for it?</p>
                       <Toggle value={expense.addAsGoal} onChange={(v) => {
                         const next = [...plannedExpenses];
                         next[idx] = { ...next[idx], addAsGoal: v };
@@ -1557,7 +1557,7 @@ const CompleteProfile = () => {
                     </div>
                   )}
                   {plannedExpenses.length > 1 && (
-                    <button onClick={() => setPlannedExpenses(plannedExpenses.filter((_, i) => i !== idx))} className="mt-1.5 text-[10px] text-destructive hover:underline">Remove</button>
+                    <button onClick={() => setPlannedExpenses(plannedExpenses.filter((_, i) => i !== idx))} className="mt-1.5 text-[11px] text-destructive hover:underline">Remove</button>
                   )}
                 </div>
               ))}
@@ -1613,7 +1613,7 @@ const CompleteProfile = () => {
                         onClick={() =>
                           setLargeIncomes((prev) => prev.filter((_, i) => i !== idx))
                         }
-                        className="mt-1.5 text-[10px] text-destructive hover:underline"
+                        className="mt-1.5 text-[11px] text-destructive hover:underline"
                       >
                         Remove
                       </button>
@@ -1797,7 +1797,7 @@ const CompleteProfile = () => {
                             </option>
                           ))}
                         </select>
-                        <p className="mt-0.5 text-[9.5px] text-muted-foreground">
+                        <p className="mt-0.5 text-[10px] text-muted-foreground">
                           Prozpr suggests {suggested}% for this goal — adjust if you have a better
                           number.
                         </p>
@@ -2063,7 +2063,7 @@ const CompleteProfile = () => {
                       </div>
                       <p className="mt-1 text-[11.5px] leading-snug text-muted-foreground">{meta.description}</p>
                       <div className="mt-2.5 flex items-center gap-2">
-                        <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${STATUS_COLORS[status]}`}>{STATUS_LABELS[status]}</span>
+                        <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${STATUS_COLORS[status]}`}>{STATUS_LABELS[status]}</span>
                         <span className="text-[12px] text-muted-foreground mb-0.5 block">
                           {idx === 1
                             ? `Opens Goal planning · ${meta.estimate}`
@@ -2202,7 +2202,7 @@ const CompleteProfile = () => {
                     )}
                   </button>
                 </div>
-                <p className="mt-1.5 text-center text-[10px] text-muted-foreground">
+                <p className="mt-1.5 text-center text-[11px] text-muted-foreground">
                   Your answers are saved as you go — pick up where you left off anytime
                 </p>
               </div>
@@ -2223,7 +2223,7 @@ const CompleteProfile = () => {
           >
             Done →
           </button>
-          <p className="text-[10px] text-center text-muted-foreground mt-1.5">Your answers are saved automatically</p>
+          <p className="text-[11px] text-center text-muted-foreground mt-1.5">Your answers are saved automatically</p>
         </div>
       </div>
       )}

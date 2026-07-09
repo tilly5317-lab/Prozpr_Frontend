@@ -120,13 +120,13 @@ function GoalDemoEmergencyWidget({
   return (
     <div className="rounded-xl border border-primary/25 bg-gradient-to-br from-primary/5 to-card px-3 py-3 space-y-3">
       <p className="text-[11px] font-semibold text-foreground">Personalise your emergency buffer</p>
-      <p className="text-[10px] leading-relaxed text-muted-foreground">
+      <p className="text-[11px] leading-relaxed text-muted-foreground">
         Drag the checkpoints to match <strong className="text-foreground/90">your</strong> income and spending. We use expenses (not income) for the corpus — that keeps the cushion realistic if income pauses.
       </p>
 
       <div className="space-y-2">
         <div>
-          <div className="flex justify-between text-[10px] text-muted-foreground mb-1">
+          <div className="flex justify-between text-[11px] text-muted-foreground mb-1">
             <span>Monthly income (after tax)</span>
             <span className="font-medium text-foreground tabular-nums">{formatDemoINR(incomeMonthly)}</span>
           </div>
@@ -141,7 +141,7 @@ function GoalDemoEmergencyWidget({
           />
         </div>
         <div>
-          <div className="flex justify-between text-[10px] text-muted-foreground mb-1">
+          <div className="flex justify-between text-[11px] text-muted-foreground mb-1">
             <span>Monthly expenses</span>
             <span className="font-medium text-foreground tabular-nums">{formatDemoINR(expenseMonthly)}</span>
           </div>
@@ -156,7 +156,7 @@ function GoalDemoEmergencyWidget({
           />
         </div>
         <div>
-          <div className="flex justify-between text-[10px] text-muted-foreground mb-1">
+          <div className="flex justify-between text-[11px] text-muted-foreground mb-1">
             <span>Months of expenses to hold</span>
             <span className="font-medium text-foreground tabular-nums">{emergencyMonths} mo</span>
           </div>
@@ -169,7 +169,7 @@ function GoalDemoEmergencyWidget({
             onChange={(e) => onMonthsChange(Number(e.target.value))}
             className="w-full h-2 accent-primary cursor-pointer"
           />
-          <p className="text-[9px] text-muted-foreground/80 mt-0.5">3–6 mo if stable income · 9–12 mo if variable or sole earner</p>
+          <p className="text-[10px] text-muted-foreground/80 mt-0.5">3–6 mo if stable income · 9–12 mo if variable or sole earner</p>
         </div>
       </div>
 
@@ -177,9 +177,9 @@ function GoalDemoEmergencyWidget({
         className="rounded-lg border border-border/60 bg-card/80 px-2.5 py-2 space-y-1"
         style={{ borderLeft: "3px solid hsl(var(--primary) / 0.5)" }}
       >
-        <p className="text-[10px] font-semibold text-foreground">Suggested emergency fund target</p>
+        <p className="text-[11px] font-semibold text-foreground">Suggested emergency fund target</p>
         <p className="text-lg font-semibold tabular-nums text-foreground">{formatDemoINR(cushion)}</p>
-        <p className="text-[10px] text-muted-foreground leading-relaxed">
+        <p className="text-[11px] text-muted-foreground leading-relaxed">
           ≈ {emergencyMonths} months × {formatDemoINR(expenseMonthly)} expenses. Rough savings rate vs income:{" "}
           <span className="font-medium text-foreground">{savingsRate.toFixed(0)}%</span>.
           {tight ? (
@@ -205,7 +205,7 @@ function GoalPlanningCheckpointRail({ activeIndex }: { activeIndex: number }) {
         {GOAL_DEMO_CHECKPOINT_LABELS.map((label, i) => (
           <div
             key={label}
-            className={`flex-1 min-w-0 text-center rounded-md px-0.5 py-1 text-[8px] font-medium leading-tight transition-colors ${
+            className={`flex-1 min-w-0 text-center rounded-md px-0.5 py-1 text-[9px] font-medium leading-tight transition-colors ${
               i <= clamped ? "bg-primary/15 text-primary" : "bg-muted/50 text-muted-foreground"
             }`}
           >
@@ -221,7 +221,7 @@ function GoalPlanningCheckpointRail({ activeIndex }: { activeIndex: number }) {
           transition={{ type: "spring", stiffness: 120, damping: 20 }}
         />
       </div>
-      <p className="text-[9px] text-center text-muted-foreground/80">Updates as you move through the conversation</p>
+      <p className="text-[10px] text-center text-muted-foreground/80">Updates as you move through the conversation</p>
     </div>
   );
 }
@@ -426,12 +426,12 @@ const SummaryCard = ({ sectionName, notes }: { sectionName: string; notes: strin
                         updated[ni] = e.target.value;
                         setEditNotes(updated);
                       }}
-                      className="w-full bg-white/10 rounded px-2 py-1 text-[10px] text-white/85 outline-none border border-white/10 focus:border-accent/50"
+                      className="w-full bg-white/10 rounded px-2 py-1 text-[11px] text-white/85 outline-none border border-white/10 focus:border-accent/50"
                     />
                   ))}
                   <button
                     onClick={handleSave}
-                    className="mt-1 rounded-full bg-accent/20 border border-accent/30 px-3 py-0.5 text-[10px] font-medium text-accent hover:bg-accent/30 transition-colors"
+                    className="mt-1 rounded-full bg-accent/20 border border-accent/30 px-3 py-0.5 text-[11px] font-medium text-accent hover:bg-accent/30 transition-colors"
                   >
                     Save
                   </button>
@@ -439,7 +439,7 @@ const SummaryCard = ({ sectionName, notes }: { sectionName: string; notes: strin
               ) : (
                 <ul className="space-y-0.5">
                   {editNotes.map((note, ni) => (
-                    <li key={ni} className="text-[10px] text-white/75 leading-relaxed">• {note}</li>
+                    <li key={ni} className="text-[11px] text-white/75 leading-relaxed">• {note}</li>
                   ))}
                 </ul>
               )}
@@ -701,7 +701,7 @@ const SessionHistoryPanel = ({
                               <p className="text-xs font-medium text-foreground truncate">
                                 {s.title || "Untitled"}
                               </p>
-                              <p className="text-[10px] text-muted-foreground/70 mt-0.5">
+                              <p className="text-[11px] text-muted-foreground/70 mt-0.5">
                                 {formatSessionDate(s.updated_at)}
                               </p>
                             </button>
@@ -1397,7 +1397,7 @@ const AIChatPanel = ({
   const renderMessages = () => (
     <>
       {messages.length > 0 && (
-        <p className="text-center text-[10px] text-muted-foreground/50 mb-2">{chatStartTime}</p>
+        <p className="text-center text-[11px] text-muted-foreground/50 mb-2">{chatStartTime}</p>
       )}
 
       {messages.map((msg, i) => (
@@ -1410,13 +1410,13 @@ const AIChatPanel = ({
           {msg.type === "section-start" ? (
             /* ── Section label pill with time estimate ── */
             <div className="flex flex-col items-center my-1 gap-0.5">
-              <span className="rounded-full bg-primary/10 px-3 py-1 text-[10px] font-semibold text-primary tracking-wide">
+              <span className="rounded-full bg-primary/10 px-3 py-1 text-[11px] font-semibold text-primary tracking-wide">
                 {msg.content}
               </span>
               {(() => {
                 const sectionIdx = CHAT_ONBOARDING_SECTIONS.findIndex(s => msg.content.includes(s.name));
                 return sectionIdx >= 0 ? (
-                  <span className="text-[9px] text-muted-foreground/70 italic">
+                  <span className="text-[10px] text-muted-foreground/70 italic">
                     takes {CHAT_ONBOARDING_SECTIONS[sectionIdx].estimate}
                   </span>
                 ) : null;
@@ -1476,7 +1476,7 @@ const AIChatPanel = ({
                   style={{ backgroundColor: "hsl(220, 40%, 20%)" }}
                 >
                   <div className="flex flex-col">
-                    <span className="text-[10px] font-medium" style={{ color: "hsl(40, 50%, 70%)" }}>Ready to invest?</span>
+                    <span className="text-[11px] font-medium" style={{ color: "hsl(40, 50%, 70%)" }}>Ready to invest?</span>
                     <span className="text-[13px] font-semibold" style={{ color: "hsl(40, 55%, 80%)" }}>View your plan</span>
                   </div>
                   <div
@@ -1494,7 +1494,7 @@ const AIChatPanel = ({
                   className="ml-7 mt-2 self-start flex items-center gap-3 rounded-xl px-4 py-3 transition-opacity hover:opacity-90 border border-primary/25 bg-primary/5"
                 >
                   <div className="flex flex-col text-left">
-                    <span className="text-[10px] font-medium text-muted-foreground">Rebalancing plan ready</span>
+                    <span className="text-[11px] font-medium text-muted-foreground">Rebalancing plan ready</span>
                     <span className="text-[13px] font-semibold text-foreground">View recommended plan</span>
                   </div>
                   <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/15">
@@ -1591,7 +1591,7 @@ const AIChatPanel = ({
             <button
               type="button"
               onClick={() => setRatingDismissed(true)}
-              className="text-[10px] text-muted-foreground/60 hover:text-foreground"
+              className="text-[11px] text-muted-foreground/60 hover:text-foreground"
             >
               Maybe later
             </button>
@@ -1639,9 +1639,9 @@ const AIChatPanel = ({
             <div className="flex items-start justify-between gap-2">
               <div>
                 <p className="font-display text-lg font-semibold leading-tight text-foreground">Goal alignment</p>
-                <p className="mt-0.5 text-[10px] text-muted-foreground">Investment goals & portfolio fit · guided session</p>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">Investment goals & portfolio fit · guided session</p>
               </div>
-              <span className="shrink-0 rounded-full border border-border/60 bg-muted/50 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+              <span className="shrink-0 rounded-full border border-border/60 bg-muted/50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                 Guided
               </span>
             </div>
@@ -1672,7 +1672,7 @@ const AIChatPanel = ({
                     borderLeft: "2px solid hsla(38, 45%, 54%, 0.45)",
                   }}
                 >
-                  <p className="mb-0.5 text-[10px] font-semibold" style={{ color: "hsl(38, 45%, 54%)" }}>💡 Pi Insight</p>
+                  <p className="mb-0.5 text-[11px] font-semibold" style={{ color: "hsl(38, 45%, 54%)" }}>💡 Pi Insight</p>
                   {isClientContextLoading ? (
                     <span className="inline-flex items-center gap-1.5">
                       <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
@@ -1729,16 +1729,16 @@ const AIChatPanel = ({
             <div className="border-t border-border/30 bg-muted/30">
               <div className="flex items-center justify-between px-4 py-2">
                 <div className="flex flex-col">
-                  <span className="text-[10px] font-medium text-muted-foreground">
+                  <span className="text-[11px] font-medium text-muted-foreground">
                     Section {onboardingSection + 1} of {CHAT_ONBOARDING_SECTIONS_COUNT} · {CHAT_ONBOARDING_SECTIONS[onboardingSection].name}
                   </span>
-                  <span className="text-[9px] text-muted-foreground/70 italic">
+                  <span className="text-[10px] text-muted-foreground/70 italic">
                     takes {CHAT_ONBOARDING_SECTIONS[onboardingSection].estimate}
                   </span>
                 </div>
                 <motion.button
                   onClick={stopOnboarding}
-                  className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-medium transition-all"
+                  className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium transition-all"
                   style={{
                     background: "rgba(50, 110, 230, 0.18)",
                     color: "#7ab8ff",
@@ -1781,7 +1781,7 @@ const AIChatPanel = ({
                     </span>
                   </div>
                   <div className="flex items-center gap-0.5">
-                    <span className="text-[10px] text-primary font-medium">review</span>
+                    <span className="text-[11px] text-primary font-medium">review</span>
                     {reviewChipOpen ? (
                       <ChevronUp className="h-3 w-3 text-primary" />
                     ) : (
@@ -1811,7 +1811,7 @@ const AIChatPanel = ({
                                 <div className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-emerald-500/15">
                                   <Check className="h-2 w-2 text-emerald-500" />
                                 </div>
-                                <span className="text-[10px] font-medium text-foreground">{CHAT_ONBOARDING_SECTIONS[idx].name}</span>
+                                <span className="text-[11px] font-medium text-foreground">{CHAT_ONBOARDING_SECTIONS[idx].name}</span>
                               </div>
                               {expandedReviewSection === idx ? (
                                 <ChevronUp className="h-2.5 w-2.5 text-muted-foreground" />
@@ -1831,7 +1831,7 @@ const AIChatPanel = ({
                                   <div className="px-2.5 pb-1.5 pl-7">
                                     <ul className="space-y-0.5">
                                       {CHAT_ONBOARDING_NOTES[idx].map((note, ni) => (
-                                        <li key={ni} className="text-[10px] text-muted-foreground leading-relaxed">• {note}</li>
+                                        <li key={ni} className="text-[11px] text-muted-foreground leading-relaxed">• {note}</li>
                                       ))}
                                     </ul>
                                   </div>
@@ -1987,7 +1987,7 @@ const AIChatPanel = ({
 
           <div className="flex items-center justify-center gap-1.5 px-5 py-1">
             <AlertCircle className="h-3 w-3 text-muted-foreground/40" />
-            <p className="text-[10px] text-muted-foreground/40">For informational purposes only.</p>
+            <p className="text-[11px] text-muted-foreground/40">For informational purposes only.</p>
           </div>
 
           <div className="px-5 pt-2 pb-4">
@@ -2043,7 +2043,7 @@ const AIChatPanel = ({
                 )}
               </div>
 
-              <p className="text-[10px] text-muted-foreground/40 mt-8">
+              <p className="text-[11px] text-muted-foreground/40 mt-8">
                 {micState === "listening" ? "Tap again to stop" : ""}
               </p>
 

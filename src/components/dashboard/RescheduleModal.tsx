@@ -79,7 +79,7 @@ const RescheduleModal = ({ onClose }: RescheduleModalProps) => {
             </div>
 
             <div className="px-3 pt-2">
-              <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5">
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">
                 Pick a time
               </p>
               <div className="flex flex-wrap gap-1.5">
@@ -107,14 +107,14 @@ const RescheduleModal = ({ onClose }: RescheduleModalProps) => {
               <div className="flex items-center justify-between mb-1.5">
                 <label
                   htmlFor="reschedule-agenda"
-                  className="text-[10px] uppercase tracking-wide text-muted-foreground"
+                  className="text-[11px] uppercase tracking-wide text-muted-foreground"
                 >
                   What to discuss
                   <span className="ml-1 normal-case tracking-normal text-muted-foreground/70">
                     (optional)
                   </span>
                 </label>
-                <span className="text-[10px] text-muted-foreground/70 tabular-nums">
+                <span className="text-[11px] text-muted-foreground/70 tabular-nums">
                   {agenda.length}/{AGENDA_MAX}
                 </span>
               </div>
@@ -127,7 +127,7 @@ const RescheduleModal = ({ onClose }: RescheduleModalProps) => {
                 className="w-full resize-none rounded-lg bg-muted/50 px-3 py-2 text-[12px] text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-foreground/30"
                 style={{ border: "1px solid hsl(var(--border))" }}
               />
-              <p className="mt-1 text-[10.5px] text-muted-foreground/70">
+              <p className="mt-1 text-[11px] text-muted-foreground/70">
                 Your advisor will see this before the call.
               </p>
             </div>

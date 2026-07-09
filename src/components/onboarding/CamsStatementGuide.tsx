@@ -63,7 +63,7 @@ const CamsStatementGuide = ({ compact = false }: { compact?: boolean }) => {
       </figure>
 
       {!compact && (
-        <p className="mt-3 text-[10px] leading-relaxed text-muted-foreground/80">
+        <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground/80">
           Tip: the CAS covers CAMS, KFintech, Franklin &amp; SB Funds Services in one PDF, so a
           single statement captures your whole mutual fund portfolio.
         </p>

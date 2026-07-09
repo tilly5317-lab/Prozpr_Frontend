@@ -103,14 +103,14 @@ const LinkAccounts = () => {
           <div className="flex h-7 w-7 items-center justify-center rounded-full bg-foreground">
             <span className="text-xs font-semibold text-primary-foreground">1</span>
           </div>
-          <span className="text-[10px] text-foreground font-medium mt-1.5">Accounts</span>
+          <span className="text-[11px] text-foreground font-medium mt-1.5">Accounts</span>
         </div>
         <div className="flex-1 h-[1.5px] bg-border mx-2 mt-[-16px]" />
         <div className="flex flex-col items-center">
           <div className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary">
             <span className="text-xs font-semibold text-muted-foreground">2</span>
           </div>
-          <span className="text-[10px] text-muted-foreground mt-1.5">About you</span>
+          <span className="text-[11px] text-muted-foreground mt-1.5">About you</span>
         </div>
       </motion.div>
 
@@ -165,7 +165,7 @@ const LinkAccounts = () => {
                 </div>
               </>
             ) : (
-              <span className="text-[10px] text-muted-foreground">Not added</span>
+              <span className="text-[11px] text-muted-foreground">Not added</span>
             )}
           </div>
         </motion.div>
