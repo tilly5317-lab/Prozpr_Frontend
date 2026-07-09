@@ -7,6 +7,7 @@ import {
   createLumpSumPlan,
   getRebalancingRunDetail,
   listRebalancingRuns,
+  type LumpSumAction,
   type RebalancingSubgroupSummary,
   type SipPlanResponse,
 } from "@/lib/api";
@@ -51,21 +52,24 @@ function plainName(raw: string): string {
 const toInput = (inr: number) => formatMoneyInput(String(Math.round(inr)));
 
 /**
- * One-time lump-sum plan — the additional-investment engine's ``lumpsum`` output.
- * Renders the amount + each fund's slice, or an inline set-up form that calls the
- * engine directly (``createLumpSumPlan``) when no plan exists / when adjusting.
- * Mirrors the SIP tab, but the amount is a single one-time deployment.
+ * One-time lump-sum plan — add (deploy fresh money) or withdraw (redeem holdings
+ * to raise cash). Renders the amount + each fund's slice, or an inline set-up
+ * form that calls the engine directly (``createLumpSumPlan``). Mirrors the SIP
+ * tab, but the amount is a single one-time transaction.
  */
 function LumpSumCard({
   plan,
+  action,
   onCreated,
   driftRows,
 }: {
   plan: SipPlanResponse;
+  action: LumpSumAction;
   onCreated: (p: SipPlanResponse) => void;
   driftRows: DriftRow[];
 }) {
   const navigate = useNavigate();
+  const isWithdraw = action === "withdraw";
   const hasPlan = plan.has_plan && plan.buys.length > 0;
   const [editing, setEditing] = useState(!hasPlan);
   const [amount, setAmount] = useState(hasPlan ? toInput(plan.monthly_amount_inr) : "");
@@ -80,11 +84,15 @@ function LumpSumCard({
     setSubmitting(true);
     setError(null);
     try {
-      const p = await createLumpSumPlan(parsed);
+      const p = await createLumpSumPlan(parsed, action);
       onCreated(p);
       setEditing(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't set up your lump sum. Please try again.");
+      setError(
+        e instanceof Error
+          ? e.message
+          : `Couldn't set up your ${isWithdraw ? "withdrawal" : "lump sum"}. Please try again.`,
+      );
     } finally {
       setSubmitting(false);
     }
@@ -97,11 +105,19 @@ function LumpSumCard({
         <div className="flex items-center gap-1.5">
           <Coins className="h-3.5 w-3.5 text-[hsl(var(--wealth-navy))]" />
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-            {hasPlan ? "Adjust your lump sum" : "Invest a lump sum"}
+            {isWithdraw
+              ? hasPlan
+                ? "Adjust your withdrawal"
+                : "Withdraw funds"
+              : hasPlan
+                ? "Adjust your lump sum"
+                : "Invest a lump sum"}
           </p>
         </div>
         <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
-          How much do you want to invest as a one-time lump sum? Pi splits it across the right funds for your goals.
+          {isWithdraw
+            ? "How much do you want to withdraw? Pi picks which holdings to redeem to raise it tax-efficiently."
+            : "How much do you want to invest as a one-time lump sum? Pi splits it across the right funds for your goals."}
         </p>
 
         <form
@@ -121,7 +137,9 @@ function LumpSumCard({
               disabled={submitting}
               className="w-full bg-transparent px-2 py-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground/60"
             />
-            <span className="shrink-0 text-[11px] text-muted-foreground">one-time</span>
+            <span className="shrink-0 text-[11px] text-muted-foreground">
+              {isWithdraw ? "to withdraw" : "one-time"}
+            </span>
           </div>
 
           {error && <p className="mt-2 text-[11px] leading-snug text-[#C24C3A]">{error}</p>}
@@ -134,7 +152,15 @@ function LumpSumCard({
               style={{ backgroundColor: "hsl(var(--wealth-navy))" }}
             >
               {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              {submitting ? "Building your plan…" : hasPlan ? "Update lump sum" : "Plan lump sum"}
+              {submitting
+                ? "Building your plan…"
+                : isWithdraw
+                  ? hasPlan
+                    ? "Update withdrawal"
+                    : "Plan withdrawal"
+                  : hasPlan
+                    ? "Update lump sum"
+                    : "Plan lump sum"}
             </button>
             {hasPlan && (
               <button
@@ -164,12 +190,16 @@ function LumpSumCard({
       <div className="mb-3 rounded-2xl border border-border bg-card p-4">
         <div className="flex items-center gap-1.5">
           <Coins className="h-3.5 w-3.5 text-[hsl(var(--wealth-navy))]" />
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Your lump sum</p>
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+            {isWithdraw ? "Your withdrawal" : "Your lump sum"}
+          </p>
         </div>
         <div className="mt-1 flex items-center justify-between gap-3">
           <p className="text-2xl font-bold text-foreground">
             {formatInr0(plan.monthly_amount_inr)}
-            <span className="ml-1 text-[12px] font-medium text-muted-foreground">one-time</span>
+            <span className="ml-1 text-[12px] font-medium text-muted-foreground">
+              {isWithdraw ? "withdrawal" : "one-time"}
+            </span>
           </p>
           <button
             type="button"
@@ -177,29 +207,32 @@ function LumpSumCard({
               setAmount(toInput(plan.monthly_amount_inr));
               setEditing(true);
             }}
-            aria-label="Edit lump sum amount"
+            aria-label={isWithdraw ? "Edit withdrawal amount" : "Edit lump sum amount"}
             className="flex shrink-0 items-center gap-1 rounded-full border border-border px-3 py-1.5 text-[11.5px] font-semibold text-foreground transition-colors hover:bg-muted/50"
           >
             <Pencil className="h-3.5 w-3.5" />
             Edit
           </button>
         </div>
-        {bucketLabel && (
+        {bucketLabel && !isWithdraw && (
           <p className="mt-1 text-[11px] leading-snug text-muted-foreground">{bucketLabel}</p>
         )}
       </div>
 
-      {/* Proposed Target — the lump sum's recommended split across asset classes. */}
-      {driftRows.length > 0 && (
+      {/* Proposed Target — only for deployments (a target allocation is meaningless
+          when withdrawing). */}
+      {!isWithdraw && driftRows.length > 0 && (
         <div className="mb-3">
           <CurrentVsTargetChart rows={driftRows} bars={["target"]} title="Proposed Target" />
         </div>
       )}
 
-      {/* Suggested funds card — each row opens that fund's detail page */}
+      {/* Funds card — each row opens that fund's detail page */}
       <div className="mb-3 rounded-2xl border border-border bg-card p-4">
         <div className="flex items-center justify-between">
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Suggested funds</p>
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+            {isWithdraw ? "Redeem from these funds" : "Suggested funds"}
+          </p>
           <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
             {plan.fund_count} fund{plan.fund_count === 1 ? "" : "s"}
           </span>
@@ -219,6 +252,7 @@ function LumpSumCard({
               </div>
               <div className="flex shrink-0 items-center gap-1">
                 <span className="text-[12px] font-semibold tabular-nums text-foreground">
+                  {isWithdraw ? "−" : ""}
                   {formatInr0(b.monthly_amount_inr)}
                 </span>
                 <ChevronRight className="h-4 w-4 text-muted-foreground" />
@@ -227,10 +261,13 @@ function LumpSumCard({
           ))}
         </div>
 
-        {/* Undeployed remainder — only when a material amount couldn't be placed */}
+        {/* Remainder — only when a material amount couldn't be placed / raised */}
         {plan.monthly_undeployed_inr > 0 && (
           <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
-            {formatInr0(plan.monthly_undeployed_inr)} isn&apos;t placed yet — per-fund caps or a shortage of eligible funds left a remainder.
+            {formatInr0(plan.monthly_undeployed_inr)}{" "}
+            {isWithdraw
+              ? "couldn't be raised — not enough eligible holdings to redeem."
+              : "isn't placed yet — per-fund caps or a shortage of eligible funds left a remainder."}
           </p>
         )}
       </div>
@@ -240,11 +277,15 @@ function LumpSumCard({
 
 /**
  * Lump-sum planner — the "Lump sum" tab of the Invest section (`/invest/lumpsum`).
- * Enter a one-time amount → the additional-investment engine runs (cadence=lumpsum)
- * → recommended funds appear. Toggle at top switches to Rebalancing / SIP.
+ * Toggle Add / Withdraw, enter a one-time amount → the additional-investment
+ * engine runs (cadence=lumpsum) → funds appear. Toggle at top switches sections.
  */
 const LumpSumPlanner = () => {
   const [plan, setPlan] = useState<SipPlanResponse | null>(null);
+  // Which action produced the current `plan` — so toggling to the other action
+  // shows its set-up form instead of mislabelling the existing plan.
+  const [planAction, setPlanAction] = useState<LumpSumAction>("add");
+  const [action, setAction] = useState<LumpSumAction>("add");
   const [accepting, setAccepting] = useState(false);
   const [accepted, setAccepted] = useState(false);
   const [subgroupSummaries, setSubgroupSummaries] = useState<RebalancingSubgroupSummary[]>([]);
@@ -280,21 +321,25 @@ const LumpSumPlanner = () => {
 
   const handleCreated = (p: SipPlanResponse) => {
     setPlan(p);
+    setPlanAction(action);
     setAccepted(false);
   };
 
-  const hasPlan = !!plan?.has_plan && (plan?.buys.length ?? 0) > 0;
+  // Only show the fetched/created plan under the action that produced it.
+  const shownPlan = plan && planAction === action ? plan : EMPTY_PLAN;
+  const hasPlan = shownPlan.has_plan && shownPlan.buys.length > 0;
   const driftRows = useMemo(
-    () => buildSipTargetRows(plan?.buys ?? [], subgroupSummaries),
-    [plan, subgroupSummaries],
+    () => (action === "add" ? buildSipTargetRows(shownPlan.buys, subgroupSummaries) : []),
+    [action, shownPlan, subgroupSummaries],
   );
 
   const acceptLumpSum = async () => {
-    if (!plan || accepting || plan.monthly_amount_inr <= 0) return;
+    if (accepting || shownPlan.monthly_amount_inr <= 0) return;
     setAccepting(true);
     try {
-      const p = await createLumpSumPlan(plan.monthly_amount_inr);
+      const p = await createLumpSumPlan(shownPlan.monthly_amount_inr, action);
       setPlan(p);
+      setPlanAction(action);
       setAccepted(true);
     } catch {
       /* leave the button idle so the user can retry */
@@ -303,19 +348,48 @@ const LumpSumPlanner = () => {
     }
   };
 
+  const isWithdraw = action === "withdraw";
+
   return (
     <div className="mobile-container bg-background min-h-screen pb-24">
       <div className="px-5 pt-2">
+        {/* Add / Withdraw toggle */}
+        <div className="mb-3 flex rounded-full border border-border bg-card p-0.5">
+          {(["add", "withdraw"] as const).map((a) => (
+            <button
+              key={a}
+              type="button"
+              onClick={() => {
+                setAction(a);
+                setAccepted(false);
+              }}
+              className={`flex-1 rounded-full py-1.5 text-[12px] font-semibold transition-colors ${
+                action === a ? "bg-foreground text-background" : "text-muted-foreground"
+              }`}
+            >
+              {a === "add" ? "Add funds" : "Withdraw funds"}
+            </button>
+          ))}
+        </div>
+
         <p className="mb-3 text-[11px] leading-snug text-muted-foreground">
-          Deploy a one-time lump sum. Enter an amount and Pi&apos;s engine splits it
-          across the right funds for your goals — the same plan you&apos;d get in chat.
+          {isWithdraw
+            ? "Take money out in one go. Enter an amount and Pi's engine picks which holdings to redeem — tax-efficiently, the same plan you'd get in chat."
+            : "Deploy a one-time lump sum. Enter an amount and Pi's engine splits it across the right funds for your goals — the same plan you'd get in chat."}
         </p>
+
         {plan ? (
-          <LumpSumCard plan={plan} onCreated={handleCreated} driftRows={driftRows} />
+          <LumpSumCard
+            key={action}
+            plan={shownPlan}
+            action={action}
+            onCreated={handleCreated}
+            driftRows={driftRows}
+          />
         ) : (
           <div className="flex items-center justify-center gap-2 pt-16 text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
-            <span className="text-sm">Loading your lump sum…</span>
+            <span className="text-sm">Loading…</span>
           </div>
         )}
 
@@ -328,7 +402,15 @@ const LumpSumPlanner = () => {
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground py-3.5 text-[15px] font-semibold tracking-wide text-background transition-all active:scale-[0.98] disabled:opacity-60"
           >
             {accepting ? <Loader2 className="h-4 w-4 animate-spin" /> : accepted ? <Check className="h-4 w-4" /> : null}
-            {accepted ? "Lump sum accepted" : accepting ? "Accepting…" : "Accept lump sum"}
+            {accepted
+              ? isWithdraw
+                ? "Withdrawal accepted"
+                : "Lump sum accepted"
+              : accepting
+                ? "Accepting…"
+                : isWithdraw
+                  ? "Accept withdrawal"
+                  : "Accept lump sum"}
             {!accepted && !accepting && <ArrowRight className="h-4 w-4" />}
           </button>
         )}
