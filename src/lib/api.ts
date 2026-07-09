@@ -1380,6 +1380,8 @@ export interface AboutYouStatus {
   confirmedCount: number;
   /** True only when all four sections are confirmed. */
   allConfirmed: boolean;
+  /** Per-section confirmation, indexed 0 financial · 1 goals · 2 risk · 3 tax. */
+  sections: boolean[];
 }
 
 /**
@@ -1433,7 +1435,7 @@ export async function getAboutYouStatus(): Promise<AboutYouStatus> {
   }
 
   const confirmedCount = confirmed.filter(Boolean).length;
-  return { confirmedCount, allConfirmed: confirmedCount === 4 };
+  return { confirmedCount, allConfirmed: confirmedCount === 4, sections: confirmed };
 }
 
 /** User has linked an institution or already has portfolio value / holdings in DB. */
