@@ -446,7 +446,7 @@ const DonutChart = ({ data, centerLabel }: { data: { label: string; value: numbe
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <p className="text-base font-bold text-foreground">{centerLabel}</p>
-        <p className="text-[9px] text-muted-foreground">Total</p>
+        <p className="text-[10px] text-muted-foreground">Total</p>
       </div>
     </div>
   );
@@ -1273,7 +1273,7 @@ const Execute = () => {
                   key={opt.id}
                   type="button"
                   onClick={() => setAllocView(opt.id)}
-                  className={`rounded-full px-2.5 py-1 text-[10px] font-semibold transition-colors ${
+                  className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors ${
                     active
                       ? "bg-card text-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground"
@@ -1373,19 +1373,19 @@ const Execute = () => {
 
                           {allocView === "funds" && (
                             <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                              <span className="text-[9px] font-medium px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">
+                              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">
                                 {etf.category}
                               </span>
-                              <span className="text-[9px] font-medium px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">
+                              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">
                                 {etf.exchange}
                               </span>
                               {etf.custom ? (
-                                <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 dark:bg-muted dark:text-muted-foreground">
+                                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 dark:bg-muted dark:text-muted-foreground">
                                   Custom
                                 </span>
                               ) : etf.houseRec ? (
                                 <span
-                                  className="text-[9px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-0.5"
+                                  className="text-[10px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-0.5"
                                   style={{
                                     backgroundColor: `hsl(var(--bucket-${group.bucket}) / 0.14)`,
                                     color: `hsl(var(--bucket-${group.bucket}))`,
@@ -1395,7 +1395,7 @@ const Execute = () => {
                                 </span>
                               ) : null}
                               {etf.customerPref && (
-                                <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-muted dark:text-muted-foreground">
+                                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-muted dark:text-muted-foreground">
                                   Customer preference
                                 </span>
                               )}
@@ -1568,11 +1568,11 @@ const Execute = () => {
                               </p>
                             </div>
                             <div className="shrink-0 flex flex-col items-end gap-0.5">
-                              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-secondary text-muted-foreground">
+                              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-secondary text-muted-foreground">
                                 {f.category}
                               </span>
                               <span
-                                className="text-[10px] text-muted-foreground"
+                                className="text-[11px] text-muted-foreground"
                                 style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
                               >
                                 ER {f.expenseRatio}
@@ -1608,7 +1608,7 @@ const Execute = () => {
             >
               <div className="min-w-0">
                 <p className="text-[12px] font-medium text-foreground">Uninvested cash</p>
-                <p className="text-[10px] text-muted-foreground mt-0.5">Held as a buffer — not allocated to funds</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Held as a buffer — not allocated to funds</p>
               </div>
               <div className="text-right shrink-0">
                 <p
@@ -1617,7 +1617,7 @@ const Execute = () => {
                 >
                   {formatINR(uninvestedCash)}
                 </p>
-                <p className="text-[10px] text-muted-foreground">{Math.round(uninvestedPct)}%</p>
+                <p className="text-[11px] text-muted-foreground">{Math.round(uninvestedPct)}%</p>
               </div>
             </div>
           )}
@@ -1758,7 +1758,7 @@ const Execute = () => {
                       {/* Risk + stars */}
                       <div className="flex items-center gap-2 mt-3 flex-wrap">
                         <span
-                          className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                          className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
                           style={{
                             backgroundColor: riskStyles[risk].bg,
                             color: riskStyles[risk].fg,
@@ -1777,14 +1777,14 @@ const Execute = () => {
                               }}
                             />
                           ))}
-                          <span className="text-[10px] text-muted-foreground ml-1">
+                          <span className="text-[11px] text-muted-foreground ml-1">
                             {stars}.0
                           </span>
                         </div>
                       </div>
 
                       {/* Performance chart */}
-                      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mt-5 mb-2">
+                      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest mt-5 mb-2">
                         Performance vs benchmark
                       </p>
                       <div style={{ height: 150, width: "100%" }}>
@@ -1836,7 +1836,7 @@ const Execute = () => {
                       </div>
 
                       {/* Key stats row */}
-                      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mt-4 mb-2">
+                      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest mt-4 mb-2">
                         Key stats
                       </p>
                       <div className="grid grid-cols-2 gap-y-2.5 gap-x-4">
@@ -1848,7 +1848,7 @@ const Execute = () => {
                           { label: "3Y CAGR", value: etf.returns2Y },
                         ].map((s) => (
                           <div key={s.label}>
-                            <p className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                            <p className="text-[11px] text-muted-foreground uppercase tracking-wide">
                               {s.label}
                             </p>
                             <p className="text-[13px] font-semibold text-foreground">
@@ -1860,7 +1860,7 @@ const Execute = () => {
 
                       {/* Why this fund? */}
                       <div className="rounded-xl bg-[#1B3A6B]/5 border border-[#1B3A6B]/10 p-3.5 mt-4">
-                        <p className="text-[9px] font-semibold text-muted-foreground uppercase tracking-widest mb-1.5">
+                        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-1.5">
                           Why this fund?
                         </p>
                         <p className="text-[12.5px] text-foreground/80 leading-relaxed">
@@ -1868,7 +1868,7 @@ const Execute = () => {
                         </p>
                       </div>
 
-                      <p className="text-[9px] text-muted-foreground/60 mt-3 text-center">
+                      <p className="text-[10px] text-muted-foreground/60 mt-3 text-center">
                         Past performance is not indicative of future returns
                       </p>
                     </div>

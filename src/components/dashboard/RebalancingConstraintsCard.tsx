@@ -62,8 +62,8 @@ const RebalancingConstraintsCard = () => {
               className="[&_[role=slider]]:bg-accent [&_[role=slider]]:border-accent [&_.relative>div]:bg-accent"
             />
             <div className="flex justify-between mt-1">
-              <span className="text-[9px] text-muted-foreground">50%</span>
-              <span className="text-[9px] text-muted-foreground">90%</span>
+              <span className="text-[10px] text-muted-foreground">50%</span>
+              <span className="text-[10px] text-muted-foreground">90%</span>
             </div>
           </div>
 

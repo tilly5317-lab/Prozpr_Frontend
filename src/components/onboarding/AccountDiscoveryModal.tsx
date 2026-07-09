@@ -215,7 +215,7 @@ const AccountDiscoveryModal = ({
                           {kindLabel(account.kind)} · {account.account_type}
                           {account.masked_identifier ? ` · ${account.masked_identifier}` : ""}
                         </span>
-                        <span className="text-[10px] text-muted-foreground/80 mt-0.5">
+                        <span className="text-[11px] text-muted-foreground/80 mt-0.5">
                           {formatInrCompact(account.current_value)}
                           {account.holdings_count != null && account.holdings_count > 0
                             ? ` · ${account.holdings_count} holdings`

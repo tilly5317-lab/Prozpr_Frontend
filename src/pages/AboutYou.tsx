@@ -261,16 +261,16 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
           <div className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary">
             <Check className="h-3.5 w-3.5 text-muted-foreground" />
           </div>
-          <span className="text-[10px] text-muted-foreground mt-1.5">Link accounts</span>
-          <span className="text-[10px] text-muted-foreground">~90 secs</span>
+          <span className="text-[11px] text-muted-foreground mt-1.5">Link accounts</span>
+          <span className="text-[11px] text-muted-foreground">~90 secs</span>
         </div>
         <div className="flex-1 h-[1.5px] bg-border mx-2 mt-[-22px]" />
         <div className="flex flex-col items-center">
           <div className="flex h-7 w-7 items-center justify-center rounded-full bg-foreground">
             <span className="text-xs font-semibold text-primary-foreground">2</span>
           </div>
-          <span className="text-[10px] text-foreground font-medium mt-1.5">About you</span>
-          <span className="text-[10px] text-muted-foreground">~30 secs</span>
+          <span className="text-[11px] text-foreground font-medium mt-1.5">About you</span>
+          <span className="text-[11px] text-muted-foreground">~30 secs</span>
         </div>
       </motion.div>
 

@@ -157,7 +157,7 @@ export default function PortfolioFundDetail() {
             <ArrowLeft className="h-4 w-4" />
           </button>
           <div className="min-w-0 flex-1">
-            <p className="text-[9.5px] uppercase tracking-wide text-muted-foreground">Mutual fund</p>
+            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Mutual fund</p>
             <h1 className="text-[15px] font-semibold leading-tight text-foreground">
               {loading ? "Loading…" : data?.scheme_name ?? schemeCode}
             </h1>
@@ -169,17 +169,17 @@ export default function PortfolioFundDetail() {
             {!loading && data && (
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {data.asset_class && (
-                  <span className="inline-flex rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-muted-foreground">
+                  <span className="inline-flex rounded-full bg-muted/60 px-2 py-0.5 text-[11px] font-semibold tracking-wide text-muted-foreground">
                     {data.asset_class}
                   </span>
                 )}
-                <span className="inline-flex rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-muted-foreground">
+                <span className="inline-flex rounded-full bg-muted/60 px-2 py-0.5 text-[11px] font-semibold tracking-wide text-muted-foreground">
                   {planLabel}
                 </span>
-                <span className="inline-flex rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-muted-foreground">
+                <span className="inline-flex rounded-full bg-muted/60 px-2 py-0.5 text-[11px] font-semibold tracking-wide text-muted-foreground">
                   {optionLabel}
                 </span>
-                <span className="inline-flex rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-muted-foreground">
+                <span className="inline-flex rounded-full bg-muted/60 px-2 py-0.5 text-[11px] font-semibold tracking-wide text-muted-foreground">
                   {schemeType.toUpperCase()}
                 </span>
               </div>
@@ -193,11 +193,11 @@ export default function PortfolioFundDetail() {
           <section className="rounded-2xl border border-[#D4A868]/40 bg-[#D4A868]/[0.06] p-4">
             <div className="flex items-center gap-2">
               <Sparkles className="h-3.5 w-3.5 text-[#D4A868]" />
-              <p className="text-[10.5px] uppercase tracking-[0.14em] text-[#D4A868]">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-[#D4A868]">
                 Why this trade
               </p>
               <span
-                className="ml-1 rounded-md px-2 py-0.5 text-[10.5px] font-semibold tracking-wide"
+                className="ml-1 rounded-md px-2 py-0.5 text-[11px] font-semibold tracking-wide"
                 style={{
                   backgroundColor: rebalanceTrade.action === "SELL" ? "#3A1717" : "#113126",
                   color: rebalanceTrade.action === "SELL" ? "#FF6559" : "#3FD998",
@@ -255,7 +255,7 @@ export default function PortfolioFundDetail() {
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="text-[10px] text-muted-foreground">{range} change</p>
+                  <p className="text-[11px] text-muted-foreground">{range} change</p>
                   <p
                     className="text-[13px] font-semibold tabular-nums"
                     style={{ color: isUp ? "hsl(164 54% 40%)" : "hsl(0 84% 50%)" }}
@@ -272,7 +272,7 @@ export default function PortfolioFundDetail() {
 
             <section className="rounded-2xl border border-border/70 bg-card p-4">
               <p className="text-[12px] font-semibold text-foreground">Trailing NAV returns</p>
-              <p className="mt-0.5 text-[10.5px] text-muted-foreground">
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
                 Total return on the NAV through {latestNavDate ? formatDate(latestNavDate) : "—"}.
               </p>
               <div className="mt-3 grid grid-cols-4 gap-1.5">
@@ -280,7 +280,7 @@ export default function PortfolioFundDetail() {
                   const positive = value != null && value >= 0;
                   return (
                     <div key={label} className="rounded-lg bg-muted/30 px-1.5 py-2 text-center">
-                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
                       <p
                         className="mt-0.5 text-[11.5px] font-semibold tabular-nums"
                         style={{
@@ -320,7 +320,7 @@ export default function PortfolioFundDetail() {
                   )}
                 </p>
               </div>
-              <p className="mt-0.5 text-[10.5px] text-muted-foreground">
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
                 Aggregated across folios held in your primary portfolio (CAMS-linked positions).
               </p>
               {!pos ? (
@@ -356,7 +356,7 @@ export default function PortfolioFundDetail() {
                 <Receipt className="h-3.5 w-3.5 text-muted-foreground" />
                 <p className="text-[12px] font-semibold text-foreground">Transactions</p>
               </div>
-              <p className="mt-0.5 text-[10.5px] text-muted-foreground">
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
                 Ledger rows traced from your CAS imports and consolidation pipeline.
               </p>
               {sortedTxns.length === 0 ? (
@@ -365,7 +365,7 @@ export default function PortfolioFundDetail() {
                 </p>
               ) : (
                 <div className="mt-3 overflow-hidden rounded-lg border border-border/60">
-                  <div className="grid grid-cols-12 gap-1 bg-muted/40 px-2 py-1.5 text-[9.5px] uppercase tracking-wide text-muted-foreground">
+                  <div className="grid grid-cols-12 gap-1 bg-muted/40 px-2 py-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
                     <span className="col-span-3">Date</span>
                     <span className="col-span-2">Type</span>
                     <span className="col-span-3 text-right">Units</span>
