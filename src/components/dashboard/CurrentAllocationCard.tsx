@@ -45,7 +45,7 @@ function plainFundDisplayName(raw: string): string {
 const HAIRLINE = "hsl(var(--hairline))";
 const POSITIVE = "#0f8a5f";
 const NEGATIVE = "#c24c3a";
-const LABEL_CLASS = "text-[10px] text-muted-foreground uppercase tracking-wide";
+const LABEL_CLASS = "text-[11px] text-muted-foreground uppercase tracking-wide";
 const VALUE_CLASS = "text-sm font-semibold text-foreground";
 
 /** Compact INR with a single decimal place (e.g. ₹4.8L, ₹1.2Cr). */
@@ -203,7 +203,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
   }[] = hasAllocations
     ? portfolio!.allocations.map((a, i) => ({
         name: a.asset_class,
-        value: Math.round(a.allocation_percentage * 10) / 10,
+        value: Math.round(a.allocation_percentage),
         color: getColor(a.asset_class, i),
         amount: a.amount,
         bucket: normalizeBucket(a.asset_class),
@@ -340,12 +340,12 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
   return (
     <div onClick={() => setSelectedSlice(null)}>
       <p
-        className="text-[10px] uppercase tracking-[1.5px] mb-3 text-muted-foreground"
+        className="text-[11px] uppercase tracking-[1.5px] mb-3 text-muted-foreground"
         style={{ fontWeight: 500 }}
       >
         Current Allocation
         {showSampleHoldingsBanner && (
-          <span className="ml-2 font-normal normal-case text-[10px] text-muted-foreground">
+          <span className="ml-2 font-normal normal-case text-[11px] text-muted-foreground">
             (sample — add holdings or import a statement)
           </span>
         )}
@@ -426,17 +426,17 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                 <div className="mt-1.5 space-y-1">
                   {selectedSubGroups.map((sg) => (
                     <div key={sg.name} className="flex items-start justify-between gap-2">
-                      <span className="flex-1 min-w-0 text-[10px] text-muted-foreground leading-tight break-words">
+                      <span className="flex-1 min-w-0 text-[11px] text-muted-foreground leading-tight break-words">
                         {sg.name}
                       </span>
-                      <span className="text-[10px] font-medium text-foreground shrink-0">
+                      <span className="text-[11px] font-medium text-foreground shrink-0">
                         {formatInr1(sg.value)}
                       </span>
                     </div>
                   ))}
                 </div>
               ) : (
-                <p className="mt-1.5 text-[10px] text-muted-foreground leading-snug">
+                <p className="mt-1.5 text-[11px] text-muted-foreground leading-snug">
                   No sub-categories recorded in this bucket.
                 </p>
               )}
@@ -449,7 +449,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                     className="h-2.5 w-2.5 rounded-full shrink-0"
                     style={{ backgroundColor: item.color }}
                   />
-                  <span className="text-[10px] text-muted-foreground leading-tight">{item.name}</span>
+                  <span className="text-[11px] text-muted-foreground leading-tight">{item.name}</span>
                 </div>
                 <span className="text-xs font-semibold text-foreground">{item.value}%</span>
               </div>
@@ -465,7 +465,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
             key={stat.label}
             className={`flex-1 text-center ${i < stats.length - 1 ? "border-r border-border/30" : ""}`}
           >
-            <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{stat.label}</p>
+            <p className="text-[11px] text-muted-foreground uppercase tracking-wide">{stat.label}</p>
             <p className="text-sm font-bold text-foreground truncate px-0.5">{stat.value}</p>
           </div>
         ))}
@@ -532,7 +532,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                           >
                             {formatInr1(group.totalValue)}
                           </p>
-                          <p className="text-[10px] font-medium text-muted-foreground">
+                          <p className="text-[11px] font-medium text-muted-foreground">
                             {group.totalPct.toFixed(0)}%
                           </p>
                         </div>
@@ -616,7 +616,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                         <div>
                           <p className="text-xs font-semibold text-foreground">{row.value}</p>
                           {collapsedReturnText && (
-                            <span className="text-[10px] font-medium" style={{ color: collapsedReturnColor }}>
+                            <span className="text-[11px] font-medium" style={{ color: collapsedReturnColor }}>
                               {collapsedReturnText} YoY
                             </span>
                           )}
