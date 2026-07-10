@@ -3,13 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ArrowRight, Check, Loader2, Sparkles } from "lucide-react";
 import BottomNav from "@/components/BottomNav";
+import { CurrentVsTargetChart } from "@/components/invest/CurrentVsTargetChart";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import RebalanceGate from "@/components/invest/RebalanceGate";
 import TradeFundDetailView from "@/components/fund/TradeFundDetailView";
 import { toast } from "@/hooks/use-toast";
@@ -193,15 +188,6 @@ function axisINR(n: number): string {
   return `₹${Math.round(a)}`;
 }
 
-/** Round an axis maximum up to a clean 1 / 2 / 5 × 10ⁿ value. */
-function niceCeil(v: number): number {
-  if (v <= 0) return 1;
-  const pow = Math.pow(10, Math.floor(Math.log10(v)));
-  const n = v / pow;
-  const step = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10;
-  return step * pow;
-}
-
 function mapTrade(t: RebalancingTrade): UITrade {
   const type: "BUY" | "SELL" = t.action.toUpperCase() === "BUY" ? "BUY" : "SELL";
   return {
@@ -311,27 +297,6 @@ const cardStyle: CSSProperties = {
   background: "hsl(var(--card))",
   border: "1px solid hsl(var(--border))",
   borderRadius: 16,
-};
-
-// Drift caption colours — semantic so they track the active light/dark theme.
-const OVERWEIGHT = "hsl(var(--destructive))";
-const UNDERWEIGHT = "hsl(var(--wealth-green))";
-const NEUTRAL = "hsl(var(--muted-foreground))";
-
-// Current vs target bars now use each asset class's own colour: Target is the
-// solid asset colour, Current is the same colour lightened. `withAlpha` turns an
-// `hsl(h s% l%)` token into a translucent version.
-const withAlpha = (color: string, a: number): string => {
-  if (color.startsWith("hsl")) return color.replace(/\)\s*$/, ` / ${a})`);
-  if (color.startsWith("#")) {
-    const hex = color.slice(1);
-    const full = hex.length === 3 ? hex.split("").map((c) => c + c).join("") : hex;
-    const alpha = Math.round(Math.min(1, Math.max(0, a)) * 255)
-      .toString(16)
-      .padStart(2, "0");
-    return `#${full}${alpha}`;
-  }
-  return color;
 };
 
 /* ── Example plan ──────────────────────────────────────────────────────────
@@ -612,7 +577,7 @@ const RebalanceExplanation = () => {
             <div className="-mb-1 flex items-center gap-2">
               <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-foreground/80">Rebalancing plan</span>
               {isExample && (
-                <span className="rounded-full border border-[#D4A868]/40 bg-[#D4A868]/10 px-2 py-0.5 text-[9.5px] font-semibold uppercase tracking-wider text-[#9A7B2E]">
+                <span className="rounded-full border border-[#D4A868]/40 bg-[#D4A868]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[#9A7B2E]">
                   Example
                 </span>
               )}
@@ -654,7 +619,7 @@ const RebalanceExplanation = () => {
                   <Sparkles className="h-3.5 w-3.5" />
                 </span>
                 <span
-                  className="text-[10px] uppercase font-semibold"
+                  className="text-[11px] uppercase font-semibold"
                   style={{ letterSpacing: "1.6px", color: "#9A7B2E" }}
                 >
                   Prozpr insight
@@ -673,128 +638,15 @@ const RebalanceExplanation = () => {
               </p>
             </motion.section>
 
-            {/* Current vs target — clustered ₹ bars per asset class. The Current
-                and Target bars sit flush (no gap) and share one ₹ x-axis so the
-                lengths are comparable across rows (mirrors a clustered bar chart). */}
-            {driftRowsToShow.length > 0 && (() => {
-              const rawMax = Math.max(1, ...driftRowsToShow.flatMap((r) => [r.currentInr, r.targetInr]));
-              const axisMax = niceCeil(rawMax);
-              const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * axisMax);
-              const barEase = [0.22, 1, 0.36, 1] as const;
-              return (
-                <section style={cardStyle} className="px-4 py-4">
-                  <p className="text-[11px] tracking-[0.16em] uppercase text-muted-foreground">
-                    Current vs target
-                  </p>
-
-                  <div className="mt-1.5 flex items-center gap-3 text-[10px] text-muted-foreground">
-                    <span className="inline-flex items-center gap-1">
-                      <span className="h-2 w-3.5 rounded-sm" style={{ background: withAlpha("hsl(var(--muted-foreground))", 0.3) }} />
-                      Current
-                    </span>
-                    <span className="inline-flex items-center gap-1">
-                      <span className="h-2 w-3.5 rounded-sm bg-muted-foreground" />
-                      Target
-                    </span>
-                  </div>
-
-                  <TooltipProvider delayDuration={100}>
-                    <div className="mt-4 space-y-4">
-                      {driftRowsToShow.map((row, i) => {
-                        const drift = row.current - row.target;
-                        const curWidth = (row.currentInr / axisMax) * 100;
-                        const tgtWidth = (row.targetInr / axisMax) * 100;
-                        const delay = i * 0.09;
-                        return (
-                          <Tooltip key={row.key}>
-                            <TooltipTrigger asChild>
-                              <div className="cursor-default">
-                                <div className="mb-1.5 flex items-center justify-between gap-2">
-                                  <div className="flex items-center gap-2">
-                                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: row.color }} />
-                                    <span className="text-[13px] text-foreground">{row.label}</span>
-                                  </div>
-                                  <span
-                                    className="text-[11px]"
-                                    style={{ color: drift > 0 ? OVERWEIGHT : drift < 0 ? UNDERWEIGHT : NEUTRAL }}
-                                  >
-                                    {row.amountText}
-                                  </span>
-                                </div>
-
-                                {/* Current (top) + Target (bottom) — flush, no gap between
-                                    them. Each bar grows 0 → its width for a smooth reveal. */}
-                                <div className="overflow-hidden rounded-[3px] bg-muted">
-                                  <motion.div
-                                    key={`cur-${row.key}`}
-                                    className="h-3.5"
-                                    style={{ background: withAlpha(row.color, 0.3) }}
-                                    initial={{ width: 0 }}
-                                    animate={{ width: `${Math.max(curWidth, 0.5)}%` }}
-                                    transition={{ duration: 0.85, ease: barEase, delay }}
-                                  />
-                                  <motion.div
-                                    key={`tgt-${row.key}`}
-                                    className="h-3.5"
-                                    style={{ background: row.color }}
-                                    initial={{ width: 0 }}
-                                    animate={{ width: `${Math.max(tgtWidth, 0.5)}%` }}
-                                    transition={{ duration: 0.85, ease: barEase, delay: delay + 0.06 }}
-                                  />
-                                </div>
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" className="px-3 py-2">
-                              <div className="mb-1 flex items-center gap-1.5">
-                                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: row.color }} />
-                                <span className="text-[11px] font-semibold">{row.label}</span>
-                              </div>
-                              <div className="space-y-0.5 text-[11px]">
-                                <div className="flex items-center justify-between gap-5">
-                                  <span className="text-muted-foreground">Current</span>
-                                  <span className="font-medium tabular-nums">
-                                    {row.current}% · {axisINR(row.currentInr)}
-                                  </span>
-                                </div>
-                                <div className="flex items-center justify-between gap-5">
-                                  <span className="text-muted-foreground">Target</span>
-                                  <span className="font-medium tabular-nums">
-                                    {row.target}% · {axisINR(row.targetInr)}
-                                  </span>
-                                </div>
-                              </div>
-                            </TooltipContent>
-                          </Tooltip>
-                        );
-                      })}
-                    </div>
-                  </TooltipProvider>
-
-                  {/* Shared ₹ x-axis */}
-                  <div className="relative mt-2 h-4">
-                    {ticks.map((t, i) => (
-                      <span
-                        key={t}
-                        className="absolute top-0 text-[9px] tabular-nums text-muted-foreground"
-                        style={{
-                          left: `${i * 25}%`,
-                          transform:
-                            i === 0 ? "none" : i === ticks.length - 1 ? "translateX(-100%)" : "translateX(-50%)",
-                        }}
-                      >
-                        {axisINR(t)}
-                      </span>
-                    ))}
-                  </div>
-                </section>
-              );
-            })()}
+            {/* Current vs target — combined Current / Target stacked ₹ bars
+                (shared component; also used on the SIP tab). */}
+            <CurrentVsTargetChart rows={driftRowsToShow} />
 
             {/* Proposed trades — the real BUY / SELL actions grouped by bucket
                 (sample trades when this is an example plan). */}
             <section style={cardStyle} className="px-4 py-4">
               <div className="flex items-center justify-between">
-                <p className="text-[10px] tracking-[0.16em] uppercase text-muted-foreground">
+                <p className="text-[11px] tracking-[0.16em] uppercase text-muted-foreground">
                   Proposed trades{isExample ? " · example" : ""}
                 </p>
                 <p className="text-[11px] text-wealth-green">{taxTextToShow}</p>
@@ -812,13 +664,13 @@ const RebalanceExplanation = () => {
                             pops, without the glow/clutter from before. */}
                         <div className="flex items-center gap-2 pb-2">
                           <p
-                            className="text-[10px] font-bold tracking-[0.14em] uppercase truncate"
+                            className="text-[11px] font-bold tracking-[0.14em] uppercase truncate"
                             style={{ color: color ?? "hsl(var(--muted-foreground))" }}
                           >
                             {label}
                           </p>
                           <span
-                            className="shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold"
+                            className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
                             style={
                               color
                                 ? { backgroundColor: `${color}1f`, color }
@@ -841,7 +693,7 @@ const RebalanceExplanation = () => {
                                 className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-left flex items-center gap-3 transition-colors hover:bg-muted/40"
                               >
                                 <span
-                                  className="w-11 shrink-0 rounded-md py-1 text-center text-[10px] font-bold tracking-wide"
+                                  className="w-11 shrink-0 rounded-md py-1 text-center text-[11px] font-bold tracking-wide"
                                   style={{ backgroundColor: `${tone}1f`, color: tone }}
                                 >
                                   {trade.type}
@@ -865,15 +717,8 @@ const RebalanceExplanation = () => {
             {/* Funds you're keeping — everything in the portfolio NOT being sold,
                 tagged performing-well / neutral, with the same fund details. */}
             {keptFundsToShow.length > 0 && (
-              <section
-                className="px-4 py-4"
-                style={{
-                  background: "hsl(150 28% 45% / 0.05)",
-                  border: "1px solid hsl(150 28% 42% / 0.22)",
-                  borderRadius: 16,
-                }}
-              >
-                <p className="text-[10px] tracking-[0.16em] uppercase" style={{ color: "hsl(var(--muted-foreground))" }}>
+              <section className="px-4 py-4" style={cardStyle}>
+                <p className="text-[11px] tracking-[0.16em] uppercase" style={{ color: "hsl(var(--muted-foreground))" }}>
                   Funds you're keeping
                 </p>
                 <p className="mt-1 text-[11.5px] leading-snug text-muted-foreground">
@@ -883,16 +728,10 @@ const RebalanceExplanation = () => {
                   {keptFundsToShow.map((f) => (
                     <div key={f.id} className="flex items-center gap-3 py-2.5">
                       <span
-                        className="w-[52px] shrink-0 px-2 py-1 rounded-md text-[10px] font-semibold tracking-wide leading-tight text-center"
+                        className="w-[52px] shrink-0 px-2 py-1 rounded-md text-[11px] font-semibold tracking-wide leading-tight text-center"
                         style={{
-                          backgroundColor:
-                            f.tone === "well"
-                              ? "rgba(99,102,241,0.12)"
-                              : "hsl(var(--muted-foreground) / 0.12)",
-                          color:
-                            f.tone === "well"
-                              ? "#6366F1"
-                              : "hsl(var(--muted-foreground))",
+                          backgroundColor: "hsl(var(--muted-foreground) / 0.12)",
+                          color: "hsl(var(--muted-foreground))",
                         }}
                       >
                         {f.tone === "well" ? "Ahead" : "Neutral"}
@@ -900,24 +739,16 @@ const RebalanceExplanation = () => {
                       <div className="min-w-0 flex-1">
                         <p className="text-[13px] leading-tight font-medium text-foreground truncate">{f.name}</p>
                         {f.subtitle && (
-                          <p className="text-[10.5px] text-muted-foreground truncate">{f.subtitle}</p>
+                          <p className="text-[11px] text-muted-foreground truncate">{f.subtitle}</p>
                         )}
                       </div>
                       <div className="shrink-0 text-right">
                         <p
-                          className="text-[13px] leading-none font-semibold tabular-nums"
-                          style={{
-                            color:
-                              f.gainPct == null
-                                ? "hsl(var(--muted-foreground))"
-                                : f.gainPct >= 0
-                                  ? "hsl(var(--wealth-green))"
-                                  : "hsl(var(--destructive))",
-                          }}
+                          className="text-[13px] leading-none font-semibold tabular-nums text-foreground"
                         >
                           {f.gainPct == null ? "—" : `${f.gainPct >= 0 ? "+" : ""}${f.gainPct.toFixed(1)}%`}
                         </p>
-                        <p className="mt-1 text-[10px] text-muted-foreground tabular-nums">{axisINR(f.value)}</p>
+                        <p className="mt-1 text-[11px] text-muted-foreground tabular-nums">{axisINR(f.value)}</p>
                       </div>
                     </div>
                   ))}

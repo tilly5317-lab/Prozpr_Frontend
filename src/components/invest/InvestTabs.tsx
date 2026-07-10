@@ -11,18 +11,23 @@ import { motion } from "framer-motion";
 const InvestTabs = () => {
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const onSip = pathname.startsWith("/invest/sip");
+  const activeKey = pathname.startsWith("/invest/sip")
+    ? "sip"
+    : pathname.startsWith("/invest/lumpsum")
+      ? "lumpsum"
+      : "rebalance-explanation";
 
   const tabs = [
     { key: "rebalance-explanation", label: "Rebalancing" },
     { key: "sip", label: "SIP" },
+    { key: "lumpsum", label: "Lump sum" },
   ] as const;
 
   return (
     <div className="px-5 pt-10 pb-1.5">
       <div className="relative flex rounded-full border border-[#D4A868]/25 bg-card p-0.5">
         {tabs.map((t) => {
-          const active = t.key === "sip" ? onSip : !onSip;
+          const active = t.key === activeKey;
           return (
             <button
               key={t.key}

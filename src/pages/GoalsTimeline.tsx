@@ -470,7 +470,7 @@ function AddGoalSheet({
             >
               <div className="flex items-center gap-2 border-b border-border px-4 py-3">
                 <div className="min-w-0 flex-1">
-                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
                     {isEdit ? "Edit goal" : "New goal"}
                   </p>
                   <h2 className="text-base font-semibold text-foreground truncate">
@@ -489,7 +489,7 @@ function AddGoalSheet({
 
               <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
                 <div>
-                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5">
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">
                     Goal category
                   </p>
                   <div className="grid grid-cols-2 gap-2">
@@ -539,7 +539,7 @@ function AddGoalSheet({
                   <div>
                     <label
                       htmlFor="timeline-goal-property-value"
-                      className="text-[10px] uppercase tracking-wide text-muted-foreground"
+                      className="text-[11px] uppercase tracking-wide text-muted-foreground"
                     >
                       Property value (₹)
                     </label>
@@ -556,7 +556,7 @@ function AddGoalSheet({
                       style={{ border: "1px solid hsl(var(--border))" }}
                     />
                     {propertyVal > 0 && (
-                      <p className="mt-1 text-[10px] text-muted-foreground tabular-nums">
+                      <p className="mt-1 text-[11px] text-muted-foreground tabular-nums">
                         = ₹{Math.round(propertyVal).toLocaleString("en-IN")}
                       </p>
                     )}
@@ -568,7 +568,7 @@ function AddGoalSheet({
                     <div>
                       <label
                         htmlFor="timeline-goal-amount"
-                        className="text-[10px] uppercase tracking-wide text-muted-foreground"
+                        className="text-[11px] uppercase tracking-wide text-muted-foreground"
                       >
                         Cost (₹)
                       </label>
@@ -589,7 +589,7 @@ function AddGoalSheet({
                   <div className={showHouseDetails ? "col-span-2" : undefined}>
                     <label
                       htmlFor="timeline-goal-year"
-                      className="text-[10px] uppercase tracking-wide text-muted-foreground"
+                      className="text-[11px] uppercase tracking-wide text-muted-foreground"
                     >
                       Target year
                     </label>
@@ -609,7 +609,7 @@ function AddGoalSheet({
                     />
                   </div>
                 </div>
-                <p className="-mt-2 text-[10.5px] text-muted-foreground">
+                <p className="-mt-2 text-[11px] text-muted-foreground">
                   {yearsAway === 0
                     ? "Within this year"
                     : `${yearsAway} year${yearsAway === 1 ? "" : "s"} away`}
@@ -618,7 +618,7 @@ function AddGoalSheet({
                 {category !== "" && (
                   <div className="rounded-xl border border-border bg-muted/30 p-3 space-y-3">
                     <div>
-                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5">
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">
                         Funded partially by a loan?
                       </p>
                       <div className="grid grid-cols-2 gap-2">
@@ -654,7 +654,7 @@ function AddGoalSheet({
                         <div>
                           <label
                             htmlFor="timeline-goal-loan-pct"
-                            className="text-[10px] uppercase tracking-wide text-muted-foreground"
+                            className="text-[11px] uppercase tracking-wide text-muted-foreground"
                           >
                             Loan (% of {showHouseDetails ? "property value" : "goal cost"})
                           </label>
@@ -671,7 +671,7 @@ function AddGoalSheet({
                         <div>
                           <label
                             htmlFor="timeline-goal-loan-term"
-                            className="text-[10px] uppercase tracking-wide text-muted-foreground"
+                            className="text-[11px] uppercase tracking-wide text-muted-foreground"
                           >
                             Expected loan term (years)
                           </label>
@@ -686,7 +686,7 @@ function AddGoalSheet({
                           />
                         </div>
                         {totalValue > 0 && loanPctNum > 0 && (
-                          <p className="text-[10.5px] text-muted-foreground">
+                          <p className="text-[11px] text-muted-foreground">
                             Loan ≈{" "}
                             <span className="font-semibold text-foreground tabular-nums">
                               {formatINR(loanAmount)}
@@ -704,7 +704,7 @@ function AddGoalSheet({
                 )}
 
                 <div>
-                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5">
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">
                     Is this in today&apos;s money or at the target date?
                   </p>
                   <div className="grid grid-cols-2 gap-2">
@@ -729,7 +729,7 @@ function AddGoalSheet({
                           aria-pressed={active}
                         >
                           <p className="text-[11.5px] font-semibold">{opt.label}</p>
-                          <p className="mt-0.5 text-[10px] leading-tight">
+                          <p className="mt-0.5 text-[11px] leading-tight">
                             {opt.hint}
                           </p>
                         </button>
@@ -742,7 +742,7 @@ function AddGoalSheet({
                   <div>
                     <label
                       htmlFor="timeline-goal-inflation"
-                      className="text-[10px] uppercase tracking-wide text-muted-foreground"
+                      className="text-[11px] uppercase tracking-wide text-muted-foreground"
                     >
                       Expected inflation (%/yr)
                     </label>
@@ -765,7 +765,7 @@ function AddGoalSheet({
                         onClick={() =>
                           setInflation(String(inflationSuggestion.rate))
                         }
-                        className="mt-1.5 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10.5px] font-medium"
+                        className="mt-1.5 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium"
                         style={{
                           backgroundColor: "rgba(212, 168, 104, 0.10)",
                           color: "#D4A868",
@@ -776,7 +776,7 @@ function AddGoalSheet({
                         {inflationSuggestion.reason}
                       </button>
                     )}
-                    <p className="mt-1.5 text-[10px] leading-snug text-muted-foreground/80">
+                    <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground/80">
                       Override this if you have a better number — it&apos;s based
                       on Prozpr&apos;s research for this goal category.
                     </p>
@@ -784,7 +784,7 @@ function AddGoalSheet({
                 )}
 
                 <div>
-                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5">
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">
                     Priority
                   </p>
                   <div className="flex rounded-full bg-muted/50 p-0.5">
@@ -1004,7 +1004,7 @@ function ProjectionSheet({ open, onClose, fundFlow, headline, sipMonthly }: Proj
                 className="w-full max-w-md rounded-2xl bg-card p-6 text-center shadow-2xl"
                 onClick={(e) => e.stopPropagation()}
               >
-                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
                   Goals projection
                 </p>
                 <p className="mt-2 text-sm text-muted-foreground">
@@ -1093,7 +1093,7 @@ function ProjectionSheet({ open, onClose, fundFlow, headline, sipMonthly }: Proj
             >
               <div className="flex items-start gap-2 border-b border-border px-4 py-3">
                 <div className="min-w-0 flex-1">
-                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
                     Goals projection
                   </p>
                   <p className="mt-0.5 text-[11px] text-muted-foreground">
@@ -1113,7 +1113,7 @@ function ProjectionSheet({ open, onClose, fundFlow, headline, sipMonthly }: Proj
               <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
                 {/* Sensitivity — return scenario */}
                 <div>
-                  <p className="mb-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                  <p className="mb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
                     Return scenario · sensitivity
                   </p>
                   <div className="flex rounded-full bg-muted/60 p-0.5">
@@ -1132,7 +1132,7 @@ function ProjectionSheet({ open, onClose, fundFlow, headline, sipMonthly }: Proj
                           aria-pressed={active}
                         >
                           {s.label}
-                          <span className="ml-1 text-[9.5px] font-normal tabular-nums opacity-70">
+                          <span className="ml-1 text-[10px] font-normal tabular-nums opacity-70">
                             {s.rate}%
                           </span>
                         </button>
@@ -1144,7 +1144,7 @@ function ProjectionSheet({ open, onClose, fundFlow, headline, sipMonthly }: Proj
                 {/* Closing headline (live) */}
                 <div className="flex items-center justify-between rounded-xl border border-border bg-muted/30 px-3 py-2.5">
                   <div className="min-w-0">
-                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
                       Closing financial assets
                     </p>
                     <p className="text-[11px] text-muted-foreground/80">{horizonLabel}</p>
@@ -1271,7 +1271,7 @@ function ProjectionSheet({ open, onClose, fundFlow, headline, sipMonthly }: Proj
                   })}
                 </div>
 
-                <p className="text-[10px] leading-snug text-muted-foreground/80">
+                <p className="text-[11px] leading-snug text-muted-foreground/80">
                   Sensitivity varies only investment returns; contributions, one-off flows and goal
                   outflows are held constant. Assumptions, not a guarantee.
                 </p>
@@ -1874,7 +1874,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
               Inputs
             </button>
             {goalsLoading && (
-              <span className="text-[10px] text-muted-foreground">Goals…</span>
+              <span className="text-[11px] text-muted-foreground">Goals…</span>
             )}
             {cashflowLoading && (
               <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
@@ -1987,7 +1987,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
         >
           <div className="rounded-xl border border-border bg-card px-3 py-1.5 flex items-center gap-3">
           <div className="shrink-0 leading-tight">
-            <p className="text-[9.5px] uppercase tracking-wide text-muted-foreground">
+            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
               Invest /mo
             </p>
             <p
@@ -1995,7 +1995,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
               style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
             >
               {formatINRCompact(monthlyContrib)}
-              <span className="ml-1 text-[9.5px] font-medium text-muted-foreground">
+              <span className="ml-1 text-[10px] font-medium text-muted-foreground">
                 · {formatINRCompact(monthlyContrib * 12)}/yr
               </span>
             </p>
@@ -2016,7 +2016,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
               placeholder="0"
               aria-label="Monthly investment amount"
             />
-            <span className="text-[9.5px] text-muted-foreground shrink-0">/mo</span>
+            <span className="text-[10px] text-muted-foreground shrink-0">/mo</span>
           </div>
           {/* Apply the typed SIP to the actual plan — saves the input and re-runs
               the engine so the whole cashflow reflects it. Shown only when the
@@ -2026,7 +2026,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
               type="button"
               onClick={() => void applySipToPlan()}
               disabled={applyingSip}
-              className="shrink-0 inline-flex items-center gap-1 rounded-full px-2.5 h-6 text-[10px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+              className="shrink-0 inline-flex items-center gap-1 rounded-full px-2.5 h-6 text-[11px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
               style={{ backgroundColor: "#D4A868" }}
               title="Save this SIP and recompute your cashflow plan"
             >
@@ -2047,7 +2047,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
           </button>
           </div>
           {sipCapped && affordableMonthly != null && (
-            <p className="mt-1 px-1 text-[10px] leading-snug text-amber-600 dark:text-amber-400">
+            <p className="mt-1 px-1 text-[11px] leading-snug text-amber-600 dark:text-amber-400">
               You can invest about {formatINRCompact(affordableMonthly)}/mo from your income
               (after tax, expenses &amp; EMIs). A higher SIP is capped to that — it won't grow
               your corpus further, since the plan never invests more than you can save.
@@ -2057,7 +2057,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
 
         {/* Priority filter — toggle which goals feed the projection */}
         <div className="flex items-center gap-2 px-1">
-          <span className="text-[10px] uppercase tracking-wide text-muted-foreground shrink-0">
+          <span className="text-[11px] uppercase tracking-wide text-muted-foreground shrink-0">
             Show
           </span>
           <div className="flex flex-wrap gap-1.5">
@@ -2105,7 +2105,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
 
         {/* Chart axis legend — explains what the bars mean */}
         {isTornado && (
-          <div className="flex items-center justify-between px-1 pt-2 pb-1 text-[10px] text-muted-foreground">
+          <div className="flex items-center justify-between px-1 pt-2 pb-1 text-[11px] text-muted-foreground">
             <div className="flex items-center gap-1.5">
               <span className="inline-block h-2 w-3 rounded-sm" style={{ backgroundColor: "rgb(239,68,68)" }} />
               <span>Negative</span>
@@ -2360,7 +2360,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                       }}
                     >
                       <div
-                        className="rounded-md border border-border bg-card px-2 py-0.5 text-[10.5px] shadow-md whitespace-nowrap"
+                        className="rounded-md border border-border bg-card px-2 py-0.5 text-[11px] shadow-md whitespace-nowrap"
                         style={{
                           fontFamily:
                             "ui-monospace, SFMono-Regular, Menlo, monospace",
@@ -2374,7 +2374,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                               Close {formatINRCompact(corpusClosing)}
                             </span>
                             {tornadoOffScale && (
-                              <span className="ml-1 text-[10px] text-amber-600">
+                              <span className="ml-1 text-[11px] text-amber-600">
                                 (off-scale)
                               </span>
                             )}
@@ -2443,7 +2443,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                           {rowMilestones.map((m) => (
                             <span
                               key={m.value}
-                              className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold animate-pulse"
+                              className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold animate-pulse"
                               style={{
                                 backgroundColor: "rgba(229,192,121,0.95)",
                                 color: "#3a2a08",
@@ -2461,7 +2461,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                     {hasGoals && (!isTornado || hasTornadoBar) && (
                       <div className="flex items-center justify-between gap-2">
                         <span
-                          className="text-[10.5px] tabular-nums text-muted-foreground"
+                          className="text-[11px] tabular-nums text-muted-foreground"
                           style={{
                             fontFamily:
                               "ui-monospace, SFMono-Regular, Menlo, monospace",
@@ -2658,7 +2658,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
           </AnimatePresence>
         </ul>
 
-        <p className="px-1 text-[9.5px] leading-snug text-muted-foreground/70">
+        <p className="px-1 text-[10px] leading-snug text-muted-foreground/70">
           {isTornado
             ? "Each bar = total net worth at the end of that year. Green = positive net worth (you still have money). Red = negative net worth (goals have outpaced what you've saved). Wider = larger amount."
             : "Gold spine = projected NAV (today's portfolio, ₹2L/mo, 9% p.a.). Red ticks = goal-draw years."}

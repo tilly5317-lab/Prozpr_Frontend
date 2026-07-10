@@ -60,15 +60,15 @@ function ChartTooltip({
       className="rounded-md bg-popover text-popover-foreground shadow-md px-2.5 py-1.5"
       style={{ border: "1px solid hsl(var(--border))" }}
     >
-      <p className="text-[10px] text-muted-foreground">
+      <p className="text-[11px] text-muted-foreground">
         {formatTooltipDate(p.recorded_date)}
       </p>
       <p className="text-[12px] font-semibold">{formatInr0(p.total_value)}</p>
-      <p className="text-[10px] text-muted-foreground">
+      <p className="text-[11px] text-muted-foreground">
         Invested {formatInr0(p.total_invested)}
       </p>
       <p
-        className={`text-[10px] font-medium ${
+        className={`text-[11px] font-medium ${
           gain >= 0 ? "text-wealth-green" : "text-destructive"
         }`}
       >
@@ -291,7 +291,7 @@ const PortfolioNavChart = ({ camsMissing, onUploadCams }: PortfolioNavChartProps
                 userPickedHorizonRef.current = true;
                 setHorizon(h);
               }}
-              className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition-all ${
+              className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all ${
                 horizon === h
                   ? "bg-accent/15 text-accent"
                   : "bg-muted/60 text-muted-foreground hover:text-foreground"
@@ -311,7 +311,7 @@ const PortfolioNavChart = ({ camsMissing, onUploadCams }: PortfolioNavChartProps
           <div className="flex h-full w-full flex-col items-center justify-center gap-1.5 px-4 text-center">
             <UploadCloud className="h-6 w-6 text-[#D4A868]" />
             <p className="text-[12px] font-medium text-foreground">See your portfolio history</p>
-            <p className="text-[10.5px] leading-snug text-muted-foreground">
+            <p className="text-[11px] leading-snug text-muted-foreground">
               Upload your CAMS statement — we&apos;ll build your net-worth history from your real holdings.
             </p>
             <button
@@ -361,7 +361,7 @@ const PortfolioNavChart = ({ camsMissing, onUploadCams }: PortfolioNavChartProps
                   Calculating your net worth history… {Math.round(job?.progress_pct ?? 0)}%
                 </p>
                 {job?.message && (
-                  <p className="text-[10px] text-muted-foreground">{job.message}</p>
+                  <p className="text-[11px] text-muted-foreground">{job.message}</p>
                 )}
               </>
             ) : errored ? (
@@ -475,7 +475,7 @@ const PortfolioNavChart = ({ camsMissing, onUploadCams }: PortfolioNavChartProps
       </div>
 
       {hasPoints && (
-        <div className="mt-2 flex items-center justify-center gap-4 text-[9px] text-muted-foreground">
+        <div className="mt-2 flex items-center justify-center gap-4 text-[10px] text-muted-foreground">
           <span className="flex items-center gap-1">
             <span className="inline-block h-[2px] w-3.5 rounded-full" style={{ backgroundColor: strokeColor }} />
             Total value
