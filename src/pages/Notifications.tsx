@@ -79,7 +79,7 @@ const Notifications = () => {
               >
                 {!item.is_read ? (
                   <div className="absolute top-2.5 right-2.5">
-                    <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-semibold text-accent">New</span>
+                    <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[11px] font-semibold text-accent">New</span>
                   </div>
                 ) : null}
                 <div className="flex gap-3">

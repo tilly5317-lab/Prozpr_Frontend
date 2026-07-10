@@ -459,7 +459,7 @@ export function DiscoverScreen({
             <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
               Search results
             </p>
-            <p className="text-[10px] text-muted-foreground/70">
+            <p className="text-[11px] text-muted-foreground/70">
               {searchFeed.loading && searchFeed.items.length === 0
                 ? "Searching…"
                 : `${searchFeed.total} match${searchFeed.total === 1 ? "" : "es"}`}
@@ -501,7 +501,7 @@ export function DiscoverScreen({
               }}
               transition={{ duration: 2.4, ease: "easeInOut" }}
             >
-              <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest" style={{ color: "hsl(40, 50%, 70%)" }}>
+              <p className="mb-1 text-[11px] font-semibold uppercase tracking-widest" style={{ color: "hsl(40, 50%, 70%)" }}>
                 Your plan
               </p>
               <h3 className="text-base font-bold" style={{ color: "hsl(40, 55%, 80%)" }}>
@@ -517,7 +517,7 @@ export function DiscoverScreen({
         <div className="mb-5 px-5">
           <div className="overflow-hidden rounded-2xl border border-border/40">
             <div className="bg-[#1B3A6B] px-4 pb-5 pt-4">
-              <p className="mb-2 text-[9px] font-semibold uppercase tracking-widest text-white/50">House view · March 2026</p>
+              <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-white/50">House view · March 2026</p>
               <h3 className="mb-1.5 text-base font-bold leading-snug text-white">Stay invested, ignore the noise</h3>
               <p className="text-[11px] leading-relaxed text-white/60">
                 Near-term volatility is sentiment-driven. Fundamentals remain strong — we favour large-cap and flexi-cap allocations for 2026.
@@ -526,7 +526,7 @@ export function DiscoverScreen({
             <div className="flex items-center justify-between bg-card px-4 py-3.5">
               <div>
                 <p className="text-[11px] font-semibold text-foreground">Our top pick: Flexi Cap</p>
-                <p className="text-[10px] text-muted-foreground">+19.4% avg. 1Y</p>
+                <p className="text-[11px] text-muted-foreground">+19.4% avg. 1Y</p>
               </div>
               <button type="button" className="rounded-full bg-primary px-3.5 py-1.5 text-[11px] font-semibold text-primary-foreground">
                 Read more
@@ -552,11 +552,11 @@ export function DiscoverScreen({
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-xs font-bold text-foreground">{fund.name}</p>
-                  <p className="mt-0.5 text-[10px] text-muted-foreground">{fund.subtitle}</p>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">{fund.subtitle}</p>
                 </div>
                 <div className="ml-2 shrink-0 text-right">
                   <p className="text-sm font-bold text-[hsl(var(--wealth-green))]">{fund.returns}</p>
-                  <p className="text-[9px] text-muted-foreground">1Y return</p>
+                  <p className="text-[10px] text-muted-foreground">1Y return</p>
                 </div>
               </motion.button>
             ))}
@@ -581,7 +581,7 @@ export function DiscoverScreen({
                 </div>
                 <p className="text-xs font-bold leading-tight text-foreground">{s.label}</p>
                 <p className="mt-0.5 text-[11px] font-bold text-[hsl(var(--wealth-green))]">
-                  {s.return1Y} <span className="text-[10px] font-normal text-muted-foreground">1Y</span>
+                  {s.return1Y} <span className="text-[11px] font-normal text-muted-foreground">1Y</span>
                 </p>
                 <svg viewBox="0 0 40 22" className="mt-2 h-4 w-full" preserveAspectRatio="none">
                   <polyline
@@ -610,11 +610,11 @@ export function DiscoverScreen({
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
                   <p className="text-xs font-semibold text-foreground">View all funds</p>
-                  <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                  <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
                     Beta
                   </span>
                 </div>
-                <p className="mt-0.5 text-[10px] text-muted-foreground">
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
                   Full MF universe with search — opens dedicated page
                 </p>
               </div>
@@ -643,8 +643,8 @@ export function DiscoverScreen({
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-xs font-semibold text-foreground">{item.name}</p>
                     <div className="mt-0.5 flex items-center gap-1.5">
-                      <span className="text-[10px] text-muted-foreground">{item.category}</span>
-                      <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium ${riskColor(item.risk)}`}>{item.risk}</span>
+                      <span className="text-[11px] text-muted-foreground">{item.category}</span>
+                      <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${riskColor(item.risk)}`}>{item.risk}</span>
                     </div>
                   </div>
                 </div>
@@ -701,7 +701,7 @@ export function DiscoverScreen({
             >
               <div className="mb-3 flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-widest text-primary">Your plan</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-widest text-primary">Your plan</p>
                   <h2 id="plan-ready-title" className="mt-1 text-lg font-bold leading-snug text-foreground">
                     Your recommended investment plan is ready
                   </h2>
@@ -764,7 +764,7 @@ export function DiscoverScreen({
                     <h3 className="mb-0.5 text-base font-bold text-foreground">{viewFund.name}</h3>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-muted-foreground">{viewFund.category}</span>
-                      <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${riskColor(viewFund.risk)}`}>
+                      <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-medium ${riskColor(viewFund.risk)}`}>
                         {viewFund.risk} Risk
                       </span>
                     </div>
@@ -788,7 +788,7 @@ export function DiscoverScreen({
                     { label: "5Y Return", value: viewFund.returns5Y },
                   ].map((r) => (
                     <div key={r.label} className="rounded-xl bg-secondary/60 p-3 text-center">
-                      <p className="mb-0.5 text-[10px] text-muted-foreground">{r.label}</p>
+                      <p className="mb-0.5 text-[11px] text-muted-foreground">{r.label}</p>
                       <p className="text-sm font-bold text-[hsl(var(--wealth-green))]">{r.value}</p>
                     </div>
                   ))}
@@ -851,15 +851,15 @@ export function DiscoverScreen({
                   <div key={fund.name} className="rounded-xl border border-border/40 bg-secondary/40 p-3.5">
                     <div className="mb-1 flex items-center justify-between">
                       <p className="text-xs font-semibold text-foreground">{fund.name}</p>
-                      <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium ${riskColor(fund.risk)}`}>{fund.risk}</span>
+                      <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${riskColor(fund.risk)}`}>{fund.risk}</span>
                     </div>
-                    <p className="mb-1.5 text-[10px] text-muted-foreground">{fund.category}</p>
+                    <p className="mb-1.5 text-[11px] text-muted-foreground">{fund.category}</p>
                     <div className="flex items-center gap-3">
                       <span className="text-xs font-semibold text-[hsl(var(--wealth-green))]">
-                        {fund.returns1Y} <span className="text-[9px] font-normal text-muted-foreground">1Y</span>
+                        {fund.returns1Y} <span className="text-[10px] font-normal text-muted-foreground">1Y</span>
                       </span>
                       <span className="text-xs font-semibold text-[hsl(var(--wealth-green))]">
-                        {fund.returns3Y} <span className="text-[9px] font-normal text-muted-foreground">3Y</span>
+                        {fund.returns3Y} <span className="text-[10px] font-normal text-muted-foreground">3Y</span>
                       </span>
                     </div>
                   </div>

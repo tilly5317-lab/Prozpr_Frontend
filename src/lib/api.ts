@@ -1273,6 +1273,36 @@ export async function createSipPlan(monthlyAmountInr: number): Promise<SipPlanRe
   });
 }
 
+/**
+ * The user's latest one-time lump-sum deployment plan (additional-investment
+ * engine, ``cadence=lumpsum``). Shares the SIP read shape — ``monthly_amount_inr``
+ * / ``buys[].monthly_amount_inr`` carry the one-time amounts. ``has_plan`` is
+ * false when they haven't planned one yet.
+ */
+export async function getMyLumpSumPlan(): Promise<SipPlanResponse> {
+  return request<SipPlanResponse>("/additional-investment/lumpsum");
+}
+
+/** Whether a lump-sum plan deploys fresh money (``add``) or raises cash by
+ * redeeming holdings (``withdraw``). */
+export type LumpSumAction = "add" | "withdraw";
+
+/**
+ * Plan (or refresh) a one-time lump sum for ``amountInr``. ``action="add"`` runs
+ * the additional-investment engine (``cadence=lumpsum``) to deploy the amount
+ * across funds; ``action="withdraw"`` plans which holdings to redeem to raise it.
+ * Throws with a customer-facing message when the engine can't plan yet.
+ */
+export async function createLumpSumPlan(
+  amountInr: number,
+  action: LumpSumAction = "add",
+): Promise<SipPlanResponse> {
+  return request<SipPlanResponse>("/additional-investment/lumpsum", {
+    method: "POST",
+    body: JSON.stringify({ amount_inr: amountInr, action }),
+  });
+}
+
 /** NAV point for MF holding-detail chart (`mf_nav_history`). */
 export interface MfHoldingNavPoint {
   nav_date: string;
@@ -1380,6 +1410,8 @@ export interface AboutYouStatus {
   confirmedCount: number;
   /** True only when all four sections are confirmed. */
   allConfirmed: boolean;
+  /** Per-section confirmation, indexed 0 financial · 1 goals · 2 risk · 3 tax. */
+  sections: boolean[];
 }
 
 /**
@@ -1433,7 +1465,7 @@ export async function getAboutYouStatus(): Promise<AboutYouStatus> {
   }
 
   const confirmedCount = confirmed.filter(Boolean).length;
-  return { confirmedCount, allConfirmed: confirmedCount === 4 };
+  return { confirmedCount, allConfirmed: confirmedCount === 4, sections: confirmed };
 }
 
 /** User has linked an institution or already has portfolio value / holdings in DB. */

@@ -69,40 +69,43 @@ const ProfileSwitcher = () => {
   const isCumulative = activeView.type === "cumulative";
   const isSelf = activeView.type === "self";
   const isActingAs = activeView.type === "member";
+  // Family switching / acting-as needs the expanded pill (avatar + nickname +
+  // chevron). The common single-user case is a clean circle matching the
+  // WhatsApp button beside it — same size, shape and muted shading.
+  const showExtras = hasFamily || isActingAs;
 
   return (
     <div className="relative" ref={dropdownRef}>
-      {/* Active indicator when acting as someone else */}
       <button
         onClick={() => setOpen((prev) => !prev)}
-        className={`flex items-center gap-1.5 rounded-full border pl-1 pr-2 py-1 transition-colors ${
-          isActingAs
-            ? "border-primary/40 bg-primary/5 hover:bg-primary/10"
-            : "border-border bg-card hover:bg-muted"
+        className={`flex items-center rounded-full bg-muted/60 transition-colors hover:bg-muted ${
+          showExtras ? "h-9 gap-1.5 pl-1 pr-2" : "h-9 w-9 justify-center"
         }`}
         aria-label="Switch profile"
       >
-        <div
-          className={`flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-bold ${
-            isCumulative
-              ? "bg-gradient-to-br from-primary/20 to-accent/20 text-primary"
-              : isActingAs
-              ? "bg-primary/15 text-primary"
-              : "bg-accent/10 text-accent"
-          }`}
-        >
-          {isCumulative ? (
-            <Users className="h-3.5 w-3.5" />
-          ) : (
-            getActiveInitials()
-          )}
-        </div>
+        {showExtras ? (
+          <div
+            className={`flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold ${
+              isCumulative
+                ? "bg-gradient-to-br from-primary/20 to-accent/20 text-primary"
+                : isActingAs
+                ? "bg-primary/15 text-primary"
+                : "bg-accent/10 text-accent"
+            }`}
+          >
+            {isCumulative ? <Users className="h-3.5 w-3.5" /> : getActiveInitials()}
+          </div>
+        ) : (
+          <span className="flex items-center justify-center text-[13px] font-bold text-accent">
+            {isCumulative ? <Users className="h-4 w-4" /> : getActiveInitials()}
+          </span>
+        )}
         {isActingAs && (
-          <span className="text-[9px] font-semibold text-primary max-w-[60px] truncate">
+          <span className="text-[10px] font-semibold text-primary max-w-[60px] truncate">
             {activeView.member.nickname}
           </span>
         )}
-        {(hasFamily || isActingAs) && (
+        {showExtras && (
           <ChevronDown
             className={`h-3 w-3 text-muted-foreground transition-transform duration-200 ${
               open ? "rotate-180" : ""
@@ -124,14 +127,14 @@ const ProfileSwitcher = () => {
             {isActingAs && (
               <div className="px-3 py-2 bg-primary/5 border-b border-primary/10 flex items-center gap-2">
                 <ArrowRightLeft className="h-3 w-3 text-primary shrink-0" />
-                <p className="text-[10px] text-primary font-medium">
+                <p className="text-[11px] text-primary font-medium">
                   Acting as <span className="font-semibold">{activeView.member.nickname}</span> — full access
                 </p>
               </div>
             )}
 
             <div className="px-3 pt-2.5 pb-1">
-              <p className="text-[9px] uppercase tracking-widest text-muted-foreground font-semibold">
+              <p className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">
                 Switch Account
               </p>
             </div>
@@ -151,7 +154,7 @@ const ProfileSwitcher = () => {
                 <p className="text-xs font-semibold text-foreground truncate">
                   {[user?.first_name, user?.last_name].filter(Boolean).join(" ") || "My Account"}
                 </p>
-                <p className="text-[10px] text-muted-foreground">Your account</p>
+                <p className="text-[11px] text-muted-foreground">Your account</p>
               </div>
               {isSelf && <Check className="h-3.5 w-3.5 text-primary shrink-0" />}
             </button>
@@ -161,7 +164,7 @@ const ProfileSwitcher = () => {
               <>
                 <div className="h-px bg-border/40 mx-3" />
                 <div className="px-3 pt-2 pb-1 flex items-center gap-1.5">
-                  <p className="text-[9px] uppercase tracking-widest text-muted-foreground font-semibold">
+                  <p className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">
                     Family
                   </p>
                   <ShieldCheck className="h-2.5 w-2.5 text-emerald-500" />
@@ -189,7 +192,7 @@ const ProfileSwitcher = () => {
                         <p className="text-xs font-semibold text-foreground truncate">
                           {m.nickname}
                         </p>
-                        <p className="text-[10px] text-muted-foreground capitalize">
+                        <p className="text-[11px] text-muted-foreground capitalize">
                           {m.relationship_type} · Full access
                         </p>
                       </div>
@@ -220,7 +223,7 @@ const ProfileSwitcher = () => {
                     <p className="text-xs font-semibold text-foreground">
                       Family Portfolio
                     </p>
-                    <p className="text-[10px] text-muted-foreground">
+                    <p className="text-[11px] text-muted-foreground">
                       Combined view · {activeMembers.length + 1} members
                     </p>
                   </div>
@@ -234,7 +237,7 @@ const ProfileSwitcher = () => {
             {/* Appearance — Light / Dark / System */}
             <div className="h-px bg-border/40" />
             <div className="px-3 pt-2 pb-1.5">
-              <p className="text-[9px] uppercase tracking-widest text-muted-foreground font-semibold mb-1.5">
+              <p className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold mb-1.5">
                 Appearance
               </p>
               <div className="flex gap-1 rounded-lg bg-muted/60 p-0.5">
@@ -245,7 +248,7 @@ const ProfileSwitcher = () => {
                       key={id}
                       type="button"
                       onClick={() => setThemeMode(id)}
-                      className={`flex-1 flex items-center justify-center gap-1 rounded-md py-1.5 text-[10px] font-medium transition-colors ${
+                      className={`flex-1 flex items-center justify-center gap-1 rounded-md py-1.5 text-[11px] font-medium transition-colors ${
                         active
                           ? "bg-card text-foreground shadow-sm"
                           : "text-muted-foreground hover:text-foreground"
@@ -269,7 +272,7 @@ const ProfileSwitcher = () => {
                   setOpen(false);
                   navigate("/family");
                 }}
-                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-[10px] font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
+                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-[11px] font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
               >
                 <UserPlus className="h-3 w-3" />
                 Manage Family
@@ -279,7 +282,7 @@ const ProfileSwitcher = () => {
                   setOpen(false);
                   navigate("/profile");
                 }}
-                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-[10px] font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
+                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-[11px] font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
               >
                 <Settings className="h-3 w-3" />
                 {isActingAs ? `${activeView.member.nickname}'s Profile` : "My Profile"}

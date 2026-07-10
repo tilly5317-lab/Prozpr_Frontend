@@ -200,7 +200,7 @@ const CamsUploadModal = ({ open, onClose, onUploaded, replaceExisting = false }:
 
                 <div className="mt-4">
                   <div className="mb-2 flex items-center gap-2">
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-semibold text-primary">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary">
                       2
                     </span>
                     <p className="text-[12px] font-medium text-foreground">
@@ -252,7 +252,7 @@ const CamsUploadModal = ({ open, onClose, onUploaded, replaceExisting = false }:
                     disabled={uploading}
                     className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground/50 disabled:opacity-60"
                   />
-                  <p className="mt-1 text-[10px] text-muted-foreground/80">
+                  <p className="mt-1 text-[11px] text-muted-foreground/80">
                     This is only used to open the PDF — it is never stored.
                   </p>
                 </div>

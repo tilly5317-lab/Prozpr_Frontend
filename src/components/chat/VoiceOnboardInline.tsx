@@ -97,16 +97,16 @@ const VoiceOnboardInline = ({ onComplete }: VoiceOnboardInlineProps) => {
                       : "hsl(var(--muted))",
                 }}
               />
-              <span className="text-[8px] text-muted-foreground/70 leading-tight text-center truncate w-full">
+              <span className="text-[9px] text-muted-foreground/70 leading-tight text-center truncate w-full">
                 {s.name}
               </span>
-              <span className="text-[7px] text-muted-foreground/50">~5 min</span>
+              <span className="text-[9px] text-muted-foreground/50">~5 min</span>
             </div>
           ))}
         </div>
         <div className="flex justify-between mt-1.5">
-          <span className="text-[10px] text-muted-foreground">Section {currentSection + 1} of {ONBOARDING_SECTIONS.length}</span>
-          <span className="text-[10px] font-medium text-primary">{section.name}</span>
+          <span className="text-[11px] text-muted-foreground">Section {currentSection + 1} of {ONBOARDING_SECTIONS.length}</span>
+          <span className="text-[11px] font-medium text-primary">{section.name}</span>
         </div>
       </div>
 
@@ -122,7 +122,7 @@ const VoiceOnboardInline = ({ onComplete }: VoiceOnboardInlineProps) => {
             className="flex flex-col items-center text-center"
           >
             {isRecording && !isPaused && (
-              <span className="mb-2 rounded-full bg-primary/10 px-3 py-1 text-[9px] font-semibold text-primary uppercase tracking-wider">
+              <span className="mb-2 rounded-full bg-primary/10 px-3 py-1 text-[10px] font-semibold text-primary uppercase tracking-wider">
                 Now speaking
               </span>
             )}
@@ -188,12 +188,12 @@ const VoiceOnboardInline = ({ onComplete }: VoiceOnboardInlineProps) => {
                     animate={{ opacity: [1, 0.3, 1] }}
                     transition={{ duration: 1.2, repeat: Infinity }}
                   />
-                  <span className="text-[10px] text-muted-foreground">Recording · tap mic to finish</span>
+                  <span className="text-[11px] text-muted-foreground">Recording · tap mic to finish</span>
                 </>
               ) : isPaused ? (
-                <span className="text-[10px] text-muted-foreground">Paused</span>
+                <span className="text-[11px] text-muted-foreground">Paused</span>
               ) : (
-                <span className="text-[10px] text-muted-foreground">Tap mic to start</span>
+                <span className="text-[11px] text-muted-foreground">Tap mic to start</span>
               )}
             </div>
           </motion.div>
@@ -203,7 +203,7 @@ const VoiceOnboardInline = ({ onComplete }: VoiceOnboardInlineProps) => {
       {/* Completed sections */}
       {completedSections.length > 0 && (
         <div className="px-4 pb-4 pt-2 shrink-0 max-h-[35%] overflow-y-auto border-t border-border/40">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
             Completed
           </p>
           <div className="space-y-1.5">
@@ -220,7 +220,7 @@ const VoiceOnboardInline = ({ onComplete }: VoiceOnboardInlineProps) => {
                     <span className="text-[12px] font-medium text-foreground">{ONBOARDING_SECTIONS[idx].name}</span>
                   </div>
                   <div className="flex items-center gap-1">
-                    <span className="text-[10px] text-muted-foreground">Review</span>
+                    <span className="text-[11px] text-muted-foreground">Review</span>
                     {expandedReview === idx ? (
                       <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
                     ) : (

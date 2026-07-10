@@ -44,7 +44,7 @@ const OnboardingLoading = () => {
         <div className="w-full mt-5 bg-secondary rounded-full h-2.5 overflow-hidden">
           <div className="h-full bg-foreground transition-all" style={{ width: `${progress}%` }} />
         </div>
-        <p className="text-[10px] text-muted-foreground mt-2">{progress}%</p>
+        <p className="text-[11px] text-muted-foreground mt-2">{progress}%</p>
       </div>
     </div>
   );
