@@ -2586,3 +2586,125 @@ export async function reportIssue(
   }
   return JSON.parse(text) as IssueReportResponse;
 }
+
+// ── Fintech Primitives (FP) order execution ─────────────────────────────────
+// Sandbox order gateway: KYC readiness (Pre-Verification) gates the order UI;
+// once complete the backend mints the FP investor profile + investment account
+// and orders can be placed. Order `state` is FP's own string, verbatim
+// (`under_review`, `created`, `pending`, `failed`, …).
+
+export interface FpAccount {
+  id: string;
+  fp_investor_id: string | null;
+  fp_investment_account_id: string | null;
+  pan: string | null;
+  holder_name: string | null;
+  bank_account_masked: string | null;
+  kyc_status: "pending" | "submitted" | "completed" | "failed" | string;
+  kyc_pv_id: string | null;
+  kyc_checked_at: string | null;
+  created_at: string;
+}
+
+export interface FpStatusResponse {
+  configured: boolean;
+  account: FpAccount | null;
+  kyc_complete: boolean;
+  ready_to_transact: boolean;
+}
+
+export interface FpKycSummary {
+  id: string;
+  status: string;
+  verified: boolean;
+  pan_status?: string | null;
+  pan_code?: string | null;
+  name_status?: string | null;
+  dob_status?: string | null;
+}
+
+export interface FpKycSetupResponse {
+  kyc: FpKycSummary | null;
+  account: FpAccount;
+  ready_to_transact: boolean;
+}
+
+export interface FpOrder {
+  id: string;
+  kind: "LUMPSUM" | "SIP" | string;
+  state: string;
+  scheme_code: string | null;
+  isin: string | null;
+  scheme_name: string | null;
+  amount: number;
+  installment_day: number | null;
+  number_of_installments: number | null;
+  fp_id: string;
+  created_at: string;
+}
+
+export interface FpOrderBatchResponse {
+  orders: FpOrder[];
+  failed: string[];
+}
+
+export async function getFpStatus(): Promise<FpStatusResponse> {
+  return request<FpStatusResponse>("/fp/status");
+}
+
+/** The KYC page's single call: PAN in; name/DOB come from the user's identity
+ * on our backend. Idempotent — call again (PAN omitted) to re-poll. */
+export async function runFpKycSetup(pan?: string): Promise<FpKycSetupResponse> {
+  return request<FpKycSetupResponse>("/fp/kyc-setup", {
+    method: "POST",
+    body: JSON.stringify({ pan: pan ?? null }),
+  });
+}
+
+export async function placeFpLumpsum(schemeCode: string, amount: number): Promise<FpOrder> {
+  return request<FpOrder>("/fp/orders/lumpsum", {
+    method: "POST",
+    body: JSON.stringify({ scheme_code: schemeCode, amount }),
+  });
+}
+
+export async function placeFpSip(
+  schemeCode: string,
+  amount: number,
+  installmentDay = 5,
+  numberOfInstallments = 12,
+): Promise<FpOrder> {
+  return request<FpOrder>("/fp/orders/sip", {
+    method: "POST",
+    body: JSON.stringify({
+      scheme_code: schemeCode,
+      amount,
+      installment_day: installmentDay,
+      number_of_installments: numberOfInstallments,
+    }),
+  });
+}
+
+/** Place an FP SIP purchase plan for every fund of the latest SIP plan. */
+export async function executeFpSipPlan(): Promise<FpOrderBatchResponse> {
+  return request<FpOrderBatchResponse>("/fp/orders/execute-sip-plan", { method: "POST" });
+}
+
+/** Place FP lumpsums for the latest rebalancing run's BUY trades. `amounts`
+ * carries per-trade edits from the review screen (trade id → INR; 0 skips). */
+export async function executeFpRebalance(
+  amounts?: Record<string, number>,
+): Promise<FpOrderBatchResponse> {
+  return request<FpOrderBatchResponse>("/fp/orders/execute-rebalance", {
+    method: "POST",
+    body: JSON.stringify({ amounts: amounts ?? null }),
+  });
+}
+
+export async function listFpOrders(): Promise<FpOrder[]> {
+  return request<FpOrder[]>("/fp/orders");
+}
+
+export async function refreshFpOrder(orderId: string): Promise<FpOrder> {
+  return request<FpOrder>(`/fp/orders/${orderId}/refresh`, { method: "POST" });
+}

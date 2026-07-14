@@ -4,6 +4,7 @@ import { Loader2, Repeat, Pencil, ChevronRight } from "lucide-react";
 import BottomNav from "@/components/BottomNav";
 import { getMySipPlan, createSipPlan, type SipPlanResponse } from "@/lib/api";
 import { formatInr0, formatMoneyInput } from "@/lib/utils";
+import { KycBanner, useFpStatus } from "@/components/invest/KycGate";
 
 /** Shown when the SIP fetch fails or returns nothing — renders the set-up prompt. */
 const EMPTY_SIP: SipPlanResponse = {
@@ -268,7 +269,9 @@ function SipPlanCard({
  * switches to Rebalancing.
  */
 const SipPlanner = () => {
+  const navigate = useNavigate();
   const [sip, setSip] = useState<SipPlanResponse | null>(null);
+  const { loading: fpLoading, ready } = useFpStatus();
 
   useEffect(() => {
     let cancelled = false;
@@ -278,6 +281,8 @@ const SipPlanner = () => {
     return () => { cancelled = true; };
   }, []);
 
+  const hasPlan = !!sip?.has_plan && (sip?.buys.length ?? 0) > 0;
+
   return (
     <div className="mobile-container bg-background min-h-screen pb-24">
       <div className="px-5 pt-2">
@@ -285,8 +290,21 @@ const SipPlanner = () => {
           Deploy fresh money every month. Enter an amount and Pi&apos;s engine splits it
           across the right funds for your goals — the same plan you&apos;d get in chat.
         </p>
+        <KycBanner hidden={fpLoading || ready} />
         {sip ? (
-          <SipPlanCard sip={sip} onCreated={setSip} />
+          <>
+            <SipPlanCard sip={sip} onCreated={setSip} />
+            {/* Place the plan as real SIP orders — enabled once KYC is complete */}
+            {hasPlan && ready && (
+              <button
+                type="button"
+                onClick={() => navigate("/order-summary?type=sip")}
+                className="mb-3 w-full rounded-full bg-foreground py-2.5 text-[12.5px] font-semibold text-background transition-opacity hover:opacity-90"
+              >
+                Review &amp; place SIP orders
+              </button>
+            )}
+          </>
         ) : (
           <div className="flex items-center justify-center gap-2 pt-16 text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />

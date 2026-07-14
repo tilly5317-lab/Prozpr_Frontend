@@ -63,6 +63,9 @@ import Portfolio from "./pages/Portfolio";
 import PortfolioFundDetail from "./pages/PortfolioFundDetail";
 import OnboardingLoading from "./pages/OnboardingLoading";
 import FamilyMembers from "./pages/FamilyMembers";
+import Kyc from "./pages/Kyc";
+import OrderSummary from "./pages/OrderSummary";
+import LumpsumPlanner from "./pages/LumpsumPlanner";
 
 const queryClient = new QueryClient();
 
@@ -96,7 +99,11 @@ const App = () => (
               <Route index element={<Navigate to="/invest/rebalance-explanation" replace />} />
               <Route path="rebalance-explanation" element={<RebalanceExplanation />} />
               <Route path="sip" element={<SipPlanner />} />
+              <Route path="lumpsum" element={<LumpsumPlanner />} />
             </Route>
+            {/* KYC gate + order flow for FP transactions */}
+            <Route path="/kyc" element={<Kyc />} />
+            <Route path="/order-summary" element={<OrderSummary />} />
             <Route path="/execute" element={<Execute />} />
             <Route path="/excecute" element={<Execute />} />
             {/* Back-compat: old flat rebalancing URLs redirect into the invest section */}
