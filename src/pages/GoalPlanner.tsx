@@ -21,6 +21,7 @@ import {
   type AnnualCashflowRow,
 } from "@/lib/api";
 import { exportCashflowXls } from "@/lib/export-xls";
+import { trackDetailedOnboardingSectionCompleted } from "@/lib/detailedOnboardingAnalytics";
 import AnnualCashflowChart from "@/components/goals/AnnualCashflowChart";
 import CashflowGate from "@/components/goals/CashflowGate";
 
@@ -1109,6 +1110,9 @@ const GoalPlanner = () => {
         priority: addPriority.toUpperCase(),
         monthly_contribution: monthlyParsed.value,
       });
+      // Having ≥1 goal is what marks the "What are you trying to achieve?"
+      // profile section confirmed, so a saved goal = section completed.
+      trackDetailedOnboardingSectionCompleted("goal_planning");
       setGoals((prev) => [...prev, mapGoalResponse(res)]);
       resetAddGoalForm();
       setAddGoalOpen(false);

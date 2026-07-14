@@ -33,6 +33,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import BottomNav from "@/components/BottomNav";
 import { toast } from "sonner";
+import { trackDetailedOnboardingSectionCompleted } from "@/lib/detailedOnboardingAnalytics";
 import {
   listGoals,
   createGoal,
@@ -1606,6 +1607,9 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
           toast.success("Goal updated");
         } else {
           const res = await createGoal(payload);
+          // Having ≥1 goal is what marks the "What are you trying to achieve?"
+          // profile section confirmed, so a saved goal = section completed.
+          trackDetailedOnboardingSectionCompleted("goal_planning");
           setGoals((prev) => [...prev, mapGoalFromApi(res, currentYear)]);
           toast.success("Goal added");
         }
