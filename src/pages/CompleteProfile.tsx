@@ -25,6 +25,11 @@ import {
   type CurrentPropertyPayload,
   type FullProfileResponse,
 } from "@/lib/api";
+import {
+  detailedOnboardingSectionForIndex,
+  trackDetailedOnboardingSectionStarted,
+  trackDetailedOnboardingSectionCompleted,
+} from "@/lib/detailedOnboardingAnalytics";
 
 type SectionStatus = "not_started" | "auto_filled" | "in_progress" | "confirmed";
 
@@ -1032,6 +1037,8 @@ const CompleteProfile = () => {
     const nextStatuses = [...statuses];
     nextStatuses[idx] = "confirmed";
     setStatuses(nextStatuses);
+    const section = detailedOnboardingSectionForIndex(idx);
+    if (section) trackDetailedOnboardingSectionCompleted(section);
     // Back to the section cards — the next card to tackle is visible there.
     navigate(CARDS_PATH);
     setGroupIndex(0);
@@ -1190,8 +1197,10 @@ const CompleteProfile = () => {
   // address bar and the visible section stay in lock-step.
   const openSectionCard = (idx: number) => {
     // "What are you trying to achieve?" lives in Goal planning — send the user
-    // there to set goals and complete the cashflow inputs in one place.
+    // there to set goals and complete the cashflow inputs in one place. Track
+    // the start here since /goal-planner never passes the pathname effect below.
     if (idx === 1) {
+      trackDetailedOnboardingSectionStarted("goal_planning");
       navigate("/goal-planner?inputs=1");
       return;
     }
@@ -1225,6 +1234,8 @@ const CompleteProfile = () => {
     const idx = sectionForPath(location.pathname);
     if (idx === 1) {
       // Goals inputs live in Goal planning; /profile/goals just forwards there.
+      // Deep links land here (not openSectionCard), so track the start too.
+      trackDetailedOnboardingSectionStarted("goal_planning");
       navigate("/goal-planner?inputs=1", { replace: true });
       return;
     }
@@ -1243,6 +1254,8 @@ const CompleteProfile = () => {
       setOpenSection(idx);
       setGroupIndex(0);
       markInProgress(idx);
+      const section = detailedOnboardingSectionForIndex(idx);
+      if (section) trackDetailedOnboardingSectionStarted(section);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname, profileLoaded]);
