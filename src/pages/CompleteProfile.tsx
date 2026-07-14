@@ -1998,7 +1998,7 @@ const CompleteProfile = () => {
     <div className="mobile-container bg-background min-h-screen pb-28">
       {/* Header */}
       <div className="px-5 pt-10 pb-1 flex items-center gap-3">
-        <button onClick={() => navigate(-1)} className="flex h-8 w-8 items-center justify-center rounded-full bg-muted hover:bg-muted/80 transition-colors">
+        <button onClick={() => navigate("/profile")} className="flex h-8 w-8 items-center justify-center rounded-full bg-muted hover:bg-muted/80 transition-colors">
           <ArrowLeft className="h-4 w-4 text-foreground" />
         </button>
         <div>

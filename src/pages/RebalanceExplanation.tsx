@@ -1,7 +1,7 @@
 import { type CSSProperties, useCallback, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowRight, Check, Loader2, Sparkles } from "lucide-react";
+import { ArrowRight, Loader2, Sparkles } from "lucide-react";
 import BottomNav from "@/components/BottomNav";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -11,6 +11,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import RebalanceGate from "@/components/invest/RebalanceGate";
+import { KycBanner, useFpStatus } from "@/components/invest/KycGate";
 import TradeFundDetailView from "@/components/fund/TradeFundDetailView";
 import { toast } from "@/hooks/use-toast";
 import {
@@ -465,6 +466,8 @@ const RebalanceExplanation = () => {
   // Bumped to open the gate's inputs form on demand (e.g. from the example plan's
   // CTA) — so the user can add their details even after dismissing the prompt.
   const [gateEditSignal, setGateEditSignal] = useState(0);
+  // FP transaction readiness — gates the "place buy orders" step behind KYC.
+  const { loading: fpLoading, ready: fpReady } = useFpStatus();
 
   // Open the full fund-detail page (same screen as a portfolio holding), passing
   // the trade's rationale so it can render a "Why this trade" card on top. The
@@ -549,19 +552,24 @@ const RebalanceExplanation = () => {
     ? EXAMPLE_SUMMARY
     : detail?.summary ?? DEFAULT_SUMMARY;
 
-  const proceed = useCallback(async () => {
+  // Place order: mark the plan approved (best-effort) and open the order
+  // summary, which places an FP lumpsum per pending BUY trade. Only reachable
+  // once KYC is complete (the button below stays disabled until then).
+  const placeOrder = useCallback(async () => {
     if (!detail) return;
     setApproving(true);
     try {
-      await updateRebalancingStatus(detail.id, "approved");
-      setDetail((prev) => (prev ? { ...prev, status: "approved" } : prev));
-      toast({ title: "Plan approved", description: "Your rebalancing trades are ready to execute." });
+      if (!isApproved) {
+        await updateRebalancingStatus(detail.id, "approved");
+        setDetail((prev) => (prev ? { ...prev, status: "approved" } : prev));
+      }
+      navigate("/order-summary?type=rebalance");
     } catch {
-      toast({ title: "Couldn't approve", description: "Please try again.", variant: "destructive" });
+      toast({ title: "Couldn't start your order", description: "Please try again.", variant: "destructive" });
     } finally {
       setApproving(false);
     }
-  }, [detail]);
+  }, [detail, isApproved, navigate]);
 
   return (
     <div className="mobile-container bg-background min-h-screen pb-24">
@@ -935,16 +943,25 @@ const RebalanceExplanation = () => {
                 <ArrowRight className="h-4 w-4" />
               </button>
             ) : (
-              <button
-                type="button"
-                onClick={() => void proceed()}
-                disabled={approving || isApproved || uiTrades.length === 0}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground py-3.5 text-[15px] font-semibold tracking-wide text-background transition-all active:scale-[0.98] disabled:opacity-60"
-              >
-                {approving ? <Loader2 className="h-4 w-4 animate-spin" /> : isApproved ? <Check className="h-4 w-4" /> : null}
-                {isApproved ? "Plan approved" : approving ? "Approving…" : "Approve plan"}
-                {!isApproved && !approving && <ArrowRight className="h-4 w-4" />}
-              </button>
+              <>
+                {/* Transactions need the one-time KYC check first */}
+                <KycBanner hidden={fpLoading || fpReady} />
+                <button
+                  type="button"
+                  onClick={() => void placeOrder()}
+                  disabled={approving || !fpReady || uiTrades.length === 0}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground py-3.5 text-[15px] font-semibold tracking-wide text-background transition-all active:scale-[0.98] disabled:opacity-60"
+                >
+                  {approving && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {approving ? "Opening your order…" : "Place order"}
+                  {!approving && <ArrowRight className="h-4 w-4" />}
+                </button>
+                {!fpReady && !fpLoading && (
+                  <p className="mt-2 text-center text-[10.5px] leading-snug text-muted-foreground">
+                    Complete KYC above to place orders.
+                  </p>
+                )}
+              </>
             )}
           </>
         )}
