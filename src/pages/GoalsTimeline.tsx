@@ -1893,10 +1893,10 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                   )
                 }
                 className="shrink-0 inline-flex items-center gap-1 rounded-full border border-border bg-card px-2.5 py-0.5 text-[11px] font-semibold text-foreground hover:bg-muted/40"
-                aria-label="Download cashflow"
+                aria-label="Export Plan"
               >
                 <Download className="h-3 w-3" />
-                Download
+                Export Plan
               </button>
             ) : (
               !cashflowLoading && (
