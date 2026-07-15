@@ -85,6 +85,11 @@ function SipPlanCard({
 
   const parsed = Number(amount.replace(/,/g, ""));
   const valid = Number.isFinite(parsed) && parsed > 0;
+  // Guard: a monthly SIP above 100% of monthly income can't be a savings rate —
+  // block it client-side before hitting the API. Only enforced when we know the
+  // income (otherwise the savings % is hidden and there is nothing to compare).
+  const overIncome =
+    valid && monthlyIncome != null && monthlyIncome > 0 && parsed > monthlyIncome;
 
   // The plan's split was computed for an amount the canonical SIP no longer
   // matches — it moved on another surface after this plan was built.
@@ -100,7 +105,7 @@ function SipPlanCard({
   };
 
   const submit = async () => {
-    if (!valid || submitting) return;
+    if (!valid || overIncome || submitting) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -154,12 +159,18 @@ function SipPlanCard({
             <span className="shrink-0 text-[11px] text-muted-foreground">/ month</span>
           </div>
 
+          {overIncome && monthlyIncome != null && (
+            <p className="mt-2 text-[11px] leading-snug text-[#C24C3A]">
+              That's more than your monthly income ({formatInr0(monthlyIncome)}). A monthly SIP can't
+              be over 100% of what you earn — enter an amount you can save each month.
+            </p>
+          )}
           {error && <p className="mt-2 text-[11px] leading-snug text-[#C24C3A]">{error}</p>}
 
           <div className="mt-3 flex items-center gap-2">
             <button
               type="submit"
-              disabled={!valid || submitting}
+              disabled={!valid || overIncome || submitting}
               className="flex flex-1 items-center justify-center gap-1.5 rounded-full px-4 py-2 text-[12px] font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
               style={{ backgroundColor: "hsl(var(--wealth-navy))" }}
             >
@@ -215,7 +226,7 @@ function SipPlanCard({
         </div>
         {savingsPct != null && (
           <p className="mt-1 text-[14px] font-semibold text-wealth-green">
-            {savingsPct}% savings
+            {savingsPct}% of savings
           </p>
         )}
         {bucketLabel && (
