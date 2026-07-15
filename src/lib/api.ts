@@ -2729,7 +2729,7 @@ export interface FpKycSetupResponse {
 
 export interface FpOrder {
   id: string;
-  kind: "LUMPSUM" | "SIP" | string;
+  kind: "LUMPSUM" | "SIP" | "REDEMPTION" | "SWITCH" | "SWP" | "STP" | string;
   state: string;
   scheme_code: string | null;
   isin: string | null;
@@ -2750,29 +2750,127 @@ export async function getFpStatus(): Promise<FpStatusResponse> {
   return request<FpStatusResponse>("/fp/status");
 }
 
+export interface FpFundScheme {
+  isin: string;
+  scheme_code: string | null;
+  scheme_name: string | null;
+  amc_name: string | null;
+  category: string | null;
+  sub_category: string | null;
+  plan_type: string | null;
+  option_type: string | null;
+  is_active: boolean;
+  available_for_transaction: boolean;
+  fp_verified: boolean | null;
+  fp_min_amount: number | null;
+  note: string | null;
+}
+
+export interface FpFundSchemesResponse {
+  count: number;
+  verified: boolean;
+  source: string;
+  schemes: FpFundScheme[];
+}
+
+/** Active, transactable funds on the FP tenant. `verify` live-checks each ISIN
+ * against FP's mf_scheme_plans (slower). */
+export async function listFpFundSchemes(verify = false): Promise<FpFundSchemesResponse> {
+  return request<FpFundSchemesResponse>(`/fp/fund-schemes${verify ? "?verify=true" : ""}`);
+}
+
+export interface FpFolio {
+  folio_number: string;
+  isin: string;
+  scheme_code: string | null;
+  scheme_name: string | null;
+  amc_name: string | null;
+  category: string | null;
+  units: number;
+  avg_cost_nav: number;
+  current_nav: number;
+  nav_date: string | null;
+  invested_amount: number;
+  current_value: number;
+  unrealized_gain: number;
+  unrealized_gain_pct: number;
+}
+
+export interface FpFoliosResponse {
+  /** true = FP returned no folios (sandbox never settles) and these are demo test data. */
+  simulated: boolean;
+  source: string;
+  note: string | null;
+  count: number;
+  total_invested: number;
+  total_current_value: number;
+  total_unrealized_gain: number;
+  folios: FpFolio[];
+}
+
+export interface FpInvestmentReport {
+  simulated: boolean;
+  source: string;
+  note: string | null;
+  as_of: string;
+  invested_amount: number;
+  current_value: number;
+  absolute_gain: number;
+  absolute_gain_pct: number;
+  xirr_pct: number;
+  cagr_pct: number;
+  schemes: Array<{
+    isin: string;
+    scheme_name: string | null;
+    invested_amount: number;
+    current_value: number;
+    unrealized_gain: number;
+    unrealized_gain_pct: number;
+    xirr_pct: number;
+  }>;
+  capital_gains: {
+    short_term_gain: number;
+    long_term_gain: number;
+    total_gain: number;
+  };
+}
+
+/** Investor folios/holdings — real FP data if any, else simulated test data. */
+export async function listFpFolios(): Promise<FpFoliosResponse> {
+  return request<FpFoliosResponse>("/fp/mf-folios");
+}
+
+/** Investment report (holdings + returns + capital gains) — `simulated` when
+ * built from test folios (the sandbox reality). */
+export async function getFpInvestmentReport(): Promise<FpInvestmentReport> {
+  return request<FpInvestmentReport>("/fp/reports/investment");
+}
+
 /** The KYC page's single call: PAN in; name/DOB come from the user's identity
  * on our backend. Idempotent — call again (PAN omitted) to re-poll. */
 export async function runFpKycSetup(pan?: string): Promise<FpKycSetupResponse> {
-  return request<FpKycSetupResponse>("/fp/kyc-setup", {
+  return request<FpKycSetupResponse>("/fp/kyc/setup", {
     method: "POST",
     body: JSON.stringify({ pan: pan ?? null }),
   });
 }
 
+/** One-time buy — FP mf_purchases. */
 export async function placeFpLumpsum(schemeCode: string, amount: number): Promise<FpOrder> {
-  return request<FpOrder>("/fp/orders/lumpsum", {
+  return request<FpOrder>("/fp/mf-purchases", {
     method: "POST",
     body: JSON.stringify({ scheme_code: schemeCode, amount }),
   });
 }
 
+/** Start a SIP — FP mf_purchase_plans. */
 export async function placeFpSip(
   schemeCode: string,
   amount: number,
   installmentDay = 5,
   numberOfInstallments = 12,
 ): Promise<FpOrder> {
-  return request<FpOrder>("/fp/orders/sip", {
+  return request<FpOrder>("/fp/mf-purchase-plans", {
     method: "POST",
     body: JSON.stringify({
       scheme_code: schemeCode,
@@ -2783,17 +2881,99 @@ export async function placeFpSip(
   });
 }
 
-/** Place an FP SIP purchase plan for every fund of the latest SIP plan. */
-export async function executeFpSipPlan(): Promise<FpOrderBatchResponse> {
-  return request<FpOrderBatchResponse>("/fp/orders/execute-sip-plan", { method: "POST" });
+/** Sell (redeem) — FP mf_redemptions. Provide amount, units, or allUnits. */
+export async function placeFpRedemption(
+  schemeCode: string,
+  opts: { amount?: number; units?: number; allUnits?: boolean; folioNumber?: string } = {},
+): Promise<FpOrder> {
+  return request<FpOrder>("/fp/mf-redemptions", {
+    method: "POST",
+    body: JSON.stringify({
+      scheme_code: schemeCode,
+      amount: opts.amount ?? null,
+      units: opts.units ?? null,
+      all_units: opts.allUnits ?? false,
+      folio_number: opts.folioNumber ?? null,
+    }),
+  });
 }
 
-/** Place FP lumpsums for the latest rebalancing run's BUY trades. `amounts`
+/** Switch scheme→scheme within one AMC — FP mf_switches. */
+export async function placeFpSwitch(
+  fromSchemeCode: string,
+  toSchemeCode: string,
+  opts: { amount?: number; units?: number; allUnits?: boolean; folioNumber?: string } = {},
+): Promise<FpOrder> {
+  return request<FpOrder>("/fp/mf-switches", {
+    method: "POST",
+    body: JSON.stringify({
+      from_scheme_code: fromSchemeCode,
+      to_scheme_code: toSchemeCode,
+      amount: opts.amount ?? null,
+      units: opts.units ?? null,
+      all_units: opts.allUnits ?? false,
+      folio_number: opts.folioNumber ?? null,
+    }),
+  });
+}
+
+/** SWP — systematic withdrawal, FP mf_redemption_plans. */
+export async function placeFpRedemptionPlan(
+  schemeCode: string,
+  opts: {
+    amount?: number;
+    units?: number;
+    installmentDay?: number;
+    numberOfInstallments?: number;
+    folioNumber?: string;
+  } = {},
+): Promise<FpOrder> {
+  return request<FpOrder>("/fp/mf-redemption-plans", {
+    method: "POST",
+    body: JSON.stringify({
+      scheme_code: schemeCode,
+      amount: opts.amount ?? null,
+      units: opts.units ?? null,
+      installment_day: opts.installmentDay ?? 5,
+      number_of_installments: opts.numberOfInstallments ?? 12,
+      folio_number: opts.folioNumber ?? null,
+    }),
+  });
+}
+
+/** STP — systematic transfer scheme→scheme, FP mf_switch_plans. */
+export async function placeFpSwitchPlan(
+  fromSchemeCode: string,
+  toSchemeCode: string,
+  amount: number,
+  installmentDay = 5,
+  numberOfInstallments = 12,
+): Promise<FpOrder> {
+  return request<FpOrder>("/fp/mf-switch-plans", {
+    method: "POST",
+    body: JSON.stringify({
+      from_scheme_code: fromSchemeCode,
+      to_scheme_code: toSchemeCode,
+      amount,
+      installment_day: installmentDay,
+      number_of_installments: numberOfInstallments,
+    }),
+  });
+}
+
+/** Place an FP SIP purchase plan for every fund of the latest SIP plan. */
+export async function executeFpSipPlan(): Promise<FpOrderBatchResponse> {
+  return request<FpOrderBatchResponse>("/fp/mf-purchase-plans/from-sip-run", {
+    method: "POST",
+  });
+}
+
+/** Place FP mf_purchases for the latest rebalancing run's BUY trades. `amounts`
  * carries per-trade edits from the review screen (trade id → INR; 0 skips). */
 export async function executeFpRebalance(
   amounts?: Record<string, number>,
 ): Promise<FpOrderBatchResponse> {
-  return request<FpOrderBatchResponse>("/fp/orders/execute-rebalance", {
+  return request<FpOrderBatchResponse>("/fp/mf-purchases/from-rebalance", {
     method: "POST",
     body: JSON.stringify({ amounts: amounts ?? null }),
   });
