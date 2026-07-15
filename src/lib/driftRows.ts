@@ -145,6 +145,37 @@ export function buildSipTargetRows(
   });
 }
 
+/* Lump-sum tab: the recommended one-time deployment split across Equity / Debt /
+   Others, from the plan's own alignment rows (each already carries the backend
+   asset_class, so there is no client-side classification and no rebalancing-run
+   fetch needed). Rows carry only the target (current* = 0) — a single Target bar,
+   mirroring the SIP tab's Proposed Target. Returns [] when there are no rows so
+   callers hide the chart. */
+export function buildLumpSumTargetRows(
+  alignmentRows: { asset_class: string; deploy_inr: number }[],
+): DriftRow[] {
+  if (!alignmentRows.length) return [];
+  const agg: Record<Bucket, number> = { equity: 0, debt: 0, others: 0 };
+  for (const r of alignmentRows) {
+    agg[toBucket(r.asset_class)] += r.deploy_inr || 0;
+  }
+  const total = BUCKET_ORDER.reduce((sum, b) => sum + agg[b], 0);
+  if (total <= 0) return [];
+  return BUCKET_ORDER.filter((b) => agg[b] > 0).map((b) => {
+    const pct = Math.round((agg[b] / total) * 100);
+    return {
+      key: b,
+      label: BUCKET_META[b].label,
+      color: BUCKET_META[b].color,
+      current: 0,
+      target: pct,
+      currentInr: 0,
+      targetInr: agg[b],
+      amountText: `${pct}% · ${compactINR(agg[b])}`,
+    };
+  });
+}
+
 /* Preferred path: render the backend's multi-asset-aware breakdown directly. */
 export function driftRowsFromBreakdown(breakdown: RebalancingAssetClassBreakdown): DriftRow[] {
   const agg: Record<Bucket, { current: number; target: number }> = {
