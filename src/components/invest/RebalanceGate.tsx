@@ -330,7 +330,7 @@ const RebalanceGate = ({ onReady, onResolved, editSignal }: RebalanceGateProps) 
                 {missingItems.map((m) => (
                   <span
                     key={m.key}
-                    className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/5 px-2 py-0.5 text-[10.5px] font-medium text-amber-700 dark:text-amber-400"
+                    className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/5 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400"
                   >
                     <AlertCircle className="h-3 w-3" /> {m.label}
                   </span>
@@ -408,7 +408,7 @@ const RebalanceGate = ({ onReady, onResolved, editSignal }: RebalanceGateProps) 
                                 ) : null}
                               </span>
                               {showMissing && (
-                                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+                                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400">
                                   <AlertCircle className="h-3 w-3" /> Needed
                                 </span>
                               )}
@@ -422,9 +422,9 @@ const RebalanceGate = ({ onReady, onResolved, editSignal }: RebalanceGateProps) 
                               className={`${inputClass} mt-1.5 ${err ? "border-destructive ring-1 ring-destructive" : ""}`}
                             />
                             {f.help && !err && (
-                              <p className="mt-1 text-[10.5px] leading-snug text-muted-foreground/80">{f.help}</p>
+                              <p className="mt-1 text-[11px] leading-snug text-muted-foreground/80">{f.help}</p>
                             )}
-                            {err && <p className="mt-1 text-[10.5px] font-medium text-destructive">{err}</p>}
+                            {err && <p className="mt-1 text-[11px] font-medium text-destructive">{err}</p>}
                           </div>
                         );
                       })}
@@ -444,7 +444,7 @@ const RebalanceGate = ({ onReady, onResolved, editSignal }: RebalanceGateProps) 
                       <p className="flex items-center gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-400">
                         <AlertCircle className="h-3.5 w-3.5" /> No mutual-fund holdings found
                       </p>
-                      <p className="mt-1 text-[10.5px] leading-snug text-muted-foreground/80">
+                      <p className="mt-1 text-[11px] leading-snug text-muted-foreground/80">
                         Rebalancing plans trades against your real holdings. Add your
                         latest CAMS statement (with its password) — we&apos;ll extract your
                         transactions &amp; holdings and generate your plan automatically.

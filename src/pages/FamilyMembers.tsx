@@ -281,11 +281,11 @@ const FamilyMembers = () => {
         </button>
         <div className="flex-1">
           <h1 className="text-lg font-semibold text-foreground">Family Members</h1>
-          <p className="text-[10px] text-muted-foreground">
+          <p className="text-[11px] text-muted-foreground">
             {members.length === 0 ? "Add family to manage their accounts" : `${activeCount} verified${pendingCount > 0 ? ` · ${pendingCount} pending` : ""}`}
           </p>
         </div>
-        <button onClick={() => setSheetMode("add")} className="flex h-8 items-center gap-1.5 rounded-full bg-primary px-3 text-[10px] font-semibold text-primary-foreground hover:bg-primary/90 transition-colors">
+        <button onClick={() => setSheetMode("add")} className="flex h-8 items-center gap-1.5 rounded-full bg-primary px-3 text-[11px] font-semibold text-primary-foreground hover:bg-primary/90 transition-colors">
           <UserPlus className="h-3 w-3" />
           Add
         </button>
@@ -298,7 +298,7 @@ const FamilyMembers = () => {
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 mb-4"><Users className="h-7 w-7 text-primary" /></div>
             <h3 className="text-sm font-semibold text-foreground mb-1.5">Manage your family's wealth together</h3>
             <p className="text-[11px] text-muted-foreground leading-relaxed max-w-[260px] mb-2">Add family members with OTP verification. Once verified, you get full access to manage their portfolio, goals, investments — everything.</p>
-            <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground mb-5"><ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />Secured by OTP verification</div>
+            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground mb-5"><ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />Secured by OTP verification</div>
             <button onClick={() => setSheetMode("add")} className="flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 transition-colors">
               <UserPlus className="h-3.5 w-3.5" />Add Your First Family Member
             </button>
@@ -320,21 +320,21 @@ const FamilyMembers = () => {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5">
                     <p className="text-xs font-semibold text-foreground truncate">{m.nickname}</p>
-                    <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[8px] font-semibold ${statusInfo.bg} ${statusInfo.text}`}>{statusInfo.label}</span>
+                    <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${statusInfo.bg} ${statusInfo.text}`}>{statusInfo.label}</span>
                   </div>
-                  <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+                  <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
                     <span className="capitalize flex items-center gap-1"><Heart className="h-2.5 w-2.5" />{m.relationship_type}</span>
                     {m.phone && <span className="flex items-center gap-1"><Phone className="h-2.5 w-2.5" />{m.phone}</span>}
                   </div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   {isPending && (
-                    <button onClick={() => handleVerifyFromCard(m.id, m.phone || "")} className="flex h-7 items-center gap-1 rounded-lg bg-amber-200/60 px-2 text-[10px] font-medium text-amber-800 hover:bg-amber-200/90 transition-colors">
+                    <button onClick={() => handleVerifyFromCard(m.id, m.phone || "")} className="flex h-7 items-center gap-1 rounded-lg bg-amber-200/60 px-2 text-[11px] font-medium text-amber-800 hover:bg-amber-200/90 transition-colors">
                       <ShieldCheck className="h-3 w-3" />Verify
                     </button>
                   )}
                   {m.status === "active" && (
-                    <button onClick={() => { switchToMember(m); navigate("/"); }} className="flex h-7 items-center gap-1 rounded-lg bg-white/50 px-2 text-[10px] font-medium text-foreground hover:bg-white/80 transition-colors">
+                    <button onClick={() => { switchToMember(m); navigate("/"); }} className="flex h-7 items-center gap-1 rounded-lg bg-white/50 px-2 text-[11px] font-medium text-foreground hover:bg-white/80 transition-colors">
                       Switch<ChevronRight className="h-3 w-3" />
                     </button>
                   )}
@@ -345,10 +345,10 @@ const FamilyMembers = () => {
                 {isDeleting && (
                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
                     <div className="flex items-center justify-between border-t border-red-200/50 bg-red-50/50 px-3 py-2">
-                      <p className="text-[10px] text-red-700">Remove {m.nickname}?</p>
+                      <p className="text-[11px] text-red-700">Remove {m.nickname}?</p>
                       <div className="flex gap-2">
-                        <button onClick={() => setConfirmDelete(null)} className="text-[10px] font-medium text-muted-foreground hover:text-foreground">Cancel</button>
-                        <button onClick={() => handleRemove(m.id)} className="text-[10px] font-semibold text-red-600 hover:text-red-800">Remove</button>
+                        <button onClick={() => setConfirmDelete(null)} className="text-[11px] font-medium text-muted-foreground hover:text-foreground">Cancel</button>
+                        <button onClick={() => handleRemove(m.id)} className="text-[11px] font-semibold text-red-600 hover:text-red-800">Remove</button>
                       </div>
                     </div>
                   </motion.div>
@@ -382,28 +382,28 @@ const FamilyMembers = () => {
                   </div>
                   <div className="px-5 pb-10 space-y-4">
                     <div>
-                      <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Nickname *</label>
+                      <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Nickname *</label>
                       <input value={form.nickname} onChange={(e) => setForm((f) => ({ ...f, nickname: e.target.value }))} placeholder="e.g. Mom, Priya, Dad" className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2.5 text-xs text-foreground outline-none focus:border-primary transition-colors" />
                     </div>
                     <div>
-                      <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Relationship</label>
+                      <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Relationship</label>
                       <div className="flex flex-wrap gap-1.5 mt-1.5">
                         {RELATIONSHIPS.map((r) => (
-                          <button key={r.value} onClick={() => setForm((f) => ({ ...f, relationship_type: r.value }))} className={`flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[10px] font-medium border transition-all ${form.relationship_type === r.value ? "bg-primary/10 text-primary border-primary/30" : "bg-card text-muted-foreground border-border hover:border-primary/20"}`}>
+                          <button key={r.value} onClick={() => setForm((f) => ({ ...f, relationship_type: r.value }))} className={`flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[11px] font-medium border transition-all ${form.relationship_type === r.value ? "bg-primary/10 text-primary border-primary/30" : "bg-card text-muted-foreground border-border hover:border-primary/20"}`}>
                             <span className="text-xs">{r.icon}</span>{r.label}
                           </button>
                         ))}
                       </div>
                     </div>
                     <div>
-                      <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Phone Number * <span className="normal-case text-muted-foreground/60">(OTP will be sent here)</span></label>
+                      <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Phone Number * <span className="normal-case text-muted-foreground/60">(OTP will be sent here)</span></label>
                       <div className="relative mt-1">
                         <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                         <input value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder="+91 98765 43210" type="tel" className="w-full rounded-xl border border-border bg-background pl-9 pr-3 py-2.5 text-xs text-foreground outline-none focus:border-primary transition-colors" />
                       </div>
                     </div>
                     <div>
-                      <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Email <span className="normal-case text-muted-foreground/60">(optional)</span></label>
+                      <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Email <span className="normal-case text-muted-foreground/60">(optional)</span></label>
                       <div className="relative mt-1">
                         <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                         <input value={form.email || ""} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="member@email.com" type="email" className="w-full rounded-xl border border-border bg-background pl-9 pr-3 py-2.5 text-xs text-foreground outline-none focus:border-primary transition-colors" />
@@ -411,7 +411,7 @@ const FamilyMembers = () => {
                     </div>
                     <div className="flex items-start gap-2 rounded-lg bg-emerald-50 px-3 py-2.5">
                       <ShieldCheck className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
-                      <p className="text-[10px] text-emerald-800 leading-relaxed">An OTP will be sent to the member's phone for consent verification.</p>
+                      <p className="text-[11px] text-emerald-800 leading-relaxed">An OTP will be sent to the member's phone for consent verification.</p>
                     </div>
                     <button onClick={handleAdd} disabled={submitting} className="w-full flex items-center justify-center gap-2 rounded-xl bg-primary py-3 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-all">
                       {submitting ? <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary-foreground/30 border-t-primary-foreground" /> : <UserPlus className="h-3.5 w-3.5" />}
@@ -434,14 +434,14 @@ const FamilyMembers = () => {
                       <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
                       <div>
                         <p className="text-[11px] font-semibold text-amber-800">No account found</p>
-                        <p className="text-[10px] text-amber-700 leading-relaxed mt-0.5">
+                        <p className="text-[11px] text-amber-700 leading-relaxed mt-0.5">
                           <span className="font-medium">{onboardForm.phone}</span> isn't registered yet. Fill in the details below to create an account for your family member.
                         </p>
                       </div>
                     </div>
 
                     {/* Relationship chips (already selected, shown compactly) */}
-                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                    <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
                       <span className="font-semibold text-foreground">{onboardForm.nickname}</span>
                       <span className="capitalize">· {onboardForm.relationship_type}</span>
                       <span>· {onboardForm.phone}</span>
@@ -449,17 +449,17 @@ const FamilyMembers = () => {
 
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">First Name *</label>
+                        <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">First Name *</label>
                         <input value={onboardForm.first_name} onChange={(e) => setOnboardForm((f) => ({ ...f, first_name: e.target.value }))} placeholder="e.g. Priya" className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2.5 text-xs text-foreground outline-none focus:border-primary transition-colors" />
                       </div>
                       <div>
-                        <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Last Name</label>
+                        <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Last Name</label>
                         <input value={onboardForm.last_name || ""} onChange={(e) => setOnboardForm((f) => ({ ...f, last_name: e.target.value }))} placeholder="e.g. Sharma" className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2.5 text-xs text-foreground outline-none focus:border-primary transition-colors" />
                       </div>
                     </div>
 
                     <div>
-                      <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Email <span className="normal-case text-muted-foreground/60">(optional)</span></label>
+                      <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Email <span className="normal-case text-muted-foreground/60">(optional)</span></label>
                       <div className="relative mt-1">
                         <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                         <input value={onboardForm.email || ""} onChange={(e) => setOnboardForm((f) => ({ ...f, email: e.target.value }))} placeholder="member@email.com" type="email" className="w-full rounded-xl border border-border bg-background pl-9 pr-3 py-2.5 text-xs text-foreground outline-none focus:border-primary transition-colors" />
@@ -467,7 +467,7 @@ const FamilyMembers = () => {
                     </div>
 
                     <div>
-                      <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Set Password * <span className="normal-case text-muted-foreground/60">(min 8 chars)</span></label>
+                      <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Set Password * <span className="normal-case text-muted-foreground/60">(min 8 chars)</span></label>
                       <div className="relative mt-1">
                         <input
                           value={onboardForm.password}
@@ -484,7 +484,7 @@ const FamilyMembers = () => {
 
                     <div className="flex items-start gap-2 rounded-lg bg-blue-50 px-3 py-2.5">
                       <UserRoundPlus className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
-                      <p className="text-[10px] text-blue-800 leading-relaxed">
+                      <p className="text-[11px] text-blue-800 leading-relaxed">
                         This will create a new Ask Prozpr account for your family member. An OTP will be sent to their phone for consent verification.
                       </p>
                     </div>
@@ -494,7 +494,7 @@ const FamilyMembers = () => {
                       {submitting ? "Creating Account…" : "Create Account & Send OTP"}
                     </button>
 
-                    <button onClick={() => setSheetMode("add")} className="w-full text-center text-[10px] font-medium text-muted-foreground hover:text-foreground transition-colors py-1">
+                    <button onClick={() => setSheetMode("add")} className="w-full text-center text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors py-1">
                       ← Back to add existing member
                     </button>
                   </div>
@@ -513,7 +513,7 @@ const FamilyMembers = () => {
                       <div className="flex h-12 w-12 mx-auto items-center justify-center rounded-full bg-emerald-100 mb-3"><ShieldCheck className="h-5 w-5 text-emerald-600" /></div>
                       <p className="text-xs text-muted-foreground leading-relaxed">We sent a verification code to</p>
                       <p className="text-sm font-semibold text-foreground mt-0.5">{otpMemberPhone}</p>
-                      <p className="text-[10px] text-muted-foreground mt-1">Ask your family member to share the OTP</p>
+                      <p className="text-[11px] text-muted-foreground mt-1">Ask your family member to share the OTP</p>
                     </div>
                     <div className="flex justify-center gap-2" onPaste={handleOtpPaste}>
                       {otpDigits.map((digit, idx) => (

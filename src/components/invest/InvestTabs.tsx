@@ -20,7 +20,11 @@ const InvestTabs = () => {
   const tabs = [
     { key: "rebalance-explanation", label: "Rebalancing" },
     { key: "sip", label: "SIP" },
+<<<<<<< HEAD
     { key: "lumpsum", label: "Lumpsum" },
+=======
+    { key: "lumpsum", label: "Lump sum" },
+>>>>>>> 9edb7054101b7638075378cdb77839cfb104a2ab
   ] as const;
 
   return (

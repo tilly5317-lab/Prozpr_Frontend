@@ -113,11 +113,11 @@ export function MfFundList({
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-xs font-semibold text-foreground">{fund.scheme_name}</p>
                   <div className="mt-0.5 flex items-center gap-1.5">
-                    <span className="truncate text-[10px] text-muted-foreground">
+                    <span className="truncate text-[11px] text-muted-foreground">
                       {fund.amc_name} ┬╖ {fund.sub_category ?? fund.category}
                     </span>
                     {fund.risk_rating_sebi && (
-                      <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-medium ${riskBadge(fund.risk_rating_sebi)}`}>
+                      <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${riskBadge(fund.risk_rating_sebi)}`}>
                         {fund.risk_rating_sebi}
                       </span>
                     )}
@@ -149,13 +149,13 @@ export function MfFundList({
       )}
 
       {!hasMore && items.length > 0 && (
-        <p className="pt-1 text-center text-[10px] text-muted-foreground/70">
+        <p className="pt-1 text-center text-[11px] text-muted-foreground/70">
           {total} {total === 1 ? "fund" : "funds"} ┬╖ end of list
         </p>
       )}
 
       {error && items.length > 0 && (
-        <p className="pt-1 text-center text-[10px] text-destructive">{error}</p>
+        <p className="pt-1 text-center text-[11px] text-destructive">{error}</p>
       )}
     </div>
   );

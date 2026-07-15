@@ -126,7 +126,7 @@ const AdvisorMeetings = () => {
 
               <div className="mt-3 pt-2" style={{ borderTop: "1px solid hsl(var(--border))" }}>
                 <p
-                  className="text-[10px] uppercase text-muted-foreground mb-2"
+                  className="text-[11px] uppercase text-muted-foreground mb-2"
                   style={{ fontWeight: 600, letterSpacing: "1.8px" }}
                 >
                   Action items

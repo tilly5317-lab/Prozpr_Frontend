@@ -257,16 +257,16 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
             <DualRangeSlider min={1} max={30} value={horizonRange} onChange={setHorizonRange} />
             <div className="flex justify-between mt-1">
               <div className="text-left leading-tight">
-                <span className="text-[10px] text-muted-foreground uppercase tracking-wider block">1 yr</span>
-                <span className="text-[9px] text-muted-foreground/70 italic mt-0.5 block">Short term</span>
+                <span className="text-[11px] text-muted-foreground uppercase tracking-wider block">1 yr</span>
+                <span className="text-[10px] text-muted-foreground/70 italic mt-0.5 block">Short term</span>
               </div>
               <div className="text-center leading-tight">
-                <span className="text-[10px] text-muted-foreground uppercase tracking-wider block">10 yrs</span>
-                <span className="text-[9px] text-muted-foreground/70 italic mt-0.5 block">Medium</span>
+                <span className="text-[11px] text-muted-foreground uppercase tracking-wider block">10 yrs</span>
+                <span className="text-[10px] text-muted-foreground/70 italic mt-0.5 block">Medium</span>
               </div>
               <div className="text-right leading-tight">
-                <span className="text-[10px] text-muted-foreground uppercase tracking-wider block">20+ yrs</span>
-                <span className="text-[9px] text-muted-foreground/70 italic mt-0.5 block">Long haul</span>
+                <span className="text-[11px] text-muted-foreground uppercase tracking-wider block">20+ yrs</span>
+                <span className="text-[10px] text-muted-foreground/70 italic mt-0.5 block">Long haul</span>
               </div>
             </div>
           </div>

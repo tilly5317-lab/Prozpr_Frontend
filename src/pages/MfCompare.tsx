@@ -335,12 +335,12 @@ export default function MfCompare() {
             <section className="rounded-2xl border border-border/70 bg-card p-4">
               <div className="mb-1 flex items-center justify-between">
                 <p className="text-[12px] font-semibold text-foreground">Growth of ₹100</p>
-                <p className="text-[10px] text-muted-foreground">Rebased · {range}</p>
+                <p className="text-[11px] text-muted-foreground">Rebased · {range}</p>
               </div>
               <CompareChart series={series} />
               <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
                 {funds.map((f) => (
-                  <span key={f.schemeCode} className="inline-flex items-center gap-1.5 text-[10.5px]">
+                  <span key={f.schemeCode} className="inline-flex items-center gap-1.5 text-[11px]">
                     <span className="h-2 w-2 rounded-full" style={{ backgroundColor: f.color }} />
                     <span className="max-w-[10rem] truncate text-muted-foreground">{f.name}</span>
                   </span>
@@ -383,7 +383,7 @@ export default function MfCompare() {
                 <table className="w-full border-collapse text-left">
                   <thead>
                     <tr className="border-b border-border/60">
-                      <th className="sticky left-0 z-10 bg-card px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      <th className="sticky left-0 z-10 bg-card px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                         Metric
                       </th>
                       {funds.map((f) => {
@@ -399,9 +399,9 @@ export default function MfCompare() {
                               <span className="truncate text-[11px] font-bold text-foreground">{f.name}</span>
                               {f.isProzprPick && <Star className="h-3 w-3 shrink-0 text-[#D4A868]" fill="#D4A868" />}
                             </div>
-                            <p className="mt-0.5 truncate text-[9.5px] text-muted-foreground">{f.amc ?? "—"}</p>
+                            <p className="mt-0.5 truncate text-[10px] text-muted-foreground">{f.amc ?? "—"}</p>
                             {wins > 0 && (
-                              <span className="mt-1 inline-block rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                              <span className="mt-1 inline-block rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
                                 Best on {wins}
                               </span>
                             )}
@@ -440,7 +440,7 @@ export default function MfCompare() {
                   </tbody>
                 </table>
               </div>
-              <p className="border-t border-border/50 px-3 py-2 text-[10px] leading-snug text-muted-foreground/80">
+              <p className="border-t border-border/50 px-3 py-2 text-[11px] leading-snug text-muted-foreground/80">
                 <Check className="mr-0.5 inline h-3 w-3 text-emerald-600 dark:text-emerald-400" />
                 marks the best fund per metric. Returns are trailing figures from fund data. Past
                 performance isn&apos;t a forecast.
@@ -631,7 +631,7 @@ function FundPicker({
                         <span className="block truncate text-xs font-semibold text-foreground">
                           {item.scheme_name}
                         </span>
-                        <span className="block truncate text-[10px] text-muted-foreground">
+                        <span className="block truncate text-[11px] text-muted-foreground">
                           {item.amc_name} · {item.sub_category ?? item.category}
                         </span>
                       </span>
