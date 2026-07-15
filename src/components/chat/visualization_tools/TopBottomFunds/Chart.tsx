@@ -37,7 +37,7 @@ export function TopBottomFunds({ payload }: { payload: TopBottomFundsPayload }) 
 
       <div className="grid grid-cols-1 gap-4">
         <div>
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1 font-semibold">
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1 font-semibold">
             Top performers
           </p>
           <div className="divide-y divide-border/60">
@@ -47,7 +47,7 @@ export function TopBottomFunds({ payload }: { payload: TopBottomFundsPayload }) 
           </div>
         </div>
         <div>
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1 font-semibold">
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1 font-semibold">
             Bottom performers
           </p>
           <div className="divide-y divide-border/60">

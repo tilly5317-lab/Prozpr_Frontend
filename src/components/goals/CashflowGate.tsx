@@ -426,20 +426,20 @@ const CashflowGate = ({ onReady, editSignal, autoOpenInputs }: CashflowGateProps
               <button
                 type="button"
                 onClick={() => setCorpusInflation(String(PROZPR_INFLATION))}
-                className="mt-1.5 inline-flex items-center gap-1 rounded-full border border-[#D4A868]/40 bg-[#D4A868]/[0.06] px-2.5 py-1 text-[10.5px] font-medium text-[#D4A868] transition-colors hover:bg-[#D4A868]/10"
+                className="mt-1.5 inline-flex items-center gap-1 rounded-full border border-[#D4A868]/40 bg-[#D4A868]/[0.06] px-2.5 py-1 text-[11px] font-medium text-[#D4A868] transition-colors hover:bg-[#D4A868]/10"
               >
                 <Sparkles className="h-3 w-3" /> Prozpr suggests {PROZPR_INFLATION}%
               </button>
-              <p className="mt-1 text-[10.5px] leading-snug text-muted-foreground/80">
+              <p className="mt-1 text-[11px] leading-snug text-muted-foreground/80">
                 We&apos;ll discount this back to today&apos;s money over your {yearsToRetirement()} year
                 {yearsToRetirement() === 1 ? "" : "s"} to retirement.
               </p>
             </div>
           )}
           {f.help && !err && (
-            <p className="mt-1 text-[10.5px] leading-snug text-muted-foreground/80">{f.help}</p>
+            <p className="mt-1 text-[11px] leading-snug text-muted-foreground/80">{f.help}</p>
           )}
-          {err && <p className="mt-1 text-[10.5px] font-medium text-destructive">{err}</p>}
+          {err && <p className="mt-1 text-[11px] font-medium text-destructive">{err}</p>}
         </div>
       );
     }
@@ -454,7 +454,7 @@ const CashflowGate = ({ onReady, editSignal, autoOpenInputs }: CashflowGateProps
             ) : null}
           </span>
           {showMissing && (
-            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-muted-foreground">
+            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-muted-foreground">
               <AlertCircle className="h-3 w-3" /> Needed
             </span>
           )}
@@ -487,9 +487,9 @@ const CashflowGate = ({ onReady, editSignal, autoOpenInputs }: CashflowGateProps
           />
         )}
         {f.help && !err && (
-          <p className="mt-1 text-[10.5px] leading-snug text-muted-foreground/80">{f.help}</p>
+          <p className="mt-1 text-[11px] leading-snug text-muted-foreground/80">{f.help}</p>
         )}
-        {err && <p className="mt-1 text-[10.5px] font-medium text-destructive">{err}</p>}
+        {err && <p className="mt-1 text-[11px] font-medium text-destructive">{err}</p>}
       </div>
     );
   };
@@ -505,7 +505,7 @@ const CashflowGate = ({ onReady, editSignal, autoOpenInputs }: CashflowGateProps
             <span className="ml-1 font-normal text-muted-foreground">({f.unit})</span>
           ) : null}
         </span>
-        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-muted-foreground">
+        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-muted-foreground">
           <Lock className="h-3 w-3" /> From CAMS
         </span>
       </label>
@@ -516,7 +516,7 @@ const CashflowGate = ({ onReady, editSignal, autoOpenInputs }: CashflowGateProps
         value={displayValue(f, values[f.key] ?? "")}
         className={`${readonlyInputClass} mt-1.5`}
       />
-      <p className="mt-1.5 text-[10.5px] leading-snug text-muted-foreground/80">
+      <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground/80">
         Update your CAMS to change this number.
       </p>
     </div>
@@ -583,7 +583,7 @@ const CashflowGate = ({ onReady, editSignal, autoOpenInputs }: CashflowGateProps
                 {missingFields.map((f) => (
                   <span
                     key={f.key}
-                    className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10.5px] font-medium text-muted-foreground"
+                    className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
                   >
                     <AlertCircle className="h-3 w-3" /> {f.label}
                   </span>

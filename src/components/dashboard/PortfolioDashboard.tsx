@@ -14,6 +14,7 @@ import CamsUploadModal from "@/components/onboarding/CamsUploadModal";
 import { useCamsMissing } from "@/hooks/useCamsMissing";
 import { useFamily } from "@/context/FamilyContext";
 import {
+  getAboutYouStatus,
   getCumulativePortfolio,
   getFamilyMemberPortfolio,
   getFullProfile,
@@ -98,7 +99,7 @@ function PortfolioMainPanel({
           {activeGain != null && (
             <div className="flex flex-col items-start gap-0.5">
               <span
-                className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
                   activeGain >= 0
                     ? "bg-wealth-green/15 text-wealth-green"
                     : "bg-destructive/15 text-destructive"
@@ -116,7 +117,7 @@ function PortfolioMainPanel({
           )}
         </div>
 
-        <p className="text-[10px] text-muted-foreground/80 mt-1 mb-3">Invested {fmtInr0(portfolio.total_invested)}</p>
+        <p className="text-[11px] text-muted-foreground/80 mt-1 mb-3">Invested {fmtInr0(portfolio.total_invested)}</p>
 
         {useNavChart ? (
           <PortfolioNavChart
@@ -134,7 +135,7 @@ function PortfolioMainPanel({
                     e.stopPropagation();
                     setTimePeriod(period);
                   }}
-                  className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition-all ${
+                  className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all ${
                     timePeriod === period
                       ? "bg-accent/15 text-accent"
                       : "bg-muted/60 text-muted-foreground hover:text-foreground"
@@ -250,8 +251,20 @@ function DiscoverEntryCard() {
  * Each shares one profile category and unlocks a specific Prozpr capability.
  * Deep-links into the matching Complete-Profile section (?section=N).
  */
-function ProfileUnlockCircles({ profile }: { profile: FullProfileResponse | null }) {
+function ProfileUnlockCircles() {
   const navigate = useNavigate();
+
+  // Per-section completion — the SAME rule the Profile page uses (getAboutYouStatus),
+  // so these icons and the profile page never disagree. Indexed 0 financial ·
+  // 1 goals · 2 risk · 3 tax. Defaults to all-incomplete until resolved.
+  const [sectionDone, setSectionDone] = useState<boolean[]>([false, false, false, false]);
+  useEffect(() => {
+    let cancelled = false;
+    getAboutYouStatus()
+      .then((s) => { if (!cancelled) setSectionDone(s.sections); })
+      .catch(() => { /* leave everything unlocked if status can't be resolved */ });
+    return () => { cancelled = true; };
+  }, []);
 
   const items = [
     {
@@ -261,7 +274,7 @@ function ProfileUnlockCircles({ profile }: { profile: FullProfileResponse | null
       unlocks: "Supercharge rebalancing",
       flash: true,
       ring: "#D4A868",
-      done: false,
+      done: sectionDone[0],
     },
     {
       section: 3,
@@ -270,7 +283,7 @@ function ProfileUnlockCircles({ profile }: { profile: FullProfileResponse | null
       unlocks: "Unlock smarter funds",
       flash: true,
       ring: "#D4A868",
-      done: false,
+      done: sectionDone[3],
     },
     {
       section: 2,
@@ -279,7 +292,7 @@ function ProfileUnlockCircles({ profile }: { profile: FullProfileResponse | null
       unlocks: "Tune your portfolio",
       flash: true,
       ring: "#D4A868",
-      done: false,
+      done: sectionDone[2],
     },
     {
       section: 1,
@@ -288,9 +301,13 @@ function ProfileUnlockCircles({ profile }: { profile: FullProfileResponse | null
       unlocks: "Chart your future",
       flash: true,
       ring: "#D4A868",
-      done: false,
+      done: sectionDone[1],
     },
   ];
+
+  // Completed sections slide to the far right; sections still to do stay on the
+  // left. Sort is stable, so the curated order is preserved within each group.
+  const orderedItems = [...items].sort((a, b) => Number(a.done) - Number(b.done));
 
   const remaining = items.filter((i) => !i.done).length;
 
@@ -298,7 +315,7 @@ function ProfileUnlockCircles({ profile }: { profile: FullProfileResponse | null
     <div className="rounded-[14px] border border-border bg-card p-4" style={{ boxShadow: "0 1px 2px rgba(0,0,0,0.04)" }}>
       <div className="mb-3 flex items-center justify-between">
         <div>
-          <p className="text-[10px] uppercase tracking-[1.5px] text-muted-foreground" style={{ fontWeight: 500 }}>
+          <p className="text-[11px] uppercase tracking-[1.5px] text-muted-foreground" style={{ fontWeight: 500 }}>
             Unlock more
           </p>
           <p className="mt-0.5 text-[13px] font-semibold text-foreground">
@@ -307,7 +324,7 @@ function ProfileUnlockCircles({ profile }: { profile: FullProfileResponse | null
         </div>
         {remaining > 0 ? (
           <motion.span
-            className="shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-semibold text-white"
+            className="shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold text-white"
             style={{
               // Same glowing purple/pink sweep as the Goals-page insight banner.
               backgroundImage: "linear-gradient(100deg, #D4A868, #C2487A, #7A52C8, #D4A868)",
@@ -323,14 +340,14 @@ function ProfileUnlockCircles({ profile }: { profile: FullProfileResponse | null
             ✨ {remaining === 1 ? "1 step to full plan" : `${remaining} unlocks left`}
           </motion.span>
         ) : (
-          <span className="shrink-0 rounded-full bg-wealth-green/10 px-2.5 py-0.5 text-[10px] font-semibold text-wealth-green">
+          <span className="shrink-0 rounded-full bg-wealth-green/10 px-2.5 py-0.5 text-[11px] font-semibold text-wealth-green">
             🎉 All unlocked
           </span>
         )}
       </div>
 
       <div className="flex justify-between gap-1">
-        {items.map(({ section, Icon, title, unlocks, ring, done, flash }) => (
+        {orderedItems.map(({ section, Icon, title, unlocks, ring, done, flash }) => (
           <motion.button
             key={section}
             type="button"
@@ -366,11 +383,11 @@ function ProfileUnlockCircles({ profile }: { profile: FullProfileResponse | null
                 </span>
               )}
             </span>
-            <span className="text-[10px] font-semibold leading-tight text-foreground">{title}</span>
+            <span className="text-[11px] font-semibold leading-tight text-foreground">{title}</span>
             {!done && (
               flash ? (
                 <motion.span
-                  className="text-[8.5px] italic font-semibold leading-tight"
+                  className="text-[9px] italic font-semibold leading-tight"
                   style={{ color: ring }}
                   animate={{ opacity: [1, 0, 1] }}
                   transition={{ duration: 7, repeat: Infinity, ease: "easeInOut" }}
@@ -378,7 +395,7 @@ function ProfileUnlockCircles({ profile }: { profile: FullProfileResponse | null
                   {unlocks}
                 </motion.span>
               ) : (
-                <span className="text-[8.5px] leading-tight text-muted-foreground">{unlocks}</span>
+                <span className="text-[9px] leading-tight text-muted-foreground">{unlocks}</span>
               )
             )}
           </motion.button>
@@ -398,19 +415,19 @@ function CumulativeMemberBreakdownCard({ data }: { data: CumulativePortfolioResp
           <div key={m.member_id}>
             <div className="flex items-center justify-between py-2">
               <div className="flex items-center gap-2 min-w-0">
-                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent/10 text-[9px] font-bold text-accent">
+                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent/10 text-[10px] font-bold text-accent">
                   {(m.nickname[0] ?? "?").toUpperCase()}
                 </div>
                 <div className="min-w-0">
                   <p className="text-xs font-semibold text-foreground truncate">{m.nickname}</p>
-                  <p className="text-[9px] text-muted-foreground capitalize">{m.relationship_type}</p>
+                  <p className="text-[10px] text-muted-foreground capitalize">{m.relationship_type}</p>
                 </div>
               </div>
               <div className="text-right shrink-0 ml-2">
                 <p className="text-xs font-semibold text-foreground">{formatInrPaisa(m.portfolio_value)}</p>
                 {m.gain_percentage != null && (
                   <p
-                    className={`text-[9px] font-medium ${
+                    className={`text-[10px] font-medium ${
                       m.gain_percentage >= 0 ? "text-wealth-green" : "text-destructive"
                     }`}
                   >
@@ -547,7 +564,7 @@ const PortfolioDashboard = () => {
             <p style={SECTION_LABEL}>{viewLabel}</p>
           )}
           {activeView.type === "cumulative" && cumulativeData && (
-            <p className="text-[9px] text-muted-foreground/60">
+            <p className="text-[10px] text-muted-foreground/60">
               {cumulativeData.member_count} members combined
             </p>
           )}
@@ -685,7 +702,7 @@ const PortfolioDashboard = () => {
                 onUploadCams={() => setCamsOpen(true)}
               />
               <DiscoverEntryCard />
-              <ProfileUnlockCircles profile={selfProfile} />
+              <ProfileUnlockCircles />
               <AdvisorMeetingsSlot />
             </div>
           )}

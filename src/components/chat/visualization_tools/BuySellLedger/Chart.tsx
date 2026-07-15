@@ -15,13 +15,13 @@ export function BuySellLedger({ payload }: { payload: BuySellLedgerPayload }) {
         <table className="w-full text-xs">
           <thead className="bg-muted/30">
             <tr>
-              <th className="text-left font-semibold text-muted-foreground uppercase tracking-wide text-[10px] px-3 py-2">
+              <th className="text-left font-semibold text-muted-foreground uppercase tracking-wide text-[11px] px-3 py-2">
                 Fund
               </th>
-              <th className="text-right font-semibold text-muted-foreground uppercase tracking-wide text-[10px] px-3 py-2 w-20">
+              <th className="text-right font-semibold text-muted-foreground uppercase tracking-wide text-[11px] px-3 py-2 w-20">
                 Buy
               </th>
-              <th className="text-right font-semibold text-muted-foreground uppercase tracking-wide text-[10px] px-3 py-2 w-20">
+              <th className="text-right font-semibold text-muted-foreground uppercase tracking-wide text-[11px] px-3 py-2 w-20">
                 Sell
               </th>
             </tr>
@@ -31,7 +31,7 @@ export function BuySellLedger({ payload }: { payload: BuySellLedgerPayload }) {
               <tr key={`${row.name}-${row.sub_category}`} className="border-t border-border/60">
                 <td className="px-3 py-2">
                   <div className="text-foreground font-medium truncate">{row.name}</div>
-                  <div className="text-[10px] text-muted-foreground">{row.sub_category}</div>
+                  <div className="text-[11px] text-muted-foreground">{row.sub_category}</div>
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums font-semibold text-[hsl(160_50%_28%)]">
                   {row.buy_inr > 0 ? formatInrMillions(row.buy_inr) : "—"}

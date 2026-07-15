@@ -13,7 +13,7 @@ const AdvisorMeetingsSlot = () => {
         style={{ border: "1px solid hsl(var(--border))" }}
       >
         <p
-          className="text-[10px] uppercase text-muted-foreground"
+          className="text-[11px] uppercase text-muted-foreground"
           style={{ fontWeight: 500, letterSpacing: "1.5px" }}
         >
           Advisor Meetings

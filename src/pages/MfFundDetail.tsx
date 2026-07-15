@@ -137,7 +137,7 @@ export default function MfFundDetail() {
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="text-[10px] text-muted-foreground">{range} change</p>
+                  <p className="text-[11px] text-muted-foreground">{range} change</p>
                   <p
                     className="text-[13px] font-semibold tabular-nums"
                     style={{ color: isUp ? "hsl(164 54% 40%)" : "hsl(0 84% 50%)" }}
@@ -154,7 +154,7 @@ export default function MfFundDetail() {
 
             <section className="rounded-2xl border border-border/70 bg-card p-4">
               <p className="text-[12px] font-semibold text-foreground">Trailing NAV returns</p>
-              <p className="mt-0.5 text-[10.5px] text-muted-foreground">
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
                 Total return on the NAV through {latestNavDate ? formatDate(latestNavDate) : "—"}.
               </p>
               <div className="mt-3 grid grid-cols-4 gap-1.5">
@@ -162,7 +162,7 @@ export default function MfFundDetail() {
                   const positive = value != null && value >= 0;
                   return (
                     <div key={label} className="rounded-lg bg-muted/30 px-1.5 py-2 text-center">
-                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
                       <p
                         className="mt-0.5 text-[11.5px] font-semibold tabular-nums"
                         style={{
@@ -180,7 +180,7 @@ export default function MfFundDetail() {
                   );
                 })}
               </div>
-              <p className="mt-2 text-[10px] leading-snug text-muted-foreground/80">
+              <p className="mt-2 text-[11px] leading-snug text-muted-foreground/80">
                 Trailing returns reflect compounded NAV change over the trailing window — useful for
                 comparison but not a forecast of future performance.
               </p>

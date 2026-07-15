@@ -3,22 +3,43 @@ import {
   Bar,
   XAxis,
   YAxis,
-  CartesianGrid,
-  Legend,
   Tooltip,
+  Legend,
   ResponsiveContainer,
 } from "recharts";
 import type { TargetVsActualPayload } from "./types";
 
+// Asset-class colours — match the rebalancing page's buckets so the two
+// current-vs-target views read the same.
+const ASSET_COLORS: Record<string, string> = {
+  equity: "#2563EB",
+  debt: "hsl(188 52% 41%)",
+  others: "hsl(38 64% 47%)",
+  hybrid: "hsl(38 64% 47%)",
+  cash: "hsl(214 14% 47%)",
+  gold: "hsl(45 74% 47%)",
+  alternatives: "hsl(348 35% 43%)",
+};
+const FALLBACK = ["#2563EB", "hsl(188 52% 41%)", "hsl(38 64% 47%)", "hsl(214 14% 47%)", "hsl(348 35% 43%)"];
+const colorFor = (assetClass: string, i: number) =>
+  ASSET_COLORS[assetClass.trim().toLowerCase()] ?? FALLBACK[i % FALLBACK.length];
+
 export function TargetVsActual({ payload }: { payload: TargetVsActualPayload }) {
-  const data = payload.bars.map((b) => ({
+  const assets = payload.bars.map((b, i) => ({
     name: b.asset_class,
-    Target: b.target_pct,
-    Actual: b.actual_pct,
-    drift: b.drift_pct,
+    color: colorFor(b.asset_class, i),
   }));
 
-  const chartHeight = Math.max(180, payload.bars.length * 44);
+  // Two stacked rows — Current (actual) and Target — each a single 100%-width
+  // bar split into Equity / Debt / Others segments, instead of three separate
+  // clustered rows.
+  const currentRow: Record<string, number | string> = { name: "Current" };
+  const targetRow: Record<string, number | string> = { name: "Target" };
+  for (const b of payload.bars) {
+    currentRow[b.asset_class] = b.actual_pct;
+    targetRow[b.asset_class] = b.target_pct;
+  }
+  const data = [currentRow, targetRow];
 
   return (
     <div className="rounded-2xl border border-border bg-card p-5 shadow-wealth">
@@ -29,26 +50,26 @@ export function TargetVsActual({ payload }: { payload: TargetVsActualPayload }) 
         <p className="text-xs text-muted-foreground mb-4">{payload.subtitle}</p>
       ) : null}
 
-      <div style={{ width: "100%", height: chartHeight }}>
+      <div style={{ width: "100%", height: 132 }}>
         <ResponsiveContainer>
           <BarChart
             data={data}
             layout="vertical"
             margin={{ top: 4, right: 16, left: 4, bottom: 4 }}
-            barGap={4}
+            stackOffset="expand"
           >
-            <CartesianGrid horizontal={false} stroke="hsl(var(--border))" strokeOpacity={0.4} />
             <XAxis
               type="number"
+              domain={[0, 1]}
+              tickFormatter={(v: number) => `${Math.round(v * 100)}%`}
               tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
-              tickFormatter={(v: number) => `${v.toFixed(0)}%`}
               axisLine={false}
               tickLine={false}
             />
             <YAxis
               type="category"
               dataKey="name"
-              width={100}
+              width={56}
               tick={{ fontSize: 11, fill: "hsl(var(--foreground))" }}
               tickLine={false}
               axisLine={false}
@@ -58,12 +79,10 @@ export function TargetVsActual({ payload }: { payload: TargetVsActualPayload }) 
               formatter={(value: number, name) => [`${value.toFixed(1)}%`, name]}
               contentStyle={{ fontSize: "11px", borderRadius: "6px" }}
             />
-            <Legend
-              wrapperStyle={{ fontSize: "11px", paddingTop: "4px" }}
-              iconSize={10}
-            />
-            <Bar dataKey="Target" fill="hsl(222 47% 14%)" radius={[0, 4, 4, 0]} barSize={10} />
-            <Bar dataKey="Actual" fill="hsl(215 60% 48%)" radius={[0, 4, 4, 0]} barSize={10} />
+            <Legend wrapperStyle={{ fontSize: "11px", paddingTop: "4px" }} iconSize={10} />
+            {assets.map((a) => (
+              <Bar key={a.name} dataKey={a.name} stackId="mix" fill={a.color} barSize={22} />
+            ))}
           </BarChart>
         </ResponsiveContainer>
       </div>

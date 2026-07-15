@@ -1273,6 +1273,102 @@ export async function createSipPlan(monthlyAmountInr: number): Promise<SipPlanRe
   });
 }
 
+/** One fund in the lump-sum plan with its one-time amount and reasoning. */
+export interface LumpSumFundBuy {
+  recommended_fund: string;
+  sub_category: string;
+  asset_subgroup: string;
+  /** AMFI scheme code — deep-links each fund to `/discovery/mf/:schemeCode`. */
+  scheme_code: string;
+  amount_inr: number;
+  rank: number;
+  /** Plain-English "why this fund" line (goal + current-portfolio alignment). */
+  reason: string;
+}
+
+/** One part of the portfolio the lump sum was measured against — the
+ * current-vs-ideal gap the deployment fills (the "why these funds" section). */
+export interface LumpSumAlignmentRow {
+  subgroup: string;
+  /** Customer-facing label, e.g. "large-cap equity". */
+  label: string;
+  /** Equity / Debt / Others. */
+  asset_class: string;
+  /** Goal-based ideal for this part of the portfolio. */
+  ideal_inr: number;
+  /** What the customer holds there today. */
+  current_inr: number;
+  /** Shortfall this deploy is filling (max(0, ideal - current)). */
+  gap_inr: number;
+  /** How much of this lump sum goes here. */
+  deploy_inr: number;
+}
+
+/** Latest one-time lump-sum deployment plan — mirrors backend `LumpsumPlanResponse`. */
+export interface LumpSumPlanResponse {
+  has_plan: boolean;
+  run_id: string | null;
+  created_at: string | null;
+  /** Total fresh money the plan deploys (one-time). */
+  amount_inr: number;
+  /** Of the amount: how much lands in funds vs. couldn't be placed. */
+  deployed_inr: number;
+  undeployed_inr: number;
+  /** Horizon the deploy leaned toward; null when there is no plan. */
+  target_bucket: "short_term" | "medium_term" | "long_term" | null;
+  fund_count: number;
+  buys: LumpSumFundBuy[];
+  /** Per-part current-vs-ideal alignment behind the plan (may be empty). */
+  alignment_rows: LumpSumAlignmentRow[];
+  /** One-line summary of the whole deployment in goal terms. */
+  headline_reason: string | null;
+}
+
+/** Empty lump-sum plan — rendered as the set-up prompt when none exists. */
+export const EMPTY_LUMPSUM_PLAN: LumpSumPlanResponse = {
+  has_plan: false,
+  run_id: null,
+  created_at: null,
+  amount_inr: 0,
+  deployed_inr: 0,
+  undeployed_inr: 0,
+  target_bucket: null,
+  fund_count: 0,
+  buys: [],
+  alignment_rows: [],
+  headline_reason: null,
+};
+
+/**
+ * The user's latest one-time lump-sum deployment plan (additional-investment
+ * engine, ``cadence=lumpsum``). ``has_plan`` is false when they haven't planned
+ * one yet — render the set-up prompt rather than a plan.
+ */
+export async function getMyLumpSumPlan(): Promise<LumpSumPlanResponse> {
+  return request<LumpSumPlanResponse>("/additional-investment/lumpsum");
+}
+
+/** Whether a lump-sum plan deploys fresh money (``add``) or raises cash by
+ * redeeming holdings (``withdraw`` — not yet supported by the engine). */
+export type LumpSumAction = "add" | "withdraw";
+
+/**
+ * Plan (or refresh) a one-time lump sum for ``amountInr`` via the
+ * additional-investment engine (``cadence=lumpsum``): it fills the customer's
+ * largest goal-based gaps and returns the funds with reasoning. Only
+ * ``action="add"`` is supported; ``withdraw`` is rejected server-side. Throws
+ * with a customer-facing message when the engine can't plan yet.
+ */
+export async function createLumpSumPlan(
+  amountInr: number,
+  action: LumpSumAction = "add",
+): Promise<LumpSumPlanResponse> {
+  return request<LumpSumPlanResponse>("/additional-investment/lumpsum", {
+    method: "POST",
+    body: JSON.stringify({ amount_inr: amountInr, action }),
+  });
+}
+
 /** NAV point for MF holding-detail chart (`mf_nav_history`). */
 export interface MfHoldingNavPoint {
   nav_date: string;
@@ -1380,6 +1476,8 @@ export interface AboutYouStatus {
   confirmedCount: number;
   /** True only when all four sections are confirmed. */
   allConfirmed: boolean;
+  /** Per-section confirmation, indexed 0 financial · 1 goals · 2 risk · 3 tax. */
+  sections: boolean[];
 }
 
 /**
@@ -1433,7 +1531,7 @@ export async function getAboutYouStatus(): Promise<AboutYouStatus> {
   }
 
   const confirmedCount = confirmed.filter(Boolean).length;
-  return { confirmedCount, allConfirmed: confirmedCount === 4 };
+  return { confirmedCount, allConfirmed: confirmedCount === 4, sections: confirmed };
 }
 
 /** User has linked an institution or already has portfolio value / holdings in DB. */

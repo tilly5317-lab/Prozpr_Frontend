@@ -48,6 +48,7 @@ import MeetingNotesIndex from "./pages/MeetingNotesIndex";
 import GoalPlanner from "./pages/GoalPlanner";
 import GoalsTimeline from "./pages/GoalsTimeline";
 import SipPlanner from "./pages/SipPlanner";
+import LumpSumPlanner from "./pages/LumpSumPlanner";
 import InvestLayout from "@/components/invest/InvestLayout";
 import Execute from "./pages/Execute";
 import RebalanceExplanation from "./pages/RebalanceExplanation";
@@ -99,7 +100,11 @@ const App = () => (
               <Route index element={<Navigate to="/invest/rebalance-explanation" replace />} />
               <Route path="rebalance-explanation" element={<RebalanceExplanation />} />
               <Route path="sip" element={<SipPlanner />} />
+<<<<<<< HEAD
               <Route path="lumpsum" element={<LumpsumPlanner />} />
+=======
+              <Route path="lumpsum" element={<LumpSumPlanner />} />
+>>>>>>> 9edb7054101b7638075378cdb77839cfb104a2ab
             </Route>
             {/* KYC gate + order flow for FP transactions */}
             <Route path="/kyc" element={<Kyc />} />

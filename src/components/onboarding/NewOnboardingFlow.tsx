@@ -134,7 +134,7 @@ const DualRangeSlider = ({
       </div>
       <div className="flex justify-between">
         {SLIDER_TICKS.map((t) => (
-          <span key={t.value} className="text-[9px] text-muted-foreground/50">
+          <span key={t.value} className="text-[10px] text-muted-foreground/50">
             {t.label}
           </span>
         ))}
@@ -351,7 +351,7 @@ const NewOnboardingFlow = ({ onComplete }: NewOnboardingFlowProps) => {
       <div className="flex items-center gap-1">
         <div className="flex items-center gap-1.5 shrink-0">
           <div
-            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold transition-colors ${
+            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold transition-colors ${
               step > 0
                 ? "bg-wealth-green text-primary-foreground"
                 : "wealth-gradient text-primary-foreground"
@@ -360,10 +360,10 @@ const NewOnboardingFlow = ({ onComplete }: NewOnboardingFlowProps) => {
             {step > 0 ? <Check className="h-3 w-3" /> : "1"}
           </div>
           <div className="flex flex-col">
-            <span className={`text-[10px] font-medium leading-tight ${step === 0 ? "text-foreground" : "text-muted-foreground"}`}>
+            <span className={`text-[11px] font-medium leading-tight ${step === 0 ? "text-foreground" : "text-muted-foreground"}`}>
               About you
             </span>
-            <span className="text-[8px] text-muted-foreground/50 leading-tight">~30 secs</span>
+            <span className="text-[9px] text-muted-foreground/50 leading-tight">~30 secs</span>
           </div>
         </div>
 
@@ -378,7 +378,7 @@ const NewOnboardingFlow = ({ onComplete }: NewOnboardingFlowProps) => {
 
         <div className="flex items-center gap-1.5 shrink-0">
           <div
-            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold transition-colors ${
+            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold transition-colors ${
               step === 1
                 ? "wealth-gradient text-primary-foreground"
                 : "bg-secondary text-muted-foreground"
@@ -387,10 +387,10 @@ const NewOnboardingFlow = ({ onComplete }: NewOnboardingFlowProps) => {
             2
           </div>
           <div className="flex flex-col">
-            <span className={`text-[10px] font-medium leading-tight ${step === 1 ? "text-foreground" : "text-muted-foreground"}`}>
+            <span className={`text-[11px] font-medium leading-tight ${step === 1 ? "text-foreground" : "text-muted-foreground"}`}>
               Link accounts
             </span>
-            <span className="text-[8px] text-muted-foreground/50 leading-tight">~90 secs</span>
+            <span className="text-[9px] text-muted-foreground/50 leading-tight">~90 secs</span>
           </div>
         </div>
       </div>
@@ -600,7 +600,7 @@ const NewOnboardingFlow = ({ onComplete }: NewOnboardingFlowProps) => {
               <p className="text-[11px] font-medium text-muted-foreground">
                 Question {qIndex + 1} of {totalQ}
               </p>
-              <p className="text-[10px] text-muted-foreground/60">Only what's missing</p>
+              <p className="text-[11px] text-muted-foreground/60">Only what's missing</p>
             </div>
             <div className="h-1 w-full rounded-full bg-secondary overflow-hidden">
               <motion.div

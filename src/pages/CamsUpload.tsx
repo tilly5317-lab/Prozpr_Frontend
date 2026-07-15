@@ -198,7 +198,7 @@ const CamsUpload = () => {
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
-              <p className="mt-1 text-[10px] text-muted-foreground/80">
+              <p className="mt-1 text-[11px] text-muted-foreground/80">
                 This is only used to open the PDF on our server — it is never stored.
               </p>
             </div>
