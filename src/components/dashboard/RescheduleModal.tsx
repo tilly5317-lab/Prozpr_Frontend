@@ -7,11 +7,28 @@ const TIME_SLOTS = ["10:00 AM", "12:30 PM", "2:00 PM", "4:00 PM", "6:30 PM"];
 
 interface RescheduleModalProps {
   onClose: () => void;
+  /** Header title. Defaults to the reschedule-meeting wording. */
+  title?: string;
+  /** Optional line under the title, e.g. "15-minute Zoom call". */
+  meta?: string;
+  /** Label for the free-text box. */
+  agendaLabel?: string;
+  /** Helper line under the free-text box. */
+  agendaHint?: string;
+  /** Confirm button text. */
+  confirmLabel?: string;
 }
 
 const AGENDA_MAX = 400;
 
-const RescheduleModal = ({ onClose }: RescheduleModalProps) => {
+const RescheduleModal = ({
+  onClose,
+  title = "Reschedule meeting",
+  meta,
+  agendaLabel = "What to discuss",
+  agendaHint = "Your advisor will see this before the call.",
+  confirmLabel = "Confirm",
+}: RescheduleModalProps) => {
   const [selectedDate, setSelectedDate] = useState<Date | undefined>();
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [agenda, setAgenda] = useState("");
@@ -43,7 +60,7 @@ const RescheduleModal = ({ onClose }: RescheduleModalProps) => {
         transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
         role="dialog"
         aria-modal="true"
-        aria-label="Reschedule advisor meeting"
+        aria-label={title}
         className="fixed inset-0 flex items-center justify-center z-[60] px-4"
       >
         <div
@@ -55,9 +72,10 @@ const RescheduleModal = ({ onClose }: RescheduleModalProps) => {
             className="flex items-center gap-2 px-4 py-3"
             style={{ borderBottom: "1px solid hsl(var(--hairline))" }}
           >
-            <h2 className="text-base font-semibold text-foreground flex-1">
-              Reschedule meeting
-            </h2>
+            <div className="flex-1">
+              <h2 className="text-base font-semibold text-foreground">{title}</h2>
+              {meta && <p className="mt-0.5 text-[11px] text-muted-foreground">{meta}</p>}
+            </div>
             <button
               type="button"
               onClick={onClose}
@@ -109,7 +127,7 @@ const RescheduleModal = ({ onClose }: RescheduleModalProps) => {
                   htmlFor="reschedule-agenda"
                   className="text-[11px] uppercase tracking-wide text-muted-foreground"
                 >
-                  What to discuss
+                  {agendaLabel}
                   <span className="ml-1 normal-case tracking-normal text-muted-foreground/70">
                     (optional)
                   </span>
@@ -128,7 +146,7 @@ const RescheduleModal = ({ onClose }: RescheduleModalProps) => {
                 style={{ border: "1px solid hsl(var(--border))" }}
               />
               <p className="mt-1 text-[11px] text-muted-foreground/70">
-                Your advisor will see this before the call.
+                {agendaHint}
               </p>
             </div>
           </div>
@@ -155,7 +173,7 @@ const RescheduleModal = ({ onClose }: RescheduleModalProps) => {
                   : "bg-muted text-muted-foreground cursor-not-allowed opacity-60"
               }`}
             >
-              Confirm
+              {confirmLabel}
             </button>
           </div>
         </div>
