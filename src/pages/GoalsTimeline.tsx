@@ -2193,8 +2193,11 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                 <button
                   type="button"
                   onClick={() => setAddYear(y)}
-                  onMouseEnter={() => setHoveredYear(y)}
-                  onMouseLeave={() =>
+                  // Pointer events cover mouse hover AND touch press, so the
+                  // year/value readout works on mobile (mouseenter never fires
+                  // reliably on touch).
+                  onPointerEnter={() => setHoveredYear(y)}
+                  onPointerLeave={() =>
                     setHoveredYear((h) => (h === y ? null : h))
                   }
                   onFocus={() => setHoveredYear(y)}
