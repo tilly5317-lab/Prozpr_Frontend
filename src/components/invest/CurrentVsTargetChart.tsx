@@ -122,7 +122,12 @@ export function CurrentVsTargetChart({
                     <Tooltip key={`${which}-${row.key}`}>
                       <TooltipTrigger asChild>
                         <motion.div
-                          className="flex h-full cursor-default items-center justify-center"
+                          // Focusable so a tap opens the tooltip on touch devices
+                          // (Radix tooltips open on hover/focus, never on tap).
+                          tabIndex={0}
+                          role="button"
+                          aria-label={`${row.label} ${pct}%`}
+                          className="flex h-full cursor-pointer items-center justify-center focus:outline-none"
                           style={{ background: row.color, flexShrink: 0 }}
                           initial={{ width: 0 }}
                           animate={{ width: `${w}%` }}
