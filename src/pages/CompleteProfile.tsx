@@ -3,6 +3,11 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, Check, ChevronLeft, ChevronRight, Plus, X, Info, AlertTriangle, Lock, Wallet, Target, TrendingUp, Landmark } from "lucide-react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
+import {
+  trackDetailedOnboardingSectionCompleted,
+  trackDetailedOnboardingSectionStarted,
+  type DetailedOnboardingSection,
+} from "@/lib/detailedOnboardingAnalytics";
 import { Slider } from "@/components/ui/slider";
 import { formatMoneyInput } from "@/lib/utils";
 import {
@@ -130,6 +135,14 @@ const pathForSection = (idx: number): string =>
 /** Section index for a pathname, or -1 for the card list / anything else. */
 const sectionForPath = (pathname: string): number =>
   SECTION_SLUGS.indexOf(pathname.replace(/^\/profile\//, "").replace(/\/+$/, ""));
+
+// Section index → detailed-onboarding funnel name. Section 1 (goals) forwards to
+// the goal planner, where its events fire from the cashflow-inputs step instead.
+const SECTION_ANALYTICS_NAME: Record<number, DetailedOnboardingSection> = {
+  0: "financial_picture",
+  2: "investment_preferences",
+  3: "tax_details",
+};
 
 /** Card meta for the section list — icon, one-line description, time estimate. */
 const SECTION_META: { Icon: typeof Wallet; description: string; estimate: string }[] = [
@@ -564,6 +577,9 @@ const IncomeExpenseSlider = ({ label, range, onChange }: {
 const CompleteProfile = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  // Guards the detailed-onboarding "started" event so it fires once per section
+  // open (not on every effect re-run); reset when returning to the card list.
+  const analyticsStartedRef = useRef<number | null>(null);
   // -1 = section-card carousel; otherwise the open section, stepping through
   // its question groups one at a time via groupIndex.
   const [openSection, setOpenSection] = useState(-1);
@@ -1032,6 +1048,9 @@ const CompleteProfile = () => {
     const nextStatuses = [...statuses];
     nextStatuses[idx] = "confirmed";
     setStatuses(nextStatuses);
+    // Detailed-onboarding funnel: genuine success (validation passed + saved).
+    const completedName = SECTION_ANALYTICS_NAME[idx];
+    if (completedName) trackDetailedOnboardingSectionCompleted(completedName);
     // Back to the section cards — the next card to tackle is visible there.
     navigate(CARDS_PATH);
     setGroupIndex(0);
@@ -1230,6 +1249,7 @@ const CompleteProfile = () => {
     }
     if (idx < 0) {
       // Card list (/profile/complete or any non-section path).
+      analyticsStartedRef.current = null; // re-entering a section fires "started" again
       if (openSection !== -1) {
         setOpenSection(-1);
         setGroupIndex(0);
@@ -1243,6 +1263,12 @@ const CompleteProfile = () => {
       setOpenSection(idx);
       setGroupIndex(0);
       markInProgress(idx);
+    }
+    // Detailed-onboarding funnel: this section just became active.
+    const startedName = SECTION_ANALYTICS_NAME[idx];
+    if (startedName && analyticsStartedRef.current !== idx) {
+      analyticsStartedRef.current = idx;
+      trackDetailedOnboardingSectionStarted(startedName);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname, profileLoaded]);
