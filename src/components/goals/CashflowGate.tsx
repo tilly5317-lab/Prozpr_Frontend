@@ -12,6 +12,10 @@ import {
   type CashflowInputValues,
 } from "@/lib/api";
 import { toast } from "@/hooks/use-toast";
+import {
+  trackDetailedOnboardingSectionCompleted,
+  trackDetailedOnboardingSectionStarted,
+} from "@/lib/detailedOnboardingAnalytics";
 
 /**
  * Locks the goal-planning page until every input the cashflow engine needs is
@@ -240,6 +244,12 @@ const CashflowGate = ({ onReady, editSignal, autoOpenInputs }: CashflowGateProps
     }
   }, [autoOpenInputs, readiness, openForm]);
 
+  // Detailed-onboarding funnel: the "Your cashflow inputs" step (goal_planning)
+  // becomes active whenever the inputs form opens. Fires once per open.
+  useEffect(() => {
+    if (formOpen) trackDetailedOnboardingSectionStarted("goal_planning");
+  }, [formOpen]);
+
   // Every input is shown, grouped by the backend's grouping. All are editable
   // except the CAMS-sourced corpus (see LOCKED_KEYS).
   const allGrouped = useMemo(
@@ -335,6 +345,8 @@ const CashflowGate = ({ onReady, editSignal, autoOpenInputs }: CashflowGateProps
     setSaving(true);
     try {
       await saveCashflowInputs(out as CashflowInputValues);
+      // Detailed-onboarding funnel: genuine success (validation passed + saved).
+      trackDetailedOnboardingSectionCompleted("goal_planning");
       // Keep our cash-only snapshot in step with what we just wrote, so reopening
       // the panel shows the edited figure (not the stale fetch from mount).
       if (typeof out.financial_assets === "number") {
