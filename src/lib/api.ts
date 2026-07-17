@@ -2086,7 +2086,9 @@ export interface CashflowInputValues {
 /**
  * Persist the cashflow inputs to their canonical homes, using the dedicated
  * (exclude_unset) profile endpoints so we never wipe untouched fields:
- *  - PFP scalars + tax → PUT /profile/personal-finance
+ *  - PFP scalars → PUT /profile/personal-finance
+ *  - tax rate (marginal slab %) → PUT /profile/tax (income_tax_rate; SSOT shared
+ *    with /profile/complete)
  *  - date_of_birth + assumed_lifespan_years (on `users`) → PUT /profile/personal-info
  *  - retirement_age → PUT /profile/investment
  */
@@ -2094,7 +2096,6 @@ export async function saveCashflowInputs(v: CashflowInputValues): Promise<void> 
   const finance: PersonalFinancePayload = {};
   if (v.annual_income != null) finance.annual_income = v.annual_income;
   if (v.monthly_household_expense != null) finance.monthly_household_expense = v.monthly_household_expense;
-  if (v.effective_tax_rate != null) finance.effective_tax_rate = v.effective_tax_rate;
   if (v.starting_monthly_investment != null) finance.starting_monthly_investment = v.starting_monthly_investment;
   if (v.current_portfolio_corpus != null) finance.current_portfolio_corpus = v.current_portfolio_corpus;
   if (v.financial_assets != null) finance.financial_assets = v.financial_assets;
@@ -2102,6 +2103,13 @@ export async function saveCashflowInputs(v: CashflowInputValues): Promise<void> 
   if (v.financial_liabilities_excl_mortgage != null)
     finance.financial_liabilities_excl_mortgage = v.financial_liabilities_excl_mortgage;
   if (Object.keys(finance).length > 0) await updatePersonalFinance(finance);
+
+  // Tax rate is a single source of truth on the tax profile (marginal slab %),
+  // shared with /profile/complete. The gate collects it as a fraction (0-1); store
+  // it as a whole-percent on tax_profile.income_tax_rate.
+  if (v.effective_tax_rate != null) {
+    await updateTaxProfile({ income_tax_rate: Math.round(v.effective_tax_rate * 100) });
+  }
 
   const personal: PersonalInfoPayload = {};
   if (v.date_of_birth != null) personal.date_of_birth = v.date_of_birth;

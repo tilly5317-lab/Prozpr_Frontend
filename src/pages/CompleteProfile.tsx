@@ -8,6 +8,7 @@ import {
   trackDetailedOnboardingSectionStarted,
   type DetailedOnboardingSection,
 } from "@/lib/detailedOnboardingAnalytics";
+import { MARGINAL_TAX_RATE_OPTIONS } from "@/lib/taxRates";
 import { Slider } from "@/components/ui/slider";
 import { formatMoneyInput } from "@/lib/utils";
 import {
@@ -150,16 +151,6 @@ const SECTION_META: { Icon: typeof Wallet; description: string; estimate: string
   { Icon: Target, description: "Set your goals and complete your cashflow inputs in Goal planning", estimate: "~3 min" },
   { Icon: TrendingUp, description: "Your horizon and how you behave when markets move", estimate: "~2 min" },
   { Icon: Landmark, description: "Your tax slab and regime, for tax-efficient advice", estimate: "~1 min" },
-];
-
-const MARGINAL_TAX_RATE_OPTIONS: { value: string; label: string; slab: string }[] = [
-  { value: "0", label: "0%", slab: "Income up to ₹3,00,000" },
-  { value: "5", label: "5%", slab: "₹3,00,001 – ₹7,00,000" },
-  { value: "10", label: "10%", slab: "₹7,00,001 – ₹10,00,000" },
-  { value: "15", label: "15%", slab: "₹10,00,001 – ₹12,00,000" },
-  { value: "20", label: "20%", slab: "₹12,00,001 – ₹15,00,000" },
-  { value: "25", label: "25%", slab: "₹20,00,001 – ₹24,00,000 (new regime)" },
-  { value: "30", label: "30%", slab: "Above ₹15,00,000" },
 ];
 
 const OBJECTIVES = [
@@ -1213,7 +1204,9 @@ const CompleteProfile = () => {
     // the start here since /goal-planner never passes the pathname effect below.
     if (idx === 1) {
       trackDetailedOnboardingSectionStarted("goal_planning");
-      navigate("/goal-planner?inputs=1");
+      // `from=profile` lets the goals page show a "Back to profile setup" bar and
+      // return the user here once they've saved their cashflow inputs.
+      navigate("/goal-planner?inputs=1&from=profile");
       return;
     }
     navigate(pathForSection(idx));
@@ -1248,7 +1241,7 @@ const CompleteProfile = () => {
       // Goals inputs live in Goal planning; /profile/goals just forwards there.
       // Deep links land here (not openSectionCard), so track the start too.
       trackDetailedOnboardingSectionStarted("goal_planning");
-      navigate("/goal-planner?inputs=1", { replace: true });
+      navigate("/goal-planner?inputs=1&from=profile", { replace: true });
       return;
     }
     if (idx < 0) {
@@ -1916,7 +1909,7 @@ const CompleteProfile = () => {
               {showMarginalInfo && (
                 <div className="mb-2 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2">
                   <p className="text-[11px] text-foreground leading-relaxed">
-                    Example: if your taxable income is ₹13L and falls in the 20% slab, your marginal tax rate is 20% — the rate paid on your last rupee earned. Not the same as your average tax rate.
+                    Example: if your taxable income is ₹18L and falls in the 20% slab, your marginal tax rate is 20% — the rate paid on your last rupee earned. Not the same as your average tax rate.
                   </p>
                 </div>
               )}
@@ -2028,7 +2021,9 @@ const CompleteProfile = () => {
     <div className="mobile-container bg-background min-h-screen pb-28">
       {/* Header */}
       <div className="px-5 pt-10 pb-1 flex items-center gap-3">
-        <button onClick={() => navigate(-1)} className="flex h-8 w-8 items-center justify-center rounded-full bg-muted hover:bg-muted/80 transition-colors">
+        {/* The page header arrow always returns to /profile, regardless of how the
+            user reached this page (onboarding, deep link, goal-planner round-trip). */}
+        <button onClick={() => navigate("/profile")} className="flex h-8 w-8 items-center justify-center rounded-full bg-muted hover:bg-muted/80 transition-colors">
           <ArrowLeft className="h-4 w-4 text-foreground" />
         </button>
         <div>

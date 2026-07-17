@@ -12,6 +12,7 @@ import {
   type CashflowInputValues,
 } from "@/lib/api";
 import { toast } from "@/hooks/use-toast";
+import { MARGINAL_TAX_RATE_OPTIONS } from "@/lib/taxRates";
 import {
   trackDetailedOnboardingSectionCompleted,
   trackDetailedOnboardingSectionStarted,
@@ -49,6 +50,12 @@ interface CashflowGateProps {
    * user lands straight on the input form). Fires once.
    */
   autoOpenInputs?: boolean;
+  /**
+   * Called after the user successfully saves the cashflow inputs (not on initial
+   * load). Lets a host page react — e.g. return the user to the profile-setup
+   * flow they came from. Distinct from `onReady`, which also fires on mount.
+   */
+  onInputsSaved?: () => void;
 }
 
 /**
@@ -114,7 +121,7 @@ function displayValue(f: CashflowReadinessField, raw: string): string {
   return formatWithCommas(raw);
 }
 
-const CashflowGate = ({ onReady, editSignal, autoOpenInputs }: CashflowGateProps) => {
+const CashflowGate = ({ onReady, editSignal, autoOpenInputs, onInputsSaved }: CashflowGateProps) => {
   const [readiness, setReadiness] = useState<CashflowReadiness | null>(null);
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
@@ -364,6 +371,9 @@ const CashflowGate = ({ onReady, editSignal, autoOpenInputs }: CashflowGateProps
         setFormOpen(false);
         onReady?.();
       }
+      // Notify the host of a genuine user save (after onReady, so a return
+      // navigation runs last). Fires whether or not the plan is now fully ready.
+      onInputsSaved?.();
     } catch {
       toast({
         title: "Couldn't save",
@@ -373,7 +383,7 @@ const CashflowGate = ({ onReady, editSignal, autoOpenInputs }: CashflowGateProps
     } finally {
       setSaving(false);
     }
-  }, [readiness, values, onReady, corpusKind, corpusInflation, yearsToRetirement]);
+  }, [readiness, values, onReady, onInputsSaved, corpusKind, corpusInflation, yearsToRetirement]);
 
   const renderEditableField = (f: CashflowReadinessField) => {
     const err = errors[f.key];
@@ -488,6 +498,28 @@ const CashflowGate = ({ onReady, editSignal, autoOpenInputs }: CashflowGateProps
             onChange={(e) => setVal(f.key, e.target.value.replace(/\D/g, ""))}
             className={`${inputClass} mt-1.5 ${err ? "border-destructive ring-1 ring-destructive" : ""}`}
           />
+        ) : f.key === "effective_tax_rate" ? (
+          // Marginal tax rate — same slab dropdown as /profile/complete: shared
+          // options, matching styling, and just the percentage label (no verbose
+          // range) so the two screens look identical. Writes the same canonical
+          // field; stored value is a whole percent ("20"), converted to a fraction
+          // by saveInputs on the way out.
+          <select
+            value={values[f.key] ?? ""}
+            onChange={(e) => setVal(f.key, e.target.value)}
+            className={`mt-1.5 w-full appearance-none rounded-xl border bg-card px-3.5 py-3 text-[15px] text-foreground outline-none transition-colors ${
+              err
+                ? "border-destructive ring-2 ring-destructive/40"
+                : "border-border focus:border-accent focus:ring-2 focus:ring-accent/15"
+            }`}
+          >
+            <option value="">Select your slab</option>
+            {MARGINAL_TAX_RATE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
         ) : (
           <input
             type="number"

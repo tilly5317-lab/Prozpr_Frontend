@@ -256,6 +256,8 @@ function normalizeFundName(raw: string): string {
 /** One "kept" holding (not being sold) shown with its performance. */
 interface KeptFund {
   id: string;
+  /** ISIN of the held fund; drives the tap-through to its detail page (null → not clickable). */
+  isin: string | null;
   name: string;
   subtitle: string | null;
   value: number;
@@ -283,6 +285,7 @@ function buildKeptFunds(portfolio: PortfolioDetail | null, trades: UITrade[]): K
       const gainPct = basis != null && basis > 0 ? ((h.current_value - basis) / basis) * 100 : null;
       return {
         id: h.id,
+        isin: h.ticker_symbol ?? null,
         name: normalizeFundName(h.instrument_name) ? h.instrument_name.replace(/\s*·\s*Folio.*$/i, "").trim() : h.instrument_name,
         subtitle: h.sub_category ?? h.asset_class ?? null,
         value: h.current_value,
@@ -380,6 +383,7 @@ const EXAMPLE_TRADE_GROUPS: { label: string; color?: string; trades: UITrade[] }
 const EXAMPLE_KEPT_FUNDS: KeptFund[] = [
   {
     id: "example-keep-1",
+    isin: null,
     name: "Example Flexi Cap Fund",
     subtitle: "Equity · Flexi Cap",
     value: 800_000,
@@ -388,6 +392,7 @@ const EXAMPLE_KEPT_FUNDS: KeptFund[] = [
   },
   {
     id: "example-keep-2",
+    isin: null,
     name: "Example Gilt Fund",
     subtitle: "Debt · Gilt",
     value: 300_000,
@@ -448,6 +453,16 @@ const RebalanceExplanation = () => {
           },
         },
       });
+    },
+    [navigate],
+  );
+
+  // Open the same fund-detail page for a fund we're keeping (no trade, so no
+  // "Why this trade" card). Example funds carry no ISIN, so they stay inert.
+  const openKeptFund = useCallback(
+    (fund: KeptFund) => {
+      if (!fund.isin) return;
+      navigate(`/portfolio/fund/${encodeURIComponent(fund.isin)}`);
     },
     [navigate],
   );
@@ -726,7 +741,13 @@ const RebalanceExplanation = () => {
                 </p>
                 <div className="mt-3 divide-y divide-border">
                   {keptFundsToShow.map((f) => (
-                    <div key={f.id} className="flex items-center gap-3 py-2.5">
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => openKeptFund(f)}
+                      disabled={!f.isin}
+                      className="w-full flex items-center gap-3 py-2.5 text-left -mx-1 px-1 rounded-lg transition-colors enabled:hover:bg-muted/40 disabled:cursor-default"
+                    >
                       <span
                         className="w-[52px] shrink-0 px-2 py-1 rounded-md text-[11px] font-semibold tracking-wide leading-tight text-center"
                         style={{
@@ -750,7 +771,7 @@ const RebalanceExplanation = () => {
                         </p>
                         <p className="mt-1 text-[11px] text-muted-foreground tabular-nums">{axisINR(f.value)}</p>
                       </div>
-                    </div>
+                    </button>
                   ))}
                 </div>
               </section>
