@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { formatMoneyInput } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -16,6 +16,7 @@ import {
 import {
   BriefcaseBusiness,
   Car,
+  ChevronLeft,
   Download,
   GraduationCap,
   Heart,
@@ -1320,7 +1321,13 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   // When arriving from the "What are you trying to achieve?" card (?inputs=1),
   // open the cashflow inputs form straight away.
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const autoOpenInputs = searchParams.get("inputs") === "1";
+  // Arrived mid-profile-setup (?from=profile): show a "Back to profile setup" bar
+  // and return there once the cashflow inputs are saved, so the user can finish
+  // the remaining profile sections instead of being stranded here.
+  const fromProfile = searchParams.get("from") === "profile";
+  const returnToProfile = useCallback(() => navigate("/profile/complete"), [navigate]);
   const [expandedGoals, setExpandedGoals] = useState<Set<string>>(new Set());
   const [draggingGoalId, setDraggingGoalId] = useState<string | null>(null);
   const [dropTargetYear, setDropTargetYear] = useState<number | null>(null);
@@ -1854,6 +1861,16 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
     <div className="mobile-container min-h-screen bg-background pb-20">
       <header className="sticky top-0 z-40 border-b border-border bg-background">
         <div className="flex items-center gap-2 px-5 pt-10 pb-2">
+          {fromProfile && (
+            <button
+              type="button"
+              onClick={returnToProfile}
+              className="-ml-1.5 shrink-0 flex h-7 w-7 items-center justify-center rounded-full text-foreground hover:bg-muted/60"
+              aria-label="Back to profile setup"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+          )}
           <h1 className="text-lg font-semibold text-foreground">Goal planning</h1>
           {isTornado && (
             <button
@@ -2723,7 +2740,12 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
           dismissible prompt (the page stays usable as an example); when they're
           present it loads the real projection. The Settings/"Inputs" button bumps
           editSignal to open the form for viewing/editing. */}
-      <CashflowGate onReady={fetchCashflow} editSignal={editSignal} autoOpenInputs={autoOpenInputs} />
+      <CashflowGate
+        onReady={fetchCashflow}
+        editSignal={editSignal}
+        autoOpenInputs={autoOpenInputs}
+        onInputsSaved={fromProfile ? returnToProfile : undefined}
+      />
     </div>
   );
 };
