@@ -1554,7 +1554,7 @@ const CompleteProfile = () => {
                     <div><label className="text-[12px] text-muted-foreground mb-0.5 block">Year</label><TextInput value={expense.year} onChange={(v) => { const next = [...plannedExpenses]; next[idx] = { ...next[idx], year: v }; setPlannedExpenses(next); }} placeholder="e.g. 2026" /></div>
                     <div>
                       <label className="text-[12px] text-muted-foreground mb-0.5 block">Amount</label>
-                      <TextInput value={expense.amount} onChange={(v) => { const next = [...plannedExpenses]; next[idx] = { ...next[idx], amount: v }; setPlannedExpenses(next); }} prefix="₹" placeholder="e.g. 25L" />
+                      <TextInput value={expense.amount} onChange={(v) => { const next = [...plannedExpenses]; next[idx] = { ...next[idx], amount: v }; setPlannedExpenses(next); }} prefix="₹" placeholder="e.g. 25,00,000" />
                       {(() => { const n = toNum(expense.amount); return n != null && n >= 100000 ? <p className="mt-1 text-[11px] font-medium text-muted-foreground">= {formatINR(n)}</p> : null; })()}
                     </div>
                   </div>
