@@ -23,11 +23,13 @@ import {
   Home,
   Landmark,
   Loader2,
+  PanelRightOpen,
   PiggyBank,
   Plane,
   Plus,
   RotateCcw,
   Settings2,
+  TrendingUp,
   Trophy,
   X,
 } from "lucide-react";
@@ -53,6 +55,7 @@ import {
 } from "@/lib/api";
 import { exportCashflowXls } from "@/lib/export-xls";
 import CashflowGate from "@/components/goals/CashflowGate";
+import CashflowInputsForm from "@/components/goals/CashflowInputsForm";
 
 type Priority = "Low" | "Medium" | "High";
 
@@ -891,19 +894,19 @@ function AddGoalSheet({
   );
 }
 
-// Goals-projection waterfall surfaced as a popup from the tornado view.
+// Goals-projection waterfall — rendered inside the right-side plan panel.
 // Every figure comes from the cashflow engine's fund-flow summary (the single
 // source of truth) — nothing here is hardcoded. The return-scenario toggle only
 // scales the engine's ROI; all other flows are held at their engine values.
-interface ProjectionSheetProps {
-  open: boolean;
-  onClose: () => void;
+interface ProjectionContentProps {
   /** Engine fund-flow summary (SSOT for the waterfall). Null until a plan exists. */
   fundFlow: FundFlowSummary | null;
   /** Headline status — supplies the projection horizon (last FY end). */
   headline: HeadlineStatus | null;
   /** The plan's monthly SIP, for the header label. */
   sipMonthly: number | null;
+  /** Jump to the Inputs tab when no plan exists yet. */
+  onGoToInputs?: () => void;
 }
 
 type WaterfallItem = { axis: string; label: string; value: number; kind: WaterfallKind };
@@ -946,7 +949,7 @@ const ProjectionAxisTick = (props: { x?: number; y?: number; payload?: { value?:
   );
 };
 
-function ProjectionSheet({ open, onClose, fundFlow, headline, sipMonthly }: ProjectionSheetProps) {
+function ProjectionContent({ fundFlow, headline, sipMonthly, onGoToInputs }: ProjectionContentProps) {
   const [scenarioId, setScenarioId] = useState("base");
   const scenario = PROJECTION_SCENARIOS.find((s) => s.id === scenarioId) ?? PROJECTION_SCENARIOS[1];
 
@@ -982,48 +985,23 @@ function ProjectionSheet({ open, onClose, fundFlow, headline, sipMonthly }: Proj
   // No plan yet → don't fabricate a waterfall; prompt to complete inputs.
   if (!fundFlow) {
     return (
-      <AnimatePresence>
-        {open && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[60] bg-black/50"
-              onClick={onClose}
-              aria-hidden="true"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.96, y: 12 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.96, y: 12 }}
-              role="dialog"
-              aria-modal="true"
-              aria-label="Goals projection"
-              className="fixed inset-0 z-[60] flex items-center justify-center px-4"
-            >
-              <div
-                className="w-full max-w-md rounded-2xl bg-card p-6 text-center shadow-2xl"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                  Goals projection
-                </p>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  Complete your cashflow inputs to see your projection.
-                </p>
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="mt-4 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted/60"
-                >
-                  Close
-                </button>
-              </div>
-            </motion.div>
-          </>
+      <div className="py-10 text-center">
+        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+          Goals projection
+        </p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Complete your cashflow inputs to see your projection.
+        </p>
+        {onGoToInputs && (
+          <button
+            type="button"
+            onClick={onGoToInputs}
+            className="mt-4 rounded-full border border-[#D4A868]/50 px-4 py-2 text-sm font-semibold text-[#D4A868] hover:bg-[#D4A868]/10"
+          >
+            Add inputs
+          </button>
         )}
-      </AnimatePresence>
+      </div>
     );
   }
 
@@ -1067,52 +1045,11 @@ function ProjectionSheet({ open, onClose, fundFlow, headline, sipMonthly }: Proj
   });
 
   return (
-    <AnimatePresence>
-      {open && (
-        <>
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[60] bg-black/50"
-            onClick={onClose}
-            aria-hidden="true"
-          />
-          <motion.div
-            initial={{ opacity: 0, scale: 0.96, y: 12 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: 12 }}
-            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Goals projection"
-            className="fixed inset-0 z-[60] flex items-center justify-center px-4"
-          >
-            <div
-              className="flex w-full max-w-md flex-col overflow-hidden rounded-2xl bg-card shadow-2xl"
-              style={{ maxHeight: "min(88dvh, 720px)" }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-start gap-2 border-b border-border px-4 py-3">
-                <div className="min-w-0 flex-1">
-                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                    Goals projection
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-muted-foreground">
-                    Through {horizonLabel} · {monthlyLabel} · {scenario.rate}% post-tax
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="p-1.5 -m-1.5 text-muted-foreground hover:text-foreground"
-                  aria-label="Close"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-
-              <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+    <div className="space-y-4">
+      <p className="text-[11px] text-muted-foreground">
+        Through {horizonLabel} · {monthlyLabel} · {scenario.rate}% post-tax
+      </p>
+      <div className="space-y-4">
                 {/* Sensitivity — return scenario */}
                 <div>
                   <p className="mb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
@@ -1277,12 +1214,8 @@ function ProjectionSheet({ open, onClose, fundFlow, headline, sipMonthly }: Proj
                   Sensitivity varies only investment returns; contributions, one-off flows and goal
                   outflows are held constant. Assumptions, not a guarantee.
                 </p>
-              </div>
-            </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
+      </div>
+    </div>
   );
 }
 
@@ -1317,7 +1250,6 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   // EMIs); this is the fallback.
   const [profileAffordableMonthly, setProfileAffordableMonthly] = useState<number | null>(null);
   const [applyingSip, setApplyingSip] = useState(false);
-  const [insightClosed, setInsightClosed] = useState(false);
   // When arriving from the "What are you trying to achieve?" card (?inputs=1),
   // open the cashflow inputs form straight away.
   const [searchParams] = useSearchParams();
@@ -1331,7 +1263,12 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   const [expandedGoals, setExpandedGoals] = useState<Set<string>>(new Set());
   const [draggingGoalId, setDraggingGoalId] = useState<string | null>(null);
   const [dropTargetYear, setDropTargetYear] = useState<number | null>(null);
-  const [projectionOpen, setProjectionOpen] = useState(false);
+  // Right-side plan panel (projection + inputs) — opened from the header trigger.
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [panelTab, setPanelTab] = useState<"projection" | "inputs">("projection");
+  // Bumped after a save from the panel's inputs form so CashflowGate refetches
+  // readiness (its prompt would otherwise keep claiming inputs are missing).
+  const [gateRefresh, setGateRefresh] = useState(0);
 
   // Birth year (from DOB) + retirement age drive where the timeline ends.
   const [birthYear, setBirthYear] = useState<number | null>(null);
@@ -1339,8 +1276,6 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   // Transient extra extent revealed while dragging a goal past the bottom row.
   const [revealEndYear, setRevealEndYear] = useState<number | null>(null);
 
-  // Bumped by the Settings button to open the cashflow-inputs editor in CashflowGate.
-  const [editSignal, setEditSignal] = useState(0);
   const [cashflowData, setCashflowData] = useState<CashflowPlanRunDetail | null>(null);
   const [cashflowLoading, setCashflowLoading] = useState(false);
   const [cashflowError, setCashflowError] = useState<string | null>(null);
@@ -1686,19 +1621,45 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   }, [visibleGoals]);
 
   // ── Timeline extent ──────────────────────────────────────────────────────
-  // End the timeline at the engine's projection horizon — last_fy_end_date =
-  // max(retirement, last goal) — which is the single source of truth. Before a
-  // plan loads we fall back to the user's profile retirement age + last goal so
-  // the timeline still renders; we never assume a retirement age once the
-  // engine's horizon is known. Dragging a goal down can temporarily reveal rows
+  // The timeline always runs to max(retirement year (profile age, default 60,
+  // extended by a Retirement goal), last goal year, engine projection end) — so
+  // the full cashflow is always visible, even before a plan loads or when the
+  // stored run is stale/short. Dragging a goal down can temporarily reveal rows
   // up to the lifespan cap (age 100). All goals count toward the last-goal year
   // (not just visible ones) so toggling a priority filter never shrinks it.
   const effectiveBirthYear = birthYear ?? currentYear - FALLBACK_CURRENT_AGE;
-  const retirementYear = effectiveBirthYear + retirementAge;
+  // A Retirement GOAL can only EXTEND the retirement year, never shorten it:
+  // the plan runs to max(retirement age (default 60), last goal). The backend
+  // engine applies the same rule, so the timeline and the plan agree.
+  const retirementGoalYear = useMemo(() => {
+    const years = goals
+      .filter((g) => /retire/i.test(g.name))
+      .map((g) => g.year)
+      .sort((a, b) => a - b);
+    return years.length > 0 ? years[0] : null;
+  }, [goals]);
+  const retirementYear = Math.max(
+    retirementGoalYear ?? 0,
+    effectiveBirthYear + retirementAge,
+  );
   // Engine's actual projection end (FY) — authoritative when a plan is loaded.
-  const engineEndYear = cashflowData?.headline?.last_fy_end_date
-    ? new Date(cashflowData.headline.last_fy_end_date).getFullYear()
-    : null;
+  // Derived from BOTH the headline and the furthest annual row: stored runs
+  // from engine <0.3.1 carry a goal-derived headline that collapses to the
+  // current FY when there are no goals, while their annual rows still span the
+  // full projection — trust whichever reaches further so the timeline never
+  // truncates a full-length cashflow.
+  const engineEndYear = useMemo<number | null>(() => {
+    const headlineYear = cashflowData?.headline?.last_fy_end_date
+      ? new Date(cashflowData.headline.last_fy_end_date).getFullYear()
+      : null;
+    let lastRowYear: number | null = null;
+    for (const row of cashflowData?.annual_cashflow ?? []) {
+      const y = timelineYearFromAnnualRow(row);
+      if (y != null && (lastRowYear == null || y > lastRowYear)) lastRowYear = y;
+    }
+    if (headlineYear == null && lastRowYear == null) return null;
+    return Math.max(headlineYear ?? 0, lastRowYear ?? 0);
+  }, [cashflowData]);
   // Draggable ceiling: 100 calendar years from today (2026 → 2126, 2027 → 2127).
   // The backend cashflow engine's horizon cap matches (100 FY-years), so every
   // draggable year still produces corpus-closing bars.
@@ -1713,9 +1674,11 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   const baseEndYear = clamp(
     Math.max(
       lastGoalYear,
-      // Prefer the engine's horizon; fall back to the profile-derived retirement
-      // year only until a plan run is available.
-      engineEndYear ?? retirementYear,
+      // The engine's horizon AND the profile-derived retirement year both count:
+      // the timeline always reaches max(retirement age (default 60), last goal)
+      // even if the loaded plan run is stale or shorter.
+      engineEndYear ?? 0,
+      retirementYear,
       currentYear + MIN_HORIZON_YEARS,
     ),
     currentYear + MIN_HORIZON_YEARS,
@@ -1871,79 +1834,70 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
               <ChevronLeft className="h-5 w-5" />
             </button>
           )}
-          <h1 className="text-lg font-semibold text-foreground">Goal planning</h1>
-          {isTornado && (
-            <button
-              type="button"
-              onClick={() => setProjectionOpen(true)}
-              className="shrink-0 inline-flex items-center gap-1 rounded-full border border-border bg-card px-2.5 py-0.5 text-[11px] font-semibold text-foreground hover:bg-muted/40"
-              aria-label="Open goals projection"
-            >
-              Projection
-            </button>
-          )}
-          <div className="ml-auto flex items-center gap-2">
-            {/* Open the cashflow-inputs editor (view + edit the figures the
-                projection runs on). */}
-            <button
-              type="button"
-              onClick={() => setEditSignal((n) => n + 1)}
-              className="shrink-0 inline-flex items-center gap-1 rounded-full border border-[#D4A868]/50 bg-card px-2.5 py-0.5 text-[11px] font-semibold text-[#D4A868] hover:bg-[#D4A868]/10"
-              aria-label="Edit cashflow inputs"
-            >
-              <Settings2 className="h-3 w-3" />
-              Inputs
-            </button>
-            {goalsLoading && (
-              <span className="text-[11px] text-muted-foreground">Goals…</span>
-            )}
-            {cashflowLoading && (
+          <h1 className="min-w-0 truncate text-lg font-semibold text-foreground">
+            Goal planning
+          </h1>
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            {(goalsLoading || cashflowLoading) && (
               <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
             )}
-            {cashflowData ? (
+            {!cashflowData && !cashflowLoading && (
               <button
                 type="button"
-                onClick={() =>
-                  exportCashflowXls(
-                    cashflowData.annual_cashflow,
-                    cashflowData.monthly_cashflow ?? [],
-                  )
-                }
-                className="shrink-0 inline-flex items-center gap-1 rounded-full border border-border bg-card px-2.5 py-0.5 text-[11px] font-semibold text-foreground hover:bg-muted/40"
-                aria-label="Export Plan"
+                onClick={() => {
+                  setCashflowLoading(true);
+                  setCashflowError(null);
+                  computeCashflow()
+                    .then((res) => {
+                      if (!res) {
+                        setCashflowError("Complete the required inputs to run goal planning.");
+                        return;
+                      }
+                      setCashflowData(res);
+                      toast.success("Cashflow projection ready");
+                    })
+                    .catch((err) => {
+                      const msg = err instanceof Error ? err.message : "Cashflow failed";
+                      setCashflowError(msg);
+                      toast.error(msg);
+                    })
+                    .finally(() => setCashflowLoading(false));
+                }}
+                className="shrink-0 inline-flex h-8 items-center gap-1 rounded-full border border-[#D4A868]/50 bg-card px-3 text-[12px] font-semibold text-[#D4A868] hover:bg-muted/40"
               >
-                <Download className="h-3 w-3" />
-                Export Plan
+                Run cashflow
               </button>
-            ) : (
-              !cashflowLoading && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCashflowLoading(true);
-                    setCashflowError(null);
-                    computeCashflow()
-                      .then((res) => {
-                        if (!res) {
-                          setCashflowError("Complete the required inputs to run goal planning.");
-                          return;
-                        }
-                        setCashflowData(res);
-                        toast.success("Cashflow projection ready");
-                      })
-                      .catch((err) => {
-                        const msg = err instanceof Error ? err.message : "Cashflow failed";
-                        setCashflowError(msg);
-                        toast.error(msg);
-                      })
-                      .finally(() => setCashflowLoading(false));
-                  }}
-                  className="shrink-0 inline-flex items-center gap-1 rounded-full border border-[#D4A868]/50 bg-card px-2.5 py-0.5 text-[11px] font-semibold text-[#D4A868] hover:bg-muted/40"
-                >
-                  Run cashflow
-                </button>
-              )
             )}
+            {/* Download the plan (Excel) — sits just left of the plan-panel trigger. */}
+            <button
+              type="button"
+              disabled={!cashflowData}
+              onClick={() =>
+                cashflowData &&
+                exportCashflowXls(
+                  cashflowData.annual_cashflow,
+                  cashflowData.monthly_cashflow ?? [],
+                )
+              }
+              className="shrink-0 inline-flex h-8 w-8 items-center justify-center rounded-full border border-border bg-card text-foreground hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label="Download plan"
+              title="Download plan"
+            >
+              <Download className="h-3.5 w-3.5" />
+            </button>
+            {/* Open the right-side panel holding the projection + cashflow inputs. */}
+            <button
+              type="button"
+              onClick={() => {
+                setPanelTab("projection");
+                setPanelOpen(true);
+              }}
+              className="shrink-0 inline-flex h-8 items-center gap-1 rounded-full border border-[#D4A868]/50 bg-card px-3 text-[12px] font-semibold text-[#D4A868] hover:bg-[#D4A868]/10"
+              aria-label="Open projection and inputs"
+            >
+              <PanelRightOpen className="h-3.5 w-3.5" />
+              Plan
+            </button>
           </div>
         </div>
       </header>
@@ -1954,40 +1908,6 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3, ease: "easeOut" }}
       >
-        {/* Insight banner — closeable, with the headline rolling right→left.
-            Suggests the monthly amount the user can comfortably invest. */}
-        {!insightClosed && displayAffordableMonthly != null && displayAffordableMonthly > 0 && (
-          <motion.div
-            className="relative -mx-5 flex items-center overflow-hidden"
-            style={{
-              backgroundImage: "linear-gradient(100deg, #D4A868, #C2487A, #7A52C8, #D4A868)",
-              backgroundSize: "300% 100%",
-              boxShadow: "0 0 12px rgba(212,168,104,0.45)",
-            }}
-            animate={{ backgroundPosition: ["0% 50%", "100% 50%"] }}
-            transition={{ duration: 6, repeat: Infinity, ease: "linear" }}
-          >
-            <div className="flex-1 overflow-hidden py-2">
-              <motion.div
-                className="whitespace-nowrap text-[12px] font-semibold text-white"
-                animate={{ x: ["100%", "-100%"] }}
-                transition={{ duration: 23.4, repeat: Infinity, ease: "linear" }}
-              >
-                💡 Based on your cashflow, you could invest up to{" "}
-                <span className="font-bold">{formatINR(Math.round(displayAffordableMonthly))}/month</span>{" "}
-                towards your goals — adjust your SIP below to put it to work.
-              </motion.div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setInsightClosed(true)}
-              aria-label="Dismiss insight"
-              className="absolute right-2 top-1/2 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded-full bg-black/20 text-white hover:bg-black/30 transition-colors"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </motion.div>
-        )}
         {cashflowError && !cashflowLoading && (
           <p className="px-1 text-[11px] text-amber-600">{cashflowError}</p>
         )}
@@ -2004,23 +1924,13 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
             corpus bars / cashflow reflect the new SIP. */}
         <div
           className="sticky z-30 -mx-5 bg-background px-5 pb-1 pt-1"
-          style={{ top: "60px" }}
+          style={{ top: "64px" }}
         >
-          <div className="rounded-xl border border-border bg-card px-3 py-1.5 flex items-center gap-3">
-          <div className="shrink-0 leading-tight">
-            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
-              Invest /mo
-            </p>
-            <p
-              className="text-[12px] font-semibold tabular-nums text-foreground"
-              style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
-            >
-              {formatINRCompact(monthlyContrib)}
-              <span className="ml-1 text-[10px] font-medium text-muted-foreground">
-                · {formatINRCompact(monthlyContrib * 12)}/yr
-              </span>
-            </p>
-          </div>
+          <div className="rounded-xl border border-border bg-card px-3 py-2">
+          <div className="flex items-center gap-2">
+          <p className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
+            Monthly SIP
+          </p>
           <div className="flex-1 min-w-0 flex items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1.5 focus-within:ring-1 focus-within:ring-[#D4A868]">
             <span className="text-[12px] text-muted-foreground shrink-0">₹</span>
             <input
@@ -2047,7 +1957,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
               type="button"
               onClick={() => void applySipToPlan()}
               disabled={applyingSip}
-              className="shrink-0 inline-flex items-center gap-1 rounded-full px-2.5 h-6 text-[11px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+              className="shrink-0 inline-flex items-center gap-1 rounded-full px-2.5 h-7 text-[11px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
               style={{ backgroundColor: "#D4A868" }}
               title="Save this SIP and recompute your cashflow plan"
             >
@@ -2059,13 +1969,45 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
             type="button"
             onClick={() => setMonthlyContrib(planSip ?? 0)}
             disabled={monthlyContrib === (planSip ?? 0)}
-            className="shrink-0 inline-flex items-center justify-center rounded-full bg-muted/50 h-6 w-6 text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="shrink-0 inline-flex items-center justify-center rounded-full bg-muted/50 h-7 w-7 text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             style={{ border: "1px solid hsl(var(--border))" }}
             aria-label="Reset monthly investment to your plan's SIP"
             title="Reset to plan SIP"
           >
             <RotateCcw className="h-3 w-3" />
           </button>
+          </div>
+          {/* Helper line — yearly equivalent plus the cashflow headroom hint
+              (absorbs the old marquee banner); "Use" fills the input with it. */}
+          <div className="mt-1 flex items-center gap-1.5 px-0.5">
+            <p className="min-w-0 truncate text-[11px] text-muted-foreground">
+              {formatINRCompact(monthlyContrib * 12)}/yr
+              {!sipCapped &&
+                displayAffordableMonthly != null &&
+                displayAffordableMonthly > 0 && (
+                  <>
+                    {" "}· you can invest up to{" "}
+                    <span className="font-semibold text-foreground">
+                      {formatINRCompact(displayAffordableMonthly)}/mo
+                    </span>{" "}
+                    from your cashflow
+                  </>
+                )}
+            </p>
+            {!sipCapped &&
+              displayAffordableMonthly != null &&
+              displayAffordableMonthly > 0 &&
+              Math.round(displayAffordableMonthly) !== monthlyContrib && (
+                <button
+                  type="button"
+                  onClick={() => setMonthlyContrib(Math.round(displayAffordableMonthly))}
+                  className="ml-auto shrink-0 rounded-full border border-[#D4A868]/50 px-2 py-0.5 text-[10px] font-semibold text-[#D4A868] hover:bg-[#D4A868]/10"
+                  title="Set your SIP to what your cashflow allows"
+                >
+                  Use {formatINRCompact(displayAffordableMonthly)}
+                </button>
+              )}
+          </div>
           </div>
           {sipCapped && affordableMonthly != null && (
             <p className="mt-1 px-1 text-[11px] leading-snug text-amber-600 dark:text-amber-400">
@@ -2704,13 +2646,105 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
         onSubmit={handleGoalSubmit}
       />
 
-      <ProjectionSheet
-        open={projectionOpen}
-        onClose={() => setProjectionOpen(false)}
-        fundFlow={cashflowData?.fund_flow_summary ?? null}
-        headline={cashflowData?.headline ?? null}
-        sipMonthly={planSip}
-      />
+      {/* Right-side plan panel — the projection waterfall and the cashflow
+          inputs live here, opened from the header's "Plan" trigger. */}
+      <AnimatePresence>
+        {panelOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[60] bg-black/50"
+              onClick={() => setPanelOpen(false)}
+              aria-hidden="true"
+            />
+            <motion.div
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Projection and inputs"
+              className="fixed inset-y-0 right-0 z-[60] flex w-[min(420px,92vw)] flex-col border-l border-border bg-background shadow-2xl"
+            >
+              <div className="flex items-center gap-2 border-b border-border px-4 pb-3 pt-4">
+                <h2 className="text-base font-semibold text-foreground">Your plan</h2>
+                <button
+                  type="button"
+                  onClick={() => setPanelOpen(false)}
+                  className="ml-auto p-1.5 -m-1.5 text-muted-foreground hover:text-foreground"
+                  aria-label="Close panel"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="px-4 pt-3">
+                {/* Gold active state (not card-on-muted) so the selected tab is
+                    unmistakable in both light and dark themes. */}
+                <div className="flex gap-1 rounded-full border border-border bg-muted/40 p-1">
+                  {(
+                    [
+                      { id: "projection", label: "Projection", icon: TrendingUp },
+                      { id: "inputs", label: "Inputs", icon: Settings2 },
+                    ] as const
+                  ).map((tab) => {
+                    const active = panelTab === tab.id;
+                    const Icon = tab.icon;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setPanelTab(tab.id)}
+                        className={`flex flex-1 items-center justify-center gap-1.5 rounded-full py-2 text-[12px] font-bold transition-colors ${
+                          active ? "text-white" : "text-muted-foreground hover:text-foreground"
+                        }`}
+                        style={
+                          active
+                            ? {
+                                backgroundColor: "#D4A868",
+                                boxShadow: "0 2px 8px rgba(212,168,104,0.45)",
+                              }
+                            : undefined
+                        }
+                        aria-pressed={active}
+                      >
+                        <Icon className="h-3.5 w-3.5" />
+                        {tab.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto px-4 py-4">
+                {panelTab === "projection" ? (
+                  <ProjectionContent
+                    fundFlow={cashflowData?.fund_flow_summary ?? null}
+                    headline={cashflowData?.headline ?? null}
+                    sipMonthly={planSip}
+                    onGoToInputs={() => setPanelTab("inputs")}
+                  />
+                ) : (
+                  <CashflowInputsForm
+                    retirementGoalYear={retirementGoalYear}
+                    onSaved={(ready) => {
+                      void fetchCashflow();
+                      void fetchSip();
+                      setGateRefresh((n) => n + 1);
+                      if (fromProfile) {
+                        returnToProfile();
+                        return;
+                      }
+                      if (ready) setPanelOpen(false);
+                    }}
+                  />
+                )}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       {/* Floating + FAB — pinned to the right edge of the page column */}
       <div
@@ -2738,13 +2772,17 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
 
       {/* Never blocks the goal-planning page. When inputs are missing it shows a
           dismissible prompt (the page stays usable as an example); when they're
-          present it loads the real projection. The Settings/"Inputs" button bumps
-          editSignal to open the form for viewing/editing. */}
+          present it loads the real projection. Every "open the inputs" request
+          (prompt CTA, ?inputs=1 auto-open) lands on the side panel's Inputs tab.
+          Remounts via gateRefresh after a save so its readiness stays fresh. */}
       <CashflowGate
+        key={gateRefresh}
         onReady={fetchCashflow}
-        editSignal={editSignal}
-        autoOpenInputs={autoOpenInputs}
-        onInputsSaved={fromProfile ? returnToProfile : undefined}
+        autoOpenInputs={autoOpenInputs && gateRefresh === 0}
+        onOpenInputs={() => {
+          setPanelTab("inputs");
+          setPanelOpen(true);
+        }}
       />
     </div>
   );
