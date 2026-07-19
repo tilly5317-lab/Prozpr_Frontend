@@ -278,7 +278,7 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
         <motion.button
           onClick={handleComplete}
           disabled={!canComplete}
-          className="w-full flex items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-sm font-semibold text-primary-foreground tracking-wide transition-all active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none"
+          className="w-full flex items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-sm font-semibold text-primary-foreground tracking-wide transition-all active:scale-[0.98] disabled:opacity-90 disabled:pointer-events-none"
         >
           Complete profile
           <ArrowRight className="h-4 w-4" />

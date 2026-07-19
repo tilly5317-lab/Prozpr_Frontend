@@ -263,7 +263,7 @@ const CamsUpload = () => {
           type="button"
           onClick={() => void handleUpload()}
           disabled={uploading || !file}
-          className="flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold text-primary-foreground tracking-wide transition-all active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none"
+          className="flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold text-primary-foreground tracking-wide transition-all active:scale-[0.98] disabled:opacity-90 disabled:pointer-events-none"
         >
           {uploading ? (
             <>
