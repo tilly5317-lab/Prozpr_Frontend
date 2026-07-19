@@ -236,7 +236,7 @@ const LinkAccounts = () => {
             navigate("/about-you");
           }}
           disabled={linkedLoading || !camsConnected}
-          className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-foreground px-5 py-3.5 text-[15px] font-semibold text-background disabled:opacity-40 disabled:pointer-events-none"
+          className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-foreground px-5 py-3.5 text-[15px] font-semibold text-background disabled:opacity-90 disabled:pointer-events-none"
         >
           Continue
           <ArrowRight className="h-4 w-4" />

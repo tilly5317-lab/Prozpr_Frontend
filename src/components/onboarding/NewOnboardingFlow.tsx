@@ -641,7 +641,7 @@ const NewOnboardingFlow = ({ onComplete }: NewOnboardingFlowProps) => {
                 <button
                   onClick={() => setQIndex((i) => Math.max(0, i - 1))}
                   disabled={saving}
-                  className="flex items-center justify-center gap-1 rounded-xl border border-border bg-card px-4 py-3.5 text-[14px] font-semibold text-foreground transition-all active:scale-[0.98] disabled:opacity-50"
+                  className="flex items-center justify-center gap-1 rounded-xl border border-border bg-card px-4 py-3.5 text-[14px] font-semibold text-foreground transition-all active:scale-[0.98] disabled:opacity-90"
                 >
                   <ChevronLeft className="h-4 w-4" />
                   Back
@@ -650,7 +650,7 @@ const NewOnboardingFlow = ({ onComplete }: NewOnboardingFlowProps) => {
               <button
                 onClick={() => (isLast ? void handleFinish() : setQIndex((i) => i + 1))}
                 disabled={saving || !canAdvance}
-                className="flex flex-1 items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold text-primary-foreground tracking-wide transition-all active:scale-[0.98] disabled:opacity-60"
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold text-primary-foreground tracking-wide transition-all active:scale-[0.98] disabled:opacity-90"
               >
                 {saving ? (
                   <>

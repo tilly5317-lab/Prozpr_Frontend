@@ -1524,9 +1524,16 @@ export async function getAboutYouStatus(): Promise<AboutYouStatus> {
     confirmed[2] = true;
   }
 
-  // 3) Tax — a marginal income-tax rate and a chosen regime.
+  // 3) Tax — a marginal income-tax rate and a chosen regime. The regime lives
+  // in the dedicated tax_regime column for new saves, or in a legacy
+  // "Regime: old/new" note for profiles saved before the column existed —
+  // the SAME fallback /profile/complete applies, so the two never disagree.
   const tax = profile?.tax_profile;
-  if (tax?.income_tax_rate != null && (tax.tax_regime === "old" || tax.tax_regime === "new")) {
+  const hasTaxRegime =
+    tax?.tax_regime === "old" ||
+    tax?.tax_regime === "new" ||
+    (!!tax?.notes && /regime:\s*(old|new)/i.test(tax.notes));
+  if (tax?.income_tax_rate != null && hasTaxRegime) {
     confirmed[3] = true;
   }
 

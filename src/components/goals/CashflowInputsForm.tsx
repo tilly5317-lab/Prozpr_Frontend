@@ -327,8 +327,8 @@ const CashflowInputsForm = ({ onSaved, retirementGoalYear }: CashflowInputsFormP
             className={`${inputClass} mt-1.5 ${err ? "border-destructive ring-1 ring-destructive" : ""}`}
           />
           <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground/80">
-            You have a Retirement goal in {retirementGoalYear}. The projection always runs
-            to the later of that goal and this age (60 if left blank).
+            Kept in sync with your Retirement goal ({retirementGoalYear}): saving a new
+            age here moves that goal, and moving the goal updates this age.
           </p>
           {err && <p className="mt-1 text-[11px] font-medium text-destructive">{err}</p>}
         </div>

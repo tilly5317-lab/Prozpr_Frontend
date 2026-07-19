@@ -1628,9 +1628,11 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   // up to the lifespan cap (age 100). All goals count toward the last-goal year
   // (not just visible ones) so toggling a priority filter never shrinks it.
   const effectiveBirthYear = birthYear ?? currentYear - FALLBACK_CURRENT_AGE;
-  // A Retirement GOAL can only EXTEND the retirement year, never shorten it:
-  // the plan runs to max(retirement age (default 60), last goal). The backend
-  // engine applies the same rule, so the timeline and the plan agree.
+  // The Retirement GOAL's target year IS the planned retirement year (SSOT):
+  // the backend mirrors it onto the profile retirement_age on every goal
+  // create/move (and moves the goal when the age is edited), so when a
+  // retirement goal exists its year wins; otherwise the profile age (default
+  // 60) applies. The engine derives its horizon from the same rule.
   const retirementGoalYear = useMemo(() => {
     const years = goals
       .filter((g) => /retire/i.test(g.name))
@@ -1638,10 +1640,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
       .sort((a, b) => a - b);
     return years.length > 0 ? years[0] : null;
   }, [goals]);
-  const retirementYear = Math.max(
-    retirementGoalYear ?? 0,
-    effectiveBirthYear + retirementAge,
-  );
+  const retirementYear = retirementGoalYear ?? effectiveBirthYear + retirementAge;
   // Engine's actual projection end (FY) — authoritative when a plan is loaded.
   // Derived from BOTH the headline and the furthest annual row: stored runs
   // from engine <0.3.1 carry a goal-derived headline that collapses to the
@@ -2731,6 +2730,9 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                     onSaved={(ready) => {
                       void fetchCashflow();
                       void fetchSip();
+                      // Saving a retirement age moves the Retirement goal
+                      // (SSOT) — refresh the timeline's goals too.
+                      void reloadGoals();
                       setGateRefresh((n) => n + 1);
                       if (fromProfile) {
                         returnToProfile();
