@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Gift, ChevronRight, TrendingUp } from "lucide-react";
+import { Gift, ChevronRight, TrendingUp, Video } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import BottomNav, { NOTIFICATIONS_CHANGED_EVENT } from "@/components/BottomNav";
@@ -34,6 +34,7 @@ const Notifications = () => {
 
   const getIcon = (type: string) => {
     const t = (type || "").toLowerCase();
+    if (t.includes("call") || t.includes("meeting")) return Video;
     return t.includes("rebalance") || t.includes("portfolio") ? TrendingUp : Gift;
   };
 
@@ -48,7 +49,12 @@ const Notifications = () => {
       notifyNotificationsChanged();
     }
     if (item.action_url) {
-      navigate(item.action_url);
+      // External links (e.g. a Zoom join URL) open in a new tab; app paths navigate in-place.
+      if (/^https?:\/\//i.test(item.action_url)) {
+        window.open(item.action_url, "_blank", "noopener,noreferrer");
+      } else {
+        navigate(item.action_url);
+      }
       return;
     }
     navigate("/profile/complete");

@@ -2699,3 +2699,25 @@ export async function reportIssue(
   }
   return JSON.parse(text) as IssueReportResponse;
 }
+
+// ── Prozpr team call (Zoom booking) ─────────────────────
+export interface TeamCallMeeting {
+  meeting_id: number;
+  join_url: string;
+  start_time: string;
+  duration_minutes: number;
+  topic: string;
+}
+
+/** Book a 15-min Zoom call with the Prozpr team. startIso must be in the future. */
+export async function createTeamCall(startIso: string, agenda: string): Promise<TeamCallMeeting> {
+  return request<TeamCallMeeting>("/team-call", {
+    method: "POST",
+    body: JSON.stringify({ start_time: startIso, agenda }),
+  });
+}
+
+/** Cancel a previously booked team call. 404/already-gone is treated as success server-side. */
+export async function cancelTeamCall(meetingId: number): Promise<void> {
+  await request<void>(`/team-call/${meetingId}`, { method: "DELETE" });
+}
