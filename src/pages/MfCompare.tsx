@@ -377,52 +377,52 @@ export default function MfCompare() {
               </div>
             </section>
 
-            {/* Side-by-side comparison table */}
+            {/* Side-by-side comparison table — funds down, metrics across */}
             <section className="overflow-hidden rounded-2xl border border-border/70 bg-card">
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse text-left">
                   <thead>
                     <tr className="border-b border-border/60">
                       <th className="sticky left-0 z-10 bg-card px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                        Metric
+                        Fund
                       </th>
-                      {funds.map((f) => {
-                        const wins = winsByFund.get(f.schemeCode) ?? 0;
-                        return (
-                          <th
-                            key={f.schemeCode}
-                            className="min-w-[7.5rem] px-3 py-2.5 align-top"
-                            style={{ borderTop: `2px solid ${f.color}` }}
+                      {activeCriteria.map((c) => (
+                        <th
+                          key={c.key}
+                          className="whitespace-nowrap px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+                        >
+                          {c.label}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {funds.map((f) => {
+                      const wins = winsByFund.get(f.schemeCode) ?? 0;
+                      const ranged = rangedByCode.get(f.schemeCode) ?? [];
+                      return (
+                        <tr key={f.schemeCode} className="border-b border-border/40 last:border-0">
+                          <td
+                            className="sticky left-0 z-10 max-w-[9.5rem] bg-card px-3 py-2.5 align-top"
+                            style={{ borderLeft: `2px solid ${f.color}` }}
                           >
                             <div className="flex items-center gap-1.5">
                               <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: f.color }} />
-                              <span className="truncate text-[11px] font-bold text-foreground">{f.name}</span>
+                              <span className="truncate text-[11px] font-bold text-foreground">
+                                {f.amc ?? f.name}
+                              </span>
                               {f.isProzprPick && <Star className="h-3 w-3 shrink-0 text-[#D4A868]" fill="#D4A868" />}
                             </div>
-                            <p className="mt-0.5 truncate text-[10px] text-muted-foreground">{f.amc ?? "—"}</p>
                             {wins > 0 && (
                               <span className="mt-1 inline-block rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
                                 Best on {wins}
                               </span>
                             )}
-                          </th>
-                        );
-                      })}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {activeCriteria.map((c) => {
-                      const winners = bestByCriterion.get(c.key);
-                      return (
-                        <tr key={c.key} className="border-b border-border/40 last:border-0">
-                          <td className="sticky left-0 z-10 bg-card px-3 py-2.5 text-[11px] font-medium text-muted-foreground">
-                            {c.label}
                           </td>
-                          {funds.map((f) => {
-                            const ranged = rangedByCode.get(f.schemeCode) ?? [];
-                            const isWinner = winners?.has(f.schemeCode) ?? false;
+                          {activeCriteria.map((c) => {
+                            const isWinner = bestByCriterion.get(c.key)?.has(f.schemeCode) ?? false;
                             return (
-                              <td key={f.schemeCode} className="px-3 py-2.5">
+                              <td key={c.key} className="px-3 py-2.5">
                                 <span
                                   className={`inline-flex items-center gap-1 text-[12px] tabular-nums ${
                                     isWinner ? "font-bold text-emerald-600 dark:text-emerald-400" : "text-foreground"
