@@ -13,6 +13,8 @@ interface ImportMetaEnv {
   readonly VITE_PUBLIC_POSTHOG_KEY?: string;
   /** PostHog ingestion host, e.g. https://us.i.posthog.com */
   readonly VITE_PUBLIC_POSTHOG_HOST?: string;
+  /** Standing Zoom room for "talk to the Prozpr team" calls. Empty = placeholder link. */
+  readonly VITE_PROZPR_ZOOM_URL?: string;
 }
 
 interface ImportMeta {

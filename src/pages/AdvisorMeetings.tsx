@@ -4,6 +4,7 @@ import { ArrowLeft, Check, Circle, Video } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import BottomNav from "@/components/BottomNav";
 import RescheduleModal from "@/components/dashboard/RescheduleModal";
+import { PROZPR_ZOOM_URL } from "@/lib/teamCall";
 
 type ActionItem = {
   text: string;
@@ -86,7 +87,7 @@ const AdvisorMeetings = () => {
             </div>
             <div className="flex items-center gap-1.5">
               <a
-                href="https://zoom.us/j/000000"
+                href={PROZPR_ZOOM_URL}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 rounded-xl px-3 py-1.5 text-xs font-semibold bg-foreground text-background"

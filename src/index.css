@@ -210,8 +210,10 @@
     @apply bg-card rounded-2xl shadow-wealth p-4;
   }
 
+  /* Solid CTA fill — dark mode maps navy→near-white and navy-light→dark grey,
+     so a two-stop gradient reads as a washed-out fade on buttons. */
   .wealth-gradient {
-    background: linear-gradient(135deg, hsl(var(--wealth-navy)) 0%, hsl(var(--wealth-navy-light)) 100%);
+    background: hsl(var(--wealth-navy));
   }
 
   .wealth-gradient-light {

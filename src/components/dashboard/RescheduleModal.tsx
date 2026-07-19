@@ -2,11 +2,14 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { X } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
+import { slotToDate } from "@/lib/teamCall";
 
 const TIME_SLOTS = ["10:00 AM", "12:30 PM", "2:00 PM", "4:00 PM", "6:30 PM"];
 
 interface RescheduleModalProps {
   onClose: () => void;
+  /** Called with the picked slot when the user confirms (before closing). */
+  onConfirm?: (sel: { date: Date; time: string; agenda: string }) => void;
   /** Header title. Defaults to the reschedule-meeting wording. */
   title?: string;
   /** Optional line under the title, e.g. "15-minute Zoom call". */
@@ -23,6 +26,7 @@ const AGENDA_MAX = 400;
 
 const RescheduleModal = ({
   onClose,
+  onConfirm,
   title = "Reschedule meeting",
   meta,
   agendaLabel = "What to discuss",
@@ -41,7 +45,13 @@ const RescheduleModal = ({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const canConfirm = selectedDate && selectedTime;
+  // A slot is bookable only in the future — the calendar blocks past days, and
+  // this blocks already-passed times on today's date.
+  const slotInPast = (t: string) =>
+    selectedDate != null && slotToDate(selectedDate, t).getTime() <= Date.now();
+
+  const canConfirm =
+    selectedDate && selectedTime && !slotInPast(selectedTime);
 
   return (
     <>
@@ -103,15 +113,19 @@ const RescheduleModal = ({
               <div className="flex flex-wrap gap-1.5">
                 {TIME_SLOTS.map((t) => {
                   const active = selectedTime === t;
+                  const past = slotInPast(t);
                   return (
                     <button
                       key={t}
                       type="button"
+                      disabled={past}
                       onClick={() => setSelectedTime(t)}
                       className={`rounded-full px-3 py-1.5 text-[11px] font-semibold transition-colors ${
-                        active
-                          ? "bg-foreground text-background"
-                          : "bg-muted text-muted-foreground hover:text-foreground"
+                        past
+                          ? "bg-muted text-muted-foreground/40 cursor-not-allowed line-through"
+                          : active
+                            ? "bg-foreground text-background"
+                            : "bg-muted text-muted-foreground hover:text-foreground"
                       }`}
                     >
                       {t}
@@ -165,7 +179,12 @@ const RescheduleModal = ({
             </button>
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => {
+                if (selectedDate && selectedTime) {
+                  onConfirm?.({ date: selectedDate, time: selectedTime, agenda });
+                }
+                onClose();
+              }}
               disabled={!canConfirm}
               className={`flex-1 rounded-full py-2 text-[12px] font-bold transition-opacity ${
                 canConfirm
