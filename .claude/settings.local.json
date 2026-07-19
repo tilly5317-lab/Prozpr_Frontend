@@ -49,7 +49,23 @@
       "Bash(echo \"twr: $\\(curl -s -m 20 -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/api/v1/portfolio/twr\\)\")",
       "Bash(curl -s -m 15 -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/api/v1/cashflow/readiness)",
       "PowerShell(Start-Sleep -Milliseconds 800; $l = Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue; if \\($l\\) { foreach \\($p in \\($l.OwningProcess | Select-Object -Unique\\)\\) { try { Stop-Process -Id $p -Force; \"killed leftover $p\" } catch {} } } ; Start-Sleep -Milliseconds 500; $l2 = Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue; if \\($l2\\) { \"STILL LISTENING\" } else { \"port 8000 free\" })",
-      "Bash(PYTHONUTF8=1 .venv/Scripts/python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000)"
+      "Bash(PYTHONUTF8=1 .venv/Scripts/python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000)",
+      "Read(//Users/Amoul/Documents/AILAX_AI_Financial_advisor/ailax/**)",
+      "Read(//Users/Amoul/Documents/AILAX_AI_Financial_advisor/**)",
+      "Bash(find /Users/Amoul/Documents -name \"scheme_classification*\" -not -path \"*/node_modules/*\" 2>/dev/null | head -20)",
+      "Bash(.venv-mac/bin/python -m pytest app/domains/portfolio/tests/test_derive_allocations.py -q)",
+      "Bash(.venv-mac/bin/python -m pytest app/domains/portfolio app/domains/mutual_funds app/domains/rebalancing app/domains/asset_allocation -q)",
+      "Bash(.venv-mac/bin/python -m pytest app/domains/portfolio app/domains/mutual_funds app/domains/rebalancing app/domains/asset_allocation -q --ignore=app/domains/portfolio/services/tests/test_benchmark_windowed_xirr.py)",
+      "Bash(.venv-mac/bin/python /private/tmp/claude-502/-Users-Amoul-Documents-AILAX-AI-Financial-advisor-ailax-Prozpr-Frontend/dd0c1d8b-c741-4575-b10a-90d5a4ab2325/scratchpad/repro_screenshot.py)",
+      "Bash(PYTHONPATH=. .venv-mac/bin/python /private/tmp/claude-502/-Users-Amoul-Documents-AILAX-AI-Financial-advisor-ailax-Prozpr-Frontend/dd0c1d8b-c741-4575-b10a-90d5a4ab2325/scratchpad/repro_screenshot.py)",
+      "Bash(node -e \"console.log\\(JSON.stringify\\(require\\('./package.json'\\).scripts,null,2\\)\\)\")",
+      "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\('declared dep:', p.dependencies['posthog-js'] || p.devDependencies?.['posthog-js'] || 'NOT DECLARED'\\)\")",
+      "Bash(npm install *)",
+      "Bash(npm ls *)",
+      "Bash(grep \"/node_modules/react$\")",
+      "Bash(grep -nA12 \"test:\" vite.config.ts)",
+      "Bash(grep -nB2 -A25 \"export default function\\\\|export function CurrentAllocationCard\\\\|interface.*Props\" src/components/dashboard/CurrentAllocationCard.tsx)",
+      "Bash(npx vitest *)"
     ]
   }
 }

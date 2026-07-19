@@ -1118,7 +1118,11 @@ export interface PortfolioDetail {
   is_primary: boolean;
   created_at: string;
   updated_at: string;
-  allocations: { id: string; asset_class: string; allocation_percentage: number; amount: number; performance_percentage: number | null }[];
+  // `sub_categories` is this asset class's own breakdown, already look-through
+  // split by the backend (a hybrid appears under each class it splits into) and
+  // summing to `amount`. Render it as-is — grouping `holdings` by `asset_class`
+  // does NOT reproduce it, since each holding carries one undivided class.
+  allocations: { id: string; asset_class: string; allocation_percentage: number; amount: number; performance_percentage: number | null; sub_categories?: { name: string; amount: number }[] }[];
   holdings: { id: string; instrument_name: string; instrument_type: string; ticker_symbol: string | null; quantity: number | null; average_cost: number | null; current_price: number | null; current_value: number; allocation_percentage: number | null; asset_class: string | null; sub_category: string | null }[];
 }
 
