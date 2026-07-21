@@ -3,7 +3,6 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   ArrowRight,
-  CheckCircle2,
   Eye,
   EyeOff,
   FileText,
@@ -16,7 +15,6 @@ import {
   BackendOfflineError,
   type CamsPdfImportResponse,
 } from "@/lib/api";
-import { formatInrCompact } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { useOnboardingStep } from "@/hooks/useOnboardingStep";
 import CamsStatementGuide from "@/components/onboarding/CamsStatementGuide";
@@ -26,7 +24,9 @@ const MAX_PDF_BYTES = 20 * 1024 * 1024;
 /**
  * Dedicated first-step page (right after account setup): upload a CAMS / KFintech
  * Consolidated Account Statement PDF so we can read folios, holdings & transactions.
- * On success or skip the user continues to the (now CAMS-only) link-accounts page.
+ * A successful import continues automatically (success toast only, no confirmation
+ * screen): onboarding skips the link-accounts page and lands on About You; the
+ * profile "Update Holdings" entry point returns to /profile.
  */
 const CamsUpload = () => {
   const navigate = useNavigate();
@@ -90,6 +90,9 @@ const CamsUpload = () => {
       } else {
         try {
           sessionStorage.setItem("camsStatementImported", "true");
+          // The link-accounts confirmation screen is skipped on a successful
+          // upload — mark it done so resume/options screens agree.
+          if (!fromProfile) sessionStorage.setItem("completedLinkAccounts", "true");
         } catch {
           /* ignore */
         }
@@ -97,6 +100,10 @@ const CamsUpload = () => {
           title: "Statement imported",
           description: `${res.schemes} scheme(s) across ${res.folios} folio(s) — portfolio updated.`,
         });
+        // Continue automatically — the toast is the success feedback; no extra
+        // confirmation screen or second Continue click.
+        completeStep({ schemes: res.schemes, folios: res.folios });
+        navigate(fromProfile ? "/profile" : "/about-you");
       }
     } catch (e: unknown) {
       const msg =
@@ -111,8 +118,6 @@ const CamsUpload = () => {
       setUploading(false);
     }
   };
-
-  const done = result != null && result.status !== "FAILED";
 
   return (
     <div className="mobile-container flex flex-col bg-background px-6 pb-6 pt-12 min-h-screen">
@@ -130,103 +135,83 @@ const CamsUpload = () => {
           read your folios, holdings and transactions to build your portfolio.
         </p>
 
-        {!done && (
-          <>
-            <div className="mb-4">
-              <CamsStatementGuide />
-            </div>
+        <div className="mb-4">
+          <CamsStatementGuide />
+        </div>
 
-            <div className="mb-2 flex items-center gap-2">
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary">
-                2
-              </span>
-              <p className="text-sm font-medium text-foreground">Upload the statement you received</p>
-            </div>
+        <div className="mb-2 flex items-center gap-2">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary">
+            2
+          </span>
+          <p className="text-sm font-medium text-foreground">Upload the statement you received</p>
+        </div>
 
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploading}
+          className="flex w-full items-center gap-3 rounded-xl border border-dashed border-border bg-card px-3.5 py-4 text-left transition-colors hover:bg-accent/40 disabled:opacity-60"
+        >
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-secondary">
+            {file ? (
+              <FileText className="h-5 w-5 text-foreground" />
+            ) : (
+              <UploadCloud className="h-5 w-5 text-muted-foreground" />
+            )}
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium text-foreground">
+              {file ? file.name : "Choose CAMS / KFintech CAS PDF"}
+            </p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              {file ? `${(file.size / 1024).toFixed(0)} KB · tap to change file` : "PDF only · up to 20 MB"}
+            </p>
+          </div>
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="application/pdf,.pdf"
+          className="hidden"
+          onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
+        />
+
+        <div className="mt-4">
+          <label htmlFor="cas-password" className="text-[11px] font-medium text-muted-foreground">
+            Statement password
+          </label>
+          <div className="relative mt-1">
+            <input
+              id="cas-password"
+              type={showPassword ? "text" : "password"}
+              autoComplete="off"
+              placeholder="The password you set while generating the statement"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={uploading}
+              className="w-full rounded-xl border border-border bg-card px-4 py-3 pr-11 text-sm text-foreground outline-none placeholder:text-muted-foreground/50 disabled:opacity-60 focus:border-primary"
+            />
             <button
               type="button"
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() => setShowPassword((v) => !v)}
               disabled={uploading}
-              className="flex w-full items-center gap-3 rounded-xl border border-dashed border-border bg-card px-3.5 py-4 text-left transition-colors hover:bg-accent/40 disabled:opacity-60"
+              aria-label={showPassword ? "Hide password" : "Show password"}
+              className="absolute inset-y-0 right-0 flex items-center px-3 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-60"
             >
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-secondary">
-                {file ? (
-                  <FileText className="h-5 w-5 text-foreground" />
-                ) : (
-                  <UploadCloud className="h-5 w-5 text-muted-foreground" />
-                )}
-              </div>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-foreground">
-                  {file ? file.name : "Choose CAMS / KFintech CAS PDF"}
-                </p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">
-                  {file ? `${(file.size / 1024).toFixed(0)} KB · tap to change file` : "PDF only · up to 20 MB"}
-                </p>
-              </div>
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="application/pdf,.pdf"
-              className="hidden"
-              onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
-            />
-
-            <div className="mt-4">
-              <label htmlFor="cas-password" className="text-[11px] font-medium text-muted-foreground">
-                Statement password
-              </label>
-              <div className="relative mt-1">
-                <input
-                  id="cas-password"
-                  type={showPassword ? "text" : "password"}
-                  autoComplete="off"
-                  placeholder="The password you set while generating the statement"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  disabled={uploading}
-                  className="w-full rounded-xl border border-border bg-card px-4 py-3 pr-11 text-sm text-foreground outline-none placeholder:text-muted-foreground/50 disabled:opacity-60 focus:border-primary"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((v) => !v)}
-                  disabled={uploading}
-                  aria-label={showPassword ? "Hide password" : "Show password"}
-                  className="absolute inset-y-0 right-0 flex items-center px-3 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-60"
-                >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
-              <p className="mt-1 text-[11px] text-muted-foreground/80">
-                This is only used to open the PDF on our server — it is never stored.
-              </p>
-            </div>
-
-            {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
-            {result?.status === "FAILED" && result.normalize_error && (
-              <p className="mt-2 text-[11px] text-amber-700 dark:text-amber-400">
-                Parsed {result.schemes} scheme(s), but importing transactions failed:{" "}
-                {result.normalize_error}
-              </p>
-            )}
-          </>
-        )}
-
-        {done && result && (
-          <div className="flex items-center gap-2 rounded-xl border border-wealth-green/30 bg-wealth-green/5 px-3.5 py-3">
-            <CheckCircle2 className="h-5 w-5 shrink-0 text-wealth-green" />
-            <div className="min-w-0">
-              <p className="text-[13px] font-medium text-foreground">Imported successfully</p>
-              <p className="text-[11px] text-muted-foreground">
-                {result.schemes} scheme(s) · {result.folios} folio(s) ·{" "}
-                {result.mf_transactions_inserted} new transaction(s)
-              </p>
-              <p className="mt-0.5 text-[11px] text-muted-foreground">
-                Portfolio value: {formatInrCompact(result.total_value_inr)}
-              </p>
-            </div>
           </div>
+          <p className="mt-1 text-[11px] text-muted-foreground/80">
+            This is only used to open the PDF on our server — it is never stored.
+          </p>
+        </div>
+
+        {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
+        {result?.status === "FAILED" && result.normalize_error && (
+          <p className="mt-2 text-[11px] text-amber-700 dark:text-amber-400">
+            Parsed {result.schemes} scheme(s), but importing transactions failed:{" "}
+            {result.normalize_error}
+          </p>
         )}
 
         <div className="mt-auto flex items-center justify-center gap-1.5 pt-8">
@@ -237,47 +222,27 @@ const CamsUpload = () => {
         </div>
       </motion.div>
 
-      {done ? (
-        <motion.button
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4 }}
-          type="button"
-          onClick={() => {
-            completeStep({
-              schemes: result?.schemes,
-              folios: result?.folios,
-            });
-            navigate(exitRoute);
-          }}
-          className="flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold text-primary-foreground tracking-wide transition-all active:scale-[0.98]"
-        >
-          {fromProfile ? "Done — back to profile" : "Continue"}
-          <ArrowRight className="h-4 w-4" />
-        </motion.button>
-      ) : (
-        <motion.button
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4 }}
-          type="button"
-          onClick={() => void handleUpload()}
-          disabled={uploading || !file}
-          className="flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold text-primary-foreground tracking-wide transition-all active:scale-[0.98] disabled:opacity-90 disabled:pointer-events-none"
-        >
-          {uploading ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Reading statement…
-            </>
-          ) : (
-            <>
-              Upload &amp; import
-              <ArrowRight className="h-4 w-4" />
-            </>
-          )}
-        </motion.button>
-      )}
+      <motion.button
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
+        type="button"
+        onClick={() => void handleUpload()}
+        disabled={uploading || !file}
+        className="flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold text-primary-foreground tracking-wide transition-all active:scale-[0.98] disabled:opacity-90 disabled:pointer-events-none"
+      >
+        {uploading ? (
+          <>
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Reading statement…
+          </>
+        ) : (
+          <>
+            Upload &amp; import
+            <ArrowRight className="h-4 w-4" />
+          </>
+        )}
+      </motion.button>
 
       {/* CAMS is compulsory during onboarding — only the profile "Update
           Holdings" entry point may cancel without importing. */}
