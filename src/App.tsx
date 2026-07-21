@@ -56,7 +56,8 @@ import Discovery from "./pages/Discovery";
 import MfAllFunds from "./pages/MfAllFunds";
 import MfCompare from "./pages/MfCompare";
 import MfFundDetail from "./pages/MfFundDetail";
-import AdvisorMeetings from "./pages/AdvisorMeetings";
+// Zoom team-call feature disabled for now — keep the code, don't delete.
+// import AdvisorMeetings from "./pages/AdvisorMeetings";
 import CamsUpload from "./pages/CamsUpload";
 import LinkAccounts from "./pages/LinkAccounts";
 import AboutYou from "./pages/AboutYou";
@@ -108,7 +109,8 @@ const App = () => (
             <Route path="/discovery/mf/:schemeCode" element={<MfFundDetail />} />
             <Route path="/discovery/mf" element={<MfAllFunds />} />
             <Route path="/discovery" element={<Discovery />} />
-            <Route path="/advisor-meetings" element={<AdvisorMeetings />} />
+            {/* Zoom team-call feature disabled for now */}
+            {/* <Route path="/advisor-meetings" element={<AdvisorMeetings />} /> */}
             {/* Profile-completion onboarding: one mounted page (pathless layout
                 route) whose URL names the open section, so each step is linkable
                 and survives browser back/forward without reloading the page. */}

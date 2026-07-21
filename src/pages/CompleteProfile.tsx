@@ -130,6 +130,11 @@ const SECTION_SLUGS = [
   "investment-preferences",
   "tax-details",
 ];
+// Order the section cards are shown (and meant to be tackled) in — goals
+// ("What are you trying to achieve?") comes last. Internal section indexes are
+// unchanged; this only drives the card list.
+const SECTION_DISPLAY_ORDER = [0, 2, 3, 1];
+
 const CARDS_PATH = "/profile/complete";
 const pathForSection = (idx: number): string =>
   idx >= 0 && idx < SECTION_SLUGS.length ? `/profile/${SECTION_SLUGS[idx]}` : CARDS_PATH;
@@ -2049,7 +2054,8 @@ const CompleteProfile = () => {
 
           {/* Section cards — stacked vertically, tap one to open it */}
           <div className="px-5 pt-2 pb-3 flex flex-col gap-3.5">
-            {SECTION_TITLES.map((title, idx) => {
+            {SECTION_DISPLAY_ORDER.map((idx, pos) => {
+              const title = SECTION_TITLES[idx];
               const status = statuses[idx];
               const groups = sectionGroups(idx);
               const meta = SECTION_META[idx];
@@ -2059,7 +2065,7 @@ const CompleteProfile = () => {
                   key={idx}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: idx * 0.06, duration: 0.25 }}
+                  transition={{ delay: pos * 0.06, duration: 0.25 }}
                   onClick={() => openSectionCard(idx)}
                   className="relative w-full overflow-hidden rounded-2xl border bg-card p-5 text-left shadow-sm hover:shadow-md active:scale-[0.99] transition-all"
                   style={{ borderColor: isConfirmed ? "hsl(var(--wealth-navy) / 0.35)" : "hsl(var(--border))" }}

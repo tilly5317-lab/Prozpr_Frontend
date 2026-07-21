@@ -7,7 +7,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import NetWorthSparkline from "./NetWorthSparkline";
 import PortfolioNavChart from "./PortfolioNavChart";
 import CurrentAllocationCard from "./CurrentAllocationCard";
-import AdvisorMeetingsSlot from "./AdvisorMeetingsSlot";
+// Zoom team-call feature disabled for now — keep the code, don't delete.
+// import AdvisorMeetingsSlot from "./AdvisorMeetingsSlot";
 import PortfolioAnalysisModal from "./PortfolioAnalysisModal";
 import ProfileSwitcher from "./ProfileSwitcher";
 import CamsUploadModal from "@/components/onboarding/CamsUploadModal";
@@ -617,7 +618,8 @@ const PortfolioDashboard = () => {
                 middleSlot={<CumulativeMemberBreakdownCard data={cumulativeData} />}
               />
               <DiscoverEntryCard />
-              <AdvisorMeetingsSlot />
+              {/* Zoom team-call feature disabled for now */}
+              {/* <AdvisorMeetingsSlot /> */}
             </div>
           )}
           {cumulativeData && cumulativeData.total_value === 0 && (
@@ -647,7 +649,8 @@ const PortfolioDashboard = () => {
                 horizonLabel={null}
               />
               <DiscoverEntryCard />
-              <AdvisorMeetingsSlot />
+              {/* Zoom team-call feature disabled for now */}
+              {/* <AdvisorMeetingsSlot /> */}
             </div>
           )}
           {memberPortfolio && memberPortfolio.total_value === 0 && (
@@ -708,7 +711,8 @@ const PortfolioDashboard = () => {
               />
               <DiscoverEntryCard />
               <ProfileUnlockCircles />
-              <AdvisorMeetingsSlot />
+              {/* Zoom team-call feature disabled for now */}
+              {/* <AdvisorMeetingsSlot /> */}
             </div>
           )}
 

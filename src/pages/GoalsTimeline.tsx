@@ -1263,9 +1263,10 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   const [expandedGoals, setExpandedGoals] = useState<Set<string>>(new Set());
   const [draggingGoalId, setDraggingGoalId] = useState<string | null>(null);
   const [dropTargetYear, setDropTargetYear] = useState<number | null>(null);
-  // Right-side plan panel (projection + inputs) — opened from the header trigger.
+  // Right-side plan panel (inputs + projection) — opened from the header trigger.
+  // Inputs is the primary tab: first in the toggle and the default on open.
   const [panelOpen, setPanelOpen] = useState(false);
-  const [panelTab, setPanelTab] = useState<"projection" | "inputs">("projection");
+  const [panelTab, setPanelTab] = useState<"projection" | "inputs">("inputs");
   // Bumped after a save from the panel's inputs form so CashflowGate refetches
   // readiness (its prompt would otherwise keep claiming inputs are missing).
   const [gateRefresh, setGateRefresh] = useState(0);
@@ -1884,11 +1885,11 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
             >
               <Download className="h-3.5 w-3.5" />
             </button>
-            {/* Open the right-side panel holding the projection + cashflow inputs. */}
+            {/* Open the right-side panel holding the cashflow inputs + projection. */}
             <button
               type="button"
               onClick={() => {
-                setPanelTab("projection");
+                setPanelTab("inputs");
                 setPanelOpen(true);
               }}
               className="shrink-0 inline-flex h-8 items-center gap-1 rounded-full border border-[#D4A868]/50 bg-card px-3 text-[12px] font-semibold text-[#D4A868] hover:bg-[#D4A868]/10"
@@ -2685,8 +2686,8 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                 <div className="flex gap-1 rounded-full border border-border bg-muted/40 p-1">
                   {(
                     [
-                      { id: "projection", label: "Projection", icon: TrendingUp },
                       { id: "inputs", label: "Inputs", icon: Settings2 },
+                      { id: "projection", label: "Projection", icon: TrendingUp },
                     ] as const
                   ).map((tab) => {
                     const active = panelTab === tab.id;
