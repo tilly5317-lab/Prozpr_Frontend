@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { Compass, TrendingUp, TrendingDown, Wallet, Target, Activity, Landmark, Check, Droplet, Sparkles, type LucideIcon } from "lucide-react";
+import { Compass, TrendingUp, TrendingDown, Wallet, Target, Activity, Landmark, Check, Sparkles, type LucideIcon } from "lucide-react";
 import { motion } from "framer-motion";
 import BottomNav from "@/components/BottomNav";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -215,7 +215,7 @@ function DiscoverCard({
     <button
       type="button"
       onClick={onClick}
-      className="flex h-full flex-col items-start gap-2 rounded-[14px] p-[14px] text-left transition-all hover:shadow-md active:scale-[0.98]"
+      className="flex w-full items-center gap-3 rounded-[14px] p-[14px] text-left transition-all hover:shadow-md active:scale-[0.99]"
       style={{
         background: "linear-gradient(135deg, #4A380F 0%, #2D1F05 100%)",
         border: "1px solid rgba(212, 168, 104, 0.45)",
@@ -223,7 +223,7 @@ function DiscoverCard({
       }}
     >
       <div
-        className="flex h-10 w-10 items-center justify-center rounded-xl"
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
         style={{ backgroundColor: "rgba(245, 238, 220, 0.14)" }}
       >
         <Icon className="h-[1.125rem] w-[1.125rem]" strokeWidth={1.8} style={{ color: "#F5EEDC" }} />
@@ -236,7 +236,7 @@ function DiscoverCard({
           {subtitle}
         </p>
       </div>
-      <span className="mt-1 text-[13px] font-bold" style={{ color: "#F5EEDC" }}>
+      <span className="shrink-0 text-[13px] font-bold" style={{ color: "#F5EEDC" }}>
         Explore →
       </span>
     </button>
@@ -256,20 +256,12 @@ function DiscoverSection() {
         <p className="mt-0.5 text-[11px] text-muted-foreground">Curated ways to grow your wealth</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
-        <DiscoverCard
-          icon={Droplet}
-          title="Liquid funds"
-          subtitle="Park idle cash, earn more than savings"
-          onClick={() => navigate("/liquid-funds")}
-        />
-        <DiscoverCard
-          icon={Compass}
-          title="Prozpr rated funds"
-          subtitle="Top funds, handpicked and rated"
-          onClick={() => navigate("/discovery")}
-        />
-      </div>
+      <DiscoverCard
+        icon={Compass}
+        title="Prozpr rated funds"
+        subtitle="Top funds, handpicked and rated"
+        onClick={() => navigate("/discovery")}
+      />
     </div>
   );
 }

@@ -175,6 +175,13 @@ function allocationBucketToClassifiedRow(a: PortfolioDetail["allocations"][numbe
   };
 }
 
+type HoldingSort = "value" | "invested" | "return";
+const HOLDING_SORTS: { key: HoldingSort; label: string }[] = [
+  { key: "value", label: "Value" },
+  { key: "invested", label: "Invested" },
+  { key: "return", label: "Total return" },
+];
+
 interface CurrentAllocationCardProps {
   portfolio: PortfolioDetail | null;
   riskCategory: string | null;
@@ -192,6 +199,8 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
     Debt: false,
     Others: false,
   });
+  // Metric used to rank holdings within each bucket.
+  const [sortKey, setSortKey] = useState<HoldingSort>("value");
   const hasAllocations = portfolio && portfolio.allocations.length > 0;
   /** Placeholder funds only when there is no real allocation or holding data. */
   const showSampleHoldingsBanner =
@@ -210,7 +219,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
   }[] = hasAllocations
     ? portfolio!.allocations.map((a, i) => ({
         name: a.asset_class,
-        value: Math.round(a.allocation_percentage),
+        value: Math.round(a.allocation_percentage * 10) / 10,
         color: getColor(a.asset_class, i),
         amount: a.amount,
         bucket: normalizeBucket(a.asset_class),
@@ -321,8 +330,19 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
     { label: "Horizon", value: horizonLabel ?? "—" },
   ];
 
+  // Rank value per holding for the selected metric.
+  const rankVal = (r: (typeof holdingsRows)[number]) => {
+    switch (sortKey) {
+      case "invested": return r.investedTotal ?? -Infinity;
+      case "return": return r.returnPct ?? -Infinity;
+      default: return r.currentValue;
+    }
+  };
   const groupedHoldings = BUCKET_ORDER.map((bucket) => {
-    const items = holdingsRows.filter((r) => r.bucket === bucket);
+    // Holdings ranked by the selected metric, largest first.
+    const items = holdingsRows
+      .filter((r) => r.bucket === bucket)
+      .sort((a, b) => rankVal(b) - rankVal(a));
     const totalValue = items.reduce((s, r) => s + r.currentValue, 0);
     const totalPct = items.reduce((s, r) => s + (r.allocationPct ?? 0), 0);
     return { bucket, items, totalValue, totalPct };
@@ -428,7 +448,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                   {selected.name}
                 </span>
                 <span className="ml-auto text-[11px] font-semibold text-foreground shrink-0">
-                  {selected.value}%
+                  {selected.value.toFixed(1)}%
                 </span>
               </div>
               <p
@@ -466,7 +486,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                   />
                   <span className="text-[12px] text-muted-foreground leading-tight">{item.name}</span>
                 </div>
-                <span className="text-[12px] font-semibold text-foreground">{item.value}%</span>
+                <span className="text-[12px] font-semibold text-foreground">{item.value.toFixed(1)}%</span>
               </div>
             ))
           )}
@@ -508,6 +528,26 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
             className="overflow-hidden"
           >
             <div className="pt-3 space-y-2">
+              {/* Rank holdings within each bucket by the chosen metric. */}
+              <div className="flex items-center gap-1.5 px-1">
+                <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Rank by
+                </span>
+                {HOLDING_SORTS.map((opt) => (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => setSortKey(opt.key)}
+                    className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                      sortKey === opt.key
+                        ? "bg-accent/15 text-accent"
+                        : "bg-muted/60 text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
               {groupedHoldings.map((group) => {
                 const isCollapsed = collapsedBuckets[group.bucket];
                 return (
@@ -548,7 +588,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                             {formatInr1(group.totalValue)}
                           </p>
                           <p className="text-[11px] font-medium text-muted-foreground">
-                            {group.totalPct.toFixed(0)}%
+                            {group.totalPct.toFixed(1)}%
                           </p>
                         </div>
                         <motion.span
@@ -632,7 +672,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                           <p className="text-[13.2px] font-semibold text-foreground">{row.value}</p>
                           {collapsedReturnText && (
                             <span className="text-[12.1px] font-medium" style={{ color: collapsedReturnColor }}>
-                              {collapsedReturnText} YoY
+                              {collapsedReturnText}
                             </span>
                           )}
                         </div>
@@ -682,7 +722,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                               </div>
                               <div>
                                 <p className={LABEL_CLASS}>Portfolio weight</p>
-                                <p className={VALUE_CLASS}>{row.pct ?? "—"}</p>
+                                <p className={VALUE_CLASS}>{row.pct != null ? `${row.allocationPct.toFixed(1)}%` : "—"}</p>
                               </div>
                             </div>
                           </div>
@@ -699,6 +739,9 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                   </div>
                 );
               })}
+              <p className="px-1 pt-1 text-[10px] leading-snug text-muted-foreground/70">
+                The coloured % next to each holding is its total return since you invested.
+              </p>
             </div>
           </motion.div>
         )}

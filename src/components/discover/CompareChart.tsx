@@ -125,7 +125,11 @@ export function CompareChart({ series }: { series: CompareSeries[] }) {
       className="relative h-[200px] w-full touch-none select-none"
       onPointerMove={onPointer}
       onPointerDown={onPointer}
-      onPointerLeave={() => setHoverIdx(null)}
+      // Only clear on mouse-out (desktop). On touch, keep the readout visible
+      // after the finger lifts — it stays until the next touch on the chart.
+      onPointerLeave={(e) => {
+        if (e.pointerType === "mouse") setHoverIdx(null);
+      }}
     >
       <svg
         width="100%"

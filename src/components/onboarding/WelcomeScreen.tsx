@@ -3,7 +3,8 @@ import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight, TrendingUp, Sparkles, ChevronDown, ArrowLeft, Loader2, FileText, UploadCloud } from "lucide-react";
 import CamsStatementPasswordModal from "./CamsStatementPasswordModal";
-import prozprLogo from "@/assets/prozpr-logo-editorial.png";
+import prozprLogoLight from "@/assets/prozpr-logo-light.png";
+import prozprLogoDark from "@/assets/prozpr-logo-dark.png";
 import { signup, login, getMe, updateMe, checkMobileStatus } from "@/lib/api";
 import {
   trackOnboardingStepViewed,
@@ -584,10 +585,12 @@ const WelcomeScreen = ({ onExistingUserLogin }: WelcomeScreenProps) => {
         className="flex-1 flex flex-col"
       >
         <div className="flex flex-col items-center text-center mb-4 mt-12">
-          <img src={prozprLogo} alt="Prozpr - Wealth, Unified." className="w-[345px] h-auto" />
+          {/* Theme-aware: light logo on light background, dark logo on dark. */}
+          <img src={prozprLogoLight} alt="Prozpr - Wealth, Unified." className="w-[220px] max-w-full h-auto dark:hidden" />
+          <img src={prozprLogoDark} alt="Prozpr - Wealth, Unified." className="hidden w-[220px] max-w-full h-auto dark:block" />
         </div>
 
-        <div className="mt-0 space-y-2.5 mb-auto">
+        <div className="mt-6 space-y-2.5 mb-auto">
           {[
             { icon: TrendingUp, label: "Track all investments", sub: "Mutual funds, stocks and more" },
             { icon: Sparkles, label: "Prozpr, your own AI wealth advisor", sub: "Personalized recommendations" },
