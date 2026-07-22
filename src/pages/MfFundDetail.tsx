@@ -90,7 +90,7 @@ export default function MfFundDetail() {
             <ArrowLeft className="h-4 w-4" />
           </button>
           <div className="min-w-0 flex-1">
-            <h1 className="text-[15px] font-semibold leading-tight text-foreground">
+            <h1 className="text-lg font-semibold leading-tight text-foreground">
               {loading ? "Loading…" : data?.scheme_name ?? schemeCode}
             </h1>
           </div>

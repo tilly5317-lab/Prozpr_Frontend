@@ -125,7 +125,6 @@ interface Milestone {
 
 const MILESTONES: Milestone[] = [
   { value: 3_00_00_000, label: "First ₹3Cr 🎯" },
-  { value: 4_00_00_000, label: "First ₹4Cr 🎯" },
   { value: 5_00_00_000, label: "First ₹5Cr 🎯" },
   { value: 7_50_00_000, label: "₹7.5Cr 🌟" },
   { value: 10_00_00_000, label: "₹10Cr club 🏆" },
@@ -1822,7 +1821,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
 
   return (
     <div className="mobile-container min-h-screen bg-background pb-20">
-      <header className="sticky top-0 z-40 border-b border-border bg-background">
+      <header className="sticky top-0 z-40 bg-background">
         <div className="flex items-center gap-2 px-5 pt-10 pb-2">
           {fromProfile && (
             <button

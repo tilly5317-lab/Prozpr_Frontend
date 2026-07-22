@@ -89,7 +89,7 @@ const MeetingNotes = () => {
           <ArrowLeft className="h-4.5 w-4.5" />
         </button>
         <div>
-          <h1 className="text-lg font-semibold text-foreground">Meeting Notes</h1>
+          <h1 className="text-lg font-semibold text-foreground">Meeting notes</h1>
           <p className="text-[11px] text-muted-foreground">{formatDate(note?.meeting_date)}</p>
         </div>
       </div>

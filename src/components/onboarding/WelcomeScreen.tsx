@@ -1,9 +1,9 @@
 ﻿import { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, Shield, TrendingUp, Sparkles, ChevronDown, ArrowLeft, Loader2, FileText, UploadCloud } from "lucide-react";
+import { ArrowRight, TrendingUp, Sparkles, ChevronDown, ArrowLeft, Loader2, FileText, UploadCloud } from "lucide-react";
 import CamsStatementPasswordModal from "./CamsStatementPasswordModal";
-import prozprLogo from "@/assets/prozpr-logo-v2.png";
+import prozprLogo from "@/assets/prozpr-logo-editorial.png";
 import { signup, login, getMe, updateMe, checkMobileStatus } from "@/lib/api";
 import {
   trackOnboardingStepViewed,
@@ -591,7 +591,6 @@ const WelcomeScreen = ({ onExistingUserLogin }: WelcomeScreenProps) => {
           {[
             { icon: TrendingUp, label: "Track all investments", sub: "Mutual funds, stocks and more" },
             { icon: Sparkles, label: "Prozpr, your own AI wealth advisor", sub: "Personalized recommendations" },
-            { icon: Shield, label: "Bank-grade security", sub: "256-bit encryption" },
           ].map((item, i) => (
             <motion.div
               key={item.label}

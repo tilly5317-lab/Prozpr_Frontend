@@ -1,7 +1,7 @@
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { TrendingUp, TrendingDown, Compass, ArrowRight, Wallet, Target, Activity, Landmark, Check } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { Compass, TrendingUp, TrendingDown, Wallet, Target, Activity, Landmark, Check, Droplet, Sparkles, type LucideIcon } from "lucide-react";
+import { motion } from "framer-motion";
 import BottomNav from "@/components/BottomNav";
 import { Skeleton } from "@/components/ui/skeleton";
 import NetWorthSparkline from "./NetWorthSparkline";
@@ -84,46 +84,61 @@ function PortfolioMainPanel({
   onUploadCams?: () => void;
 }) {
   const [analysisOpen, setAnalysisOpen] = useState(false);
+  // Value change (₹ + %) for the selected chart horizon (1M/3M/1Y/…), shown under
+  // the headline value. Reported up from the NAV chart, which owns the horizon.
+  const [periodChange, setPeriodChange] = useState<{ pct: number | null; amount: number | null; horizon: string } | null>(null);
+  const handlePeriodChange = useCallback(
+    (info: { pct: number | null; amount: number | null; horizon: string }) => setPeriodChange(info),
+    [],
+  );
 
-  // Headline pill shows the simple total return; TWR breakdown lives in the Portfolio Analysis modal.
-  const activeGain = portfolio.total_gain_percentage;
   const stop = (e: React.MouseEvent) => e.stopPropagation();
 
   return (
-    <div className="space-y-2">
-      {/* Total Portfolio card — the headline number is not tappable; use the "Portfolio analysis →" link below. */}
-      <div className={CARD} style={CARD_BORDER}>
-        <p className="mb-3" style={SECTION_LABEL}>Total Portfolio</p>
+    <div className="space-y-[10.12px]">
+      {/* Total Portfolio — borderless, transparent so it blends into the page background. */}
+      <div className="rounded-[14px] p-[14px]">
+        <p className="mb-1 text-lg font-semibold text-foreground">Portfolio</p>
 
-        <div className="flex items-center gap-3">
-          <p className="text-2xl font-bold text-foreground tracking-tight">{fmtInr0(portfolio.total_value)}</p>
-          {activeGain != null && (
-            <div className="flex flex-col items-start gap-0.5">
-              <span
-                className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                  activeGain >= 0
-                    ? "bg-wealth-green/15 text-wealth-green"
-                    : "bg-destructive/15 text-destructive"
-                }`}
-              >
-                {activeGain >= 0 ? (
-                  <TrendingUp className="h-2.5 w-2.5" />
-                ) : (
-                  <TrendingDown className="h-2.5 w-2.5" />
-                )}
-                {activeGain >= 0 ? "+" : ""}
-                {activeGain.toFixed(1)}%
-              </span>
-            </div>
-          )}
-        </div>
+        <p className="text-2xl font-bold text-foreground tracking-tight">{fmtInr0(portfolio.total_value)}</p>
 
-        <p className="text-[11px] text-muted-foreground/80 mt-1 mb-3">Invested {fmtInr0(portfolio.total_invested)}</p>
+        {/* Period gain/loss for the selected chart horizon — ₹ amount, % change and
+            an up/down arrow, coloured green (up) or red (down). */}
+        {useNavChart && periodChange?.amount != null && periodChange.pct != null && (
+          <div
+            className={`mt-1 mb-3 flex items-center gap-1.5 text-[13px] font-semibold ${
+              periodChange.amount >= 0 ? "text-wealth-green" : "text-destructive"
+            }`}
+          >
+            {periodChange.amount >= 0 ? (
+              <TrendingUp className="h-4 w-4" />
+            ) : (
+              <TrendingDown className="h-4 w-4" />
+            )}
+            <span>
+              {periodChange.amount >= 0 ? "Up" : "Down"} {fmtInr0(Math.abs(periodChange.amount))}
+            </span>
+            <span
+              className={`inline-flex items-center rounded-full border px-2 py-0.5 ${
+                periodChange.pct >= 0
+                  ? "border-wealth-green/30 bg-wealth-green/10"
+                  : "border-destructive/30 bg-destructive/10"
+              }`}
+            >
+              {periodChange.pct >= 0 ? "+" : "−"}
+              {Math.abs(periodChange.pct).toLocaleString("en-IN", { maximumFractionDigits: 0 })}%
+            </span>
+            <span className="text-[13px] font-medium text-foreground">
+              {periodChange.horizon === "MAX" ? "since you began investing" : `in the last ${periodChange.horizon}`}
+            </span>
+          </div>
+        )}
 
         {useNavChart ? (
           <PortfolioNavChart
             camsMissing={camsMissing}
             onUploadCams={onUploadCams}
+            onPeriodChange={handlePeriodChange}
           />
         ) : (
           <>
@@ -147,24 +162,26 @@ function PortfolioMainPanel({
               ))}
             </div>
 
-            <NetWorthSparkline values={sparkline} />
+            <div className="-mx-[14px]">
+              <NetWorthSparkline values={sparkline} />
+            </div>
           </>
         )}
 
-        <button
-          type="button"
-          onClick={() => setAnalysisOpen(true)}
-          className="mt-2 pt-2 block w-full cursor-pointer"
-          style={{ borderTop: "1px solid hsl(var(--hairline))" }}
-        >
-          <p className="text-[13px] font-medium text-center w-full text-foreground hover:text-accent transition-colors">
+        {/* Portfolio analysis — subtly lifted surface (bg-card + soft shadow, no border). */}
+        <div className="mt-2 pt-2" style={{ borderTop: "1px solid hsl(var(--hairline))" }}>
+          <button
+            type="button"
+            onClick={() => setAnalysisOpen(true)}
+            className="block w-full cursor-pointer rounded-xl bg-card px-4 py-2.5 text-center text-[13px] font-semibold text-foreground shadow-sm transition-all hover:shadow-md active:scale-[0.99]"
+          >
             Portfolio analysis →
-          </p>
-        </button>
+          </button>
+        </div>
       </div>
 
-      {/* Current Allocation card (with merged holdings) */}
-      <div className={CARD} style={CARD_BORDER}>
+      {/* Current allocation — borderless, blends into the page like the total. */}
+      <div className="rounded-[14px] p-[14px]">
         <CurrentAllocationCard
           portfolio={portfolio}
           riskCategory={riskCategory}
@@ -182,68 +199,78 @@ function PortfolioMainPanel({
   );
 }
 
-function DiscoverEntryCard() {
-  const navigate = useNavigate();
+/** A gold, vertical Discover card — icon, title, subtitle and an Explore CTA. */
+function DiscoverCard({
+  icon: Icon,
+  title,
+  subtitle,
+  onClick,
+}: {
+  icon: LucideIcon;
+  title: string;
+  subtitle: string;
+  onClick: () => void;
+}) {
   return (
-    <motion.button
+    <button
       type="button"
-      onClick={() => navigate("/discovery")}
-      className="relative w-full flex items-center gap-3 rounded-[14px] p-[14px] text-left transition-all hover:shadow-sm active:scale-[0.99]"
+      onClick={onClick}
+      className="flex h-full flex-col items-start gap-2 rounded-[14px] p-[14px] text-left transition-all hover:shadow-md active:scale-[0.98]"
       style={{
         background: "linear-gradient(135deg, #4A380F 0%, #2D1F05 100%)",
         border: "1px solid rgba(212, 168, 104, 0.45)",
         color: "#F5EEDC",
       }}
-      whileTap={{ scale: 0.99 }}
-      animate={{
-        boxShadow: [
-          "0 0 0 0 rgba(212, 168, 104, 0), 0 0 0 0 rgba(212, 168, 104, 0)",
-          "0 0 28px 2px rgba(212, 168, 104, 0.55), 0 0 64px 6px rgba(212, 168, 104, 0.28)",
-          "0 0 0 0 rgba(212, 168, 104, 0), 0 0 0 0 rgba(212, 168, 104, 0)",
-          "0 0 28px 2px rgba(212, 168, 104, 0.55), 0 0 64px 6px rgba(212, 168, 104, 0.28)",
-          "0 0 0 0 rgba(212, 168, 104, 0), 0 0 0 0 rgba(212, 168, 104, 0)",
-          "0 0 28px 2px rgba(212, 168, 104, 0.55), 0 0 64px 6px rgba(212, 168, 104, 0.28)",
-          "0 0 0 0 rgba(212, 168, 104, 0), 0 0 0 0 rgba(212, 168, 104, 0)",
-          "0 0 28px 2px rgba(212, 168, 104, 0.55), 0 0 64px 6px rgba(212, 168, 104, 0.28)",
-          "0 0 0 0 rgba(212, 168, 104, 0), 0 0 0 0 rgba(212, 168, 104, 0)",
-        ],
-      }}
-      transition={{
-        duration: 5.2,
-        ease: "easeInOut",
-        times: [0, 0.08, 0.18, 0.32, 0.42, 0.56, 0.66, 0.8, 1],
-      }}
     >
       <div
-        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
-        style={{
-          backgroundColor: "rgba(245, 238, 220, 0.14)",
-          color: "#F5EEDC",
-        }}
+        className="flex h-10 w-10 items-center justify-center rounded-xl"
+        style={{ backgroundColor: "rgba(245, 238, 220, 0.14)" }}
       >
-        <Compass className="h-[1.125rem] w-[1.125rem]" strokeWidth={1.8} />
+        <Icon className="h-[1.125rem] w-[1.125rem]" strokeWidth={1.8} style={{ color: "#F5EEDC" }} />
       </div>
       <div className="min-w-0 flex-1">
-        <p
-          style={{
-            fontSize: 10,
-            fontWeight: 500,
-            textTransform: "uppercase",
-            letterSpacing: "1.5px",
-            color: "rgba(245, 238, 220, 0.75)",
-          }}
-        >
-          Discover
+        <p className="text-[13px] font-semibold leading-tight" style={{ color: "#F5EEDC" }}>
+          {title}
         </p>
-        <p
-          className="mt-0.5 text-[13px] font-semibold leading-tight"
-          style={{ color: "#F5EEDC" }}
-        >
-          Discover Prozpr rated funds
+        <p className="mt-0.5 text-[11px] leading-snug" style={{ color: "rgba(245, 238, 220, 0.7)" }}>
+          {subtitle}
         </p>
       </div>
-      <ArrowRight className="h-4 w-4 shrink-0" style={{ color: "rgba(245, 238, 220, 0.7)" }} />
-    </motion.button>
+      <span className="mt-1 text-[13px] font-bold" style={{ color: "#F5EEDC" }}>
+        Explore →
+      </span>
+    </button>
+  );
+}
+
+/** Discover section — upcoming/explorable money moves, below the allocation card. */
+function DiscoverSection() {
+  const navigate = useNavigate();
+  return (
+    <div className="pt-1">
+      <div className="mb-2">
+        <div className="flex items-center gap-1.5">
+          <Sparkles className="h-4 w-4 text-[#D4A868]" strokeWidth={2} />
+          <p className="text-[16.2px] font-semibold text-foreground">Discover</p>
+        </div>
+        <p className="mt-0.5 text-[11px] text-muted-foreground">Curated ways to grow your wealth</p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <DiscoverCard
+          icon={Droplet}
+          title="Liquid funds"
+          subtitle="Park idle cash, earn more than savings"
+          onClick={() => navigate("/liquid-funds")}
+        />
+        <DiscoverCard
+          icon={Compass}
+          title="Prozpr rated funds"
+          subtitle="Top funds, handpicked and rated"
+          onClick={() => navigate("/discovery")}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -556,10 +583,10 @@ const PortfolioDashboard = () => {
 
   const viewLabel =
     activeView.type === "self"
-      ? "Total Portfolio"
+      ? "Total portfolio"
       : activeView.type === "cumulative"
-      ? "Family Portfolio"
-      : `${activeView.member.nickname}'s Portfolio`;
+      ? "Family portfolio"
+      : `${activeView.member.nickname}'s portfolio`;
 
   return (
     <div className="mobile-container bg-background flex flex-col min-h-screen">
@@ -567,7 +594,7 @@ const PortfolioDashboard = () => {
       <div className="flex items-center justify-between px-5 pt-10 pb-2">
         <div>
           {activeView.type !== "self" && (
-            <p style={SECTION_LABEL}>{viewLabel}</p>
+            <p className="text-lg font-semibold text-foreground">{viewLabel}</p>
           )}
           {activeView.type === "cumulative" && cumulativeData && (
             <p className="text-[10px] text-muted-foreground/60">
@@ -607,7 +634,7 @@ const PortfolioDashboard = () => {
       {activeView.type === "cumulative" && (
         <>
           {cumulativeData && cumulativeData.total_value > 0 && (
-            <div className="px-5 space-y-2 pb-24">
+            <div className="px-5 space-y-[10.12px] pb-24">
               <PortfolioMainPanel
                 portfolio={cumulativeToPortfolioDetail(cumulativeData)}
                 timePeriod={timePeriod}
@@ -617,7 +644,7 @@ const PortfolioDashboard = () => {
                 horizonLabel="Combined family"
                 middleSlot={<CumulativeMemberBreakdownCard data={cumulativeData} />}
               />
-              <DiscoverEntryCard />
+              <DiscoverSection />
               {/* Zoom team-call feature disabled for now */}
               {/* <AdvisorMeetingsSlot /> */}
             </div>
@@ -639,7 +666,7 @@ const PortfolioDashboard = () => {
       {activeView.type === "member" && (
         <>
           {memberPortfolio && memberPortfolio.total_value > 0 && (
-            <div className="px-5 space-y-2 pb-24">
+            <div className="px-5 space-y-[10.12px] pb-24">
               <PortfolioMainPanel
                 portfolio={memberPortfolio}
                 timePeriod={timePeriod}
@@ -648,7 +675,7 @@ const PortfolioDashboard = () => {
                 riskCategory={null}
                 horizonLabel={null}
               />
-              <DiscoverEntryCard />
+              <DiscoverSection />
               {/* Zoom team-call feature disabled for now */}
               {/* <AdvisorMeetingsSlot /> */}
             </div>
@@ -693,7 +720,7 @@ const PortfolioDashboard = () => {
           )}
 
           {selfPortfolio && (
-            <div className="px-5 space-y-2 pb-24">
+            <div className="px-5 space-y-[10.12px] pb-24">
               <PortfolioMainPanel
                 portfolio={selfPortfolio}
                 timePeriod={timePeriod}
@@ -709,7 +736,7 @@ const PortfolioDashboard = () => {
                 camsMissing={cams.missing}
                 onUploadCams={() => setCamsOpen(true)}
               />
-              <DiscoverEntryCard />
+              <DiscoverSection />
               <ProfileUnlockCircles />
               {/* Zoom team-call feature disabled for now */}
               {/* <AdvisorMeetingsSlot /> */}

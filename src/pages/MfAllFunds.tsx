@@ -124,7 +124,7 @@ const MfAllFunds = () => {
             <ArrowLeft className="h-4 w-4" />
           </button>
           <div className="min-w-0 flex-1">
-            <h1 className="text-[17px] font-semibold leading-tight text-foreground">{heading}</h1>
+            <h1 className="text-lg font-semibold leading-tight text-foreground">{heading}</h1>
             <p className="text-[11px] text-muted-foreground">
               {feed.loading && feed.items.length === 0 ? (
                 <span className="inline-flex items-center gap-1">

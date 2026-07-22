@@ -27,7 +27,7 @@ export function MfExploreHub({ onBack }: MfExploreHubProps) {
           <ArrowLeft className="h-4 w-4 text-foreground" />
         </button>
         <div>
-          <h1 className="mb-0.5 text-xl font-bold text-foreground">Explore mutual funds</h1>
+          <h1 className="mb-0.5 text-lg font-semibold text-foreground">Explore mutual funds</h1>
           <p className="text-xs text-muted-foreground">Browse and compare the full fund universe</p>
         </div>
       </div>
