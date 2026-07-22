@@ -1,4 +1,4 @@
-import { useId, useMemo } from "react";
+import { useId, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { formatDate, type FundNavPoint } from "@/components/fund/FundScreenUi";
 
@@ -30,18 +30,33 @@ function resample(points: FundNavPoint[], n: number): FundNavPoint[] {
   return out;
 }
 
+interface SamplePoint {
+  date: string;
+  values: { id: string; color: string; v: number }[];
+}
+
 /**
  * Overlaid multi-fund growth chart. Each series is rebased to a common ₹100
  * start so funds at different NAV price points are comparable on percentage
  * growth — the standard "growth of ₹100" view used by Groww / Morningstar.
+ * Hover/drag shows a per-date card with each fund's value of ₹100 invested.
  */
 export function CompareChart({ series }: { series: CompareSeries[] }) {
   const clipId = useId();
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
-  const { lines, hi, lo, baseY, startLabel, endLabel } = useMemo(() => {
+  const { lines, hi, lo, baseY, startLabel, endLabel, samples } = useMemo(() => {
     const usable = series.filter((s) => s.points.length >= 2);
     if (!usable.length) {
-      return { lines: [], hi: 0, lo: 0, baseY: 0, startLabel: "", endLabel: "" };
+      return {
+        lines: [],
+        hi: 0,
+        lo: 0,
+        baseY: 0,
+        startLabel: "",
+        endLabel: "",
+        samples: [] as SamplePoint[],
+      };
     }
     const rebased = usable.map((s) => {
       const rs = resample(s.points, SAMPLE_COUNT);
@@ -64,7 +79,13 @@ export function CompareChart({ series }: { series: CompareSeries[] }) {
       path: r.vals
         .map((v, i) => `${i === 0 ? "M" : "L"} ${xAt(i).toFixed(2)} ${yAt(v).toFixed(2)}`)
         .join(" "),
-      end: r.vals[r.vals.length - 1]!,
+    }));
+
+    // Dates for the hover card come from the series with the densest history.
+    const dateSource = rebased.reduce((a, b) => (b.points.length > a.points.length ? b : a));
+    const samples: SamplePoint[] = Array.from({ length: SAMPLE_COUNT }, (_, i) => ({
+      date: dateSource.rs[i]!.date,
+      values: rebased.map((r) => ({ id: r.id, color: r.color, v: r.vals[i]! })),
     }));
 
     const starts = rebased.map((r) => r.rs[0]!.date).sort();
@@ -76,6 +97,7 @@ export function CompareChart({ series }: { series: CompareSeries[] }) {
       baseY: yAt(100),
       startLabel: formatDate(starts[0]!),
       endLabel: formatDate(ends[ends.length - 1]!),
+      samples,
     };
   }, [series]);
 
@@ -87,10 +109,24 @@ export function CompareChart({ series }: { series: CompareSeries[] }) {
     );
   }
 
-  const pct = (v: number) => `${v - 100 >= 0 ? "+" : ""}${(v - 100).toFixed(1)}%`;
+  const onPointer = (e: React.PointerEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const frac = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    setHoverIdx(Math.round(frac * (SAMPLE_COUNT - 1)));
+  };
+
+  const hover = hoverIdx != null ? samples[hoverIdx] : null;
+  const hoverX = hoverIdx != null ? (hoverIdx / (SAMPLE_COUNT - 1)) * 100 : 0;
+  const yPctOf = (v: number) => 100 - ((v - lo) / (hi - lo)) * 100;
+  const cardOnLeft = hoverX > 55;
 
   return (
-    <div className="relative h-[200px] w-full">
+    <div
+      className="relative h-[200px] w-full touch-none select-none"
+      onPointerMove={onPointer}
+      onPointerDown={onPointer}
+      onPointerLeave={() => setHoverIdx(null)}
+    >
       <svg
         width="100%"
         height="100%"
@@ -139,14 +175,69 @@ export function CompareChart({ series }: { series: CompareSeries[] }) {
             />
           ))}
         </g>
+
+        {hover && (
+          <line
+            x1={hoverX}
+            x2={hoverX}
+            y1="0"
+            y2="100"
+            stroke="hsl(var(--muted-foreground))"
+            strokeOpacity={0.5}
+            strokeWidth={0.75}
+            strokeDasharray="3 3"
+            vectorEffect="non-scaling-stroke"
+          />
+        )}
       </svg>
 
-      <div className="pointer-events-none absolute left-1 top-1 rounded bg-background/70 px-1 text-[11px] tabular-nums text-muted-foreground/80">
-        {pct(hi)}
-      </div>
-      <div className="pointer-events-none absolute bottom-6 left-1 rounded bg-background/70 px-1 text-[11px] tabular-nums text-muted-foreground/80">
-        {pct(lo)}
-      </div>
+      {/* Hover markers — one dot per fund on the guide line */}
+      {hover &&
+        hover.values.map((s) => (
+          <span
+            key={s.id}
+            className="pointer-events-none absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-background"
+            style={{
+              left: `${hoverX}%`,
+              top: `${yPctOf(s.v)}%`,
+              backgroundColor: s.color,
+            }}
+          />
+        ))}
+
+      {/* Floating card: value of ₹100 invested in each fund on the hovered date */}
+      {hover && (
+        <div
+          className="pointer-events-none absolute top-1 z-10 rounded-lg border border-border/70 bg-background/95 px-2.5 py-1.5 shadow-md backdrop-blur-sm"
+          style={cardOnLeft ? { right: `${100 - hoverX + 2}%` } : { left: `${hoverX + 2}%` }}
+        >
+          <p className="mb-1 whitespace-nowrap text-[10px] font-medium text-muted-foreground">
+            {formatDate(hover.date)}
+          </p>
+          <div className="space-y-0.5">
+            {hover.values.map((s) => (
+              <div key={s.id} className="flex items-center gap-1.5">
+                <span
+                  className="h-2 w-2 shrink-0 rounded-full"
+                  style={{ backgroundColor: s.color }}
+                />
+                <span className="text-[11px] font-semibold tabular-nums text-foreground">
+                  ₹{s.v.toFixed(1)}
+                </span>
+                <span
+                  className={`text-[10px] tabular-nums ${
+                    s.v >= 100 ? "text-emerald-600 dark:text-emerald-400" : "text-red-500"
+                  }`}
+                >
+                  {s.v - 100 >= 0 ? "+" : ""}
+                  {(s.v - 100).toFixed(1)}%
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="pointer-events-none absolute bottom-1 left-1 text-[11px] text-muted-foreground/80">
         {startLabel}
       </div>

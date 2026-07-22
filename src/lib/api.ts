@@ -1118,7 +1118,11 @@ export interface PortfolioDetail {
   is_primary: boolean;
   created_at: string;
   updated_at: string;
-  allocations: { id: string; asset_class: string; allocation_percentage: number; amount: number; performance_percentage: number | null }[];
+  // `sub_categories` is this asset class's own breakdown, already look-through
+  // split by the backend (a hybrid appears under each class it splits into) and
+  // summing to `amount`. Render it as-is — grouping `holdings` by `asset_class`
+  // does NOT reproduce it, since each holding carries one undivided class.
+  allocations: { id: string; asset_class: string; allocation_percentage: number; amount: number; performance_percentage: number | null; sub_categories?: { name: string; amount: number }[] }[];
   holdings: { id: string; instrument_name: string; instrument_type: string; ticker_symbol: string | null; quantity: number | null; average_cost: number | null; current_price: number | null; current_value: number; allocation_percentage: number | null; asset_class: string | null; sub_category: string | null }[];
 }
 
@@ -1524,9 +1528,16 @@ export async function getAboutYouStatus(): Promise<AboutYouStatus> {
     confirmed[2] = true;
   }
 
-  // 3) Tax — a marginal income-tax rate and a chosen regime.
+  // 3) Tax — a marginal income-tax rate and a chosen regime. The regime lives
+  // in the dedicated tax_regime column for new saves, or in a legacy
+  // "Regime: old/new" note for profiles saved before the column existed —
+  // the SAME fallback /profile/complete applies, so the two never disagree.
   const tax = profile?.tax_profile;
-  if (tax?.income_tax_rate != null && (tax.tax_regime === "old" || tax.tax_regime === "new")) {
+  const hasTaxRegime =
+    tax?.tax_regime === "old" ||
+    tax?.tax_regime === "new" ||
+    (!!tax?.notes && /regime:\s*(old|new)/i.test(tax.notes));
+  if (tax?.income_tax_rate != null && hasTaxRegime) {
     confirmed[3] = true;
   }
 
@@ -2086,7 +2097,9 @@ export interface CashflowInputValues {
 /**
  * Persist the cashflow inputs to their canonical homes, using the dedicated
  * (exclude_unset) profile endpoints so we never wipe untouched fields:
- *  - PFP scalars + tax → PUT /profile/personal-finance
+ *  - PFP scalars → PUT /profile/personal-finance
+ *  - tax rate (marginal slab %) → PUT /profile/tax (income_tax_rate; SSOT shared
+ *    with /profile/complete)
  *  - date_of_birth + assumed_lifespan_years (on `users`) → PUT /profile/personal-info
  *  - retirement_age → PUT /profile/investment
  */
@@ -2094,7 +2107,6 @@ export async function saveCashflowInputs(v: CashflowInputValues): Promise<void> 
   const finance: PersonalFinancePayload = {};
   if (v.annual_income != null) finance.annual_income = v.annual_income;
   if (v.monthly_household_expense != null) finance.monthly_household_expense = v.monthly_household_expense;
-  if (v.effective_tax_rate != null) finance.effective_tax_rate = v.effective_tax_rate;
   if (v.starting_monthly_investment != null) finance.starting_monthly_investment = v.starting_monthly_investment;
   if (v.current_portfolio_corpus != null) finance.current_portfolio_corpus = v.current_portfolio_corpus;
   if (v.financial_assets != null) finance.financial_assets = v.financial_assets;
@@ -2102,6 +2114,13 @@ export async function saveCashflowInputs(v: CashflowInputValues): Promise<void> 
   if (v.financial_liabilities_excl_mortgage != null)
     finance.financial_liabilities_excl_mortgage = v.financial_liabilities_excl_mortgage;
   if (Object.keys(finance).length > 0) await updatePersonalFinance(finance);
+
+  // Tax rate is a single source of truth on the tax profile (marginal slab %),
+  // shared with /profile/complete. The gate collects it as a fraction (0-1); store
+  // it as a whole-percent on tax_profile.income_tax_rate.
+  if (v.effective_tax_rate != null) {
+    await updateTaxProfile({ income_tax_rate: Math.round(v.effective_tax_rate * 100) });
+  }
 
   const personal: PersonalInfoPayload = {};
   if (v.date_of_birth != null) personal.date_of_birth = v.date_of_birth;
@@ -2985,4 +3004,26 @@ export async function listFpOrders(): Promise<FpOrder[]> {
 
 export async function refreshFpOrder(orderId: string): Promise<FpOrder> {
   return request<FpOrder>(`/fp/orders/${orderId}/refresh`, { method: "POST" });
+}
+
+// ── Prozpr team call (Zoom booking) ─────────────────────
+export interface TeamCallMeeting {
+  meeting_id: number;
+  join_url: string;
+  start_time: string;
+  duration_minutes: number;
+  topic: string;
+}
+
+/** Book a 15-min Zoom call with the Prozpr team. startIso must be in the future. */
+export async function createTeamCall(startIso: string, agenda: string): Promise<TeamCallMeeting> {
+  return request<TeamCallMeeting>("/team-call", {
+    method: "POST",
+    body: JSON.stringify({ start_time: startIso, agenda }),
+  });
+}
+
+/** Cancel a previously booked team call. 404/already-gone is treated as success server-side. */
+export async function cancelTeamCall(meetingId: number): Promise<void> {
+  await request<void>(`/team-call/${meetingId}`, { method: "DELETE" });
 }

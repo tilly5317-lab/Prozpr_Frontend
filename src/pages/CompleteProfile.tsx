@@ -3,6 +3,12 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, Check, ChevronLeft, ChevronRight, Plus, X, Info, AlertTriangle, Lock, Wallet, Target, TrendingUp, Landmark } from "lucide-react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
+import {
+  trackDetailedOnboardingSectionCompleted,
+  trackDetailedOnboardingSectionStarted,
+  type DetailedOnboardingSection,
+} from "@/lib/detailedOnboardingAnalytics";
+import { MARGINAL_TAX_RATE_OPTIONS } from "@/lib/taxRates";
 import { Slider } from "@/components/ui/slider";
 import { formatMoneyInput } from "@/lib/utils";
 import {
@@ -25,11 +31,6 @@ import {
   type CurrentPropertyPayload,
   type FullProfileResponse,
 } from "@/lib/api";
-import {
-  detailedOnboardingSectionForIndex,
-  trackDetailedOnboardingSectionStarted,
-  trackDetailedOnboardingSectionCompleted,
-} from "@/lib/detailedOnboardingAnalytics";
 
 type SectionStatus = "not_started" | "auto_filled" | "in_progress" | "confirmed";
 
@@ -129,6 +130,11 @@ const SECTION_SLUGS = [
   "investment-preferences",
   "tax-details",
 ];
+// Order the section cards are shown (and meant to be tackled) in — goals
+// ("What are you trying to achieve?") comes last. Internal section indexes are
+// unchanged; this only drives the card list.
+const SECTION_DISPLAY_ORDER = [0, 2, 3, 1];
+
 const CARDS_PATH = "/profile/complete";
 const pathForSection = (idx: number): string =>
   idx >= 0 && idx < SECTION_SLUGS.length ? `/profile/${SECTION_SLUGS[idx]}` : CARDS_PATH;
@@ -136,22 +142,20 @@ const pathForSection = (idx: number): string =>
 const sectionForPath = (pathname: string): number =>
   SECTION_SLUGS.indexOf(pathname.replace(/^\/profile\//, "").replace(/\/+$/, ""));
 
+// Section index → detailed-onboarding funnel name. Section 1 (goals) forwards to
+// the goal planner, where its events fire from the cashflow-inputs step instead.
+const SECTION_ANALYTICS_NAME: Record<number, DetailedOnboardingSection> = {
+  0: "financial_picture",
+  2: "investment_preferences",
+  3: "tax_details",
+};
+
 /** Card meta for the section list — icon, one-line description, time estimate. */
 const SECTION_META: { Icon: typeof Wallet; description: string; estimate: string }[] = [
   { Icon: Wallet, description: "Income, expenses, assets, property and what's coming up", estimate: "~4 min" },
   { Icon: Target, description: "Set your goals and complete your cashflow inputs in Goal planning", estimate: "~3 min" },
   { Icon: TrendingUp, description: "Your horizon and how you behave when markets move", estimate: "~2 min" },
   { Icon: Landmark, description: "Your tax slab and regime, for tax-efficient advice", estimate: "~1 min" },
-];
-
-const MARGINAL_TAX_RATE_OPTIONS: { value: string; label: string; slab: string }[] = [
-  { value: "0", label: "0%", slab: "Income up to ₹3,00,000" },
-  { value: "5", label: "5%", slab: "₹3,00,001 – ₹7,00,000" },
-  { value: "10", label: "10%", slab: "₹7,00,001 – ₹10,00,000" },
-  { value: "15", label: "15%", slab: "₹10,00,001 – ₹12,00,000" },
-  { value: "20", label: "20%", slab: "₹12,00,001 – ₹15,00,000" },
-  { value: "25", label: "25%", slab: "₹20,00,001 – ₹24,00,000 (new regime)" },
-  { value: "30", label: "30%", slab: "Above ₹15,00,000" },
 ];
 
 const OBJECTIVES = [
@@ -569,6 +573,9 @@ const IncomeExpenseSlider = ({ label, range, onChange }: {
 const CompleteProfile = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  // Guards the detailed-onboarding "started" event so it fires once per section
+  // open (not on every effect re-run); reset when returning to the card list.
+  const analyticsStartedRef = useRef<number | null>(null);
   // -1 = section-card carousel; otherwise the open section, stepping through
   // its question groups one at a time via groupIndex.
   const [openSection, setOpenSection] = useState(-1);
@@ -1037,8 +1044,9 @@ const CompleteProfile = () => {
     const nextStatuses = [...statuses];
     nextStatuses[idx] = "confirmed";
     setStatuses(nextStatuses);
-    const section = detailedOnboardingSectionForIndex(idx);
-    if (section) trackDetailedOnboardingSectionCompleted(section);
+    // Detailed-onboarding funnel: genuine success (validation passed + saved).
+    const completedName = SECTION_ANALYTICS_NAME[idx];
+    if (completedName) trackDetailedOnboardingSectionCompleted(completedName);
     // Back to the section cards — the next card to tackle is visible there.
     navigate(CARDS_PATH);
     setGroupIndex(0);
@@ -1201,7 +1209,9 @@ const CompleteProfile = () => {
     // the start here since /goal-planner never passes the pathname effect below.
     if (idx === 1) {
       trackDetailedOnboardingSectionStarted("goal_planning");
-      navigate("/goal-planner?inputs=1");
+      // `from=profile` lets the goals page show a "Back to profile setup" bar and
+      // return the user here once they've saved their cashflow inputs.
+      navigate("/goal-planner?inputs=1&from=profile");
       return;
     }
     navigate(pathForSection(idx));
@@ -1236,11 +1246,12 @@ const CompleteProfile = () => {
       // Goals inputs live in Goal planning; /profile/goals just forwards there.
       // Deep links land here (not openSectionCard), so track the start too.
       trackDetailedOnboardingSectionStarted("goal_planning");
-      navigate("/goal-planner?inputs=1", { replace: true });
+      navigate("/goal-planner?inputs=1&from=profile", { replace: true });
       return;
     }
     if (idx < 0) {
       // Card list (/profile/complete or any non-section path).
+      analyticsStartedRef.current = null; // re-entering a section fires "started" again
       if (openSection !== -1) {
         setOpenSection(-1);
         setGroupIndex(0);
@@ -1254,8 +1265,12 @@ const CompleteProfile = () => {
       setOpenSection(idx);
       setGroupIndex(0);
       markInProgress(idx);
-      const section = detailedOnboardingSectionForIndex(idx);
-      if (section) trackDetailedOnboardingSectionStarted(section);
+    }
+    // Detailed-onboarding funnel: this section just became active.
+    const startedName = SECTION_ANALYTICS_NAME[idx];
+    if (startedName && analyticsStartedRef.current !== idx) {
+      analyticsStartedRef.current = idx;
+      trackDetailedOnboardingSectionStarted(startedName);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname, profileLoaded]);
@@ -1544,7 +1559,7 @@ const CompleteProfile = () => {
                     <div><label className="text-[12px] text-muted-foreground mb-0.5 block">Year</label><TextInput value={expense.year} onChange={(v) => { const next = [...plannedExpenses]; next[idx] = { ...next[idx], year: v }; setPlannedExpenses(next); }} placeholder="e.g. 2026" /></div>
                     <div>
                       <label className="text-[12px] text-muted-foreground mb-0.5 block">Amount</label>
-                      <TextInput value={expense.amount} onChange={(v) => { const next = [...plannedExpenses]; next[idx] = { ...next[idx], amount: v }; setPlannedExpenses(next); }} prefix="₹" placeholder="e.g. 25L" />
+                      <TextInput value={expense.amount} onChange={(v) => { const next = [...plannedExpenses]; next[idx] = { ...next[idx], amount: v }; setPlannedExpenses(next); }} prefix="₹" placeholder="e.g. 25,00,000" />
                       {(() => { const n = toNum(expense.amount); return n != null && n >= 100000 ? <p className="mt-1 text-[11px] font-medium text-muted-foreground">= {formatINR(n)}</p> : null; })()}
                     </div>
                   </div>
@@ -1899,7 +1914,7 @@ const CompleteProfile = () => {
               {showMarginalInfo && (
                 <div className="mb-2 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2">
                   <p className="text-[11px] text-foreground leading-relaxed">
-                    Example: if your taxable income is ₹13L and falls in the 20% slab, your marginal tax rate is 20% — the rate paid on your last rupee earned. Not the same as your average tax rate.
+                    Example: if your taxable income is ₹18L and falls in the 20% slab, your marginal tax rate is 20% — the rate paid on your last rupee earned. Not the same as your average tax rate.
                   </p>
                 </div>
               )}
@@ -2011,6 +2026,8 @@ const CompleteProfile = () => {
     <div className="mobile-container bg-background min-h-screen pb-28">
       {/* Header */}
       <div className="px-5 pt-10 pb-1 flex items-center gap-3">
+        {/* The page header arrow always returns to /profile, regardless of how the
+            user reached this page (onboarding, deep link, goal-planner round-trip). */}
         <button onClick={() => navigate("/profile")} className="flex h-8 w-8 items-center justify-center rounded-full bg-muted hover:bg-muted/80 transition-colors">
           <ArrowLeft className="h-4 w-4 text-foreground" />
         </button>
@@ -2037,7 +2054,8 @@ const CompleteProfile = () => {
 
           {/* Section cards — stacked vertically, tap one to open it */}
           <div className="px-5 pt-2 pb-3 flex flex-col gap-3.5">
-            {SECTION_TITLES.map((title, idx) => {
+            {SECTION_DISPLAY_ORDER.map((idx, pos) => {
+              const title = SECTION_TITLES[idx];
               const status = statuses[idx];
               const groups = sectionGroups(idx);
               const meta = SECTION_META[idx];
@@ -2047,7 +2065,7 @@ const CompleteProfile = () => {
                   key={idx}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: idx * 0.06, duration: 0.25 }}
+                  transition={{ delay: pos * 0.06, duration: 0.25 }}
                   onClick={() => openSectionCard(idx)}
                   className="relative w-full overflow-hidden rounded-2xl border bg-card p-5 text-left shadow-sm hover:shadow-md active:scale-[0.99] transition-all"
                   style={{ borderColor: isConfirmed ? "hsl(var(--wealth-navy) / 0.35)" : "hsl(var(--border))" }}

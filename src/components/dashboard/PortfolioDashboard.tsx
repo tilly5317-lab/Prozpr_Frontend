@@ -7,7 +7,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import NetWorthSparkline from "./NetWorthSparkline";
 import PortfolioNavChart from "./PortfolioNavChart";
 import CurrentAllocationCard from "./CurrentAllocationCard";
-import AdvisorMeetingsSlot from "./AdvisorMeetingsSlot";
+// Zoom team-call feature disabled for now — keep the code, don't delete.
+// import AdvisorMeetingsSlot from "./AdvisorMeetingsSlot";
 import PortfolioAnalysisModal from "./PortfolioAnalysisModal";
 import ProfileSwitcher from "./ProfileSwitcher";
 import CamsUploadModal from "@/components/onboarding/CamsUploadModal";
@@ -256,15 +257,24 @@ function ProfileUnlockCircles() {
 
   // Per-section completion — the SAME rule the Profile page uses (getAboutYouStatus),
   // so these icons and the profile page never disagree. Indexed 0 financial ·
-  // 1 goals · 2 risk · 3 tax. Defaults to all-incomplete until resolved.
-  const [sectionDone, setSectionDone] = useState<boolean[]>([false, false, false, false]);
+  // 1 goals · 2 risk · 3 tax. null = still resolving: render nothing until we
+  // know, so a fully-onboarded user never sees the card flash in and vanish.
+  const [sectionStatus, setSectionStatus] = useState<boolean[] | null>(null);
   useEffect(() => {
     let cancelled = false;
     getAboutYouStatus()
-      .then((s) => { if (!cancelled) setSectionDone(s.sections); })
-      .catch(() => { /* leave everything unlocked if status can't be resolved */ });
+      .then((s) => { if (!cancelled) setSectionStatus(s.sections); })
+      .catch(() => {
+        // Status unresolvable — show the card with everything still to unlock.
+        if (!cancelled) setSectionStatus([false, false, false, false]);
+      });
     return () => { cancelled = true; };
   }, []);
+
+  // Fully onboarded (all 4 sections complete) → the card disappears entirely.
+  if (sectionStatus === null || sectionStatus.every(Boolean)) return null;
+
+  const sectionDone = sectionStatus;
 
   const items = [
     {
@@ -322,28 +332,24 @@ function ProfileUnlockCircles() {
             Share a little, unlock a lot
           </p>
         </div>
-        {remaining > 0 ? (
-          <motion.span
-            className="shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold text-white"
-            style={{
-              // Same glowing purple/pink sweep as the Goals-page insight banner.
-              backgroundImage: "linear-gradient(100deg, #D4A868, #C2487A, #7A52C8, #D4A868)",
-              backgroundSize: "300% 100%",
-              boxShadow: "0 0 14px rgba(160,70,170,0.5)",
-            }}
-            animate={{ backgroundPosition: ["0% 50%", "100% 50%"], scale: [1, 1.06, 1] }}
-            transition={{
-              backgroundPosition: { duration: 3, repeat: Infinity, ease: "linear" },
-              scale: { duration: 1.4, repeat: Infinity, ease: "easeInOut" },
-            }}
-          >
-            ✨ {remaining === 1 ? "1 step to full plan" : `${remaining} unlocks left`}
-          </motion.span>
-        ) : (
-          <span className="shrink-0 rounded-full bg-wealth-green/10 px-2.5 py-0.5 text-[11px] font-semibold text-wealth-green">
-            🎉 All unlocked
-          </span>
-        )}
+        {/* The card only renders while something is still locked (fully
+            onboarded users never see it), so `remaining` is always ≥ 1 here. */}
+        <motion.span
+          className="shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold text-white"
+          style={{
+            // Same glowing purple/pink sweep as the Goals-page insight banner.
+            backgroundImage: "linear-gradient(100deg, #D4A868, #C2487A, #7A52C8, #D4A868)",
+            backgroundSize: "300% 100%",
+            boxShadow: "0 0 14px rgba(160,70,170,0.5)",
+          }}
+          animate={{ backgroundPosition: ["0% 50%", "100% 50%"], scale: [1, 1.06, 1] }}
+          transition={{
+            backgroundPosition: { duration: 3, repeat: Infinity, ease: "linear" },
+            scale: { duration: 1.4, repeat: Infinity, ease: "easeInOut" },
+          }}
+        >
+          ✨ {remaining === 1 ? "1 step to full plan" : `${remaining} unlocks left`}
+        </motion.span>
       </div>
 
       <div className="flex justify-between gap-1">
@@ -612,7 +618,8 @@ const PortfolioDashboard = () => {
                 middleSlot={<CumulativeMemberBreakdownCard data={cumulativeData} />}
               />
               <DiscoverEntryCard />
-              <AdvisorMeetingsSlot />
+              {/* Zoom team-call feature disabled for now */}
+              {/* <AdvisorMeetingsSlot /> */}
             </div>
           )}
           {cumulativeData && cumulativeData.total_value === 0 && (
@@ -642,7 +649,8 @@ const PortfolioDashboard = () => {
                 horizonLabel={null}
               />
               <DiscoverEntryCard />
-              <AdvisorMeetingsSlot />
+              {/* Zoom team-call feature disabled for now */}
+              {/* <AdvisorMeetingsSlot /> */}
             </div>
           )}
           {memberPortfolio && memberPortfolio.total_value === 0 && (
@@ -703,7 +711,8 @@ const PortfolioDashboard = () => {
               />
               <DiscoverEntryCard />
               <ProfileUnlockCircles />
-              <AdvisorMeetingsSlot />
+              {/* Zoom team-call feature disabled for now */}
+              {/* <AdvisorMeetingsSlot /> */}
             </div>
           )}
 
