@@ -48,7 +48,6 @@ import MeetingNotesIndex from "./pages/MeetingNotesIndex";
 import GoalPlanner from "./pages/GoalPlanner";
 import GoalsTimeline from "./pages/GoalsTimeline";
 import SipPlanner from "./pages/SipPlanner";
-import LumpSumPlanner from "./pages/LumpSumPlanner";
 import InvestLayout from "@/components/invest/InvestLayout";
 import Execute from "./pages/Execute";
 import RebalanceExplanation from "./pages/RebalanceExplanation";
@@ -56,7 +55,8 @@ import Discovery from "./pages/Discovery";
 import MfAllFunds from "./pages/MfAllFunds";
 import MfCompare from "./pages/MfCompare";
 import MfFundDetail from "./pages/MfFundDetail";
-import AdvisorMeetings from "./pages/AdvisorMeetings";
+// Zoom team-call feature disabled for now — keep the code, don't delete.
+// import AdvisorMeetings from "./pages/AdvisorMeetings";
 import CamsUpload from "./pages/CamsUpload";
 import LinkAccounts from "./pages/LinkAccounts";
 import AboutYou from "./pages/AboutYou";
@@ -100,7 +100,7 @@ const App = () => (
               <Route index element={<Navigate to="/invest/rebalance-explanation" replace />} />
               <Route path="rebalance-explanation" element={<RebalanceExplanation />} />
               <Route path="sip" element={<SipPlanner />} />
-              <Route path="lumpsum" element={<LumpSumPlanner />} />
+              <Route path="lumpsum" element={<LumpsumPlanner />} />
             </Route>
             {/* KYC gate + order flow for FP transactions */}
             <Route path="/kyc" element={<Kyc />} />
@@ -114,7 +114,8 @@ const App = () => (
             <Route path="/discovery/mf/:schemeCode" element={<MfFundDetail />} />
             <Route path="/discovery/mf" element={<MfAllFunds />} />
             <Route path="/discovery" element={<Discovery />} />
-            <Route path="/advisor-meetings" element={<AdvisorMeetings />} />
+            {/* Zoom team-call feature disabled for now */}
+            {/* <Route path="/advisor-meetings" element={<AdvisorMeetings />} /> */}
             {/* Profile-completion onboarding: one mounted page (pathless layout
                 route) whose URL names the open section, so each step is linkable
                 and survives browser back/forward without reloading the page. */}

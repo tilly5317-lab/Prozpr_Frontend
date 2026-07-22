@@ -342,7 +342,7 @@ const WelcomeScreen = ({ onExistingUserLogin }: WelcomeScreenProps) => {
           type="button"
           onClick={() => camsFile && setShowCamsPasswordModal(true)}
           disabled={!camsFile}
-          className="flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold text-primary-foreground tracking-wide transition-all active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none"
+          className="flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold text-primary-foreground tracking-wide transition-all active:scale-[0.98] disabled:opacity-90 disabled:pointer-events-none"
         >
           Enter password & extract
           <ArrowRight className="h-4 w-4" />
@@ -482,7 +482,7 @@ const WelcomeScreen = ({ onExistingUserLogin }: WelcomeScreenProps) => {
           type="button"
           onClick={() => void handleCreateAccount()}
           disabled={loading}
-          className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold text-primary-foreground tracking-wide transition-all active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none"
+          className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold text-primary-foreground tracking-wide transition-all active:scale-[0.98] disabled:opacity-90 disabled:pointer-events-none"
         >
           {loading ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -558,7 +558,7 @@ const WelcomeScreen = ({ onExistingUserLogin }: WelcomeScreenProps) => {
           type="button"
           onClick={() => void handlePinSubmit()}
           disabled={pin.length < 4 || loading}
-          className="flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold text-primary-foreground tracking-wide transition-all active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none"
+          className="flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold text-primary-foreground tracking-wide transition-all active:scale-[0.98] disabled:opacity-90 disabled:pointer-events-none"
         >
           {loading ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -590,7 +590,7 @@ const WelcomeScreen = ({ onExistingUserLogin }: WelcomeScreenProps) => {
         <div className="mt-0 space-y-2.5 mb-auto">
           {[
             { icon: TrendingUp, label: "Track all investments", sub: "Mutual funds, stocks and more" },
-            { icon: Sparkles, label: "Tilly, your own AI wealth advisor", sub: "Personalized recommendations" },
+            { icon: Sparkles, label: "Prozpr, your own AI wealth advisor", sub: "Personalized recommendations" },
             { icon: Shield, label: "Bank-grade security", sub: "256-bit encryption" },
           ].map((item, i) => (
             <motion.div
@@ -681,7 +681,7 @@ const WelcomeScreen = ({ onExistingUserLogin }: WelcomeScreenProps) => {
         type="button"
         onClick={() => void handlePhoneSubmit()}
         disabled={!isValid || loading}
-        className="flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold text-primary-foreground tracking-wide transition-all active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none"
+        className="flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold text-primary-foreground tracking-wide transition-all active:scale-[0.98] disabled:opacity-90 disabled:pointer-events-none"
       >
         {loading ? (
           <Loader2 className="h-4 w-4 animate-spin" />

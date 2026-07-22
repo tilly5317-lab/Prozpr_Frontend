@@ -8,6 +8,12 @@ import type { PortfolioDetail } from "@/lib/api";
 // Holdings group by the backend's asset_class (Equity / Debt / Others) — produced by
 // scheme_classification.py and returned per holding by GET /portfolio/. The frontend
 // never re-derives this; it only displays what the API sends.
+//
+// Caveat: a holding's asset_class is its DOMINANT class, undivided. The donut and
+// its drill-down instead use `allocations[]` / `allocations[].sub_categories`, which
+// the backend look-through splits (a hybrid's value lands partly in Equity, partly
+// in Debt/Others). The two views are therefore expected to disagree — the holdings
+// list below is the whole-fund view, the donut above is the split view.
 type HoldingBucket = "Equity" | "Debt" | "Others";
 
 // Canonical asset-class palette (app-wide).
@@ -200,6 +206,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
     color: string;
     amount?: number;
     bucket: HoldingBucket;
+    subCategories?: { name: string; value: number }[];
   }[] = hasAllocations
     ? portfolio!.allocations.map((a, i) => ({
         name: a.asset_class,
@@ -207,6 +214,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
         color: getColor(a.asset_class, i),
         amount: a.amount,
         bucket: normalizeBucket(a.asset_class),
+        subCategories: a.sub_categories?.map((s) => ({ name: s.name, value: s.amount })),
       }))
     : [
         { name: "Equity", value: 48, color: EQUITY_COLOR, bucket: "Equity" },
@@ -325,17 +333,27 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
   const selectedGroup = selected ? groupedHoldings.find((g) => g.bucket === selected.bucket) : undefined;
   const selectedAmount = selected ? selected.amount ?? selectedGroup?.totalValue : undefined;
 
-  // Roll the tapped bucket's holdings up to fund sub-categories (e.g. "Large Cap",
-  // "Corporate Bond") so the slice detail shows categories, not individual funds.
-  const selectedSubGroups = selectedGroup
-    ? Object.values(
-        selectedGroup.items.reduce<Record<string, { name: string; value: number }>>((acc, row) => {
-          const key = row.subCategory?.trim() || "Other";
-          (acc[key] ??= { name: key, value: 0 }).value += row.currentValue;
-          return acc;
-        }, {}),
-      ).sort((a, b) => b.value - a.value)
-    : [];
+  // Sub-categories for the tapped slice (e.g. "Large Cap", "Corporate Bond"), so
+  // the detail shows categories rather than individual funds.
+  //
+  // Prefer the backend's `sub_categories`: it is look-through split, so a hybrid
+  // contributes only its equity sleeve to Equity and its debt sleeve to Debt,
+  // and these rows always sum to the amount displayed above them. Grouping
+  // holdings locally can't do this — each holding carries one undivided
+  // asset_class, which parks the whole fund under its dominant class and leaves
+  // the Debt/Others slices with nothing to show. That local grouping survives
+  // only as a fallback for API responses predating the field.
+  const selectedSubGroups = selected?.subCategories
+    ? selected.subCategories
+    : selectedGroup
+      ? Object.values(
+          selectedGroup.items.reduce<Record<string, { name: string; value: number }>>((acc, row) => {
+            const key = row.subCategory?.trim() || "Other";
+            (acc[key] ??= { name: key, value: 0 }).value += row.currentValue;
+            return acc;
+          }, {}),
+        ).sort((a, b) => b.value - a.value)
+      : [];
 
   return (
     <div onClick={() => setSelectedSlice(null)}>
