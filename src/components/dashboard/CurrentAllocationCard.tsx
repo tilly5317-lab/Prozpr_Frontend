@@ -357,11 +357,8 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
 
   return (
     <div onClick={() => setSelectedSlice(null)}>
-      <p
-        className="text-[11px] uppercase tracking-[1.5px] mb-3 text-muted-foreground"
-        style={{ fontWeight: 500 }}
-      >
-        Current Allocation
+      <p className="mb-3 text-[16.2px] font-semibold text-foreground">
+        Current allocation
         {showSampleHoldingsBanner && (
           <span className="ml-2 font-normal normal-case text-[11px] text-muted-foreground">
             (sample — add holdings or import a statement)
@@ -467,9 +464,9 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                     className="h-2.5 w-2.5 rounded-full shrink-0"
                     style={{ backgroundColor: item.color }}
                   />
-                  <span className="text-[11px] text-muted-foreground leading-tight">{item.name}</span>
+                  <span className="text-[12px] text-muted-foreground leading-tight">{item.name}</span>
                 </div>
-                <span className="text-xs font-semibold text-foreground">{item.value}%</span>
+                <span className="text-[12px] font-semibold text-foreground">{item.value}%</span>
               </div>
             ))
           )}
@@ -489,15 +486,15 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
         ))}
       </div>
 
-      {/* View holdings toggle */}
-      <div
-        className="mt-2 pt-2 cursor-pointer"
-        style={{ borderTop: "1px solid hsl(var(--hairline))" }}
-        onClick={() => setHoldingsOpen((o) => !o)}
-      >
-        <p className="text-[13px] font-medium text-center w-full text-foreground hover:text-accent transition-colors">
+      {/* View holdings toggle — subtly lifted surface (bg-card + soft shadow, no border). */}
+      <div className="mt-2 pt-2" style={{ borderTop: "1px solid hsl(var(--hairline))" }}>
+        <button
+          type="button"
+          onClick={() => setHoldingsOpen((o) => !o)}
+          className="block w-full cursor-pointer rounded-xl bg-card px-4 py-2.5 text-center text-[13px] font-semibold text-foreground shadow-sm transition-all hover:shadow-md active:scale-[0.99]"
+        >
           {holdingsOpen ? "Hide holdings ↑" : "View holdings →"}
-        </p>
+        </button>
       </div>
 
       {/* Expandable holdings drawer */}
@@ -510,7 +507,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
             transition={{ duration: 0.25, ease: "easeInOut" }}
             className="overflow-hidden"
           >
-            <div className="pt-3 space-y-2" style={{ borderTop: "1px solid hsl(var(--hairline))" }}>
+            <div className="pt-3 space-y-2">
               {groupedHoldings.map((group) => {
                 const isCollapsed = collapsedBuckets[group.bucket];
                 return (
@@ -618,7 +615,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                         }}
                       />
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium text-foreground">{plainFundDisplayName(row.name)}</p>
+                        <p className="text-[13.2px] font-medium text-foreground">{plainFundDisplayName(row.name)}</p>
                         {row.schemeCode ? (
                           <Link
                             to={`/portfolio/fund/${encodeURIComponent(row.schemeCode)}`}
@@ -632,9 +629,9 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                       </div>
                       <div className="text-right shrink-0 flex items-center gap-2">
                         <div>
-                          <p className="text-xs font-semibold text-foreground">{row.value}</p>
+                          <p className="text-[13.2px] font-semibold text-foreground">{row.value}</p>
                           {collapsedReturnText && (
-                            <span className="text-[11px] font-medium" style={{ color: collapsedReturnColor }}>
+                            <span className="text-[12.1px] font-medium" style={{ color: collapsedReturnColor }}>
                               {collapsedReturnText} YoY
                             </span>
                           )}

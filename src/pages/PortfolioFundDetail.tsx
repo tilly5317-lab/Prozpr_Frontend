@@ -158,7 +158,7 @@ export default function PortfolioFundDetail() {
           </button>
           <div className="min-w-0 flex-1">
             <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Mutual fund</p>
-            <h1 className="text-[15px] font-semibold leading-tight text-foreground">
+            <h1 className="text-lg font-semibold leading-tight text-foreground">
               {loading ? "Loading…" : data?.scheme_name ?? schemeCode}
             </h1>
             {!loading && (data?.amc_name || data?.sub_category) && (

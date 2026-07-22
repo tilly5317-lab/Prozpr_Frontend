@@ -281,15 +281,15 @@ const MarkdownMessage = ({ text }: { text: string }) => {
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          h1: ({ children }) => <h1 className="text-[15px] font-bold text-foreground mt-3 mb-1.5">{children}</h1>,
-          h2: ({ children }) => <h2 className="text-[14px] font-bold text-foreground mt-3 mb-1">{children}</h2>,
-          h3: ({ children }) => <h3 className="text-[13px] font-semibold text-foreground mt-2.5 mb-1">{children}</h3>,
-          p: ({ children }) => <p className="text-[12px] leading-relaxed mb-2">{children}</p>,
+          h1: ({ children }) => <h1 className="text-[17.25px] font-bold text-foreground mt-3 mb-1.5">{children}</h1>,
+          h2: ({ children }) => <h2 className="text-[16.1px] font-bold text-foreground mt-3 mb-1">{children}</h2>,
+          h3: ({ children }) => <h3 className="text-[14.95px] font-semibold text-foreground mt-2.5 mb-1">{children}</h3>,
+          p: ({ children }) => <p className="text-[13.8px] leading-relaxed mb-2">{children}</p>,
           strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
           em: ({ children }) => <em className="text-muted-foreground">{children}</em>,
           ul: ({ children }) => <ul className="list-disc list-outside pl-4 mb-2 space-y-0.5">{children}</ul>,
           ol: ({ children }) => <ol className="list-decimal list-outside pl-4 mb-2 space-y-0.5">{children}</ol>,
-          li: ({ children }) => <li className="text-[12px] leading-relaxed">{children}</li>,
+          li: ({ children }) => <li className="text-[13.8px] leading-relaxed">{children}</li>,
           table: ({ children }) => (
             <div className="mb-2 overflow-x-auto rounded-xl border border-border/60">
               <table className="w-full border-collapse text-[11px]">{children}</table>
@@ -300,7 +300,7 @@ const MarkdownMessage = ({ text }: { text: string }) => {
           th: ({ children }) => <th className="px-2.5 py-2 text-left font-semibold text-foreground">{children}</th>,
           td: ({ children }) => <td className="px-2.5 py-2 align-top text-foreground/90">{children}</td>,
           blockquote: ({ children }) => (
-            <blockquote className="border-l-2 border-primary/40 pl-3 my-2 text-[12px] text-foreground/80 italic">
+            <blockquote className="border-l-2 border-primary/40 pl-3 my-2 text-[13.8px] text-foreground/80 italic">
               {children}
             </blockquote>
           ),
@@ -1449,7 +1449,7 @@ const AIChatPanel = ({
           ) : msg.role === "user" ? (
             <div className="flex justify-end">
               <div
-                className="max-w-[80%] rounded-2xl rounded-tr-sm px-3 py-2 text-[12px] leading-relaxed text-white"
+                className="max-w-[80%] rounded-2xl rounded-tr-sm px-3 py-2 text-[13.8px] leading-relaxed text-white"
                 style={{ backgroundColor: "hsl(var(--user-bubble) / 0.85)" }}
               >
                 {msg.content}
@@ -1460,7 +1460,7 @@ const AIChatPanel = ({
               <div className="flex gap-2 items-start max-w-[95%]">
                 <ProzprAvatar />
                 <div
-                  className="rounded-2xl rounded-tl-sm px-3 py-2 text-[12px] leading-relaxed text-foreground/90"
+                  className="rounded-2xl rounded-tl-sm px-3 py-2 text-[13.8px] leading-relaxed text-foreground/90"
                   style={{
                     backgroundColor: "hsl(var(--prozpr-bubble))",
                     borderLeft: "2px solid hsla(38, 45%, 54%, 0.3)",
@@ -1666,7 +1666,7 @@ const AIChatPanel = ({
               <div className="mt-5 flex w-full max-w-[90%] items-start gap-2">
                 <ProzprAvatar />
                 <div
-                  className="rounded-2xl rounded-tl-sm px-3 py-1.5 text-left text-[12px] leading-relaxed text-foreground/90"
+                  className="rounded-2xl rounded-tl-sm px-3 py-1.5 text-left text-[13.8px] leading-relaxed text-foreground/90"
                   style={{
                     backgroundColor: "hsl(var(--prozpr-bubble))",
                     borderLeft: "2px solid hsla(38, 45%, 54%, 0.45)",

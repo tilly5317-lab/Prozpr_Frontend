@@ -127,7 +127,7 @@ const CamsUpload = () => {
         transition={{ duration: 0.35 }}
         className="flex-1 flex flex-col"
       >
-        <h1 className="text-xl font-semibold text-foreground mb-2">
+        <h1 className="text-lg font-semibold text-foreground mb-2">
           Upload your mutual fund statement
         </h1>
         <p className="text-xs text-muted-foreground mb-6 leading-relaxed">

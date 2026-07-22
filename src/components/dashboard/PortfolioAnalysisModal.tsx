@@ -308,10 +308,10 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
             role="dialog"
             aria-modal="true"
             aria-label="Portfolio analysis"
-            className="fixed inset-x-0 bottom-0 sm:inset-0 sm:flex sm:items-center sm:justify-center z-[60] px-0 sm:px-4"
+            className="fixed inset-0 flex items-center justify-center z-[60] px-4"
           >
             <div
-              className="mx-auto w-full max-w-md rounded-t-2xl sm:rounded-2xl bg-card shadow-2xl flex flex-col overflow-hidden"
+              className="mx-auto w-full max-w-md rounded-2xl bg-card shadow-2xl flex flex-col overflow-hidden"
               style={{
                 maxHeight: "min(92dvh, 720px)",
                 borderTop: "1px solid rgba(255,255,255,0.04)",
@@ -329,11 +329,10 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
                 <button
                   type="button"
                   onClick={handleExport}
-                  className="inline-flex items-center gap-1 rounded-full bg-muted/70 hover:bg-muted px-2.5 py-1 text-[11px] font-semibold text-muted-foreground hover:text-foreground transition-colors"
+                  className="p-1.5 text-muted-foreground hover:text-foreground"
                   aria-label="Export current view as CSV"
                 >
-                  <Download className="h-3 w-3" />
-                  Export
+                  <Download className="h-4 w-4" />
                 </button>
                 <button
                   type="button"

@@ -264,7 +264,7 @@ export default function MfCompare() {
             <ArrowLeft className="h-4 w-4" />
           </button>
           <div className="min-w-0 flex-1">
-            <h1 className="text-[17px] font-semibold leading-tight text-foreground">Compare &amp; rank funds</h1>
+            <h1 className="text-lg font-semibold leading-tight text-foreground">Compare &amp; rank funds</h1>
             <p className="text-[11px] text-muted-foreground">
               Overlay performance and rank up to {MAX_FUNDS} funds side by side
             </p>

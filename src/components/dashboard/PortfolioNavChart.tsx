@@ -84,9 +84,12 @@ interface PortfolioNavChartProps {
   camsMissing?: boolean;
   /** Open the CAMS upload popup — wired only when `camsMissing`. */
   onUploadCams?: () => void;
+  /** Reports the value change across the selected horizon (first → last point) —
+   *  both ₹ amount and % — plus the active horizon, for the headline to show. */
+  onPeriodChange?: (info: { pct: number | null; amount: number | null; horizon: PortfolioNavHorizon }) => void;
 }
 
-const PortfolioNavChart = ({ camsMissing, onUploadCams }: PortfolioNavChartProps) => {
+const PortfolioNavChart = ({ camsMissing, onUploadCams, onPeriodChange }: PortfolioNavChartProps) => {
   const [horizon, setHorizon] = useState<PortfolioNavHorizon>("3Y");
   const [points, setPoints] = useState<PortfolioNavHistoryPoint[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -238,6 +241,21 @@ const PortfolioNavChart = ({ camsMissing, onUploadCams }: PortfolioNavChartProps
     }));
   }, [points, horizon]);
 
+  // Value change (₹ and %) across the selected horizon window (first → last
+  // point). Reported up so the headline can show the period gain/loss.
+  const periodChange = useMemo(() => {
+    const empty = { pct: null as number | null, amount: null as number | null };
+    if (chartData.length < 2) return empty;
+    const first = chartData[0].total_value;
+    const last = chartData[chartData.length - 1].total_value;
+    if (!first) return empty;
+    return { pct: ((last - first) / first) * 100, amount: last - first };
+  }, [chartData]);
+
+  useEffect(() => {
+    onPeriodChange?.({ pct: periodChange.pct, amount: periodChange.amount, horizon });
+  }, [periodChange, horizon, onPeriodChange]);
+
   const tickCount = 5;
 
   // Evenly-spaced X ticks by data index (numeric axis), so spacing stays uniform
@@ -277,33 +295,27 @@ const PortfolioNavChart = ({ camsMissing, onUploadCams }: PortfolioNavChartProps
     ? "#2563EB" // equity blue — matches the allocation donut's equity slice
     : "hsl(var(--destructive))";
 
+  // Custom X tick: anchor the first label to the start and the last to the end so
+  // the edge dates (e.g. "Jul-25") sit flush and aren't clipped by the plot bounds.
+  const renderXTick = (props: { x?: number; y?: number; payload?: { value: number } }) => {
+    const x = props.x ?? 0;
+    const y = props.y ?? 0;
+    const v = Number(props.payload?.value ?? 0);
+    const isFirst = v === xTicks[0];
+    const isLast = v === xTicks[xTicks.length - 1];
+    const anchor = isFirst ? "start" : isLast ? "end" : "middle";
+    return (
+      <text x={x} y={y} dy={14} textAnchor={anchor} fontSize={12} fill="hsl(var(--muted-foreground))">
+        {chartData[v]?.x ?? ""}
+      </text>
+    );
+  };
+
   return (
     <div>
-      {/* Horizon picker is meaningless with no history — hide it until CAMS is in. */}
-      {!camsMissing && (
-        <div className="flex gap-1.5 mb-3">
-          {HORIZONS.map((h) => (
-            <button
-              key={h}
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                userPickedHorizonRef.current = true;
-                setHorizon(h);
-              }}
-              className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all ${
-                horizon === h
-                  ? "bg-accent/15 text-accent"
-                  : "bg-muted/60 text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {h}
-            </button>
-          ))}
-        </div>
-      )}
-
-      <div className="h-36 w-full" onClick={(e) => e.stopPropagation()}>
+      {/* Full-bleed: negative margins cancel the parent card's 14px padding so
+          the chart aligns with the cards below. Auto-width stretches to fill. */}
+      <div className="h-[180px] -mx-[14px]" onClick={(e) => e.stopPropagation()}>
         {/* No CAMS imported yet → ask the user to upload it right here in the
             NAV-history space. It only shows while CAMS is absent and disappears
             once a statement is imported (then the real chart builds). */}
@@ -398,7 +410,7 @@ const PortfolioNavChart = ({ camsMissing, onUploadCams }: PortfolioNavChartProps
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart
               data={chartData}
-              margin={{ top: 6, right: 24, left: 0, bottom: 0 }}
+              margin={{ top: 6, right: 6, left: 0, bottom: 0 }}
             >
               <defs>
                 <linearGradient id="navGrad" x1="0" y1="0" x2="0" y2="1">
@@ -412,26 +424,25 @@ const PortfolioNavChart = ({ camsMissing, onUploadCams }: PortfolioNavChartProps
                 domain={[0, Math.max(0, chartData.length - 1)]}
                 ticks={xTicks}
                 interval={0}
-                tickFormatter={(i) => chartData[Number(i)]?.x ?? ""}
-                tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }}
+                tick={renderXTick}
                 axisLine={false}
                 tickLine={false}
-                tickMargin={6}
               />
               <YAxis
+                orientation="right"
                 domain={yTicks ? [yTicks[0], yTicks[yTicks.length - 1]] : ["dataMin", "dataMax"]}
                 ticks={yTicks}
                 interval={0}
-                tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }}
+                tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }}
                 axisLine={false}
                 tickLine={false}
                 width={42}
                 tickFormatter={(v) => {
                   const n = Number(v);
-                  if (n >= 10000000) return `₹${(n / 10000000).toFixed(1)}Cr`;
-                  if (n >= 100000) return `₹${(n / 100000).toFixed(1)}L`;
-                  if (n >= 1000) return `₹${(n / 1000).toFixed(1)}k`;
-                  return `₹${n.toFixed(1)}`;
+                  if (n >= 10000000) return `${(n / 10000000).toFixed(1)}Cr`;
+                  if (n >= 100000) return `${(n / 100000).toFixed(1)}L`;
+                  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+                  return `${n.toFixed(1)}`;
                 }}
               />
               <Tooltip content={<ChartTooltip />} cursor={{ stroke: "hsl(var(--border))" }} />
@@ -474,18 +485,32 @@ const PortfolioNavChart = ({ camsMissing, onUploadCams }: PortfolioNavChartProps
         )}
       </div>
 
-      {hasPoints && (
-        <div className="mt-2 flex items-center justify-center gap-4 text-[10px] text-muted-foreground">
-          <span className="flex items-center gap-1">
-            <span className="inline-block h-[2px] w-3.5 rounded-full" style={{ backgroundColor: strokeColor }} />
-            Total value
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="inline-block h-[2px] w-3.5 rounded-full bg-muted-foreground/45" />
-            Invested
-          </span>
+      {/* Horizon picker — borderless text buttons below the chart, spread edge to
+          edge so the first (1M) sits at the left and the last (Max) right-aligns
+          with the content's right edge. Hidden until CAMS history exists. */}
+      {!camsMissing && (
+        <div className="mt-3 flex justify-between">
+          {HORIZONS.map((h) => (
+            <button
+              key={h}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                userPickedHorizonRef.current = true;
+                setHorizon(h);
+              }}
+              className={`py-1 text-[13px] font-semibold transition-colors ${
+                horizon === h
+                  ? "text-accent"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {h}
+            </button>
+          ))}
         </div>
       )}
+
     </div>
   );
 };

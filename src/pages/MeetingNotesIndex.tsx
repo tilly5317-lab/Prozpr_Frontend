@@ -39,7 +39,7 @@ const MeetingNotesIndex = () => {
   return (
     <div className="mobile-container bg-background min-h-screen flex flex-col pb-16">
       <div className="px-5 pt-10 pb-3">
-        <h1 className="text-lg font-semibold text-foreground">Meeting Notes</h1>
+        <h1 className="text-lg font-semibold text-foreground">Meeting notes</h1>
       </div>
 
       {/* Search */}
