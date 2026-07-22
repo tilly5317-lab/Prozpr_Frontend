@@ -2154,7 +2154,10 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
               >
                 <button
                   type="button"
-                  onClick={() => setAddYear(y)}
+                  // Tapping/clicking a year reveals its projected-corpus readout
+                  // (year + value). It must NOT open the add-goal sheet — new goals
+                  // are added only from the dedicated "Add goal" button.
+                  onClick={() => setHoveredYear(y)}
                   // Pointer events cover mouse hover AND touch press, so the
                   // year/value readout works on mobile (mouseenter never fires
                   // reliably on touch).
@@ -2168,9 +2171,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                   }
                   className="group relative w-full text-left flex items-stretch gap-3 px-2 transition-colors hover:bg-muted/20 focus:outline-none focus-visible:ring-1 focus-visible:ring-foreground/40 rounded-lg"
                   style={{ minHeight: hasGoals ? (isTornado ? 36 : 48) : isTornado ? 12 : 18 }}
-                  aria-label={
-                    hasGoals ? `Add another goal in ${y}` : `Add a goal in ${y}`
-                  }
+                  aria-label={`Show ${y} projected corpus`}
                 >
                   {/* Full-width background chart — gold curve in line mode, tornado bar in tornado mode */}
                   <svg
