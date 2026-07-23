@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, type ReactNode } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { Compass, TrendingUp, TrendingDown, Wallet, Target, Activity, Landmark, Check, Sparkles, type LucideIcon } from "lucide-react";
 import { motion } from "framer-motion";
@@ -84,13 +84,17 @@ function PortfolioMainPanel({
   onUploadCams?: () => void;
 }) {
   const [analysisOpen, setAnalysisOpen] = useState(false);
-  // Value change (₹ + %) for the selected chart horizon (1M/3M/1Y/…), shown under
-  // the headline value. Reported up from the NAV chart, which owns the horizon.
-  const [periodChange, setPeriodChange] = useState<{ pct: number | null; amount: number | null; horizon: string } | null>(null);
-  const handlePeriodChange = useCallback(
-    (info: { pct: number | null; amount: number | null; horizon: string }) => setPeriodChange(info),
-    [],
-  );
+  // Overall gain/loss vs what the user has put in (today's value − invested),
+  // independent of the chart horizon.
+  const investedGain =
+    portfolio.total_invested != null && portfolio.total_invested > 0
+      ? {
+          amount: portfolio.total_value - portfolio.total_invested,
+          pct:
+            portfolio.total_gain_percentage ??
+            ((portfolio.total_value - portfolio.total_invested) / portfolio.total_invested) * 100,
+        }
+      : null;
 
   const stop = (e: React.MouseEvent) => e.stopPropagation();
 
@@ -102,44 +106,37 @@ function PortfolioMainPanel({
 
         <p className="text-2xl font-bold text-foreground tracking-tight">{fmtInr0(portfolio.total_value)}</p>
 
-        {/* Period gain/loss for the selected chart horizon — ₹ amount, % change and
-            an up/down arrow, coloured green (up) or red (down). */}
-        {useNavChart && periodChange?.amount != null && periodChange.pct != null && (
+        {/* Overall gain/loss vs invested — ₹ amount, % return and an up/down
+            arrow, coloured green (up) or red (down). */}
+        {useNavChart && investedGain != null && (
           <div
             className={`mt-1 mb-3 flex items-center gap-1.5 text-[13px] font-semibold ${
-              periodChange.amount >= 0 ? "text-wealth-green" : "text-destructive"
+              investedGain.amount >= 0 ? "text-wealth-green" : "text-destructive"
             }`}
           >
-            {periodChange.amount >= 0 ? (
+            {investedGain.amount >= 0 ? (
               <TrendingUp className="h-4 w-4" />
             ) : (
               <TrendingDown className="h-4 w-4" />
             )}
             <span>
-              {periodChange.amount >= 0 ? "Up" : "Down"} {fmtInr0(Math.abs(periodChange.amount))}
+              {investedGain.amount >= 0 ? "Up" : "Down"} {fmtInr0(Math.abs(investedGain.amount))}
             </span>
             <span
               className={`inline-flex items-center rounded-full border px-2 py-0.5 ${
-                periodChange.pct >= 0
+                investedGain.pct >= 0
                   ? "border-wealth-green/30 bg-wealth-green/10"
                   : "border-destructive/30 bg-destructive/10"
               }`}
             >
-              {periodChange.pct >= 0 ? "+" : "−"}
-              {Math.abs(periodChange.pct).toLocaleString("en-IN", { maximumFractionDigits: 0 })}%
-            </span>
-            <span className="text-[13px] font-medium text-foreground">
-              {periodChange.horizon === "MAX" ? "since you began investing" : `in the last ${periodChange.horizon}`}
+              {investedGain.pct >= 0 ? "+" : "−"}
+              {Math.abs(investedGain.pct).toLocaleString("en-IN", { maximumFractionDigits: 1 })}%
             </span>
           </div>
         )}
 
         {useNavChart ? (
-          <PortfolioNavChart
-            camsMissing={camsMissing}
-            onUploadCams={onUploadCams}
-            onPeriodChange={handlePeriodChange}
-          />
+          <PortfolioNavChart camsMissing={camsMissing} onUploadCams={onUploadCams} />
         ) : (
           <>
             <div className="flex gap-1.5 mb-3" onClick={stop}>

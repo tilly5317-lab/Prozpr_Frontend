@@ -587,6 +587,7 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
                                       strokeWidth={1.75}
                                       strokeDasharray={NIFTY.dash}
                                       dot={false}
+                                      connectNulls
                                       isAnimationActive={false}
                                     />
                                   )}

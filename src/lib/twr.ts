@@ -41,7 +41,10 @@ export function rebaseTwr(points: TwrPoint[], startIdx: number): RebasedTwr {
   const window = points.slice(startIdx);
   if (window.length === 0) return { twr: 0, niftyTwr: null, series: [] };
   const base = window[0];
-  const niftyBase = base.nifty_index;
+  // Benchmark base = first point IN THE WINDOW that has a value: the stored Nifty
+  // series can start after (or stop before) the portfolio series, so the window's
+  // first point having no benchmark must not drop the line for the whole range.
+  const niftyBase = window.find((p) => p.nifty_index != null)?.nifty_index ?? null;
   const series: RebasedPoint[] = window.map((p, i) => {
     const pt: RebasedPoint = {
       i,
@@ -55,9 +58,12 @@ export function rebaseTwr(points: TwrPoint[], startIdx: number): RebasedTwr {
   });
   const last = window[window.length - 1];
   const twr = round1((last.portfolio_index / base.portfolio_index - 1) * 100);
+  // Last benchmark value in the window (the series may end before the portfolio
+  // series does when benchmark data is a few days stale).
+  const lastNifty = [...window].reverse().find((p) => p.nifty_index != null)?.nifty_index ?? null;
   const niftyTwr =
-    niftyBase != null && last.nifty_index != null
-      ? round1((last.nifty_index / niftyBase - 1) * 100)
+    niftyBase != null && lastNifty != null
+      ? round1((lastNifty / niftyBase - 1) * 100)
       : null;
   return { twr, niftyTwr, series };
 }
