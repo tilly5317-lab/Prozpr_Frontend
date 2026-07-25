@@ -80,13 +80,36 @@ export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
 
+// Per-session onboarding hints. They belong to ONE account — leaving them
+// behind after a logout/new-signup in the same tab makes the next account
+// inherit the previous one's progress (e.g. a brand-new profile seeing
+// "your statement is already imported"). Wipe them on every identity change;
+// the backend remains the source of truth for real progress.
+const ONBOARDING_SESSION_FLAGS = [
+  "onboardingComplete",
+  "camsStatementImported",
+  "camsUploadPromptShown",
+  "completedLinkAccounts",
+  "completedTellUs",
+] as const;
+
+function clearOnboardingSessionFlags() {
+  try {
+    for (const key of ONBOARDING_SESSION_FLAGS) sessionStorage.removeItem(key);
+  } catch {
+    /* private mode */
+  }
+}
+
 export function setToken(token: string) {
   localStorage.setItem(TOKEN_KEY, token);
+  clearOnboardingSessionFlags();
   invalidateUserContextCache();
 }
 
 export function clearToken() {
   localStorage.removeItem(TOKEN_KEY);
+  clearOnboardingSessionFlags();
   invalidateUserContextCache();
 }
 
@@ -514,8 +537,48 @@ export async function listLinkedAccounts(): Promise<{ accounts: LinkAccountInfo[
   return res;
 }
 
-// ── CAMS / KFintech Consolidated Account Statement (CAS) PDF upload ──
-// Replaces the Finvu account-aggregator "fetch by linked mobile" flow (paused for licensing).
+// ── CAMS / KFintech Consolidated Account Statement (CAS) import ──
+// Two-step flow backed by the CAS Parser API (casparser.in):
+//   1. requestCamsStatement() — CAMS/KFintech emails the investor a detailed CAS
+//      PDF protected with a password of their choosing;
+//   2. uploadCamsStatement() — the received PDF (+ that password) is parsed
+//      server-side and the portfolio rebuilt from it.
+export interface CamsCapabilities {
+  parse_available: boolean;
+  mailback_available: boolean;
+}
+
+/**
+ * Which halves of the CAMS import the backend's CAS Parser plan supports.
+ * When mailback is unavailable the flow starts at the upload step with
+ * manual-generation guidance instead of offering statement-by-email.
+ */
+export async function getCamsCapabilities(): Promise<CamsCapabilities> {
+  return request<CamsCapabilities>("/mf-ingest/cams-capabilities");
+}
+
+export interface CamsStatementRequestResponse {
+  status: string;
+  email: string;
+  message: string;
+}
+
+/**
+ * Ask CAMS/KFintech to email the investor their detailed CAS PDF (full history),
+ * encrypted with `password`. The email lands within a few minutes; upload the
+ * PDF with the same password via uploadCamsStatement().
+ */
+export async function requestCamsStatement(p: {
+  email: string;
+  password: string;
+  pan_no?: string | null;
+}): Promise<CamsStatementRequestResponse> {
+  return request<CamsStatementRequestResponse>("/mf-ingest/cams-request", {
+    method: "POST",
+    body: JSON.stringify(p),
+  });
+}
+
 export interface CamsPdfImportResponse {
   import_id: string;
   status: string; // "NORMALIZED" | "FAILED" | "RECEIVED"
@@ -531,6 +594,8 @@ export interface CamsPdfImportResponse {
   portfolio_allocation_rows: number;
   total_value_inr: number;
   normalize_error: string | null;
+  /** Blank profile fields auto-filled from the statement (e.g. ["email", "pan"]). */
+  profile_fields_filled?: string[];
   message: string;
 }
 

@@ -3,9 +3,15 @@ import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowRight, Briefcase, Calendar, Check, Plus, Target, Wallet, X, ShieldCheck, ChevronDown, Loader2 } from "lucide-react";
-import { persistOnboardingProfile, markOnboardingComplete } from "@/lib/api";
+import {
+  getOnboardingProfile,
+  getRiskProfile,
+  markOnboardingComplete,
+  persistOnboardingProfile,
+} from "@/lib/api";
 import { toast } from "@/hooks/use-toast";
 import { useOnboardingStep } from "@/hooks/useOnboardingStep";
+import { useEnterSubmit } from "@/hooks/useEnterSubmit";
 import { trackOnboardingCompleted } from "@/lib/onboardingAnalytics";
 
 interface Props {
@@ -129,6 +135,85 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
   // under manual control — reopening it won't auto-close.
   const autoAdvancedRef = useRef<Set<SectionId>>(new Set());
 
+  // Restore saved progress: prefill every section from the backend profile so
+  // a returning user (any device, any time later) never re-enters what they
+  // already answered — in the wizard or on a previous visit to this page.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      let profile: Awaited<ReturnType<typeof getOnboardingProfile>> | null = null;
+      try {
+        profile = await getOnboardingProfile();
+      } catch {
+        return; // nothing saved yet
+      }
+      let risk: Awaited<ReturnType<typeof getRiskProfile>> | null = null;
+      try {
+        risk = await getRiskProfile();
+      } catch {
+        /* no risk profile yet */
+      }
+      if (cancelled || !profile) return;
+
+      if (profile.date_of_birth) {
+        const m = profile.date_of_birth.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (m) setDob((prev) => prev || `${m[3]}/${m[2]}/${m[1]}`);
+      }
+      if (profile.occupation) {
+        const saved = profile.occupation;
+        const known = ["Salaried", "Business", "Freelance", "Homemaker", "Retired"];
+        if (known.includes(saved)) {
+          setOccupation((prev) => prev || saved);
+        } else {
+          setOccupation((prev) => prev || "Other");
+          setOccupationOther((prev) => prev || saved);
+        }
+      }
+      const savedSelected = profile.selected_goals ?? [];
+      const savedCustom = profile.custom_goals ?? [];
+      if (savedSelected.length || savedCustom.length) {
+        setSelectedGoals((prev) =>
+          prev.length ? prev : [...savedSelected, ...savedCustom.filter((g) => !savedSelected.includes(g))],
+        );
+        setCustomGoals((prev) => (prev.length ? prev : savedCustom));
+      }
+      if (profile.investment_horizon) {
+        // The tell-us wizard stores "Short/Medium/Long term"; this page uses
+        // year ranges — map either form onto this page's options.
+        const saved = profile.investment_horizon;
+        const wizardToRange: Record<string, string> = {
+          "Short term": "< 2 years",
+          "Medium term": "2–5 years",
+          "Long term": "5+ years",
+        };
+        const mapped = HORIZON_OPTIONS.some((h) => h.label === saved)
+          ? saved
+          : wizardToRange[saved];
+        if (mapped) setHorizon((prev) => prev || mapped);
+      }
+      if (profile.annual_income != null && profile.annual_income > 0) {
+        const saved = Math.round(profile.annual_income);
+        setIncome((prev) => (prev > 0 ? prev : saved));
+      }
+      if (profile.monthly_household_expense != null && profile.monthly_household_expense > 0) {
+        const saved = Math.round(profile.monthly_household_expense);
+        setMonthlyExpense((prev) => (prev > 0 ? prev : saved));
+      }
+      if (risk?.risk_level != null) {
+        // risk_level 0–4 ↔ preference letters A–E (what this page persists
+        // back as risk_choice_letter).
+        const idx = Math.round(risk.risk_level);
+        if (idx >= 0 && idx <= 4) {
+          const letter = ["A", "B", "C", "D", "E"][idx];
+          setInvestmentView((prev) => prev || letter);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Date-of-birth validity (must be a real, non-future date before we let the user move on).
   const dobParsed = parseDob(dob);
   const dobValid = !!dobParsed && !isFutureDob(dobParsed);
@@ -149,6 +234,11 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
   };
 
   const allComplete = SECTION_ORDER.every(isSectionComplete);
+
+  // Enter = the page's primary "Generate my portfolio" button (once enabled).
+  useEnterSubmit(() => {
+    if (allComplete && !submitting) void handleSaveAndContinue();
+  });
 
   // Auto-advance: the FIRST time the open section becomes complete, open the next
   // incomplete one. Once a section has auto-advanced once, it's marked — reopening
@@ -333,7 +423,7 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
                         ) : occupation === "Other" ? (
                           <input autoFocus value={occupationOther}
                             onChange={(e) => setOccupationOther(e.target.value)}
-                            onKeyDown={(e) => { if (e.key === "Enter" && occupationOther.trim()) { /* keep Other state */ } }}
+                            onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); /* keep typing state; screen-level Enter stays out */ }}
                             onBlur={() => { if (!occupationOther.trim()) { setOccupation(""); } }}
                             placeholder="Type occupation"
                             className="px-3 py-2 rounded-full text-xs bg-secondary text-foreground outline-none w-32 border border-border" />
@@ -381,7 +471,7 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
                         })}
                         {addingGoal ? (
                           <input autoFocus value={newGoalText} onChange={(e) => setNewGoalText(e.target.value)}
-                            onKeyDown={(e) => { if (e.key === "Enter") { addCustomGoal(); } }}
+                            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCustomGoal(); } }}
                             onBlur={() => { if (newGoalText.trim()) { addCustomGoal(); } else { setAddingGoal(false); setNewGoalText(""); } }}
                             placeholder="Type goal"
                             className="px-3 py-2 rounded-full text-xs bg-secondary text-foreground outline-none w-28 border border-border" />
@@ -519,7 +609,7 @@ const AboutYouPage = () => {
   return (
     <TellUsAboutYou
       onComplete={() => navigate("/onboarding-loading")}
-      onBack={() => navigate("/link-accounts")}
+      onBack={() => navigate("/cams-upload")}
     />
   );
 };

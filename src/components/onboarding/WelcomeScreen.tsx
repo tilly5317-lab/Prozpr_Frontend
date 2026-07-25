@@ -6,6 +6,8 @@ import CamsStatementPasswordModal from "./CamsStatementPasswordModal";
 import prozprLogoLight from "@/assets/prozpr-logo-light.png";
 import prozprLogoDark from "@/assets/prozpr-logo-dark.png";
 import { signup, login, getMe, updateMe, checkMobileStatus } from "@/lib/api";
+import { resolveOnboardingResumeRoute } from "@/lib/onboardingResume";
+import { useEnterSubmit } from "@/hooks/useEnterSubmit";
 import {
   trackOnboardingStepViewed,
   trackOnboardingStepCompleted,
@@ -43,7 +45,7 @@ const MAX_PDF_BYTES = 20 * 1024 * 1024;
 
 type Step = "phone" | "setup" | "pin" | "cams";
 
-const WelcomeScreen = ({ onExistingUserLogin }: WelcomeScreenProps) => {
+const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
   const navigate = useNavigate();
   const { refresh } = useAuth();
   const [step, setStep] = useState<Step>("phone");
@@ -72,6 +74,14 @@ const WelcomeScreen = ({ onExistingUserLogin }: WelcomeScreenProps) => {
   const [showCamsPasswordModal, setShowCamsPasswordModal] = useState(false);
 
   const isValid = phone.replace(/\s/g, "").length >= 7;
+
+  // Enter anywhere = the step's primary (highlighted) button.
+  useEnterSubmit(() => void handlePhoneSubmit(), step === "phone" && !showCodes);
+  useEnterSubmit(() => void handlePinSubmit(), step === "pin");
+  useEnterSubmit(() => void handleCreateAccount(), step === "setup");
+  useEnterSubmit(() => {
+    if (camsFile) setShowCamsPasswordModal(true);
+  }, step === "cams" && !showCamsPasswordModal);
 
   // WelcomeScreen is a single component that swaps between internal sub-steps,
   // so the onboarding "viewed" events are emitted here on each sub-step change
@@ -122,8 +132,22 @@ const WelcomeScreen = ({ onExistingUserLogin }: WelcomeScreenProps) => {
     }
   };
 
-  const resumeOnboarding = () => {
-    navigate("/link-accounts");
+  // A returning user with unfinished onboarding lands EXACTLY where they left
+  // off — resolved from backend state (answers saved + holdings imported), so
+  // progress survives any time away or a different device.
+  const resumeOnboarding = async () => {
+    setLoading(true);
+    try {
+      const route = await resolveOnboardingResumeRoute();
+      if (route) {
+        navigate(route);
+        return;
+      }
+    } catch {
+      /* resolution failed → safest is the wizard, which re-checks itself */
+    }
+    setLoading(false);
+    onNext(); // tell-us wizard — asks only the still-missing questions
   };
 
   // Returning user: verify the PIN they set at signup and drop them into the app.
@@ -166,7 +190,7 @@ const WelcomeScreen = ({ onExistingUserLogin }: WelcomeScreenProps) => {
         return;
       }
     }
-    resumeOnboarding();
+    await resumeOnboarding();
   };
 
   const isEmailValid = (v: string) => {
@@ -351,10 +375,10 @@ const WelcomeScreen = ({ onExistingUserLogin }: WelcomeScreenProps) => {
 
         <button
           type="button"
-          onClick={() => navigate("/link-accounts")}
+          onClick={() => navigate("/cams-upload")}
           className="mt-3 w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors"
         >
-          Skip for now — link accounts later
+          No PDF handy? Get your statement by email instead
         </button>
 
         <CamsStatementPasswordModal
@@ -363,7 +387,17 @@ const WelcomeScreen = ({ onExistingUserLogin }: WelcomeScreenProps) => {
           onClose={() => {
             setShowCamsPasswordModal(false);
           }}
-          onImportedContinue={() => navigate("/link-accounts")}
+          onImportedContinue={() => {
+            try {
+              // The link-accounts confirmation page is gone — mark its legacy
+              // session flag so resume/options screens agree, and continue
+              // straight to About You.
+              sessionStorage.setItem("completedLinkAccounts", "true");
+            } catch {
+              /* ignore */
+            }
+            navigate("/about-you");
+          }}
         />
       </div>
     );
@@ -466,7 +500,6 @@ const WelcomeScreen = ({ onExistingUserLogin }: WelcomeScreenProps) => {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && void handleCreateAccount()}
               placeholder="you@example.com"
               className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-primary"
             />
