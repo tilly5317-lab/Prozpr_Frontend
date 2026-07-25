@@ -18,7 +18,7 @@ interface AccountDiscoveryModalProps {
   onClose: () => void;
   /** After successful SimBanks sync */
   onSynced?: () => void;
-  /** Navigate after sync (default /link-accounts). Pass null to stay on the current route. */
+  /** Navigate after sync (default /cams-upload). Pass null to stay on the current route. */
   afterSyncNavigate?: string | null;
 }
 
@@ -32,7 +32,7 @@ const AccountDiscoveryModal = ({
   open,
   onClose,
   onSynced,
-  afterSyncNavigate = "/link-accounts",
+  afterSyncNavigate = "/cams-upload",
 }: AccountDiscoveryModalProps) => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);

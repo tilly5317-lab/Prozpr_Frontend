@@ -27,7 +27,7 @@ export const ONBOARDING_STEPS = [
   "phone_entry", // WelcomeScreen — enter mobile number
   "account_setup", // WelcomeScreen — name + PIN + email (new users)
   "cams_upload", // /cams-upload — CAMS / KFintech statement
-  "link_accounts", // /link-accounts — confirm imported holdings
+  "link_accounts", // page removed 2026-07-25 — kept so historical PostHog funnels still type-check
   "about_you", // /about-you — DOB, goals, income, risk
   "profile_generation", // /onboarding-loading — portfolio being built
 ] as const;

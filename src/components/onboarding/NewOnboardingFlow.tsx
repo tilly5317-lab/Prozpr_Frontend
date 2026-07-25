@@ -7,6 +7,8 @@ import {
   persistOnboardingProfile,
   type PersistOnboardingInput,
 } from "@/lib/api";
+import { missingOnboardingQuestions } from "@/lib/onboardingResume";
+import { useEnterSubmit } from "@/hooks/useEnterSubmit";
 import { toast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -24,6 +26,11 @@ import {
 
 interface NewOnboardingFlowProps {
   onComplete: () => void;
+  /**
+   * Skip the welcome/phone screen and open straight on the tell-us questions —
+   * used when an already-authenticated user resumes an unfinished onboarding.
+   */
+  startAtQuestions?: boolean;
 }
 
 /* ─── Date of birth input (DD/MM/YYYY, slashes inserted automatically) ─── */
@@ -182,10 +189,10 @@ const QUESTION_META: Record<QuestionKey, { title: string; sub: string; Icon: typ
 };
 
 /* ─── Main component ─── */
-const NewOnboardingFlow = ({ onComplete }: NewOnboardingFlowProps) => {
+const NewOnboardingFlow = ({ onComplete, startAtQuestions = false }: NewOnboardingFlowProps) => {
   const navigate = useNavigate();
   // -1 = welcome, 0 = about you
-  const [step, setStep] = useState(-1);
+  const [step, setStep] = useState(startAtQuestions ? 0 : -1);
 
   // Which questions still need answers (null = still checking the profile).
   const [askKeys, setAskKeys] = useState<QuestionKey[] | null>(null);
@@ -209,7 +216,6 @@ const NewOnboardingFlow = ({ onComplete }: NewOnboardingFlowProps) => {
     if (step !== 0 || askKeys !== null) return;
     let cancelled = false;
     (async () => {
-      const missing: QuestionKey[] = [];
       let profile: Awaited<ReturnType<typeof getOnboardingProfile>> | null = null;
       try {
         profile = await getOnboardingProfile();
@@ -224,42 +230,30 @@ const NewOnboardingFlow = ({ onComplete }: NewOnboardingFlowProps) => {
       }
       if (cancelled) return;
 
+      // Prefill everything we already know so a returning user never retypes.
       if (profile?.date_of_birth) {
         // Stored as YYYY-MM-DD → display as DD/MM/YYYY (parsed manually to avoid TZ shifts).
         const m = profile.date_of_birth.match(/^(\d{4})-(\d{2})-(\d{2})/);
         if (m) setDob(`${m[3]}/${m[2]}/${m[1]}`);
-      } else {
-        missing.push("dob");
       }
-
       const existingSelected = profile?.selected_goals ?? [];
       const existingCustom = profile?.custom_goals ?? [];
       if (existingSelected.length || existingCustom.length) {
         setSelectedGoals([...existingSelected, ...existingCustom.filter((g) => !existingSelected.includes(g))]);
         setCustomGoals(existingCustom);
-      } else {
-        missing.push("goals");
       }
-
       if (profile?.investment_horizon) setHorizon(profile.investment_horizon);
-      else missing.push("horizon");
-
       if (profile?.annual_income != null && profile.annual_income > 0) {
         setIncomeRange([profile.annual_income, profile.annual_income]);
-      } else {
-        missing.push("income");
       }
-
       if (profile?.monthly_household_expense != null && profile.monthly_household_expense > 0) {
         setMonthlyExpense(Math.round(profile.monthly_household_expense));
-      } else {
-        missing.push("expenses");
       }
 
-      const hasRisk = !!risk && (risk.risk_level != null || !!risk.risk_category);
-      if (!hasRisk) missing.push("risk");
-
-      setAskKeys(missing);
+      // Queue only the unanswered questions — shared rules with the resume
+      // resolver (lib/onboardingResume.ts) so "wizard done" means the same
+      // thing everywhere.
+      setAskKeys(missingOnboardingQuestions(profile, risk));
       setQIndex(0);
     })();
     return () => {
@@ -267,11 +261,11 @@ const NewOnboardingFlow = ({ onComplete }: NewOnboardingFlowProps) => {
     };
   }, [step, askKeys]);
 
-  // Everything already answered → skip straight to link-accounts.
+  // Everything already answered → skip straight to the CAMS import step.
   useEffect(() => {
     if (step === 0 && askKeys !== null && askKeys.length === 0) {
       sessionStorage.setItem("completedTellUs", "true");
-      navigate("/link-accounts");
+      navigate("/cams-upload");
     }
   }, [step, askKeys, navigate]);
 
@@ -330,8 +324,22 @@ const NewOnboardingFlow = ({ onComplete }: NewOnboardingFlowProps) => {
     }
     setSaving(false);
     sessionStorage.setItem("completedTellUs", "true");
-    navigate("/link-accounts");
+    navigate("/cams-upload");
   };
+
+  // Enter = the highlighted Next/Continue button of the current question.
+  useEnterSubmit(() => {
+    if (step !== 0 || saving || !askKeys || askKeys.length === 0) return;
+    if (addingGoal) return; // typing a custom goal — its input owns Enter
+    const total = askKeys.length;
+    const key = askKeys[Math.min(qIndex, total - 1)];
+    if (key === "dob") {
+      const parsed = parseDob(dob);
+      if (!parsed || isFutureDob(parsed)) return;
+    }
+    if (qIndex >= total - 1) void handleFinish();
+    else setQIndex((i) => i + 1);
+  }, step === 0);
 
   // Compute subtexts. Income is annual (range); expense is monthly → annualise to compare.
   const avgIncome = (incomeRange[0] + incomeRange[1]) / 2;
@@ -451,7 +459,12 @@ const NewOnboardingFlow = ({ onComplete }: NewOnboardingFlowProps) => {
                   autoFocus
                   value={newGoalText}
                   onChange={(e) => setNewGoalText(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && addCustomGoal()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault(); // keep the screen-level Enter shortcut out
+                      addCustomGoal();
+                    }
+                  }}
                   placeholder="Type goal"
                   className="px-3 py-2 rounded-full text-xs bg-secondary text-foreground outline-none w-28 border border-border"
                 />
