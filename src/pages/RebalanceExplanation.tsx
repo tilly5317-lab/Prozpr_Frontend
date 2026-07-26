@@ -443,6 +443,8 @@ const RebalanceExplanation = () => {
   const [dataError, setDataError] = useState<string | null>(null);
   const [preflightOpen, setPreflightOpen] = useState(false);
   const [preCompleted, setPreCompleted] = useState(0);
+  // How many of the ACTIVE step's sub-checks have rolled in so far.
+  const [preRevealed, setPreRevealed] = useState(0);
   // Whether the rebalancing inputs are complete. null = still checking (the gate
   // shows a pill); false = missing inputs → render the example plan; true = real
   // plan loads via onReady → loadData.
@@ -558,11 +560,12 @@ const RebalanceExplanation = () => {
 
   const startApproval = useCallback(() => {
     setPreCompleted(0);
+    setPreRevealed(0);
     setPreflightOpen(true);
   }, []);
 
-  // Advance the pre-flight checks one tick every 1.5s; when all pass, navigate
-  // to the confirmation page.
+  // Roll each step's sub-checks in ~0.7s apart; once all are shown, tick the
+  // step green and move to the next. When every step passes → confirmation page.
   useEffect(() => {
     if (!preflightOpen) return;
     if (preCompleted >= PREFLIGHT_STEPS.length) {
@@ -572,9 +575,18 @@ const RebalanceExplanation = () => {
       }, 750);
       return () => window.clearTimeout(t);
     }
-    const t = window.setTimeout(() => setPreCompleted((c) => c + 1), 2000);
+    const step = PREFLIGHT_STEPS[preCompleted];
+    if (preRevealed < step.checks.length) {
+      const t = window.setTimeout(() => setPreRevealed((r) => r + 1), 1000);
+      return () => window.clearTimeout(t);
+    }
+    const hold = step.checks.length === 0 ? 1500 : 600;
+    const t = window.setTimeout(() => {
+      setPreCompleted((c) => c + 1);
+      setPreRevealed(0);
+    }, hold);
     return () => window.clearTimeout(t);
-  }, [preflightOpen, preCompleted, navigate, ordersForApproval]);
+  }, [preflightOpen, preCompleted, preRevealed, navigate, ordersForApproval]);
 
   return (
     <div className="mobile-container bg-background min-h-screen pb-24">
@@ -885,17 +897,20 @@ const RebalanceExplanation = () => {
                           </span>
                         </div>
 
-                        {/* Sub-checks the backend runs while this step is loading. */}
+                        {/* Sub-checks roll in one at a time while this step runs. */}
                         {active && step.checks.length > 0 && (
                           <div className="mt-1.5 ml-9 space-y-1.5">
-                            {step.checks.map((c) => (
-                              <div
+                            {step.checks.slice(0, preRevealed).map((c) => (
+                              <motion.div
                                 key={c}
-                                className="flex items-center gap-2 text-[11.5px] text-muted-foreground"
+                                initial={{ opacity: 0, y: 4 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.25 }}
+                                className="flex items-center gap-2 text-[11.5px] italic text-muted-foreground"
                               >
                                 <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-muted-foreground/50" />
                                 Checking {c}…
-                              </div>
+                              </motion.div>
                             ))}
                           </div>
                         )}
