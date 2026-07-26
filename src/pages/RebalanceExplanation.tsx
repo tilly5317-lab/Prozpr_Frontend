@@ -1,7 +1,7 @@
-import { type CSSProperties, useCallback, useMemo, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
-import { ArrowRight, Check, Loader2, Sparkles } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { ArrowRight, Check, CheckCircle2, Loader2, Sparkles } from "lucide-react";
 import BottomNav from "@/components/BottomNav";
 import { CurrentVsTargetChart } from "@/components/invest/CurrentVsTargetChart";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -26,6 +26,20 @@ import {
    backend (scheme_classification.asset_class_for_subgroup) and shipped on each
    subgroup_summary / trade, so there is no client-side classification. ── */
 type Bucket = "equity" | "debt" | "others";
+
+// Sequential pre-flight checks shown after "Approve plan" (mock; each spends ~2s
+// running its sub-checks, ticks green, then the next starts).
+const PREFLIGHT_STEPS: { label: string; checks: string[] }[] = [
+  {
+    label: "Eligibility & KYC",
+    checks: ["KYC status", "Purchase / redemption constraints", "Min / max amount thresholds"],
+  },
+  {
+    label: "Backend order review",
+    checks: ["Investment account", "Scheme (ISIN)", "Amount / units", "Order type"],
+  },
+  { label: "Consent / 2FA — please approve", checks: [] },
+];
 
 const BUCKET_ORDER: Bucket[] = ["equity", "debt", "others"];
 const BUCKET_META: Record<Bucket, { label: string; color: string }> = {
@@ -427,7 +441,8 @@ const RebalanceExplanation = () => {
   const [portfolio, setPortfolio] = useState<PortfolioDetail | null>(null);
   const [dataLoading, setDataLoading] = useState(false);
   const [dataError, setDataError] = useState<string | null>(null);
-  const [approving, setApproving] = useState(false);
+  const [preflightOpen, setPreflightOpen] = useState(false);
+  const [preCompleted, setPreCompleted] = useState(0);
   // Whether the rebalancing inputs are complete. null = still checking (the gate
   // shows a pill); false = missing inputs → render the example plan; true = real
   // plan loads via onReady → loadData.
@@ -529,19 +544,37 @@ const RebalanceExplanation = () => {
     ? EXAMPLE_SUMMARY
     : detail?.summary ?? DEFAULT_SUMMARY;
 
-  const proceed = useCallback(async () => {
-    if (!detail) return;
-    setApproving(true);
-    try {
-      await updateRebalancingStatus(detail.id, "approved");
-      setDetail((prev) => (prev ? { ...prev, status: "approved" } : prev));
-      toast({ title: "Plan approved", description: "Your rebalancing trades are ready to execute." });
-    } catch {
-      toast({ title: "Couldn't approve", description: "Please try again.", variant: "destructive" });
-    } finally {
-      setApproving(false);
+  // Orders handed to the confirmation page (SELL → redemption, BUY → purchase).
+  const ordersForApproval = useMemo(
+    () =>
+      uiTrades.map((t) => ({
+        id: t.id,
+        kind: t.type === "SELL" ? ("redemption" as const) : ("purchase" as const),
+        name: t.name,
+        amount: t.amount,
+      })),
+    [uiTrades],
+  );
+
+  const startApproval = useCallback(() => {
+    setPreCompleted(0);
+    setPreflightOpen(true);
+  }, []);
+
+  // Advance the pre-flight checks one tick every 1.5s; when all pass, navigate
+  // to the confirmation page.
+  useEffect(() => {
+    if (!preflightOpen) return;
+    if (preCompleted >= PREFLIGHT_STEPS.length) {
+      const t = window.setTimeout(() => {
+        setPreflightOpen(false);
+        navigate("/approve-orders", { state: { orders: ordersForApproval } });
+      }, 750);
+      return () => window.clearTimeout(t);
     }
-  }, [detail]);
+    const t = window.setTimeout(() => setPreCompleted((c) => c + 1), 2000);
+    return () => window.clearTimeout(t);
+  }, [preflightOpen, preCompleted, navigate, ordersForApproval]);
 
   return (
     <div className="mobile-container bg-background min-h-screen pb-24">
@@ -789,18 +822,92 @@ const RebalanceExplanation = () => {
             ) : (
               <button
                 type="button"
-                onClick={() => void proceed()}
-                disabled={approving || isApproved || uiTrades.length === 0}
+                onClick={startApproval}
+                disabled={uiTrades.length === 0}
                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground py-3.5 text-[15px] font-semibold tracking-wide text-background transition-all active:scale-[0.98] disabled:opacity-60"
               >
-                {approving ? <Loader2 className="h-4 w-4 animate-spin" /> : isApproved ? <Check className="h-4 w-4" /> : null}
-                {isApproved ? "Plan approved" : approving ? "Approving…" : "Approve plan"}
-                {!isApproved && !approving && <ArrowRight className="h-4 w-4" />}
+                Approve plan
+                <ArrowRight className="h-4 w-4" />
               </button>
             )}
           </>
         )}
       </div>
+
+      {/* Pre-flight checks — each ticks green ~1.5s apart, then → confirmation. */}
+      <AnimatePresence>
+        {preflightOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[60] bg-black/45"
+              aria-hidden="true"
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 16, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.98 }}
+              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Approving your plan"
+              className="fixed inset-0 z-[60] flex items-center justify-center px-6"
+            >
+              <div className="w-full max-w-sm rounded-2xl bg-card p-5 shadow-2xl">
+                <p className="mb-4 text-[15px] font-semibold text-foreground">Approving your plan</p>
+                <div className="space-y-3">
+                  {PREFLIGHT_STEPS.map((step, i) => {
+                    if (i > preCompleted) return null; // reveal one step at a time
+                    const done = i < preCompleted;
+                    const active = i === preCompleted;
+                    return (
+                      <motion.div
+                        key={step.label}
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="flex h-6 w-6 shrink-0 items-center justify-center">
+                            {done ? (
+                              <CheckCircle2 className="h-5 w-5 text-wealth-green" />
+                            ) : (
+                              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                            )}
+                          </span>
+                          <span
+                            className={`text-[13px] ${
+                              done ? "font-medium text-foreground" : "font-medium text-foreground"
+                            }`}
+                          >
+                            {step.label}
+                          </span>
+                        </div>
+
+                        {/* Sub-checks the backend runs while this step is loading. */}
+                        {active && step.checks.length > 0 && (
+                          <div className="mt-1.5 ml-9 space-y-1.5">
+                            {step.checks.map((c) => (
+                              <div
+                                key={c}
+                                className="flex items-center gap-2 text-[11.5px] text-muted-foreground"
+                              >
+                                <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-muted-foreground/50" />
+                                Checking {c}…
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       <BottomNav />
     </div>

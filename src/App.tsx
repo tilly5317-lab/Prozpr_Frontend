@@ -106,6 +106,7 @@ import PortfolioFundDetail from "./pages/PortfolioFundDetail";
 import OnboardingLoading from "./pages/OnboardingLoading";
 import FamilyMembers from "./pages/FamilyMembers";
 import LiquidFunds from "./pages/LiquidFunds";
+import ApproveOrders from "./pages/ApproveOrders";
 
 const queryClient = new QueryClient();
 
@@ -177,6 +178,7 @@ const App = () => (
             <Route path="/goal-planner/timeline-2" element={<GoalsTimeline variant="tornado" />} />
             <Route path="/family" element={<FamilyMembers />} />
             <Route path="/liquid-funds" element={<LiquidFunds />} />
+            <Route path="/approve-orders" element={<ApproveOrders />} />
             </Route>
             </Route>
             <Route path="*" element={<NotFound />} />
