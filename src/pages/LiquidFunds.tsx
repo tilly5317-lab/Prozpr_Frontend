@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import BottomNav from "@/components/BottomNav";
 import {
@@ -36,6 +37,7 @@ const BENEFITS = [
 ];
 
 const LiquidFunds = () => {
+  const navigate = useNavigate();
   const [potNotified, setPotNotified] = useState(false);
   const [cardReserved, setCardReserved] = useState(false);
 
@@ -101,12 +103,15 @@ const LiquidFunds = () => {
         {/* Savings pot — notify when available */}
         <div className="rounded-2xl border border-border bg-card p-4">
           <div className="flex items-start gap-3">
-            <div
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
+            <button
+              type="button"
+              onClick={() => navigate("/savings-pot")}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-transform active:scale-95"
               style={{ backgroundColor: `${GREEN}1f` }}
+              aria-label="Open your Savings pot"
             >
               <PiggyBank className="h-5 w-5" strokeWidth={1.8} style={{ color: GREEN }} />
-            </div>
+            </button>
             <div className="min-w-0 flex-1">
               <p className="text-[13px] font-semibold text-foreground">Turn it into a Savings pot</p>
               <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">

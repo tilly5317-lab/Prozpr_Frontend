@@ -107,6 +107,8 @@ import OnboardingLoading from "./pages/OnboardingLoading";
 import FamilyMembers from "./pages/FamilyMembers";
 import LiquidFunds from "./pages/LiquidFunds";
 import ApproveOrders from "./pages/ApproveOrders";
+import SavingsPot from "./pages/SavingsPot";
+import IncomeArbitrage from "./pages/IncomeArbitrage";
 
 const queryClient = new QueryClient();
 
@@ -179,6 +181,8 @@ const App = () => (
             <Route path="/family" element={<FamilyMembers />} />
             <Route path="/liquid-funds" element={<LiquidFunds />} />
             <Route path="/approve-orders" element={<ApproveOrders />} />
+            <Route path="/savings-pot" element={<SavingsPot />} />
+            <Route path="/income-arbitrage" element={<IncomeArbitrage />} />
             </Route>
             </Route>
             <Route path="*" element={<NotFound />} />

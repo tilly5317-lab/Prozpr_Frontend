@@ -1,6 +1,6 @@
 import { useState, useEffect, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { Compass, TrendingUp, TrendingDown, Wallet, Target, Activity, Landmark, Check, Sparkles, type LucideIcon } from "lucide-react";
+import { Compass, TrendingUp, TrendingDown, Wallet, Target, Activity, Landmark, Check, Sparkles, Banknote, Droplet, Coins, type LucideIcon } from "lucide-react";
 import { motion } from "framer-motion";
 import BottomNav from "@/components/BottomNav";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -253,12 +253,83 @@ function DiscoverSection() {
         <p className="mt-0.5 text-[11px] text-muted-foreground">Curated ways to grow your wealth</p>
       </div>
 
-      <DiscoverCard
-        icon={Compass}
-        title="Prozpr rated funds"
-        subtitle="Top funds, handpicked and rated"
-        onClick={() => navigate("/discovery")}
-      />
+      <div className="space-y-2">
+        <DiscoverCard
+          icon={Compass}
+          title="Prozpr rated funds"
+          subtitle="Top funds, handpicked and rated"
+          onClick={() => navigate("/discovery")}
+        />
+        {/* Income + Arbitrage — plain card (not the premium gold treatment). */}
+        <button
+          type="button"
+          onClick={() => navigate("/income-arbitrage")}
+          className={`${CARD} flex w-full items-center gap-3 text-left transition-all hover:shadow-sm active:scale-[0.99]`}
+          style={CARD_BORDER}
+        >
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-muted/60">
+            <Coins className="h-[1.125rem] w-[1.125rem] text-muted-foreground" strokeWidth={1.8} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-semibold leading-tight text-foreground">Income + Arbitrage</p>
+            <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">Steady, tax-efficient returns</p>
+          </div>
+          <span className="shrink-0 text-[13px] font-bold text-foreground">Explore →</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Everyday spending — idle cash (~3%) vs a liquid-funds nudge (~6%). */
+function EverydaySpendingSection() {
+  const navigate = useNavigate();
+  const GREEN = "#2E9C7E";
+  return (
+    <div className="pt-1">
+      <p className="mb-2 text-[16.2px] font-semibold text-foreground">Everyday spending</p>
+      <div className={CARD} style={CARD_BORDER}>
+        {/* Cash holding — idle cash at a savings-style rate */}
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-muted/60">
+            <Banknote className="h-[1.125rem] w-[1.125rem] text-muted-foreground" strokeWidth={1.8} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-semibold leading-tight text-foreground">Cash holding</p>
+            <p className="text-[11px] text-muted-foreground">Earning ~3% a year</p>
+          </div>
+          <p className="shrink-0 text-[14px] font-semibold tabular-nums text-foreground">₹1,50,000</p>
+        </div>
+
+        <div className="my-3 h-px bg-border" />
+
+        {/* Liquid funds — currently empty */}
+        <div className="flex items-center gap-3">
+          <div
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
+            style={{ backgroundColor: `${GREEN}1f` }}
+          >
+            <Droplet className="h-[1.125rem] w-[1.125rem]" strokeWidth={1.8} style={{ color: GREEN }} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-semibold leading-tight text-foreground">Liquid funds</p>
+            <p className="text-[11px] font-medium" style={{ color: GREEN }}>Earn ~6% a year</p>
+          </div>
+          <p className="shrink-0 text-[14px] font-semibold tabular-nums text-muted-foreground">₹0</p>
+        </div>
+
+        {/* Glowing CTA to move idle cash into liquid funds */}
+        <motion.button
+          type="button"
+          onClick={() => navigate("/liquid-funds")}
+          className="mt-3.5 flex w-full items-center justify-center gap-1 rounded-xl py-2.5 text-[13px] font-bold text-white transition-transform active:scale-[0.99]"
+          style={{ backgroundColor: GREEN }}
+          animate={{ boxShadow: [`0 0 0 0 ${GREEN}00`, `0 0 16px 3px ${GREEN}80`, `0 0 0 0 ${GREEN}00`] }}
+          transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+        >
+          Move cash to earn ~6% →
+        </motion.button>
+      </div>
     </div>
   );
 }
@@ -338,18 +409,16 @@ function ProfileUnlockCircles() {
   const remaining = items.filter((i) => !i.done).length;
 
   return (
-    <div className="rounded-[14px] border border-border bg-card p-4" style={{ boxShadow: "0 1px 2px rgba(0,0,0,0.04)" }}>
+    <div className="pt-1">
+      {/* Title sits outside the card, like Discover / Everyday spending. */}
+      <p className="mb-2 text-[16.2px] font-semibold text-foreground">Unlock more</p>
+      <div className="rounded-[14px] border border-border bg-card p-4" style={{ boxShadow: "0 1px 2px rgba(0,0,0,0.04)" }}>
       <div className="mb-3 flex items-center justify-between">
         <div>
-          <p className="text-[11px] uppercase tracking-[1.5px] text-muted-foreground" style={{ fontWeight: 500 }}>
-            Unlock more
-          </p>
-          <p className="mt-0.5 text-[13px] font-semibold text-foreground">
+          <p className="mt-0.5 text-[12px] font-medium text-muted-foreground">
             Share a little, unlock a lot
           </p>
         </div>
-        {/* The card only renders while something is still locked (fully
-            onboarded users never see it), so `remaining` is always ≥ 1 here. */}
         <motion.span
           className="shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold text-white"
           style={{
@@ -422,6 +491,7 @@ function ProfileUnlockCircles() {
             )}
           </motion.button>
         ))}
+      </div>
       </div>
     </div>
   );
@@ -634,6 +704,7 @@ const PortfolioDashboard = () => {
                 middleSlot={<CumulativeMemberBreakdownCard data={cumulativeData} />}
               />
               <DiscoverSection />
+              <EverydaySpendingSection />
               {/* Zoom team-call feature disabled for now */}
               {/* <AdvisorMeetingsSlot /> */}
             </div>
@@ -665,6 +736,7 @@ const PortfolioDashboard = () => {
                 horizonLabel={null}
               />
               <DiscoverSection />
+              <EverydaySpendingSection />
               {/* Zoom team-call feature disabled for now */}
               {/* <AdvisorMeetingsSlot /> */}
             </div>
@@ -726,6 +798,7 @@ const PortfolioDashboard = () => {
                 onUploadCams={() => setCamsOpen(true)}
               />
               <DiscoverSection />
+              <EverydaySpendingSection />
               <ProfileUnlockCircles />
               {/* Zoom team-call feature disabled for now */}
               {/* <AdvisorMeetingsSlot /> */}
