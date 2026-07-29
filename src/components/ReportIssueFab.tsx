@@ -24,17 +24,9 @@ const positionForPath = (pathname: string): string => {
   if (pathname === "/chat") return "top-16 right-3";
 
   // Goals timeline: the gold "add a goal" + FAB owns the bottom-right corner,
-  // so move the bug button to the opposite (bottom-left) corner. The cards
-  // view (/goal-planner/cards) has no floating add button, so it keeps the
-  // default.
+  // so move the bug button to the opposite (bottom-left) corner.
   if (pathname === "/goal-planner" || pathname.startsWith("/goal-planner/timeline"))
     return "bottom-20 left-3";
-
-  // Execute / rebalancing: a full-width allocation footer sits just above the
-  // nav (so the default bottom-right overlaps it) and a mic FAB sits on the
-  // right, so use the free bottom-left, lifted clear of the footer.
-  if (pathname === "/execute" || pathname === "/excecute" || pathname === "/rebalancing")
-    return "bottom-32 left-3";
 
   return DEFAULT_POSITION;
 };

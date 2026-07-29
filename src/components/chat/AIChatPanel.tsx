@@ -39,8 +39,6 @@ interface AIChatPanelProps {
   chatFirst?: boolean;
   completionMessage?: string;
   onCompletionShown?: () => void;
-  initialAiMessage?: string;
-  showBackToInvest?: boolean;
   /** Local demo: scripted goal-alignment walkthrough — no chat API calls. */
   goalPlanningDemo?: boolean;
 }
@@ -63,7 +61,7 @@ interface Message {
   kudosId?: number;
   /** Only when type === "goal-demo-widget" */
   widgetKind?: "emergency-fund";
-  /** Backend saved an ideal rebalancing plan — show CTA to open `/execute`. */
+  /** Backend saved an ideal rebalancing plan — show CTA to open `/invest/rebalance-explanation`. */
   showViewExecutePlan?: boolean;
   /** Chart visualization payloads from backend AI modules. */
   chartPayloads?: any[] | null;
@@ -748,8 +746,6 @@ const AIChatPanel = ({
   chatFirst = false,
   completionMessage,
   onCompletionShown,
-  initialAiMessage,
-  showBackToInvest = false,
   goalPlanningDemo = false,
 }: AIChatPanelProps) => {
   const navigate = useNavigate();
@@ -948,14 +944,6 @@ const AIChatPanel = ({
     setMessages((prev) => [...prev, { role: "ai", content: completionMessage }]);
     onCompletionShown?.();
   }, [completionMessage, onCompletionShown, goalPlanningDemo, clientContext]);
-
-  // Inject initial AI message (e.g. from /execute portfolio context)
-  const initialMessageSentRef = useRef(false);
-  useEffect(() => {
-    if (goalPlanningDemo || !initialAiMessage || initialMessageSentRef.current) return;
-    initialMessageSentRef.current = true;
-    setMessages((prev) => [...prev, { role: "ai", content: initialAiMessage }]);
-  }, [initialAiMessage, goalPlanningDemo]);
 
   useEffect(() => {
     if (!goalPlanningDemo) return;
@@ -1469,24 +1457,6 @@ const AIChatPanel = ({
                   <MarkdownMessage text={msg.content} />
                 </div>
               </div>
-              {showBackToInvest && i === 0 && msg.role === "ai" && (
-                <button
-                  onClick={() => navigate("/invest/rebalance-explanation")}
-                  className="ml-7 mt-2 self-start flex items-center gap-3 rounded-xl px-4 py-3 transition-opacity hover:opacity-90"
-                  style={{ backgroundColor: "hsl(220, 40%, 20%)" }}
-                >
-                  <div className="flex flex-col">
-                    <span className="text-[11px] font-medium" style={{ color: "hsl(40, 50%, 70%)" }}>Ready to invest?</span>
-                    <span className="text-[13px] font-semibold" style={{ color: "hsl(40, 55%, 80%)" }}>View your plan</span>
-                  </div>
-                  <div
-                    className="flex h-7 w-7 items-center justify-center rounded-full"
-                    style={{ backgroundColor: "hsla(40, 55%, 65%, 0.2)" }}
-                  >
-                    <ArrowRight className="h-3.5 w-3.5" style={{ color: "hsl(40, 55%, 75%)" }} />
-                  </div>
-                </button>
-              )}
               {msg.showViewExecutePlan ? (
                 <button
                   type="button"

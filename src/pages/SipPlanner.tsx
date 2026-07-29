@@ -1,16 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, Repeat, Pencil, ChevronRight, Check, ArrowRight } from "lucide-react";
+import { Loader2, Repeat, Pencil, ChevronRight, Lock } from "lucide-react";
 import BottomNav from "@/components/BottomNav";
 import {
   getMySipPlan,
   createSipPlan,
   getOnboardingProfile,
   getRebalancingRunDetail,
+  getSipBuildProgress,
   listRebalancingRuns,
   type RebalancingSubgroupSummary,
   type SipPlanResponse,
 } from "@/lib/api";
+import { useComputeProgress } from "@/hooks/useComputeProgress";
+import {
+  ComputeProgressSteps,
+  SIP_STEPS,
+} from "@/components/invest/ComputeProgressSteps";
 import { CurrentVsTargetChart } from "@/components/invest/CurrentVsTargetChart";
 import { buildSipTargetRows, type DriftRow } from "@/lib/driftRows";
 import { formatInr0, formatMoneyInput } from "@/lib/utils";
@@ -82,6 +88,8 @@ function SipPlanCard({
   );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Real engine stage + % while the plan builds (only during the POST).
+  const submitProgress = useComputeProgress(submitting, getSipBuildProgress);
 
   const parsed = Number(amount.replace(/,/g, ""));
   const valid = Number.isFinite(parsed) && parsed > 0;
@@ -159,6 +167,13 @@ function SipPlanCard({
             <span className="shrink-0 text-[11px] text-muted-foreground">/ month</span>
           </div>
 
+          {/* Live step checklist while the engine builds the plan */}
+          {submitting && (
+            <div className="mt-3 rounded-xl bg-muted/40 p-3">
+              <ComputeProgressSteps steps={SIP_STEPS} progress={submitProgress} />
+            </div>
+          )}
+
           {overIncome && monthlyIncome != null && (
             <p className="mt-2 text-[11px] leading-snug text-[#C24C3A]">
               That's more than your monthly income ({formatInr0(monthlyIncome)}). A monthly SIP can't
@@ -175,7 +190,13 @@ function SipPlanCard({
               style={{ backgroundColor: "hsl(var(--wealth-navy))" }}
             >
               {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              {submitting ? "Building your plan…" : hasPlan ? "Update SIP" : "Set up SIP"}
+              {submitting
+                ? submitProgress
+                  ? `Building your plan… ${Math.round(submitProgress.progress_pct)}%`
+                  : "Building your plan…"
+                : hasPlan
+                  ? "Update SIP"
+                  : "Set up SIP"}
             </button>
             {hasPlan && (
               <button
@@ -312,16 +333,48 @@ function SipPlanCard({
  */
 const SipPlanner = () => {
   const [sip, setSip] = useState<SipPlanResponse | null>(null);
-  const [accepting, setAccepting] = useState(false);
-  const [accepted, setAccepted] = useState(false);
+  const [building, setBuilding] = useState(false);
   const [subgroupSummaries, setSubgroupSummaries] = useState<RebalancingSubgroupSummary[]>([]);
   const [monthlyIncome, setMonthlyIncome] = useState<number | null>(null);
+  // Real engine stage + % while the auto-build runs — visible only when we are
+  // actually calculating (a plain read renders instantly with no progress UI).
+  const buildProgress = useComputeProgress(building, getSipBuildProgress);
 
+  // The customer's canonical SIP amount may already exist (goal planner /
+  // onboarding / chat) or may have changed on another surface since this plan
+  // was built. Either way we build/refresh the fund split automatically — the
+  // page only ever ASKS for an amount when none exists anywhere.
   useEffect(() => {
     let cancelled = false;
-    getMySipPlan()
-      .then((s) => !cancelled && setSip(s))
-      .catch(() => !cancelled && setSip(EMPTY_SIP));
+    (async () => {
+      let plan: SipPlanResponse;
+      try {
+        plan = await getMySipPlan();
+      } catch {
+        if (!cancelled) setSip(EMPTY_SIP);
+        return;
+      }
+      if (cancelled) return;
+      const canonical = plan.goal_plan_monthly_investment_inr;
+      const hasFunds = plan.has_plan && plan.buys.length > 0;
+      const needsBuild =
+        canonical != null && canonical > 0 && (!hasFunds || !plan.goal_plan_in_sync);
+      if (!needsBuild) {
+        setSip(plan);
+        return;
+      }
+      setBuilding(true);
+      try {
+        const fresh = await createSipPlan(canonical);
+        if (!cancelled) setSip(fresh);
+      } catch {
+        // Engine refused (e.g. profile gate) — fall back to what we had; the
+        // card shows the set-up form or the stale-amount banner instead.
+        if (!cancelled) setSip(plan);
+      } finally {
+        if (!cancelled) setBuilding(false);
+      }
+    })();
     return () => { cancelled = true; };
   }, []);
 
@@ -358,10 +411,8 @@ const SipPlanner = () => {
     return () => { cancelled = true; };
   }, []);
 
-  // Editing the plan invalidates a prior acceptance.
   const handleCreated = (plan: SipPlanResponse) => {
     setSip(plan);
-    setAccepted(false);
   };
 
   const hasPlan = !!sip?.has_plan && (sip?.buys.length ?? 0) > 0;
@@ -371,26 +422,6 @@ const SipPlanner = () => {
     () => buildSipTargetRows(sip?.buys ?? [], subgroupSummaries),
     [sip, subgroupSummaries],
   );
-  // Accept the goal plan's newer figure when this plan drifted out of sync,
-  // otherwise (re)commit the amount already shown.
-  const newAmount =
-    sip && !sip.goal_plan_in_sync && sip.goal_plan_monthly_investment_inr
-      ? sip.goal_plan_monthly_investment_inr
-      : sip?.monthly_amount_inr ?? 0;
-
-  const acceptSip = async () => {
-    if (!sip || accepting || newAmount <= 0) return;
-    setAccepting(true);
-    try {
-      const plan = await createSipPlan(newAmount);
-      setSip(plan);
-      setAccepted(true);
-    } catch {
-      /* leave the button idle so the user can retry */
-    } finally {
-      setAccepting(false);
-    }
-  };
 
   return (
     <div className="mobile-container bg-background min-h-screen pb-24">
@@ -399,32 +430,59 @@ const SipPlanner = () => {
           Deploy fresh money every month. Enter an amount and Pi&apos;s engine splits it
           across the right funds for your goals — the same plan you&apos;d get in chat.
         </p>
-        {sip ? (
+        {building ? (
+          <div className="flex flex-col items-center pt-10">
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span className="text-sm">
+                {buildProgress?.message ?? "Building your SIP plan…"}
+              </span>
+            </div>
+            <div className="mt-4 h-2 w-full max-w-[280px] overflow-hidden rounded-full bg-secondary">
+              <div
+                className="h-full bg-foreground transition-all duration-700"
+                style={{ width: `${Math.round(buildProgress?.progress_pct ?? 3)}%` }}
+              />
+            </div>
+            <p className="mt-1.5 text-[11px] tabular-nums text-muted-foreground">
+              {Math.round(buildProgress?.progress_pct ?? 3)}%
+            </p>
+            <div className="mt-4 w-full rounded-2xl border border-border bg-card p-4">
+              <ComputeProgressSteps steps={SIP_STEPS} progress={buildProgress} />
+            </div>
+          </div>
+        ) : !sip ? (
+          <div className="flex items-center justify-center gap-2 pt-16 text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span className="text-sm">Loading your SIP…</span>
+          </div>
+        ) : (
           <SipPlanCard
             sip={sip}
             onCreated={handleCreated}
             driftRows={driftRows}
             monthlyIncome={monthlyIncome}
           />
-        ) : (
-          <div className="flex items-center justify-center gap-2 pt-16 text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            <span className="text-sm">Loading your SIP…</span>
-          </div>
         )}
 
-        {/* Bottom CTA — mirrors the rebalancing "Approve plan" button. */}
-        {hasPlan && (
-          <button
-            type="button"
-            onClick={() => void acceptSip()}
-            disabled={accepting || accepted}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground py-3.5 text-[15px] font-semibold tracking-wide text-background transition-all active:scale-[0.98] disabled:opacity-60"
-          >
-            {accepting ? <Loader2 className="h-4 w-4 animate-spin" /> : accepted ? <Check className="h-4 w-4" /> : null}
-            {accepted ? "SIP amount accepted" : accepting ? "Accepting…" : "Accept new SIP amount"}
-            {!accepted && !accepting && <ArrowRight className="h-4 w-4" />}
-          </button>
+        {/* Bottom CTA — in-app SIP execution isn't live yet, so this stays
+            disabled until the transactions feature ships. */}
+        {hasPlan && !building && (
+          <div>
+            <button
+              type="button"
+              disabled
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground py-3.5 text-[15px] font-semibold tracking-wide text-background opacity-60"
+            >
+              <Lock className="h-4 w-4" />
+              Invest in these funds — coming soon
+            </button>
+            <p className="mt-2 text-center text-[11px] leading-snug text-muted-foreground">
+              Soon you&apos;ll be able to start this SIP with one tap, right here.
+              Until then, use this plan as your guide when investing through your
+              platform of choice.
+            </p>
+          </div>
         )}
       </div>
 

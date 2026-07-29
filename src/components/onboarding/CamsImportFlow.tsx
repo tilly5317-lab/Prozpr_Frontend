@@ -36,7 +36,8 @@ const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/;
 const CAMS_MANUAL_URL =
   "https://www.camsonline.com/Investors/Statements/Consolidated-Account-Statement";
 
-type Step = "request" | "sent" | "upload" | "done";
+export type CamsImportStep = "request" | "sent" | "upload" | "done";
+type Step = CamsImportStep;
 
 /** Ordered rail shown at the top; "done" renders as upload-complete. */
 const STEP_RAIL: { key: Exclude<Step, "done">; label: string }[] = [
@@ -67,6 +68,8 @@ interface CamsImportFlowProps {
   replaceExisting?: boolean;
   /** Lets a host modal block dismissal while a request/upload is in flight. */
   onBusyChange?: (busy: boolean) => void;
+  /** Lets a host swap its own heading when the flow reaches a given step. */
+  onStepChange?: (step: CamsImportStep) => void;
   /** Tighter type scale for the modal host. */
   compact?: boolean;
   /**
@@ -94,6 +97,7 @@ const CamsImportFlow = ({
   onImported,
   replaceExisting = false,
   onBusyChange,
+  onStepChange,
   compact = false,
   fillHeight = false,
 }: CamsImportFlowProps) => {
@@ -130,6 +134,10 @@ const CamsImportFlow = ({
   useEffect(() => {
     onBusyChange?.(busy);
   }, [busy, onBusyChange]);
+
+  useEffect(() => {
+    onStepChange?.(step);
+  }, [step, onStepChange]);
 
   // Ask the backend which halves of the flow its CAS Parser plan supports.
   useEffect(() => {
