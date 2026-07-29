@@ -121,7 +121,6 @@ const BottomNav = () => {
               location.pathname === tab.path ||
               (tab.path === "/invest/rebalance-explanation" &&
                 (location.pathname.startsWith("/invest") ||
-                  location.pathname === "/execute" ||
                   location.pathname.startsWith("/rebalance")));
             return (
               <button
