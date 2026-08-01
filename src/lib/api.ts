@@ -2570,6 +2570,8 @@ export interface ComputeProgress {
   active: boolean;
   progress_pct: number;
   message: string | null;
+  /** Full stage history so far (oldest first) — no stage is missed between polls. */
+  messages?: string[];
 }
 
 /** Real pipeline stage + % of an in-flight rebalancing compute. */
@@ -2580,6 +2582,11 @@ export async function getRebalanceComputeProgress(): Promise<ComputeProgress> {
 /** Real pipeline stage + % of an in-flight SIP plan build. */
 export async function getSipBuildProgress(): Promise<ComputeProgress> {
   return request<ComputeProgress>("/additional-investment/sip/progress");
+}
+
+/** Live "thinking aloud" line of a session's in-flight chat turn. */
+export async function getChatThinking(sessionId: string): Promise<ComputeProgress> {
+  return request<ComputeProgress>(`/chat/sessions/${sessionId}/thinking`);
 }
 
 // ── Support: report an issue ────────────────────────────

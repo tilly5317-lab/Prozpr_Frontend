@@ -6,10 +6,7 @@ import BottomNav from "@/components/BottomNav";
 import { CurrentVsTargetChart } from "@/components/invest/CurrentVsTargetChart";
 import { Skeleton } from "@/components/ui/skeleton";
 import RebalanceGate from "@/components/invest/RebalanceGate";
-import {
-  ComputeProgressSteps,
-  REBALANCE_STEPS,
-} from "@/components/invest/ComputeProgressSteps";
+import { ComputeProgressSteps } from "@/components/invest/ComputeProgressSteps";
 import TradeFundDetailView from "@/components/fund/TradeFundDetailView";
 import { toast } from "@/hooks/use-toast";
 import { useComputeProgress } from "@/hooks/useComputeProgress";
@@ -584,34 +581,42 @@ const RebalanceExplanation = () => {
       <RebalanceGate onReady={loadData} onResolved={setGateReady} editSignal={gateEditSignal} />
 
       <div className="px-5 pt-2 pb-2 space-y-3">
-        {(dataLoading || computing) && (
+        {/* Recalculating: no skeletons, no duplicate status line — just the
+            live process checklist centred; done lines stay ticked until the
+            whole compute finishes and the plan renders. */}
+        {computing && (
+          <div
+            className="flex justify-center pt-14"
+            aria-busy="true"
+            aria-label="Recalculating your plan"
+          >
+            <div className="w-full max-w-[340px] rounded-2xl border border-border bg-card p-5 shadow-sm">
+              <div className="mb-4 flex items-center gap-2.5">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/50" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
+                </span>
+                <span className="text-[13.5px] font-semibold text-foreground">
+                  Building your rebalancing plan
+                </span>
+              </div>
+              <ComputeProgressSteps
+                progress={computeProgress}
+                startingLabel="Reviewing your portfolio & profile…"
+              />
+              <p className="mt-4 border-t border-border/60 pt-3 text-[11px] leading-snug text-muted-foreground">
+                Working with your live portfolio — this can take a minute.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {dataLoading && !computing && (
           <div className="space-y-3" aria-busy="true" aria-label="Loading your plan">
             <div className="flex items-center gap-2 text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
-              <span className="text-[12px]">
-                {computing
-                  ? computeProgress?.message ?? "Building your rebalancing plan…"
-                  : "Loading your plan…"}
-              </span>
+              <span className="text-[12px]">Loading your plan…</span>
             </div>
-            {/* Real pipeline % + step checklist — only while the engine is
-                actually computing (plain reads keep the quick skeleton). */}
-            {computing && (
-              <div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
-                  <div
-                    className="h-full bg-foreground transition-all duration-700"
-                    style={{ width: `${Math.round(computeProgress?.progress_pct ?? 3)}%` }}
-                  />
-                </div>
-                <p className="mt-1 text-right text-[11px] tabular-nums text-muted-foreground">
-                  {Math.round(computeProgress?.progress_pct ?? 3)}%
-                </p>
-                <div className="mt-3 rounded-2xl border border-border bg-card p-4">
-                  <ComputeProgressSteps steps={REBALANCE_STEPS} progress={computeProgress} />
-                </div>
-              </div>
-            )}
             {/* Drift card placeholder */}
             <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
               <Skeleton className="h-3 w-28" />

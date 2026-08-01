@@ -29,6 +29,7 @@ import {
 } from "@/lib/api";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useChatThinking } from "@/hooks/useChatThinking";
 
 const PENDING_CHAT_BOOTSTRAP_KEY = "askProzpr.pendingChatBootstrap.v1";
 
@@ -754,6 +755,8 @@ const AIChatPanel = ({
   );
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  // Session whose live "thinking aloud" feed we poll while a reply is pending.
+  const [thinkingSessionId, setThinkingSessionId] = useState<string | null>(null);
   const [micState, setMicState] = useState<MicState>("idle");
   const [interimTranscript, setInterimTranscript] = useState("");
   const [showFirstUseHint, setShowFirstUseHint] = useState(true);
@@ -765,6 +768,10 @@ const AIChatPanel = ({
   const recognitionRef = useRef<any>(null);
   const sessionIdRef = useRef<string | null>(null);
   const kudosCounterRef = useRef(0);
+
+  // Live backend "thinking aloud" lines shown in the typing bubble; the feed
+  // vanishes with the bubble the moment the real reply lands.
+  const thinkingLines = useChatThinking(isTyping && !goalPlanningDemo, thinkingSessionId);
 
   const [historyOpen, setHistoryOpen] = useState(false);
   // Shows the floating "jump to latest" arrow when scrolled away from the newest message.
@@ -920,7 +927,7 @@ const AIChatPanel = ({
   // Keep the view pinned to the newest message as content streams in.
   useEffect(() => {
     scrollToBottom("auto");
-  }, [messages, isTyping, interimTranscript, scrollToBottom]);
+  }, [messages, isTyping, interimTranscript, thinkingLines, scrollToBottom]);
 
   const showVoiceOnboardingChips = useMemo(() => {
     if (!clientContext?.user) return true;
@@ -1259,6 +1266,7 @@ const AIChatPanel = ({
 
     try {
       const sid = await ensureSession();
+      setThinkingSessionId(sid);
       const resp = await sendChatMessage(sid, trimmed, clientContext ?? undefined);
       setIsTyping(false);
       const hasSavedPlan = Boolean(
@@ -1488,15 +1496,68 @@ const AIChatPanel = ({
       {isTyping && (
         <div className="flex gap-2 items-start">
           <ProzprAvatar />
-          <div className="flex gap-1.5 px-3 py-2.5 rounded-2xl" style={{ backgroundColor: "hsl(var(--prozpr-bubble))" }}>
-            {[0, 1, 2].map((i) => (
-              <span
-                key={i}
-                className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40 animate-pulse"
-                style={{ animationDelay: `${i * 0.2}s` }}
-              />
-            ))}
-          </div>
+          {thinkingLines.length === 0 ? (
+            <div className="flex gap-1.5 px-3 py-2.5 rounded-2xl" style={{ backgroundColor: "hsl(var(--prozpr-bubble))" }}>
+              {[0, 1, 2].map((i) => (
+                <span
+                  key={i}
+                  className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40 animate-pulse"
+                  style={{ animationDelay: `${i * 0.2}s` }}
+                />
+              ))}
+            </div>
+          ) : (
+            /* Live "thinking aloud": the backend's real steps, appended as they
+               happen. The whole bubble disappears when the reply arrives. */
+            <div
+              className="max-w-[85%] rounded-2xl rounded-tl-sm px-3.5 py-3"
+              style={{
+                backgroundColor: "hsl(var(--prozpr-bubble))",
+                borderLeft: "2px solid hsla(38, 45%, 54%, 0.3)",
+              }}
+            >
+              <div className="mb-2 flex items-center gap-1.5">
+                <Sparkles className="h-3 w-3 text-primary" />
+                <span className="text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Thinking
+                </span>
+              </div>
+              <div className="flex flex-col">
+                {thinkingLines.map((line, i) => {
+                  const current = i === thinkingLines.length - 1;
+                  return (
+                    <motion.div
+                      key={`${i}-${line}`}
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.25 }}
+                      className="relative flex items-start gap-2 pb-2 last:pb-0"
+                    >
+                      {i < thinkingLines.length - 1 && (
+                        <span className="absolute left-[5.5px] top-4 -bottom-0.5 w-px bg-wealth-green/30" />
+                      )}
+                      {current ? (
+                        <Loader2 className="relative z-10 mt-0.5 h-3 w-3 shrink-0 animate-spin text-primary" />
+                      ) : (
+                        <span className="relative z-10 mt-0.5 flex h-3 w-3 shrink-0 items-center justify-center rounded-full bg-wealth-green">
+                          <Check className="h-2 w-2 text-white" />
+                        </span>
+                      )}
+                      <span
+                        className={`text-[12px] leading-snug ${
+                          current
+                            ? "font-medium text-foreground/85 animate-pulse"
+                            : "text-muted-foreground/75"
+                        }`}
+                      >
+                        {line}
+                      </span>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

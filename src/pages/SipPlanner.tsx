@@ -13,10 +13,7 @@ import {
   type SipPlanResponse,
 } from "@/lib/api";
 import { useComputeProgress } from "@/hooks/useComputeProgress";
-import {
-  ComputeProgressSteps,
-  SIP_STEPS,
-} from "@/components/invest/ComputeProgressSteps";
+import { ComputeProgressSteps } from "@/components/invest/ComputeProgressSteps";
 import { CurrentVsTargetChart } from "@/components/invest/CurrentVsTargetChart";
 import { buildSipTargetRows, type DriftRow } from "@/lib/driftRows";
 import { formatInr0, formatMoneyInput } from "@/lib/utils";
@@ -170,7 +167,10 @@ function SipPlanCard({
           {/* Live step checklist while the engine builds the plan */}
           {submitting && (
             <div className="mt-3 rounded-xl bg-muted/40 p-3">
-              <ComputeProgressSteps steps={SIP_STEPS} progress={submitProgress} />
+              <ComputeProgressSteps
+                progress={submitProgress}
+                startingLabel="Reading your profile & goals…"
+              />
             </div>
           )}
 
@@ -431,24 +431,29 @@ const SipPlanner = () => {
           across the right funds for your goals — the same plan you&apos;d get in chat.
         </p>
         {building ? (
-          <div className="flex flex-col items-center pt-10">
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              <span className="text-sm">
-                {buildProgress?.message ?? "Building your SIP plan…"}
-              </span>
-            </div>
-            <div className="mt-4 h-2 w-full max-w-[280px] overflow-hidden rounded-full bg-secondary">
-              <div
-                className="h-full bg-foreground transition-all duration-700"
-                style={{ width: `${Math.round(buildProgress?.progress_pct ?? 3)}%` }}
+          <div
+            className="flex justify-center pt-12"
+            aria-busy="true"
+            aria-label="Building your SIP plan"
+          >
+            <div className="w-full max-w-[340px] rounded-2xl border border-border bg-card p-5 shadow-sm">
+              <div className="mb-4 flex items-center gap-2.5">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/50" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
+                </span>
+                <span className="text-[13.5px] font-semibold text-foreground">
+                  Building your SIP plan
+                </span>
+              </div>
+              <ComputeProgressSteps
+                progress={buildProgress}
+                startingLabel="Reading your profile & goals…"
               />
-            </div>
-            <p className="mt-1.5 text-[11px] tabular-nums text-muted-foreground">
-              {Math.round(buildProgress?.progress_pct ?? 3)}%
-            </p>
-            <div className="mt-4 w-full rounded-2xl border border-border bg-card p-4">
-              <ComputeProgressSteps steps={SIP_STEPS} progress={buildProgress} />
+              <p className="mt-4 border-t border-border/60 pt-3 text-[11px] leading-snug text-muted-foreground">
+                Splitting your monthly amount across the right funds — this can
+                take a minute.
+              </p>
             </div>
           </div>
         ) : !sip ? (
