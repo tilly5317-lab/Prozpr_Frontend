@@ -134,12 +134,33 @@ export class BackendOfflineError extends Error {
   }
 }
 
+/**
+ * Non-JSON error bodies are usually gateway pages (nginx "504 Gateway Time-out" HTML,
+ * Cloudflare interstitials). Never surface raw markup to users — map to a readable message.
+ */
+function readableErrorBody(text: string, status: number): string {
+  const trimmed = text.trim();
+  if (!trimmed || trimmed.startsWith("<")) {
+    if (status === 504)
+      return "The server took too long to respond. Please try again.";
+    if (status === 502 || status === 503)
+      return "The server is temporarily unavailable. Please try again in a moment.";
+    return `Request failed (${status})`;
+  }
+  return trimmed;
+}
+
 let backendOfflineUntil = 0;
 const OFFLINE_RETRY_MS = 15_000;
 /** Default for most API calls */
 const REQUEST_TIMEOUT_MS = 45_000;
-/** Chat can run intent classification + optional market commentary + LLM — allow longer */
-const CHAT_REQUEST_TIMEOUT_MS = 120_000;
+/**
+ * Chat can run intent classification + optional market commentary + LLM — allow longer.
+ * Must stay ABOVE the backend's _FLOW_TIMEOUT_S (180s in ai_engine/services/brain.py) and
+ * nginx's proxy_read_timeout (200s) so the backend's own timeout fallback reaches the user
+ * instead of a client-side abort.
+ */
+const CHAT_REQUEST_TIMEOUT_MS = 210_000;
 /** Issue reporting blocks a user-facing submit button — keep it snappy and bounded. */
 const ISSUE_REQUEST_TIMEOUT_MS = 20_000;
 // till this
@@ -202,7 +223,7 @@ async function request<T>(
         msg = JSON.stringify(body);
       }
     } catch {
-      msg = text.trim() || `Request failed (${res.status})`;
+      msg = readableErrorBody(text, res.status);
     }
     // Treat common gateway/unavailable statuses as "offline" to avoid noisy errors.
     if ([502, 503, 504].includes(res.status)) {
@@ -2661,7 +2682,7 @@ export async function reportIssue(
       const body = JSON.parse(text) as { detail?: unknown };
       msg = typeof body?.detail === "string" ? body.detail : JSON.stringify(body);
     } catch {
-      msg = text.trim() || `Request failed (${res.status})`;
+      msg = readableErrorBody(text, res.status);
     }
     if ([502, 503, 504].includes(res.status)) {
       backendOfflineUntil = Date.now() + OFFLINE_RETRY_MS;

@@ -1283,9 +1283,23 @@ const AIChatPanel = ({
       ]);
     } catch (err: any) {
       setIsTyping(false);
-      const fallback = err?.message?.includes("401") || err?.message?.includes("Not authenticated")
-        ? "Please log in to use the chat."
-        : (err?.message ? `Request failed: ${err.message}` : "Sorry, something went wrong. Please try again.");
+      const raw: string = typeof err?.message === "string" ? err.message : "";
+      let fallback: string;
+      if (raw.includes("401") || raw.includes("Not authenticated")) {
+        fallback = "Please log in to use the chat.";
+      } else if (
+        err?.name === "BackendOfflineError" ||
+        raw.includes("timed out") ||
+        raw.includes("took too long")
+      ) {
+        fallback =
+          "That one is taking longer than expected and the request timed out. Please try asking again in a moment.";
+      } else if (!raw || raw.includes("<")) {
+        // Gateway/proxy errors can carry raw HTML — never render markup in a chat bubble.
+        fallback = "Sorry, something went wrong. Please try again.";
+      } else {
+        fallback = `Request failed: ${raw}`;
+      }
       setMessages((prev) => [...prev, { role: "ai", content: fallback }]);
     }
   }, [
