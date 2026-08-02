@@ -1438,9 +1438,9 @@ const AIChatPanel = ({
       ? ["Review my portfolio", "Where to invest?", "Complete profile"]
       : ["Why is my portfolio up today?"];
 
-  // "Where to invest?" — pre-fill the composer with the question and a greyed-out
-  // suggested amount the user can type straight over (see `inputSuggestion`).
-  const WHERE_TO_INVEST_PREFIX = "Where to invest with ";
+  // "Where to invest?" — pre-fill the composer with "Where to invest lump sum of"
+  // plus a greyed-out amount the user can type straight over (see `inputSuggestion`).
+  const WHERE_TO_INVEST_PREFIX = "Where to invest lump sum of ";
   const WHERE_TO_INVEST_AMOUNT = "INR 10 lakhs";
 
   const handleWhereToInvest = () => {

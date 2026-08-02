@@ -26,12 +26,7 @@ import {
   todayLabel,
   type ExportHandle,
 } from "@/components/reports/ReportUi";
-import {
-  STCG_RATE_PCT,
-  summariseGains,
-  taxHeads,
-  type RealisedGainRow,
-} from "@/lib/capitalGains";
+import { summariseGains, taxHeads, type RealisedGainRow } from "@/lib/capitalGains";
 import { DEMO_CAPITAL_GAINS } from "@/lib/demoCapitalGains";
 import { exportCapitalGainsXls } from "@/lib/export-xls";
 
@@ -90,8 +85,9 @@ export default function CapitalGainsStatement({
   }, [allRows, period, term, assetType, query]);
 
   const summary = useMemo(() => summariseGains(rows), [rows]);
+  // Only the per-head GAIN split is shown; `taxHeads` also carries the
+  // exemption/rate/tax fields, which this screen deliberately doesn't display.
   const heads = useMemo(() => taxHeads(summary), [summary]);
-  const totalTax = heads.reduce((s, h) => s + h.tax, 0);
 
   const filterSummary = useMemo(() => {
     const parts = [
@@ -306,41 +302,26 @@ export default function CapitalGainsStatement({
               <tr>
                 <Th>Head</Th>
                 <Th align="right">Gain</Th>
-                <Th align="right">Exemption</Th>
-                <Th align="right">Taxable</Th>
-                <Th align="right">Rate</Th>
-                <Th align="right">Tax</Th>
               </tr>
             </thead>
             <tbody>
               {heads.map((h) => (
                 <tr key={h.label}>
                   <Td className="whitespace-nowrap font-medium text-foreground">{h.label}</Td>
-                  <Td align="right">{inr(h.gain)}</Td>
-                  <Td align="right" className="text-muted-foreground">
-                    {inr(h.exemption)}
-                  </Td>
-                  <Td align="right">{inr(h.taxable)}</Td>
-                  <Td align="right" className="text-muted-foreground">
-                    {h.ratePct.toFixed(2)}%
-                  </Td>
                   <Td align="right" className="font-medium">
-                    {inr(h.tax)}
+                    <GainCell value={h.gain} text={inr(h.gain)} />
                   </Td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
               <tr className="bg-secondary/40">
-                <Td className="whitespace-nowrap font-semibold">
-                  Total estimated tax (excl. cess &amp; surcharge)
-                </Td>
-                <Td align="right" />
-                <Td align="right" />
-                <Td align="right" />
-                <Td align="right" />
+                <Td className="whitespace-nowrap font-semibold">Total</Td>
                 <Td align="right" className="font-semibold">
-                  {inr(totalTax)}
+                  <GainCell
+                    value={summary.totalTaxableGain}
+                    text={inr(summary.totalTaxableGain)}
+                  />
                 </Td>
               </tr>
             </tfoot>
@@ -350,8 +331,7 @@ export default function CapitalGainsStatement({
 
       <ReportFootnote>
         LTCG on listed equity units held over 12 months; grandfathered NAV as on 31 Jan 2018 applied
-        where relevant. STCG taxed at {STCG_RATE_PCT}% u/s 111A. Estimates exclude cess, surcharge
-        and loss set-off — not tax advice.
+        where relevant. Gains are before loss set-off — not tax advice.
       </ReportFootnote>
     </div>
   );
