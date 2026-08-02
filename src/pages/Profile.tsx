@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   User, Pencil, Check, ChevronRight, ChevronDown,
   MessageSquareText, Calculator, Users, Briefcase, AlertCircle, LogOut, UploadCloud,Bug,
-  FileText, Download,
+  FileText,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -23,19 +23,9 @@ import {
 
 /* ── tiny helpers ── */
 
-// Downloadable report PDFs (served from /public/statements).
-const REPORTS = [
-  {
-    name: "Portfolio Holdings Statement",
-    sub: "PDF · your current holdings",
-    href: "/statements/portfolio-holdings-statement.pdf",
-  },
-  {
-    name: "Capital Gains Statement",
-    sub: "PDF · realised gains",
-    href: "/statements/capital-gains-statement.pdf",
-  },
-];
+// The two statements behind the Reports row — listed here purely as the row's
+// subtitle; each is rendered (with filters + Excel/PDF download) on `/reports`.
+const REPORT_NAMES = ["Portfolio holdings", "Capital gains"];
 
 const EmptyHint = ({ label }: { label: string }) => (
   <span className="text-[11px] italic text-muted-foreground/60">
@@ -405,29 +395,24 @@ const Profile = () => {
         </div>
       ))}
 
-      {/* Reports — downloadable statements */}
-      <div className="px-5 mt-2 mb-1">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Reports</p>
+      {/* Reports — opens the statements screen (view, filter, download) */}
+      <div className="px-5 mb-1.5">
+        <button
+          onClick={() => navigate("/reports")}
+          className="wealth-card !p-2.5 w-full text-left flex items-center gap-2.5 active:scale-[0.98] transition-transform"
+        >
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-secondary">
+            <FileText className="h-3 w-3 text-muted-foreground" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-xs font-semibold text-foreground">Reports</h3>
+            <p className="text-[11px] text-muted-foreground">
+              {REPORT_NAMES.join(" · ")} — view or download
+            </p>
+          </div>
+          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        </button>
       </div>
-      {REPORTS.map((r) => (
-        <div key={r.name} className="px-5 mb-1.5">
-          <a
-            href={r.href}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="wealth-card !p-2.5 w-full text-left flex items-center gap-2.5 active:scale-[0.98] transition-transform"
-          >
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-secondary">
-              <FileText className="h-3 w-3 text-muted-foreground" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <h3 className="text-xs font-semibold text-foreground">{r.name}</h3>
-              <p className="text-[11px] text-muted-foreground">{r.sub}</p>
-            </div>
-            <Download className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-          </a>
-        </div>
-      ))}
 
       {/* Report an Issue */}
       <div className="px-5 mb-1.5">

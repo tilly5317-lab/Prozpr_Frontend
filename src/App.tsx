@@ -109,6 +109,7 @@ import LiquidFunds from "./pages/LiquidFunds";
 import ApproveOrders from "./pages/ApproveOrders";
 import SavingsPot from "./pages/SavingsPot";
 import IncomeArbitrage from "./pages/IncomeArbitrage";
+import Reports from "./pages/Reports";
 
 const queryClient = new QueryClient();
 
@@ -140,6 +141,7 @@ const App = () => (
             <Route path="/portfolio" element={<Portfolio />} />
             <Route path="/portfolio/fund/:schemeCode" element={<PortfolioFundDetail />} />
             <Route path="/profile" element={<Profile />} />
+            <Route path="/reports" element={<Reports />} />
             <Route path="/chat" element={<Chat />} />
             <Route path="/notifications" element={<Notifications />} />
             {/* Invest section — layout route so the top toggle (InvestTabs)
