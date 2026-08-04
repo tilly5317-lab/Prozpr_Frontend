@@ -141,6 +141,8 @@ export class BackendOfflineError extends Error {
 function readableErrorBody(text: string, status: number): string {
   const trimmed = text.trim();
   if (!trimmed || trimmed.startsWith("<")) {
+    if (status === 413)
+      return "The file is too large for the server to accept. Files up to 20 MB are supported.";
     if (status === 504)
       return "The server took too long to respond. Please try again.";
     if (status === 502 || status === 503)
@@ -704,7 +706,9 @@ export async function uploadCamsStatement(
       const body = JSON.parse(text) as { detail?: unknown };
       msg = typeof body?.detail === "string" ? body.detail : JSON.stringify(body);
     } catch {
-      msg = text.trim() || `Upload failed (${res.status})`;
+      // A 413 that arrives as HTML never reached FastAPI — the reverse proxy's
+      // client_max_body_size rejected the body at the edge.
+      msg = readableErrorBody(text, res.status);
     }
     if ([502, 503, 504].includes(res.status)) {
       backendOfflineUntil = Date.now() + OFFLINE_RETRY_MS;
