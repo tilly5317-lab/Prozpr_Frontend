@@ -721,6 +721,43 @@ export async function uploadCamsStatement(
   return JSON.parse(text) as CamsPdfImportResponse;
 }
 
+// ── Archived CAS statements ("My CAS statements" on the profile) ──
+export interface CasDocumentItem {
+  id: string;
+  uploaded_at: string;
+  source_filename: string | null;
+  file_size_bytes: number | null;
+  cas_type: string | null;
+  file_type: string | null;
+  statement_from: string | null;
+  statement_to: string | null;
+  folios: number | null;
+  schemes: number | null;
+  transactions: number | null;
+}
+
+export interface CasDocumentListResponse {
+  documents: CasDocumentItem[];
+}
+
+export async function listCasDocuments(): Promise<CasDocumentListResponse> {
+  return request<CasDocumentListResponse>("/mf-ingest/cas-documents");
+}
+
+/** Short-lived (5 min) presigned URL; the PDF still opens with the user's own
+ * statement password. */
+export async function getCasDocumentDownloadUrl(
+  id: string,
+): Promise<{ url: string; expires_in_seconds: number }> {
+  return request<{ url: string; expires_in_seconds: number }>(
+    `/mf-ingest/cas-documents/${id}/download`,
+  );
+}
+
+export async function deleteCasDocument(id: string): Promise<void> {
+  return request<void>(`/mf-ingest/cas-documents/${id}`, { method: "DELETE" });
+}
+
 // ── Finvu / AA bucket snapshot — DEPRECATED (account-aggregator flow paused for licensing).
 // Use uploadCamsStatement() instead. Kept only for backwards compatibility.
 export type FinvuBucketName = "Cash" | "Debt" | "Equity" | "Other";
