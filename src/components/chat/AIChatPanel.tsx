@@ -328,6 +328,32 @@ const ProzprAvatar = () => (
 const COMPOSER_TEXT_CLASS = "text-[12px] leading-5 h-5";
 
 /**
+ * Quick-action chips that pre-fill the composer instead of sending immediately.
+ * `prefix` becomes the real input value; the optional `suggestion` is painted
+ * after it in grey italics (see `ComposerSuggestion`) as an editable
+ * placeholder — typing replaces it, sending as-is keeps it. Omit `suggestion`
+ * when the whole question is fixed and there's nothing to fill in. Keyed by the
+ * chip's visible label.
+ */
+const COMPOSER_PREFILLS: Record<string, { prefix: string; suggestion?: string }> = {
+  "Where to invest?": {
+    prefix: "Where to invest lump sum of ",
+    suggestion: "INR 10 lakhs",
+  },
+  "Market outlook": {
+    prefix: "How is market outlook? Is ",
+    suggestion: "Nifty overvalued?",
+  },
+  "SIP investing": {
+    prefix: "Where should I invest SIP of ",
+    suggestion: "INR 50,000",
+  },
+  "Goals achievable?": {
+    prefix: "Are my goals achievable? Am I on track?",
+  },
+};
+
+/**
  * Grey-italic ghost suffix drawn over the composer, immediately after whatever
  * is typed — the "you can type over this" affordance for a pre-filled value.
  *
@@ -1435,17 +1461,34 @@ const AIChatPanel = ({
   const embeddedSuggestions = goalPlanningDemo
     ? ["Retirement · 15+ years", "Home down payment", "Education fund"]
     : chatFirst
-      ? ["Review my portfolio", "Where to invest?", "Complete profile"]
+      ? [
+          "Review my portfolio",
+          "Where to invest?",
+          "SIP investing",
+          "Market outlook",
+          "Goals achievable?",
+          "Complete profile",
+        ]
       : ["Why is my portfolio up today?"];
 
-  // "Where to invest?" — pre-fill the composer with "Where to invest lump sum of"
-  // plus a greyed-out amount the user can type straight over (see `inputSuggestion`).
-  const WHERE_TO_INVEST_PREFIX = "Where to invest lump sum of ";
-  const WHERE_TO_INVEST_AMOUNT = "INR 10 lakhs";
-
-  const handleWhereToInvest = () => {
-    setInput(WHERE_TO_INVEST_PREFIX);
-    setInputSuggestion(WHERE_TO_INVEST_AMOUNT);
+  /**
+   * Chips that don't send straight away: they pre-fill the composer with
+   * `prefix` and paint `suggestion` after it in grey italics, so the user can
+   * either send as-is or type over the suggested part. Add a chip here and to
+   * `embeddedSuggestions` — no other wiring needed.
+   */
+  const handleSuggestionChip = (label: string) => {
+    if (label === "Complete profile") {
+      navigate("/profile/complete");
+      return;
+    }
+    const prefill = COMPOSER_PREFILLS[label];
+    if (!prefill) {
+      void sendMessage(label);
+      return;
+    }
+    setInput(prefill.prefix);
+    setInputSuggestion(prefill.suggestion ?? null);
     // Focus after paint so the caret lands at the end of the pre-filled text —
     // the next keystroke then replaces the suggestion instead of inserting into it.
     requestAnimationFrame(() => {
@@ -1943,13 +1986,7 @@ const AIChatPanel = ({
                   {embeddedSuggestions.map((q) => (
                     <button
                       key={q}
-                      onClick={() =>
-                        q === "Complete profile"
-                          ? navigate("/profile/complete")
-                          : q === "Where to invest?"
-                            ? handleWhereToInvest()
-                            : sendMessage(q)
-                      }
+                      onClick={() => handleSuggestionChip(q)}
                       className="shrink-0 whitespace-nowrap rounded-full border border-border/50 bg-card px-3 py-1.5 text-[11px] font-medium text-muted-foreground shadow-sm transition-colors hover:bg-muted/60"
                     >
                       {q}
@@ -1962,13 +1999,7 @@ const AIChatPanel = ({
                 {embeddedSuggestions.map((q) => (
                   <button
                     key={q}
-                    onClick={() =>
-                      q === "Complete profile"
-                        ? navigate("/profile/complete")
-                        : q === "Where to invest?"
-                          ? handleWhereToInvest()
-                          : sendMessage(q)
-                    }
+                    onClick={() => handleSuggestionChip(q)}
                     className="shrink-0 whitespace-nowrap rounded-full border border-border/50 bg-card px-3 py-1.5 text-[11px] font-medium text-muted-foreground shadow-sm transition-colors hover:bg-muted/60"
                   >
                     {q}
