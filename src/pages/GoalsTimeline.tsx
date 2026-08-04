@@ -29,6 +29,7 @@ import {
   Plus,
   RotateCcw,
   Settings2,
+  Target,
   TrendingUp,
   Trophy,
   X,
@@ -1258,7 +1259,19 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   // and return there once the cashflow inputs are saved, so the user can finish
   // the remaining profile sections instead of being stranded here.
   const fromProfile = searchParams.get("from") === "profile";
-  const returnToProfile = useCallback(() => navigate("/profile/complete"), [navigate]);
+  // ?from=resume tells /profile/complete to keep its remembered entry origin
+  // (e.g. chat) across this round trip instead of resetting it to /profile.
+  const returnToProfile = useCallback(
+    () => navigate("/profile/complete?from=resume"),
+    [navigate],
+  );
+  // The profile's "What are you trying to achieve?" section is confirmed by
+  // having ≥1 saved goal — not by cashflow inputs — so the from-profile flow
+  // must not bounce back before one exists.
+  const hasPersistedGoals = useMemo(
+    () => goals.some((g) => isPersistedGoalId(g.id)),
+    [goals],
+  );
   const [expandedGoals, setExpandedGoals] = useState<Set<string>>(new Set());
   const [draggingGoalId, setDraggingGoalId] = useState<string | null>(null);
   const [dropTargetYear, setDropTargetYear] = useState<number | null>(null);
@@ -1552,7 +1565,16 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
           // Having ≥1 goal is what marks the "What are you trying to achieve?"
           // profile section confirmed, so a saved goal = section completed.
           trackDetailedOnboardingSectionCompleted("goal_planning");
+          const wasFirstGoal = !hasPersistedGoals;
           setGoals((prev) => [...prev, mapGoalFromApi(res, currentYear)]);
+          if (fromProfile && wasFirstGoal) {
+            // Mid-profile-setup, first goal saved: the section is now complete,
+            // so take the user straight back to finish the remaining cards.
+            closeGoalSheet();
+            toast.success("Goal added — taking you back to profile setup");
+            returnToProfile();
+            return;
+          }
           toast.success("Goal added");
         }
         closeGoalSheet();
@@ -1564,7 +1586,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
         setGoalSaving(false);
       }
     },
-    [currentYear, closeGoalSheet, fetchCashflow],
+    [currentYear, closeGoalSheet, fetchCashflow, fromProfile, hasPersistedGoals, returnToProfile],
   );
 
   const handleDeleteGoal = useCallback(
@@ -1913,10 +1935,21 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
         {goalsLoading && (
           <p className="px-1 text-[11px] text-muted-foreground">Loading goals from your plan…</p>
         )}
-        {!goalsLoading && goals.length === 0 && (
+        {!goalsLoading && goals.length === 0 && !fromProfile && (
           <p className="px-1 text-[11px] text-muted-foreground">
             No goals in your account yet. Use + to add one.
           </p>
+        )}
+        {/* Mid-profile-setup with no goal yet: spell out exactly what completes
+            the "What are you trying to achieve?" section and what happens next. */}
+        {!goalsLoading && fromProfile && !hasPersistedGoals && (
+          <div className="flex items-start gap-2 rounded-xl border border-[#D4A868]/50 bg-[#D4A868]/10 px-3 py-2.5">
+            <Target className="mt-0.5 h-4 w-4 shrink-0 text-[#D4A868]" />
+            <p className="text-[12px] leading-snug text-foreground">
+              Add your first goal with the <span className="font-semibold">+</span> button to
+              complete this section — we'll take you back to profile setup once it's saved.
+            </p>
+          </div>
         )}
         {/* Monthly investment (SIP what-if). Line mode previews instantly on the
             gold spine; in both modes "Apply to plan" re-runs the engine so the
@@ -2736,7 +2769,13 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                       void reloadGoals();
                       setGateRefresh((n) => n + 1);
                       if (fromProfile) {
-                        returnToProfile();
+                        // Saving inputs never redirects — the user stays on the
+                        // goal planner and returns to profile setup via the back
+                        // bar (or automatically after their first goal is saved).
+                        setPanelOpen(false);
+                        if (!hasPersistedGoals) {
+                          toast.info("Inputs saved — now add your first goal with the + button");
+                        }
                         return;
                       }
                       if (ready) setPanelOpen(false);

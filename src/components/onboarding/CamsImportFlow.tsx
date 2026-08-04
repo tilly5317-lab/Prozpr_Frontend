@@ -36,8 +36,11 @@ const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/;
 const CAMS_MANUAL_URL =
   "https://www.camsonline.com/Investors/Statements/Consolidated-Account-Statement";
 
-export type CamsImportStep = "request" | "sent" | "upload" | "done";
+export type CamsImportStep = "choose" | "request" | "sent" | "upload" | "done";
 type Step = CamsImportStep;
+
+/** Which of the two entry paths the user picked on the choice screen. */
+type ImportPath = "have" | "get" | null;
 
 /** Ordered rail shown at the top; "done" renders as upload-complete. */
 const STEP_RAIL: { key: Exclude<Step, "done">; label: string }[] = [
@@ -101,7 +104,11 @@ const CamsImportFlow = ({
   compact = false,
   fillHeight = false,
 }: CamsImportFlowProps) => {
-  const [step, setStep] = useState<Step>("request");
+  // Entry is a two-way choice: "I have an updated CAS" (straight to upload)
+  // vs "I don't have one" (guided email request). Upload-first because most
+  // returning users already hold the PDF — one tap, zero forms.
+  const [step, setStep] = useState<Step>("choose");
+  const [path, setPath] = useState<ImportPath>(null);
   // Whether the backend's CAS Parser plan includes statement-by-email. When it
   // doesn't, the flow starts straight at Upload with manual-generation
   // guidance; when the plan is upgraded this lights back up automatically.
@@ -146,10 +153,10 @@ const CamsImportFlow = ({
       .then((caps) => {
         if (cancelled) return;
         setMailbackAvailable(caps.mailback_available);
-        // Skip the email-request step entirely on plans without the generator
-        // (only if the user hasn't already navigated away from it).
+        // Skip the choice + email-request steps entirely on plans without the
+        // generator (only if the user hasn't already navigated further).
         if (!caps.mailback_available) {
-          setStep((s) => (s === "request" ? "upload" : s));
+          setStep((s) => (s === "choose" || s === "request" ? "upload" : s));
         }
       })
       .catch(() => {
@@ -284,9 +291,19 @@ const CamsImportFlow = ({
     }
   };
 
+  const chooseHave = () => {
+    setPath("have");
+    setStep("upload");
+  };
+  const chooseGet = () => {
+    setPath("get");
+    setStep("request");
+  };
+
   // Enter anywhere = the step's primary (highlighted) button.
   useEnterSubmit(() => {
-    if (step === "request") void handleRequest();
+    if (step === "choose") chooseHave();
+    else if (step === "request") void handleRequest();
     else if (step === "sent") setStep("upload");
     else if (step === "upload") void handleUpload();
     else if (step === "done" && result) onImported(result);
@@ -314,11 +331,14 @@ const CamsImportFlow = ({
 
   return (
     <div className={fillHeight ? "flex flex-1 flex-col" : undefined}>
-      {/* ── step rail (hidden when the plan has no statement-by-email — the
-             flow is then a single upload screen and a rail would mislead) ── */}
+      {/* ── step rail — only for the guided email path. The choice screen and
+             the direct-upload path are single screens; a 3-step rail there
+             would exaggerate the effort involved. ── */}
       <div
         className={`mb-4 flex items-center gap-1.5 ${
-          mailbackAvailable === false ? "hidden" : ""
+          mailbackAvailable === false || step === "choose" || path !== "get"
+            ? "hidden"
+            : ""
         }`}
       >
         {STEP_RAIL.map((s, i) => {
@@ -357,6 +377,63 @@ const CamsImportFlow = ({
       </div>
 
       <AnimatePresence mode="wait">
+        {/* ─────────────────────────── STEP 0 · CHOOSE PATH ─────────────────────────── */}
+        {step === "choose" && (
+          <motion.div key="choose" {...stepMotion} className={stepShell}>
+            <p className={`${sub} leading-relaxed text-muted-foreground`}>
+              Your Consolidated Account Statement (CAS) lists every mutual fund
+              you own. We read it once and build your entire portfolio from it.
+            </p>
+
+            <div className="mt-4 space-y-3">
+              <button
+                type="button"
+                onClick={chooseHave}
+                className="group flex w-full items-center gap-3 rounded-2xl border-2 border-primary/60 bg-primary/5 px-4 py-4 text-left transition-all hover:border-primary hover:bg-primary/10 active:scale-[0.98]"
+              >
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl wealth-gradient">
+                  <UploadCloud className="h-5 w-5 text-primary-foreground" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[14px] font-semibold text-foreground">
+                    I have an updated CAS
+                  </p>
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                    Upload the PDF you already have — done in under a minute.
+                  </p>
+                </div>
+                <ArrowRight className="h-4 w-4 shrink-0 text-primary transition-transform group-hover:translate-x-0.5" />
+              </button>
+
+              <button
+                type="button"
+                onClick={chooseGet}
+                className="group flex w-full items-center gap-3 rounded-2xl border border-border bg-background px-4 py-4 text-left transition-all hover:bg-accent/40 active:scale-[0.98]"
+              >
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-secondary">
+                  <Mail className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[14px] font-semibold text-foreground">
+                    I don&apos;t have an updated CAS
+                  </p>
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                    We&apos;ll have CAMS email you a fresh statement in 5–10 minutes.
+                  </p>
+                </div>
+                <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+              </button>
+            </div>
+
+            <div className={ctaBlock}>
+              <p className="text-center text-[11px] leading-relaxed text-muted-foreground/80">
+                Not sure? If your last statement is older than a month, request a
+                fresh one so nothing is missing.
+              </p>
+            </div>
+          </motion.div>
+        )}
+
         {/* ─────────────────────────── STEP 1 · REQUEST ─────────────────────────── */}
         {step === "request" && (
           <motion.div key="request" {...stepMotion} className={stepShell}>
@@ -476,15 +553,26 @@ const CamsImportFlow = ({
                 )}
               </button>
 
-              <button
-                type="button"
-                onClick={() => setStep("upload")}
-                disabled={requesting}
-                className="mt-3 flex w-full items-center justify-center gap-1 text-[12px] font-medium text-primary transition-colors hover:text-primary/80 disabled:opacity-50"
-              >
-                Already have your CAS PDF? Upload it directly
-                <ArrowRight className="h-3.5 w-3.5" />
-              </button>
+              <div className="mt-3 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setStep("choose")}
+                  disabled={requesting}
+                  className="flex items-center gap-1 text-[12px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                  Back
+                </button>
+                <button
+                  type="button"
+                  onClick={chooseHave}
+                  disabled={requesting}
+                  className="flex items-center gap-1 text-[12px] font-medium text-primary transition-colors hover:text-primary/80 disabled:opacity-50"
+                >
+                  I already have a CAS PDF
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
           </motion.div>
         )}
@@ -574,8 +662,9 @@ const CamsImportFlow = ({
               </div>
             ) : (
               <p className={`${sub} leading-relaxed text-muted-foreground`}>
-                Upload the CAS PDF from your email — we&apos;ll read your folios, holdings
-                and every transaction, then rebuild your portfolio from it.
+                {path === "get"
+                  ? "Upload the CAS PDF from your email — we'll read your folios, holdings and every transaction, then rebuild your portfolio from it."
+                  : "Upload your CAS PDF — we'll read your folios, holdings and every transaction, then rebuild your portfolio from it."}
               </p>
             )}
 
@@ -689,12 +778,12 @@ const CamsImportFlow = ({
               {mailbackAvailable !== false && (
                 <button
                   type="button"
-                  onClick={() => setStep("request")}
+                  onClick={() => setStep(path === "get" ? "sent" : "choose")}
                   disabled={uploading}
                   className="flex items-center gap-1 text-[12px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
                 >
                   <ArrowLeft className="h-3.5 w-3.5" />
-                  Request by email instead
+                  Back
                 </button>
               )}
               <a
@@ -748,6 +837,11 @@ const CamsImportFlow = ({
               ))}
             </div>
 
+            <p className="mt-3 text-center text-[11px] text-muted-foreground/80">
+              A copy of this statement is saved in your profile for future
+              reference.
+            </p>
+
             <div className={ctaBlock}>
               <button
                 type="button"
@@ -764,7 +858,8 @@ const CamsImportFlow = ({
 
       <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-[11px] text-muted-foreground">
         <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
-        Parsed securely — the PDF and password are discarded right after parsing.
+        Encrypted end to end — your password is never stored; the statement is
+        saved securely to your profile.
       </p>
     </div>
   );

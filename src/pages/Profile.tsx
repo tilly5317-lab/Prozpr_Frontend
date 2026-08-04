@@ -7,6 +7,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import BottomNav from "@/components/BottomNav";
+import CasStatementsCard from "@/components/profile/CasStatementsCard";
 import ReportIssueDialog from "@/components/ReportIssueDialog";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/context/AuthContext";
@@ -389,6 +390,9 @@ const Profile = () => {
           </button>
         </div>
       ))}
+
+      {/* Saved CAS statements (hidden until the first import) */}
+      <CasStatementsCard />
 
       {/* Report an Issue */}
       <div className="px-5 mb-1.5">
