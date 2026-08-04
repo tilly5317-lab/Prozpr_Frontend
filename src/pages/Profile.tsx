@@ -2,12 +2,11 @@ import { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   User, Pencil, Check, ChevronRight, ChevronDown,
-  MessageSquareText, Calculator, BarChart3, Users, Briefcase, AlertCircle, LogOut, UploadCloud,Bug,
+  MessageSquareText, Calculator, BarChart3, Users, Briefcase, AlertCircle, LogOut, UploadCloud, Bug, FileText,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import BottomNav from "@/components/BottomNav";
-import CasStatementsCard from "@/components/profile/CasStatementsCard";
 import ReportIssueDialog from "@/components/ReportIssueDialog";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/context/AuthContext";
@@ -368,6 +367,7 @@ const Profile = () => {
       {([
         { icon: User, title: "Tell Us More About You", sub: "Goals, risk tolerance & mandates", route: "/profile/complete", showDot: !aboutYouConfirmed },
         { icon: UploadCloud, title: "Update Holdings", sub: "Upload your latest CAMS / KFintech statement", route: "/cams-upload?from=profile", showDot: false },
+        { icon: FileText, title: "My CAS Statements", sub: "Download statements you've imported", route: "/cas-statements", showDot: false },
       ]).map((item) => (
         <div key={item.title} className="px-5 mb-1.5">
           <button
@@ -390,9 +390,6 @@ const Profile = () => {
           </button>
         </div>
       ))}
-
-      {/* Saved CAS statements (hidden until the first import) */}
-      <CasStatementsCard />
 
       {/* Report an Issue */}
       <div className="px-5 mb-1.5">

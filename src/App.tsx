@@ -83,6 +83,7 @@ import NotFound from "./pages/NotFound";
 import Notifications from "./pages/Notifications";
 import CompleteProfile from "./pages/CompleteProfile";
 import Profile from "./pages/Profile";
+import CasStatements from "./pages/CasStatements";
 import Chat from "./pages/Chat";
 import GoalsTimeline from "./pages/GoalsTimeline";
 import SipPlanner from "./pages/SipPlanner";
@@ -133,6 +134,7 @@ const App = () => (
             <Route path="/portfolio" element={<Portfolio />} />
             <Route path="/portfolio/fund/:schemeCode" element={<PortfolioFundDetail />} />
             <Route path="/profile" element={<Profile />} />
+            <Route path="/cas-statements" element={<CasStatements />} />
             <Route path="/chat" element={<Chat />} />
             <Route path="/notifications" element={<Notifications />} />
             {/* Invest section — layout route so the top toggle (InvestTabs)
