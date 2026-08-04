@@ -29,6 +29,7 @@ import {
 } from "@/lib/api";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useChatThinking } from "@/hooks/useChatThinking";
 
 const PENDING_CHAT_BOOTSTRAP_KEY = "askProzpr.pendingChatBootstrap.v1";
 
@@ -39,8 +40,6 @@ interface AIChatPanelProps {
   chatFirst?: boolean;
   completionMessage?: string;
   onCompletionShown?: () => void;
-  initialAiMessage?: string;
-  showBackToInvest?: boolean;
   /** Local demo: scripted goal-alignment walkthrough — no chat API calls. */
   goalPlanningDemo?: boolean;
 }
@@ -63,7 +62,7 @@ interface Message {
   kudosId?: number;
   /** Only when type === "goal-demo-widget" */
   widgetKind?: "emergency-fund";
-  /** Backend saved an ideal rebalancing plan — show CTA to open `/execute`. */
+  /** Backend saved an ideal rebalancing plan — show CTA to open `/invest/rebalance-explanation`. */
   showViewExecutePlan?: boolean;
   /** Chart visualization payloads from backend AI modules. */
   chartPayloads?: any[] | null;
@@ -783,8 +782,6 @@ const AIChatPanel = ({
   chatFirst = false,
   completionMessage,
   onCompletionShown,
-  initialAiMessage,
-  showBackToInvest = false,
   goalPlanningDemo = false,
 }: AIChatPanelProps) => {
   const navigate = useNavigate();
@@ -801,6 +798,8 @@ const AIChatPanel = ({
   const [inputSuggestion, setInputSuggestion] = useState<string | null>(null);
   const composerRef = useRef<HTMLInputElement>(null);
   const [isTyping, setIsTyping] = useState(false);
+  // Session whose live "thinking aloud" feed we poll while a reply is pending.
+  const [thinkingSessionId, setThinkingSessionId] = useState<string | null>(null);
   const [micState, setMicState] = useState<MicState>("idle");
   const [interimTranscript, setInterimTranscript] = useState("");
   const [showFirstUseHint, setShowFirstUseHint] = useState(true);
@@ -812,6 +811,10 @@ const AIChatPanel = ({
   const recognitionRef = useRef<any>(null);
   const sessionIdRef = useRef<string | null>(null);
   const kudosCounterRef = useRef(0);
+
+  // Live backend "thinking aloud" lines shown in the typing bubble; the feed
+  // vanishes with the bubble the moment the real reply lands.
+  const thinkingLines = useChatThinking(isTyping && !goalPlanningDemo, thinkingSessionId);
 
   const [historyOpen, setHistoryOpen] = useState(false);
   // Shows the floating "jump to latest" arrow when scrolled away from the newest message.
@@ -967,7 +970,7 @@ const AIChatPanel = ({
   // Keep the view pinned to the newest message as content streams in.
   useEffect(() => {
     scrollToBottom("auto");
-  }, [messages, isTyping, interimTranscript, scrollToBottom]);
+  }, [messages, isTyping, interimTranscript, thinkingLines, scrollToBottom]);
 
   const showVoiceOnboardingChips = useMemo(() => {
     if (!clientContext?.user) return true;
@@ -991,14 +994,6 @@ const AIChatPanel = ({
     setMessages((prev) => [...prev, { role: "ai", content: completionMessage }]);
     onCompletionShown?.();
   }, [completionMessage, onCompletionShown, goalPlanningDemo, clientContext]);
-
-  // Inject initial AI message (e.g. from /execute portfolio context)
-  const initialMessageSentRef = useRef(false);
-  useEffect(() => {
-    if (goalPlanningDemo || !initialAiMessage || initialMessageSentRef.current) return;
-    initialMessageSentRef.current = true;
-    setMessages((prev) => [...prev, { role: "ai", content: initialAiMessage }]);
-  }, [initialAiMessage, goalPlanningDemo]);
 
   useEffect(() => {
     if (!goalPlanningDemo) return;
@@ -1318,6 +1313,7 @@ const AIChatPanel = ({
 
     try {
       const sid = await ensureSession();
+      setThinkingSessionId(sid);
       const resp = await sendChatMessage(sid, trimmed, clientContext ?? undefined);
       setIsTyping(false);
       const hasSavedPlan = Boolean(
@@ -1334,9 +1330,23 @@ const AIChatPanel = ({
       ]);
     } catch (err: any) {
       setIsTyping(false);
-      const fallback = err?.message?.includes("401") || err?.message?.includes("Not authenticated")
-        ? "Please log in to use the chat."
-        : (err?.message ? `Request failed: ${err.message}` : "Sorry, something went wrong. Please try again.");
+      const raw: string = typeof err?.message === "string" ? err.message : "";
+      let fallback: string;
+      if (raw.includes("401") || raw.includes("Not authenticated")) {
+        fallback = "Please log in to use the chat.";
+      } else if (
+        err?.name === "BackendOfflineError" ||
+        raw.includes("timed out") ||
+        raw.includes("took too long")
+      ) {
+        fallback =
+          "That one is taking longer than expected and the request timed out. Please try asking again in a moment.";
+      } else if (!raw || raw.includes("<")) {
+        // Gateway/proxy errors can carry raw HTML — never render markup in a chat bubble.
+        fallback = "Sorry, something went wrong. Please try again.";
+      } else {
+        fallback = `Request failed: ${raw}`;
+      }
       setMessages((prev) => [...prev, { role: "ai", content: fallback }]);
     }
   }, [
@@ -1545,24 +1555,6 @@ const AIChatPanel = ({
                   <MarkdownMessage text={msg.content} />
                 </div>
               </div>
-              {showBackToInvest && i === 0 && msg.role === "ai" && (
-                <button
-                  onClick={() => navigate("/invest/rebalance-explanation")}
-                  className="ml-7 mt-2 self-start flex items-center gap-3 rounded-xl px-4 py-3 transition-opacity hover:opacity-90"
-                  style={{ backgroundColor: "hsl(220, 40%, 20%)" }}
-                >
-                  <div className="flex flex-col">
-                    <span className="text-[11px] font-medium" style={{ color: "hsl(40, 50%, 70%)" }}>Ready to invest?</span>
-                    <span className="text-[13px] font-semibold" style={{ color: "hsl(40, 55%, 80%)" }}>View your plan</span>
-                  </div>
-                  <div
-                    className="flex h-7 w-7 items-center justify-center rounded-full"
-                    style={{ backgroundColor: "hsla(40, 55%, 65%, 0.2)" }}
-                  >
-                    <ArrowRight className="h-3.5 w-3.5" style={{ color: "hsl(40, 55%, 75%)" }} />
-                  </div>
-                </button>
-              )}
               {msg.showViewExecutePlan ? (
                 <button
                   type="button"
@@ -1594,15 +1586,68 @@ const AIChatPanel = ({
       {isTyping && (
         <div className="flex gap-2 items-start">
           <ProzprAvatar />
-          <div className="flex gap-1.5 px-3 py-2.5 rounded-2xl" style={{ backgroundColor: "hsl(var(--prozpr-bubble))" }}>
-            {[0, 1, 2].map((i) => (
-              <span
-                key={i}
-                className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40 animate-pulse"
-                style={{ animationDelay: `${i * 0.2}s` }}
-              />
-            ))}
-          </div>
+          {thinkingLines.length === 0 ? (
+            <div className="flex gap-1.5 px-3 py-2.5 rounded-2xl" style={{ backgroundColor: "hsl(var(--prozpr-bubble))" }}>
+              {[0, 1, 2].map((i) => (
+                <span
+                  key={i}
+                  className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40 animate-pulse"
+                  style={{ animationDelay: `${i * 0.2}s` }}
+                />
+              ))}
+            </div>
+          ) : (
+            /* Live "thinking aloud": the backend's real steps, appended as they
+               happen. The whole bubble disappears when the reply arrives. */
+            <div
+              className="max-w-[85%] rounded-2xl rounded-tl-sm px-3.5 py-3"
+              style={{
+                backgroundColor: "hsl(var(--prozpr-bubble))",
+                borderLeft: "2px solid hsla(38, 45%, 54%, 0.3)",
+              }}
+            >
+              <div className="mb-2 flex items-center gap-1.5">
+                <Sparkles className="h-3 w-3 text-primary" />
+                <span className="text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Thinking
+                </span>
+              </div>
+              <div className="flex flex-col">
+                {thinkingLines.map((line, i) => {
+                  const current = i === thinkingLines.length - 1;
+                  return (
+                    <motion.div
+                      key={`${i}-${line}`}
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.25 }}
+                      className="relative flex items-start gap-2 pb-2 last:pb-0"
+                    >
+                      {i < thinkingLines.length - 1 && (
+                        <span className="absolute left-[5.5px] top-4 -bottom-0.5 w-px bg-wealth-green/30" />
+                      )}
+                      {current ? (
+                        <Loader2 className="relative z-10 mt-0.5 h-3 w-3 shrink-0 animate-spin text-primary" />
+                      ) : (
+                        <span className="relative z-10 mt-0.5 flex h-3 w-3 shrink-0 items-center justify-center rounded-full bg-wealth-green">
+                          <Check className="h-2 w-2 text-white" />
+                        </span>
+                      )}
+                      <span
+                        className={`text-[12px] leading-snug ${
+                          current
+                            ? "font-medium text-foreground/85 animate-pulse"
+                            : "text-muted-foreground/75"
+                        }`}
+                      >
+                        {line}
+                      </span>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

@@ -1,10 +1,11 @@
+import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ArrowRight, CheckCircle2 } from "lucide-react";
 import { type CamsPdfImportResponse } from "@/lib/api";
 import { useOnboardingStep } from "@/hooks/useOnboardingStep";
 import { camsImportedThisSession, useCamsMissing } from "@/hooks/useCamsMissing";
-import CamsImportFlow from "@/components/onboarding/CamsImportFlow";
+import CamsImportFlow, { type CamsImportStep } from "@/components/onboarding/CamsImportFlow";
 
 /**
  * Dedicated first-step page (right after account setup): guided CAMS import —
@@ -27,6 +28,10 @@ const CamsUpload = () => {
   const { completeStep } = useOnboardingStep("cams_upload", { enabled: !fromProfile });
   const cams = useCamsMissing();
   const alreadyImported = cams.hasCams === true || camsImportedThisSession();
+  // Mirrors the flow's current step so the page heading can celebrate success
+  // instead of still reading "Import your mutual funds" on the done screen.
+  const [flowStep, setFlowStep] = useState<CamsImportStep>("request");
+  const imported = flowStep === "done";
 
   const markDoneFlags = () => {
     try {
@@ -59,17 +64,17 @@ const CamsUpload = () => {
         className="flex flex-1 flex-col"
       >
         <h1 className="mb-2 text-lg font-semibold text-foreground">
-          Import your mutual funds
+          {imported ? "Mutual funds imported successfully" : "Import your mutual funds"}
         </h1>
         <p className="mb-6 text-xs leading-relaxed text-muted-foreground">
-          We&apos;ll fetch your CAMS/KFintech Consolidated Account Statement straight to
-          your email — then read your folios, holdings and transactions to build your
-          portfolio.
+          {imported
+            ? "We've read your folios, holdings and transactions and built your portfolio. You're all set to continue."
+            : "We'll fetch your CAMS/KFintech Consolidated Account Statement straight to your email — then read your folios, holdings and transactions to build your portfolio."}
         </p>
 
         {/* Resuming users with a statement already imported can continue without
             re-uploading (a fresh upload below still works and replaces the data). */}
-        {!fromProfile && alreadyImported && (
+        {!fromProfile && alreadyImported && !imported && (
           <div className="mb-5 rounded-xl border border-wealth-green/30 bg-wealth-green/5 px-3.5 py-3">
             <div className="flex items-center gap-2">
               <CheckCircle2 className="h-4 w-4 shrink-0 text-wealth-green" />
@@ -91,7 +96,7 @@ const CamsUpload = () => {
           </div>
         )}
 
-        <CamsImportFlow onImported={handleImported} fillHeight />
+        <CamsImportFlow onImported={handleImported} onStepChange={setFlowStep} fillHeight />
 
         {/* CAMS is compulsory during onboarding — only the profile "Update
             Holdings" entry point may cancel without importing. */}

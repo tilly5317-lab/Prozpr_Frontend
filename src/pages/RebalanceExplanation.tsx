@@ -1,15 +1,18 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, Check, CheckCircle2, Loader2, Sparkles } from "lucide-react";
+import { motion } from "framer-motion";
+import { ArrowRight, Check, Loader2, Sparkles } from "lucide-react";
 import BottomNav from "@/components/BottomNav";
 import { CurrentVsTargetChart } from "@/components/invest/CurrentVsTargetChart";
 import { Skeleton } from "@/components/ui/skeleton";
 import RebalanceGate from "@/components/invest/RebalanceGate";
+import { ComputeProgressSteps } from "@/components/invest/ComputeProgressSteps";
 import TradeFundDetailView from "@/components/fund/TradeFundDetailView";
 import { toast } from "@/hooks/use-toast";
+import { useComputeProgress } from "@/hooks/useComputeProgress";
 import {
   getMyPortfolio,
+  getRebalanceComputeProgress,
   getRebalancingRunDetail,
   listRebalancingRuns,
   runRebalancing,
@@ -484,35 +487,61 @@ const RebalanceExplanation = () => {
     [navigate],
   );
 
+  // True only while the engine is actually computing a plan (first-ever visit
+  // with no run, or the Recalculate button). Plain reads never set this — the
+  // progress % / stage UI shows only during a real compute.
+  const [computing, setComputing] = useState(false);
+  const computeProgress = useComputeProgress(computing, getRebalanceComputeProgress);
+
+  // Run the engine and load the resulting run. Used once when no plan exists,
+  // and by the Recalculate button; chat is the other producer of runs.
+  const compute = useCallback(async () => {
+    setComputing(true);
+    setDataError(null);
+    try {
+      const res = await runRebalancing();
+      if (res.blocking_message) {
+        setDataError(res.blocking_message);
+        return;
+      }
+      const run = (await listRebalancingRuns())[0];
+      if (!run) {
+        setDataError("No rebalancing plan is available yet.");
+        return;
+      }
+      setDetail(await getRebalancingRunDetail(run.id));
+      getMyPortfolio().then(setPortfolio).catch(() => { /* section just hides */ });
+    } catch {
+      setDataError("Couldn't build your rebalancing plan. Please try again.");
+    } finally {
+      setComputing(false);
+    }
+  }, []);
+
   // Load the latest rebalancing run's real trades + subgroup roll-ups. Called by
-  // the gate's onReady once every required input is present.
+  // the gate's onReady once every required input is present. READ-ONLY except
+  // the very first visit: with no run on record it computes one, exactly once —
+  // afterwards new runs come from chat or the Recalculate button.
   const loadData = useCallback(async () => {
     setDataLoading(true);
     setDataError(null);
     try {
       const runs = await listRebalancingRuns().catch(() => []);
-      let run = runs[0];
+      const run = runs[0];
       if (!run) {
-        const res = await runRebalancing();
-        if (res.blocking_message) {
-          setDataError(res.blocking_message);
-          return;
-        }
-        run = (await listRebalancingRuns())[0];
+        setDataLoading(false);
+        await compute();
+        return;
       }
-      if (run) {
-        setDetail(await getRebalancingRunDetail(run.id));
-        // Best-effort: load holdings so we can show the funds we're keeping.
-        getMyPortfolio().then(setPortfolio).catch(() => { /* section just hides */ });
-      } else {
-        setDataError("No rebalancing plan is available yet.");
-      }
+      setDetail(await getRebalancingRunDetail(run.id));
+      // Best-effort: load holdings so we can show the funds we're keeping.
+      getMyPortfolio().then(setPortfolio).catch(() => { /* section just hides */ });
     } catch {
       setDataError("Couldn't load your rebalancing plan. Please try again.");
     } finally {
       setDataLoading(false);
     }
-  }, []);
+  }, [compute]);
 
   const driftRows = useMemo(() => {
     // Prefer the backend's multi-asset-aware breakdown; fall back to the local
@@ -534,7 +563,8 @@ const RebalanceExplanation = () => {
 
   // Render an example plan when the inputs aren't ready and there's no real plan
   // to show. The same sections render either the real or the sample data.
-  const isExample = gateReady === false && !detail && !dataLoading && !dataError;
+  const isExample =
+    gateReady === false && !detail && !dataLoading && !computing && !dataError;
   const driftRowsToShow = isExample ? EXAMPLE_DRIFT_ROWS : driftRows;
   const tradeGroupsToShow = isExample ? EXAMPLE_TRADE_GROUPS : tradeGroups;
   const tradeCountToShow = isExample
@@ -596,11 +626,41 @@ const RebalanceExplanation = () => {
       <RebalanceGate onReady={loadData} onResolved={setGateReady} editSignal={gateEditSignal} />
 
       <div className="px-5 pt-2 pb-2 space-y-3">
-        {dataLoading && (
+        {/* Recalculating: no skeletons, no duplicate status line — just the
+            live process checklist centred; done lines stay ticked until the
+            whole compute finishes and the plan renders. */}
+        {computing && (
+          <div
+            className="flex justify-center pt-14"
+            aria-busy="true"
+            aria-label="Recalculating your plan"
+          >
+            <div className="w-full max-w-[340px] rounded-2xl border border-border bg-card p-5 shadow-sm">
+              <div className="mb-4 flex items-center gap-2.5">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/50" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
+                </span>
+                <span className="text-[13.5px] font-semibold text-foreground">
+                  Building your rebalancing plan
+                </span>
+              </div>
+              <ComputeProgressSteps
+                progress={computeProgress}
+                startingLabel="Reviewing your portfolio & profile…"
+              />
+              <p className="mt-4 border-t border-border/60 pt-3 text-[11px] leading-snug text-muted-foreground">
+                Working with your live portfolio — this can take a minute.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {dataLoading && !computing && (
           <div className="space-y-3" aria-busy="true" aria-label="Loading your plan">
             <div className="flex items-center gap-2 text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
-              <span className="text-[12px]">Building your plan…</span>
+              <span className="text-[12px]">Loading your plan…</span>
             </div>
             {/* Drift card placeholder */}
             <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
@@ -626,13 +686,13 @@ const RebalanceExplanation = () => {
           </div>
         )}
 
-        {!dataLoading && dataError && (
+        {!dataLoading && !computing && dataError && (
           <div className="rounded-2xl border border-border bg-card p-6 text-center text-sm text-muted-foreground">
             {dataError}
           </div>
         )}
 
-        {!dataLoading && !dataError && (detail || isExample) && (
+        {!dataLoading && !computing && !dataError && (detail || isExample) && (
           <>
             <div className="-mb-1 flex items-center gap-2">
               <span className="text-lg font-semibold text-foreground">Rebalancing</span>
@@ -640,6 +700,16 @@ const RebalanceExplanation = () => {
                 <span className="rounded-full border border-[#D4A868]/40 bg-[#D4A868]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[#9A7B2E]">
                   Example
                 </span>
+              )}
+              {!isExample && detail && (
+                <button
+                  type="button"
+                  onClick={() => void compute()}
+                  className="ml-auto flex items-center gap-1 rounded-full border border-border px-3 py-1.5 text-[11.5px] font-semibold text-foreground transition-colors hover:bg-muted/50"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  Recalculate
+                </button>
               )}
             </div>
 

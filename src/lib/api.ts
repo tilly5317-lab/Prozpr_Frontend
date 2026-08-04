@@ -134,12 +134,33 @@ export class BackendOfflineError extends Error {
   }
 }
 
+/**
+ * Non-JSON error bodies are usually gateway pages (nginx "504 Gateway Time-out" HTML,
+ * Cloudflare interstitials). Never surface raw markup to users — map to a readable message.
+ */
+function readableErrorBody(text: string, status: number): string {
+  const trimmed = text.trim();
+  if (!trimmed || trimmed.startsWith("<")) {
+    if (status === 504)
+      return "The server took too long to respond. Please try again.";
+    if (status === 502 || status === 503)
+      return "The server is temporarily unavailable. Please try again in a moment.";
+    return `Request failed (${status})`;
+  }
+  return trimmed;
+}
+
 let backendOfflineUntil = 0;
 const OFFLINE_RETRY_MS = 15_000;
 /** Default for most API calls */
 const REQUEST_TIMEOUT_MS = 45_000;
-/** Chat can run intent classification + optional market commentary + LLM — allow longer */
-const CHAT_REQUEST_TIMEOUT_MS = 120_000;
+/**
+ * Chat can run intent classification + optional market commentary + LLM — allow longer.
+ * Must stay ABOVE the backend's _FLOW_TIMEOUT_S (180s in ai_engine/services/brain.py) and
+ * nginx's proxy_read_timeout (200s) so the backend's own timeout fallback reaches the user
+ * instead of a client-side abort.
+ */
+const CHAT_REQUEST_TIMEOUT_MS = 210_000;
 /** Issue reporting blocks a user-facing submit button — keep it snappy and bounded. */
 const ISSUE_REQUEST_TIMEOUT_MS = 20_000;
 // till this
@@ -202,7 +223,7 @@ async function request<T>(
         msg = JSON.stringify(body);
       }
     } catch {
-      msg = text.trim() || `Request failed (${res.status})`;
+      msg = readableErrorBody(text, res.status);
     }
     // Treat common gateway/unavailable statuses as "offline" to avoid noisy errors.
     if ([502, 503, 504].includes(res.status)) {
@@ -483,6 +504,36 @@ export async function markOnboardingComplete(): Promise<void> {
   }
 }
 
+// ── Onboarding "Generate my portfolio" job ──────────────────────────
+export type OnboardingGenerationState = "none" | "pending" | "running" | "success" | "failed";
+
+export interface OnboardingGenerationStep {
+  key: string;
+  label: string;
+  state: "pending" | "active" | "done";
+}
+
+/** Polled status of the post-signup personalisation job (real backend progress). */
+export interface OnboardingGenerationStatus {
+  status: OnboardingGenerationState;
+  phase: string | null;
+  progress_pct: number;
+  message: string | null;
+  steps: OnboardingGenerationStep[];
+  started_at: string | null;
+  finished_at: string | null;
+}
+
+/** Kick off the personalisation job (idempotent — returns the running job if any). */
+export async function startOnboardingGeneration(): Promise<OnboardingGenerationStatus> {
+  return request<OnboardingGenerationStatus>("/onboarding/generate", { method: "POST" });
+}
+
+/** Latest personalisation-job status — the loading page polls this. */
+export async function getOnboardingGenerationStatus(): Promise<OnboardingGenerationStatus> {
+  return request<OnboardingGenerationStatus>("/onboarding/generate/status");
+}
+
 // ── SimBanks (account aggregator simulator) ─────────────────────────
 export interface SimBankDiscoveredAccount {
   account_ref_no: string;
@@ -745,7 +796,7 @@ export interface ChatMessageInfo {
 export interface ChatSendResponse {
   user_message: ChatMessageInfo;
   assistant_message: ChatMessageInfo;
-  /** Present when chat persisted an ideal allocation — use for CTA to `/execute`. */
+  /** Present when chat persisted an ideal allocation — use for CTA to `/invest/rebalance-explanation`. */
   ideal_allocation_rebalancing_id?: string | null;
   ideal_allocation_snapshot_id?: string | null;
 }
@@ -1712,120 +1763,6 @@ export function shouldSkipPostSetupChatPrompts(
   return inferOnboardingComplete(me, profile) && inferAccountLinkingComplete(portfolio, linkedAccounts);
 }
 
-/** Goal-based allocation output (mirrors ``goal_based_allocation_pydantic.models.GoalAllocationOutput``). */
-export interface GoalAllocationGoal {
-  goal_name: string;
-  time_to_goal_months: number;
-  amount_needed: number;
-  goal_priority: string;
-  investment_goal: string;
-}
-
-export interface GoalAllocationFutureInvestment {
-  bucket?: string | null;
-  future_investment_amount: number;
-  message?: string | null;
-}
-
-export interface GoalAllocationSubgroupFundMapping {
-  asset_class: "equity" | "debt" | "others";
-  asset_subgroup: string;
-  sub_category: string;
-  recommended_fund: string;
-  isin: string;
-  amount: number;
-}
-
-export interface AggregatedSubgroupRow {
-  subgroup: string;
-  sub_category?: string | null;
-  emergency: number;
-  short_term: number;
-  medium_term: number;
-  long_term: number;
-  total: number;
-  fund_mapping?: GoalAllocationSubgroupFundMapping | null;
-}
-
-export interface GoalAllocationBucket {
-  bucket: "emergency" | "short_term" | "medium_term" | "long_term";
-  goals: GoalAllocationGoal[];
-  total_goal_amount: number;
-  allocated_amount: number;
-  future_investment?: GoalAllocationFutureInvestment | null;
-  subgroup_amounts: Record<string, number>;
-  rationale?: string | null;
-  goal_rationales: Record<string, string>;
-}
-
-export interface GoalAllocationAssetClassSplit {
-  bucket: "emergency" | "short_term" | "medium_term" | "long_term";
-  equity: number;
-  debt: number;
-  others: number;
-  equity_pct: number;
-  debt_pct: number;
-  others_pct: number;
-}
-
-export interface GoalAllocationAssetClassBlock {
-  per_bucket: GoalAllocationAssetClassSplit[];
-  equity_total: number;
-  debt_total: number;
-  others_total: number;
-  equity_total_pct: number;
-  debt_total_pct: number;
-  others_total_pct: number;
-}
-
-export interface GoalAllocationAssetClassBreakdown {
-  planned: GoalAllocationAssetClassBlock;
-  actual: GoalAllocationAssetClassBlock;
-  actual_sum_matches_grand_total: boolean;
-}
-
-export interface GoalAllocationOutput {
-  client_summary: {
-    age: number;
-    occupation?: string | null;
-    effective_risk_score: number;
-    total_corpus: number;
-    goals: GoalAllocationGoal[];
-  };
-  bucket_allocations: GoalAllocationBucket[];
-  aggregated_subgroups: AggregatedSubgroupRow[];
-  future_investments_summary: GoalAllocationFutureInvestment[];
-  grand_total: number;
-  all_amounts_in_multiples_of_100: boolean;
-  asset_class_breakdown?: GoalAllocationAssetClassBreakdown | null;
-}
-
-export interface RecommendedPlanSnapshot {
-  id: string;
-  snapshot_kind: string;
-  allocation: {
-    rows?: Array<{ asset_class: string; weight_pct: number }>;
-    equity_pct?: number;
-    debt_pct?: number;
-    others_pct?: number;
-    goal_allocation_output?: GoalAllocationOutput;
-  };
-  effective_at: string;
-  source?: string | null;
-  notes?: string | null;
-  created_at: string;
-}
-
-export interface RecommendedPlanResponse {
-  snapshot: RecommendedPlanSnapshot | null;
-  latest_rebalancing_id: string | null;
-}
-
-/** Latest persisted ideal allocation from chat or asset-allocation module (requires auth). */
-export async function getRecommendedPlan(): Promise<RecommendedPlanResponse> {
-  return request<RecommendedPlanResponse>("/portfolio/recommended-plan");
-}
-
 export interface PortfolioAllocationInput {
   asset_class: string;
   allocation_percentage: number;
@@ -2542,43 +2479,6 @@ export async function markAllNotificationsAsRead(): Promise<{ message: string }>
   });
 }
 
-// ── Meeting Notes API ───────────────────────────────────
-export interface MeetingNoteInfo {
-  id: string;
-  title: string;
-  meeting_date: string | null;
-  is_mandate_approved: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface MeetingNoteItemInfo {
-  id: string;
-  item_type: "transcript" | "summary";
-  role: string | null;
-  content: string;
-  sort_order: number;
-  created_at: string;
-}
-
-export interface MeetingNoteDetailInfo extends MeetingNoteInfo {
-  items: MeetingNoteItemInfo[];
-}
-
-export async function listMeetingNotes(): Promise<MeetingNoteInfo[]> {
-  return request<MeetingNoteInfo[]>("/meeting-notes/");
-}
-
-export async function getMeetingNote(noteId: string): Promise<MeetingNoteDetailInfo> {
-  return request<MeetingNoteDetailInfo>(`/meeting-notes/${noteId}`);
-}
-
-export async function approveMeetingMandate(noteId: string): Promise<{ message: string; meeting_note_id: string }> {
-  return request<{ message: string; meeting_note_id: string }>(`/meeting-notes/${noteId}/approve-mandate`, {
-    method: "POST",
-  });
-}
-
 // ── Rebalancing API ─────────────────────────────────────
 export type RebalancingStatus = "pending" | "approved" | "executed" | "rejected";
 
@@ -2766,6 +2666,30 @@ export async function runRebalancing(
   );
 }
 
+/** Live stage of an in-flight synchronous compute (polled while the POST runs). */
+export interface ComputeProgress {
+  active: boolean;
+  progress_pct: number;
+  message: string | null;
+  /** Full stage history so far (oldest first) — no stage is missed between polls. */
+  messages?: string[];
+}
+
+/** Real pipeline stage + % of an in-flight rebalancing compute. */
+export async function getRebalanceComputeProgress(): Promise<ComputeProgress> {
+  return request<ComputeProgress>("/ai-modules/rebalancing/compute-progress");
+}
+
+/** Real pipeline stage + % of an in-flight SIP plan build. */
+export async function getSipBuildProgress(): Promise<ComputeProgress> {
+  return request<ComputeProgress>("/additional-investment/sip/progress");
+}
+
+/** Live "thinking aloud" line of a session's in-flight chat turn. */
+export async function getChatThinking(sessionId: string): Promise<ComputeProgress> {
+  return request<ComputeProgress>(`/chat/sessions/${sessionId}/thinking`);
+}
+
 // ── Support: report an issue ────────────────────────────
 export const ISSUE_SOURCES = [
   "Chat Response",
@@ -2838,7 +2762,7 @@ export async function reportIssue(
       const body = JSON.parse(text) as { detail?: unknown };
       msg = typeof body?.detail === "string" ? body.detail : JSON.stringify(body);
     } catch {
-      msg = text.trim() || `Request failed (${res.status})`;
+      msg = readableErrorBody(text, res.status);
     }
     if ([502, 503, 504].includes(res.status)) {
       backendOfflineUntil = Date.now() + OFFLINE_RETRY_MS;
