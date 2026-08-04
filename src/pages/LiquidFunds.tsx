@@ -8,14 +8,12 @@ import {
   Clock,
   ShieldCheck,
   PiggyBank,
-  CreditCard,
   Bell,
   Check,
 } from "lucide-react";
 
-// Dark "plant growing" green for the hero; gold reserved for the premium card perk.
+// Dark "plant growing" green for the hero.
 const GREEN_GRADIENT = "linear-gradient(135deg, #1F5A38 0%, #0E2C1B 100%)";
-const GOLD_GRADIENT = "linear-gradient(135deg, #4A380F 0%, #2D1F05 100%)";
 const GREEN = "#2E9C7E";
 
 const BENEFITS = [
@@ -39,15 +37,10 @@ const BENEFITS = [
 const LiquidFunds = () => {
   const navigate = useNavigate();
   const [potNotified, setPotNotified] = useState(false);
-  const [cardReserved, setCardReserved] = useState(false);
 
   const notifyPot = () => {
     setPotNotified(true);
     toast.success("We'll notify you the moment Savings pots go live.");
-  };
-  const reserveCard = () => {
-    setCardReserved(true);
-    toast.success("Spot reserved — you're on the early-access list for the card.");
   };
 
   return (
@@ -135,53 +128,6 @@ const LiquidFunds = () => {
               <>
                 <Bell className="h-3.5 w-3.5" /> Notify me when available
               </>
-            )}
-          </button>
-        </div>
-
-        {/* First 1,000 → spending card (premium gold perk) */}
-        <div
-          className="rounded-2xl p-4"
-          style={{ background: GOLD_GRADIENT, border: "1px solid rgba(212, 168, 104, 0.45)" }}
-        >
-          <div className="flex items-start gap-3">
-            <div
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
-              style={{ backgroundColor: "rgba(245, 238, 220, 0.14)" }}
-            >
-              <CreditCard className="h-5 w-5" strokeWidth={1.8} style={{ color: "#F5EEDC" }} />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <p className="text-[13px] font-semibold" style={{ color: "#F5EEDC" }}>
-                  Be one of the first 1,000
-                </p>
-                <span
-                  className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide"
-                  style={{ backgroundColor: "rgba(245, 238, 220, 0.16)", color: "#F5EEDC" }}
-                >
-                  Limited
-                </span>
-              </div>
-              <p className="mt-0.5 text-[12px] leading-relaxed" style={{ color: "rgba(245, 238, 220, 0.75)" }}>
-                Early members get a Prozpr card to spend straight from their pot —
-                no need to move money to your bank first.
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={reserveCard}
-            disabled={cardReserved}
-            className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-full py-2.5 text-[13px] font-bold transition-opacity hover:opacity-90 disabled:opacity-100"
-            style={{ backgroundColor: "#F5EEDC", color: "#2D1F05" }}
-          >
-            {cardReserved ? (
-              <>
-                <Check className="h-3.5 w-3.5" /> Spot reserved
-              </>
-            ) : (
-              "Reserve my spot"
             )}
           </button>
         </div>
