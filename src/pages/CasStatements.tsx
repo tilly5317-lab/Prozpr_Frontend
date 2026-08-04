@@ -61,8 +61,13 @@ const CasStatements = () => {
       toast.success("Download started", {
         description: "The PDF opens with your statement password.",
       });
-    } catch {
-      toast.error("Could not fetch the statement. Please try again.");
+    } catch (e: unknown) {
+      // Surface the backend's own reason (e.g. storage not configured) —
+      // a generic message here makes real failures undiagnosable.
+      toast.error("Could not fetch the statement", {
+        description:
+          e instanceof Error && e.message ? e.message : "Please try again.",
+      });
     } finally {
       setWorkingId(null);
     }
@@ -77,8 +82,11 @@ const CasStatements = () => {
       await deleteCasDocument(doc.id);
       setDocs((prev) => prev.filter((d) => d.id !== doc.id));
       toast.success("Statement removed");
-    } catch {
-      toast.error("Could not remove the statement. Please try again.");
+    } catch (e: unknown) {
+      toast.error("Could not remove the statement", {
+        description:
+          e instanceof Error && e.message ? e.message : "Please try again.",
+      });
     } finally {
       setWorkingId(null);
     }
