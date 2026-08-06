@@ -873,6 +873,69 @@ export async function sendChatMessage(
   );
 }
 
+/**
+ * Streaming twin of `sendChatMessage`. Calls the SSE endpoint and invokes
+ * `onDelta` with each incremental slice of the answer as it is generated.
+ *
+ * The resolved value comes from the terminal `done` event and IS AUTHORITATIVE:
+ * the backend may discard a truncated answer in favour of a fallback, so the
+ * caller must render the resolved content rather than keep what it painted from
+ * deltas.
+ */
+export async function sendChatMessageStreaming(
+  sessionId: string,
+  content: string,
+  clientContext: Record<string, unknown> | undefined,
+  onDelta: (text: string) => void
+): Promise<ChatSendResponse> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const token = getToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const familyMemberId = getActiveFamilyMemberId();
+  if (familyMemberId) headers["X-Family-Member-Id"] = familyMemberId;
+
+  const res = await fetch(`${API}/chat/sessions/${sessionId}/messages/stream`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ content, client_context: clientContext ?? null }),
+  });
+  if (!res.ok || !res.body) {
+    throw new Error(`Request failed: ${res.status}`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let result: ChatSendResponse | null = null;
+  let failure: string | null = null;
+
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    // SSE frames are separated by a blank line; keep the trailing partial.
+    const frames = buffer.split("\n\n");
+    buffer = frames.pop() ?? "";
+    for (const frame of frames) {
+      let event: string | null = null;
+      let data: string | null = null;
+      for (const line of frame.split("\n")) {
+        if (line.startsWith("event: ")) event = line.slice(7);
+        else if (line.startsWith("data: ")) data = line.slice(6);
+      }
+      if (!data) continue;
+      const parsed = JSON.parse(data);
+      if (event === "delta") onDelta(parsed.text as string);
+      else if (event === "done") result = parsed as ChatSendResponse;
+      else if (event === "error") failure = String(parsed.detail ?? "stream error");
+    }
+  }
+
+  if (failure) throw new Error(failure);
+  if (!result) throw new Error("Stream ended without a result");
+  return result;
+}
+
 export async function listChatSessions(): Promise<ChatSessionInfo[]> {
   return request<ChatSessionInfo[]>("/chat/sessions");
 }
