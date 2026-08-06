@@ -767,6 +767,11 @@ const AIChatPanel = ({
   const [isClientContextLoading, setIsClientContextLoading] = useState(!goalPlanningDemo);
   const [chatStartTime, setChatStartTime] = useState(formatTimestamp);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Whether the user is parked at the bottom and should keep following new
+  // content. Flips to false the moment they scroll up, which is what stops
+  // streaming text from yanking them back down. A ref (not state) so reading it
+  // in the scroll effect never goes stale and updating it never re-renders.
+  const stickToBottomRef = useRef(true);
   const recognitionRef = useRef<any>(null);
   const sessionIdRef = useRef<string | null>(null);
   const kudosCounterRef = useRef(0);
@@ -907,6 +912,8 @@ const AIChatPanel = ({
     const el = scrollRef.current;
     if (!el) return;
     el.scrollTo({ top: el.scrollHeight, behavior });
+    // Jumping to the latest re-engages follow mode.
+    stickToBottomRef.current = true;
     setShowJumpToLatest(false);
   }, []);
 
@@ -923,12 +930,16 @@ const AIChatPanel = ({
     const el = scrollRef.current;
     if (!el) return;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    setShowJumpToLatest(distanceFromBottom > 120);
+    const awayFromBottom = distanceFromBottom > 120;
+    // Follow new content only while parked at the bottom; scrolling up unsticks.
+    stickToBottomRef.current = !awayFromBottom;
+    setShowJumpToLatest(awayFromBottom);
   }, []);
 
-  // Keep the view pinned to the newest message as content streams in.
+  // Follow the newest message as content streams in, but only while the user is
+  // parked at the bottom — if they've scrolled up to read, leave them there.
   useEffect(() => {
-    scrollToBottom("auto");
+    if (stickToBottomRef.current) scrollToBottom("auto");
   }, [messages, isTyping, interimTranscript, thinkingLines, scrollToBottom]);
 
   const showVoiceOnboardingChips = useMemo(() => {
@@ -1261,6 +1272,9 @@ const AIChatPanel = ({
     }
 
     setMessages((prev) => [...prev, { role: "user", content: trimmed }]);
+    // Sending re-anchors to the bottom so the user sees their message and the
+    // answer streaming in, even if they'd scrolled up beforehand.
+    stickToBottomRef.current = true;
     setInput("");
     setInterimTranscript("");
     setIsTyping(true);
