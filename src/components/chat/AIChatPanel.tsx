@@ -7,7 +7,7 @@ import { useNavigate } from "react-router-dom";
 import { formatInrCompact } from "@/lib/utils";
 import {
   createChatSession,
-  sendChatMessage,
+  sendChatMessageStreaming,
   getOrCreateActiveSession,
   getChatSession,
   listChatSessions,
@@ -66,6 +66,8 @@ interface Message {
   showViewExecutePlan?: boolean;
   /** Chart visualization payloads from backend AI modules. */
   chartPayloads?: any[] | null;
+  /** Bubble currently being filled by SSE deltas; replaced by the done event. */
+  streaming?: boolean;
 }
 
 const DUMMY_USER_CONTEXT: UserInfo = {
@@ -765,6 +767,11 @@ const AIChatPanel = ({
   const [isClientContextLoading, setIsClientContextLoading] = useState(!goalPlanningDemo);
   const [chatStartTime, setChatStartTime] = useState(formatTimestamp);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Whether the user is parked at the bottom and should keep following new
+  // content. Flips to false the moment they scroll up, which is what stops
+  // streaming text from yanking them back down. A ref (not state) so reading it
+  // in the scroll effect never goes stale and updating it never re-renders.
+  const stickToBottomRef = useRef(true);
   const recognitionRef = useRef<any>(null);
   const sessionIdRef = useRef<string | null>(null);
   const kudosCounterRef = useRef(0);
@@ -905,6 +912,8 @@ const AIChatPanel = ({
     const el = scrollRef.current;
     if (!el) return;
     el.scrollTo({ top: el.scrollHeight, behavior });
+    // Jumping to the latest re-engages follow mode.
+    stickToBottomRef.current = true;
     setShowJumpToLatest(false);
   }, []);
 
@@ -921,12 +930,16 @@ const AIChatPanel = ({
     const el = scrollRef.current;
     if (!el) return;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    setShowJumpToLatest(distanceFromBottom > 120);
+    const awayFromBottom = distanceFromBottom > 120;
+    // Follow new content only while parked at the bottom; scrolling up unsticks.
+    stickToBottomRef.current = !awayFromBottom;
+    setShowJumpToLatest(awayFromBottom);
   }, []);
 
-  // Keep the view pinned to the newest message as content streams in.
+  // Follow the newest message as content streams in, but only while the user is
+  // parked at the bottom — if they've scrolled up to read, leave them there.
   useEffect(() => {
-    scrollToBottom("auto");
+    if (stickToBottomRef.current) scrollToBottom("auto");
   }, [messages, isTyping, interimTranscript, thinkingLines, scrollToBottom]);
 
   const showVoiceOnboardingChips = useMemo(() => {
@@ -1259,6 +1272,9 @@ const AIChatPanel = ({
     }
 
     setMessages((prev) => [...prev, { role: "user", content: trimmed }]);
+    // Sending re-anchors to the bottom so the user sees their message and the
+    // answer streaming in, even if they'd scrolled up beforehand.
+    stickToBottomRef.current = true;
     setInput("");
     setInterimTranscript("");
     setIsTyping(true);
@@ -1267,20 +1283,46 @@ const AIChatPanel = ({
     try {
       const sid = await ensureSession();
       setThinkingSessionId(sid);
-      const resp = await sendChatMessage(sid, trimmed, clientContext ?? undefined);
+      // Grow one bubble from the deltas. The updater is idempotent (it locates
+      // the streaming bubble rather than trusting a captured index) so React's
+      // dev-mode double-invocation cannot duplicate it.
+      let streamed = "";
+      const resp = await sendChatMessageStreaming(
+        sid,
+        trimmed,
+        clientContext ?? undefined,
+        (delta) => {
+          streamed += delta;
+          setIsTyping(false);
+          setMessages((prev) => {
+            const idx = prev.findIndex((m) => m.streaming);
+            if (idx === -1) {
+              return [...prev, { role: "ai", content: streamed, streaming: true }];
+            }
+            const next = [...prev];
+            next[idx] = { ...next[idx], content: streamed };
+            return next;
+          });
+        }
+      );
       setIsTyping(false);
       const hasSavedPlan = Boolean(
         resp.ideal_allocation_rebalancing_id ?? resp.ideal_allocation_snapshot_id
       );
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "ai",
-          content: resp.assistant_message.content,
-          ...(hasSavedPlan ? { showViewExecutePlan: true } : {}),
-          chartPayloads: resp.assistant_message.chart_payloads || null,
-        },
-      ]);
+      // done is authoritative — replace the streamed text, never append to it.
+      const finalMessage: Message = {
+        role: "ai",
+        content: resp.assistant_message.content,
+        ...(hasSavedPlan ? { showViewExecutePlan: true } : {}),
+        chartPayloads: resp.assistant_message.chart_payloads || null,
+      };
+      setMessages((prev) => {
+        const idx = prev.findIndex((m) => m.streaming);
+        if (idx === -1) return [...prev, finalMessage];
+        const next = [...prev];
+        next[idx] = finalMessage;
+        return next;
+      });
     } catch (err: any) {
       setIsTyping(false);
       const raw: string = typeof err?.message === "string" ? err.message : "";
@@ -1300,7 +1342,11 @@ const AIChatPanel = ({
       } else {
         fallback = `Request failed: ${raw}`;
       }
-      setMessages((prev) => [...prev, { role: "ai", content: fallback }]);
+      // Drop a half-streamed bubble so a failed turn never leaves partial text.
+      setMessages((prev) => [
+        ...prev.filter((m) => !m.streaming),
+        { role: "ai", content: fallback },
+      ]);
     }
   }, [
     ensureSession,
