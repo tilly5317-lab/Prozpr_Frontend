@@ -33,6 +33,13 @@ import { useChatThinking } from "@/hooks/useChatThinking";
 
 const PENDING_CHAT_BOOTSTRAP_KEY = "askProzpr.pendingChatBootstrap.v1";
 
+// Question counts at which the session-rating card appears — it asks ON these
+// turns only, not on every turn from the first one onwards. Previously the gate
+// was `questionCount >= 3`, so from the third question the card sat under every
+// single answer for the rest of the session. Widening gaps keep the ask
+// occasional; past the last entry the session is never asked again.
+const RATING_PROMPT_AT_QUESTIONS = [3, 6, 12, 15];
+
 interface AIChatPanelProps {
   isOpen: boolean;
   onClose: () => void;
@@ -810,7 +817,11 @@ const AIChatPanel = ({
      chat session so the prompt is never shown again for an already-rated
      session (loaded back in restoreSession / handleSelectSession). */
   const [sessionRating, setSessionRating] = useState<number | null>(null);
-  const [ratingDismissed, setRatingDismissed] = useState(false);
+  // The question count at which "Maybe later" was last clicked. Dismissing
+  // silences only that one ask; the next milestone in RATING_PROMPT_AT_QUESTIONS
+  // may still ask. Storing the count rather than a boolean is what lets a later
+  // milestone come back after an earlier one was waved off.
+  const [ratingDismissedAt, setRatingDismissedAt] = useState<number | null>(null);
   // True only right after the user rates in this view, so we can show a brief
   // "thanks" once. On an already-rated session loaded from the backend this
   // stays false, so the rating UI is fully silent — it never nags again.
@@ -852,7 +863,7 @@ const AIChatPanel = ({
       sessionIdRef.current = session.id;
       setMessages([]);
       setSessionRating(null);
-      setRatingDismissed(false);
+      setRatingDismissedAt(null);
       setRatingJustSubmitted(false);
       setPendingRating(0);
       setHoverRating(0);
@@ -871,7 +882,7 @@ const AIChatPanel = ({
       const dummy = DUMMY_SESSIONS.find((s) => s.id === sessionId);
       sessionIdRef.current = sessionId;
       setSessionRating(null);
-      setRatingDismissed(false);
+      setRatingDismissedAt(null);
       setRatingJustSubmitted(false);
       setPendingRating(0);
       setHoverRating(0);
@@ -889,7 +900,7 @@ const AIChatPanel = ({
       // Restore any prior rating so an already-rated session isn't re-prompted
       // (and stays silent — no thanks line either, since it wasn't just rated).
       setSessionRating(session.rating ?? null);
-      setRatingDismissed(false);
+      setRatingDismissedAt(null);
       setRatingJustSubmitted(false);
       setPendingRating(0);
       setHoverRating(0);
@@ -1638,7 +1649,8 @@ const AIChatPanel = ({
           );
         }
         const questionCount = messages.filter((m) => m.role === "user").length;
-        if (ratingDismissed || questionCount < 3) return null;
+        if (!RATING_PROMPT_AT_QUESTIONS.includes(questionCount)) return null;
+        if (ratingDismissedAt === questionCount) return null;
         return (
           <div className="mx-auto mt-2 flex w-full max-w-[90%] flex-col items-center gap-2 rounded-2xl border border-border/40 bg-muted/30 px-4 py-3">
             <p className="text-[12px] font-medium text-foreground">How is Pi doing so far?</p>
@@ -1681,7 +1693,7 @@ const AIChatPanel = ({
             )}
             <button
               type="button"
-              onClick={() => setRatingDismissed(true)}
+              onClick={() => setRatingDismissedAt(questionCount)}
               className="text-[11px] text-muted-foreground/60 hover:text-foreground"
             >
               Maybe later
