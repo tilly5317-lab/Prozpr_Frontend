@@ -5,6 +5,7 @@ import {
   ArrowRight,
   Check,
   CheckCircle2,
+  Clock,
   Eye,
   EyeOff,
   ExternalLink,
@@ -39,7 +40,7 @@ const CAMS_MANUAL_URL =
 export type CamsImportStep = "choose" | "request" | "sent" | "upload" | "done";
 type Step = CamsImportStep;
 
-/** Which of the two entry paths the user picked on the choice screen. */
+/** Which of the guided entry paths the user picked on the choice screen. */
 type ImportPath = "have" | "get" | null;
 
 /** Ordered rail shown at the top; "done" renders as upload-complete. */
@@ -81,6 +82,14 @@ interface CamsImportFlowProps {
    * pattern the rest of onboarding uses). Modals keep the natural flow.
    */
   fillHeight?: boolean;
+  /**
+   * Supply to offer the third entry option, "I'll do this later" — the host
+   * decides what deferring means (onboarding records it and moves on; a modal
+   * just closes). Omit and the flow shows only the two import paths.
+   */
+  onSkip?: () => void;
+  /** Disables the skip option while the host is persisting the choice. */
+  skipping?: boolean;
 }
 
 /**
@@ -94,7 +103,8 @@ interface CamsImportFlowProps {
  *     pre-filled from step 1. The backend parses it remotely and rebuilds the
  *     portfolio (holdings + full transaction ledger).
  *
- * Users who already hold a CAS PDF can jump straight to Upload.
+ * Users who already hold a CAS PDF can jump straight to Upload, and hosts that
+ * pass `onSkip` offer a third door: do this later.
  */
 const CamsImportFlow = ({
   onImported,
@@ -103,10 +113,13 @@ const CamsImportFlow = ({
   onStepChange,
   compact = false,
   fillHeight = false,
+  onSkip,
+  skipping = false,
 }: CamsImportFlowProps) => {
-  // Entry is a two-way choice: "I have an updated CAS" (straight to upload)
-  // vs "I don't have one" (guided email request). Upload-first because most
-  // returning users already hold the PDF — one tap, zero forms.
+  // Entry is a three-way choice: "I have an updated CAS" (straight to upload),
+  // "I don't have one" (guided email request), and — where the host allows it —
+  // "I'll do this later". Upload-first because most returning users already
+  // hold the PDF — one tap, zero forms.
   const [step, setStep] = useState<Step>("choose");
   const [path, setPath] = useState<ImportPath>(null);
   // Whether the backend's CAS Parser plan includes statement-by-email. When it
@@ -329,6 +342,23 @@ const CamsImportFlow = ({
   const stepShell = fillHeight ? "flex flex-1 flex-col" : "";
   const ctaBlock = fillHeight ? "mt-auto pt-6" : "mt-4";
 
+  // "I'll do this later" stays reachable INSIDE the guided steps too — a user
+  // who opened the email path and changed their mind shouldn't have to walk
+  // back to the choice screen to defer. Also the only place it can appear on
+  // plans without mailback, where the flow starts at Upload.
+  const skipLink =
+    onSkip && step !== "done" ? (
+      <button
+        type="button"
+        onClick={onSkip}
+        disabled={skipping || busy}
+        className="mt-3 flex w-full items-center justify-center gap-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+      >
+        {skipping ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Clock className="h-3.5 w-3.5" />}
+        I&apos;ll do this later
+      </button>
+    ) : null;
+
   return (
     <div className={fillHeight ? "flex flex-1 flex-col" : undefined}>
       {/* ── step rail — only for the guided email path. The choice screen and
@@ -423,12 +453,42 @@ const CamsImportFlow = ({
                 </div>
                 <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
               </button>
+
+              {/* Third door — deliberately quieter than the two import paths,
+                  but a real, labelled choice rather than a hidden escape. */}
+              {onSkip && (
+                <button
+                  type="button"
+                  onClick={onSkip}
+                  disabled={skipping}
+                  className="group flex w-full items-center gap-3 rounded-2xl border border-dashed border-border bg-background/60 px-4 py-3.5 text-left transition-all hover:bg-accent/30 active:scale-[0.98] disabled:opacity-60"
+                >
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-muted">
+                    {skipping ? (
+                      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                    ) : (
+                      <Clock className="h-5 w-5 text-muted-foreground" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[14px] font-semibold text-foreground">
+                      I&apos;ll do this later
+                    </p>
+                    <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                      Explore first. You can add your statement any time — we&apos;ll
+                      keep the option handy.
+                    </p>
+                  </div>
+                  <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+                </button>
+              )}
             </div>
 
             <div className={ctaBlock}>
               <p className="text-center text-[11px] leading-relaxed text-muted-foreground/80">
-                Not sure? If your last statement is older than a month, request a
-                fresh one so nothing is missing.
+                {onSkip
+                  ? "Without a statement we can still set up your plan, but your portfolio, rebalancing and net-worth history stay empty until you add one."
+                  : "Not sure? If your last statement is older than a month, request a fresh one so nothing is missing."}
               </p>
             </div>
           </motion.div>
@@ -573,6 +633,7 @@ const CamsImportFlow = ({
                   <ArrowRight className="h-3.5 w-3.5" />
                 </button>
               </div>
+              {skipLink}
             </div>
           </motion.div>
         )}
@@ -633,6 +694,7 @@ const CamsImportFlow = ({
                   {resendIn > 0 ? `Resend in ${resendIn}s` : "Resend email"}
                 </button>
               </div>
+              {skipLink}
             </div>
           </motion.div>
         )}
@@ -796,6 +858,7 @@ const CamsImportFlow = ({
                 <ExternalLink className="h-3 w-3" />
               </a>
             </div>
+            {skipLink}
             </div>
           </motion.div>
         )}

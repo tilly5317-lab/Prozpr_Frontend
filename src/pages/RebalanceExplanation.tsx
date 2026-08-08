@@ -19,6 +19,7 @@ import {
   updateRebalancingStatus,
   type PortfolioDetail,
   type RebalancingAssetClassBreakdown,
+  type RebalancingReadiness,
   type RebalancingRunDetail,
   type RebalancingSubgroupSummary,
   type RebalancingTrade,
@@ -305,108 +306,10 @@ const cardStyle: CSSProperties = {
   borderRadius: 16,
 };
 
-/* ── Example plan ──────────────────────────────────────────────────────────
-   Shown when the user hasn't supplied the inputs the engine needs yet (e.g. date
-   of birth, CAMS holdings). The page renders the real sections populated with
-   clearly-labelled SAMPLE numbers so the user can see what the page produces —
-   the dismissible RebalanceGate prompt offers to add their details to get the
-   real plan. Nothing here is persisted or actionable. */
-const EXAMPLE_DRIFT_ROWS: DriftRow[] = [
-  {
-    key: "equity",
-    label: BUCKET_META.equity.label,
-    color: BUCKET_META.equity.color,
-    current: 62,
-    target: 55,
-    currentInr: 3_100_000,
-    targetInr: 2_750_000,
-    amountText: "7% overweight · -₹3.5L",
-  },
-  {
-    key: "debt",
-    label: BUCKET_META.debt.label,
-    color: BUCKET_META.debt.color,
-    current: 28,
-    target: 35,
-    currentInr: 1_400_000,
-    targetInr: 1_750_000,
-    amountText: "7% underweight · +₹3.5L",
-  },
-  {
-    key: "others",
-    label: BUCKET_META.others.label,
-    color: BUCKET_META.others.color,
-    current: 10,
-    target: 10,
-    currentInr: 500_000,
-    targetInr: 500_000,
-    amountText: "On target",
-  },
-];
-
-const EXAMPLE_TRADE_GROUPS: { label: string; color?: string; trades: UITrade[] }[] = [
-  {
-    label: "Top up to target",
-    color: BUY_GREEN,
-    trades: [
-      {
-        id: "example-buy-1",
-        isin: "",
-        type: "BUY",
-        bucket: "debt",
-        amount: "₹40,000",
-        subtitle: "Top up to target",
-        name: "Example Corporate Bond Fund",
-        category: "Debt · Corporate Bond",
-        rationale: "Sample trade — add your details to see your real plan.",
-        reasonCode: "add_to_target",
-      },
-    ],
-  },
-  {
-    label: "Trim back to target",
-    color: TRADE_ORANGE,
-    trades: [
-      {
-        id: "example-sell-1",
-        isin: "",
-        type: "SELL",
-        bucket: "equity",
-        amount: "₹40,000",
-        subtitle: "Trim back to target",
-        name: "Example Large Cap Fund",
-        category: "Equity · Large Cap",
-        rationale: "Sample trade — add your details to see your real plan.",
-        reasonCode: "trim_over_target",
-      },
-    ],
-  },
-];
-
-const EXAMPLE_KEPT_FUNDS: KeptFund[] = [
-  {
-    id: "example-keep-1",
-    isin: null,
-    name: "Example Flexi Cap Fund",
-    subtitle: "Equity · Flexi Cap",
-    value: 800_000,
-    gainPct: 14.2,
-    tone: "well",
-  },
-  {
-    id: "example-keep-2",
-    isin: null,
-    name: "Example Gilt Fund",
-    subtitle: "Debt · Gilt",
-    value: 300_000,
-    gainPct: 6.1,
-    tone: "neutral",
-  },
-];
-
 /* Hero headline for the "Prozpr insight" card. The backend computes a plan-aware
-   `summary` per run; we fall back to the original static copy when it's absent
-   (older runs) and show a representative one for the example plan. */
+   `summary` per run; we fall back to this static copy when it's absent (older
+   runs). It describes the page, never a number — every figure on this screen
+   comes from the user's own run. */
 type HeadlineCopy = { title: string; subtitle: string; reason?: string | null };
 
 const DEFAULT_SUMMARY: HeadlineCopy = {
@@ -414,14 +317,6 @@ const DEFAULT_SUMMARY: HeadlineCopy = {
   reason: "Your mix has drifted from what your goals call for.",
   subtitle:
     "Here's how to glide back to your target allocation. Prozpr picked units with the lowest capital gains to limit the tax you pay while rebalancing.",
-};
-
-const EXAMPLE_SUMMARY: HeadlineCopy = {
-  title: "Trimming your Equity back to target",
-  reason:
-    "That's more market risk than your goals call for — a downturn now would set them back.",
-  subtitle:
-    "Reducing your equity weightage by 7% — Prozpr picked the lowest-tax units (₹12,400 est.).",
 };
 
 const RebalanceExplanation = () => {
@@ -432,12 +327,18 @@ const RebalanceExplanation = () => {
   const [dataError, setDataError] = useState<string | null>(null);
   const [approving, setApproving] = useState(false);
   // Whether the rebalancing inputs are complete. null = still checking (the gate
-  // shows a pill); false = missing inputs → render the example plan; true = real
-  // plan loads via onReady → loadData.
+  // shows a pill); false = missing inputs → render the "not ready yet" panel;
+  // true = real plan loads via onReady → loadData.
   const [gateReady, setGateReady] = useState<boolean | null>(null);
-  // Bumped to open the gate's inputs form on demand (e.g. from the example plan's
+  // Full readiness payload from the gate, so the not-ready panel can name what's
+  // actually missing rather than assume it's the holdings.
+  const [readiness, setReadiness] = useState<RebalancingReadiness | null>(null);
+  // Bumped to open the gate's inputs form on demand (e.g. from the not-ready
   // CTA) — so the user can add their details even after dismissing the prompt.
   const [gateEditSignal, setGateEditSignal] = useState(0);
+  // Bumped to open the gate's CAMS import directly, for the (common) case where
+  // holdings are the missing piece.
+  const [gateCamsSignal, setGateCamsSignal] = useState(0);
 
   // Open the full fund-detail page (same screen as a portfolio holding), passing
   // the trade's rationale so it can render a "Why this trade" card on top. The
@@ -461,7 +362,7 @@ const RebalanceExplanation = () => {
   );
 
   // Open the same fund-detail page for a fund we're keeping (no trade, so no
-  // "Why this trade" card). Example funds carry no ISIN, so they stay inert.
+  // "Why this trade" card). Rows without an ISIN stay inert.
   const openKeptFund = useCallback(
     (fund: KeptFund) => {
       if (!fund.isin) return;
@@ -544,20 +445,20 @@ const RebalanceExplanation = () => {
 
   const isApproved = detail?.status === "approved" || detail?.status === "executed";
 
-  // Render an example plan when the inputs aren't ready and there's no real plan
-  // to show. The same sections render either the real or the sample data.
-  const isExample =
+  // Inputs are missing and there is no run to show. The page previously filled
+  // this state with a fully-populated SAMPLE plan (invented drift %, invented
+  // trades, an invented ₹12,400 tax estimate). Nothing on this screen may be
+  // fabricated — a plan is advice about real money — so we render an explicit
+  // "not ready yet" panel instead and say exactly what's missing.
+  const notReady =
     gateReady === false && !detail && !dataLoading && !computing && !dataError;
-  const driftRowsToShow = isExample ? EXAMPLE_DRIFT_ROWS : driftRows;
-  const tradeGroupsToShow = isExample ? EXAMPLE_TRADE_GROUPS : tradeGroups;
-  const tradeCountToShow = isExample
-    ? EXAMPLE_TRADE_GROUPS.reduce((n, g) => n + g.trades.length, 0)
-    : uiTrades.length;
-  const keptFundsToShow = isExample ? EXAMPLE_KEPT_FUNDS : keptFunds;
-  const taxTextToShow = isExample ? "Tax impact · ₹12,400 est." : taxText;
-  const summaryToShow: HeadlineCopy = isExample
-    ? EXAMPLE_SUMMARY
-    : detail?.summary ?? DEFAULT_SUMMARY;
+  const needsHoldings = !!readiness && !readiness.has_holdings;
+  // Required inputs the user can actually type (date of birth today). Holdings
+  // are handled separately — they can only come from a statement.
+  const missingFields = (readiness?.fields ?? [])
+    .filter((f) => !f.optional && !f.present)
+    .map((f) => f.label);
+  const summaryToShow: HeadlineCopy = detail?.summary ?? DEFAULT_SUMMARY;
 
   const proceed = useCallback(async () => {
     if (!detail) return;
@@ -576,9 +477,15 @@ const RebalanceExplanation = () => {
   return (
     <div className="mobile-container bg-background min-h-screen pb-24">
       {/* Gate: never blocks the page. When inputs are missing it shows a
-          dismissible prompt and reports readiness so we render an example plan;
-          when ready it loads the real plan via onReady. */}
-      <RebalanceGate onReady={loadData} onResolved={setGateReady} editSignal={gateEditSignal} />
+          dismissible in-flow notice and reports readiness so we render the
+          "not ready yet" panel; when ready it loads the real plan via onReady. */}
+      <RebalanceGate
+        onReady={loadData}
+        onResolved={setGateReady}
+        onReadiness={setReadiness}
+        editSignal={gateEditSignal}
+        camsSignal={gateCamsSignal}
+      />
 
       <div className="px-5 pt-2 pb-2 space-y-3">
         {/* Recalculating: no skeletons, no duplicate status line — just the
@@ -647,25 +554,85 @@ const RebalanceExplanation = () => {
           </div>
         )}
 
-        {!dataLoading && !computing && !dataError && (detail || isExample) && (
+        {/* Nothing to plan with yet — an honest placeholder, not a mock plan.
+            The RebalanceGate notice above already offers the upload / inputs;
+            this explains what the page will show once they exist. */}
+        {notReady && (
           <>
             <div className="-mb-1 flex items-center gap-2">
               <span className="text-lg font-semibold text-foreground">Rebalancing</span>
-              {isExample && (
-                <span className="rounded-full border border-[#D4A868]/40 bg-[#D4A868]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[#9A7B2E]">
-                  Example
-                </span>
+            </div>
+            <section style={cardStyle} className="px-5 py-7 text-center">
+              <span
+                className="mx-auto flex h-11 w-11 items-center justify-center rounded-full"
+                style={{ backgroundColor: "rgba(212,168,104,0.14)", color: "#9A7B2E" }}
+              >
+                <Sparkles className="h-5 w-5" />
+              </span>
+              <h1 className="mt-3 text-[17px] font-semibold tracking-tight text-foreground">
+                Your rebalancing plan isn&apos;t ready yet
+              </h1>
+              <p className="mx-auto mt-2 max-w-[310px] text-[12.5px] leading-relaxed text-muted-foreground">
+                Rebalancing compares what you hold today against the mix your
+                goals call for, then picks the lowest-tax units to trade.
+                {needsHoldings
+                  ? " That needs your real holdings, so there's nothing to show until your CAMS statement is in."
+                  : " We just need a couple of details from you first."}
+              </p>
+              {(needsHoldings || missingFields.length > 0) && (
+                <div className="mt-3 flex flex-wrap justify-center gap-1.5">
+                  {needsHoldings && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/5 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400">
+                      CAMS statement
+                    </span>
+                  )}
+                  {missingFields.map((label) => (
+                    <span
+                      key={label}
+                      className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/5 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400"
+                    >
+                      {label}
+                    </span>
+                  ))}
+                </div>
               )}
-              {!isExample && detail && (
+              <button
+                type="button"
+                onClick={() =>
+                  needsHoldings
+                    ? setGateCamsSignal((n) => n + 1)
+                    : setGateEditSignal((n) => n + 1)
+                }
+                className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-foreground py-3.5 text-[15px] font-semibold tracking-wide text-background transition-all active:scale-[0.98]"
+              >
+                {needsHoldings ? "Add CAMS statement" : "Complete setup"}
+                <ArrowRight className="h-4 w-4" />
+              </button>
+              {needsHoldings && missingFields.length > 0 && (
                 <button
                   type="button"
-                  onClick={() => void compute()}
-                  className="ml-auto flex items-center gap-1 rounded-full border border-border px-3 py-1.5 text-[11.5px] font-semibold text-foreground transition-colors hover:bg-muted/50"
+                  onClick={() => setGateEditSignal((n) => n + 1)}
+                  className="mt-2.5 w-full text-[12.5px] font-medium text-muted-foreground transition-colors hover:text-foreground"
                 >
-                  <RefreshCw className="h-3.5 w-3.5" />
-                  Recalculate
+                  Add the other details instead
                 </button>
               )}
+            </section>
+          </>
+        )}
+
+        {!dataLoading && !computing && !dataError && detail && (
+          <>
+            <div className="-mb-1 flex items-center gap-2">
+              <span className="text-lg font-semibold text-foreground">Rebalancing</span>
+              <button
+                type="button"
+                onClick={() => void compute()}
+                className="ml-auto flex items-center gap-1 rounded-full border border-border px-3 py-1.5 text-[11.5px] font-semibold text-foreground transition-colors hover:bg-muted/50"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                Recalculate
+              </button>
             </div>
 
             <motion.section
@@ -725,24 +692,23 @@ const RebalanceExplanation = () => {
 
             {/* Current vs target — combined Current / Target stacked ₹ bars
                 (shared component; also used on the SIP tab). */}
-            <CurrentVsTargetChart rows={driftRowsToShow} />
+            <CurrentVsTargetChart rows={driftRows} />
 
-            {/* Proposed trades — the real BUY / SELL actions grouped by bucket
-                (sample trades when this is an example plan). */}
+            {/* Proposed trades — the real BUY / SELL actions grouped by bucket. */}
             <section style={cardStyle} className="px-4 py-4">
               <div className="flex items-center justify-between">
                 <p className="text-[11px] tracking-[0.16em] uppercase text-muted-foreground">
-                  Proposed trades{isExample ? " · example" : ""}
+                  Proposed trades
                 </p>
-                <p className="text-[11px] text-wealth-green">{taxTextToShow}</p>
+                <p className="text-[11px] text-wealth-green">{taxText}</p>
               </div>
-              {tradeCountToShow === 0 ? (
+              {uiTrades.length === 0 ? (
                 <p className="mt-3 text-[13px] text-muted-foreground">
                   No trades needed — your portfolio is already aligned with the plan.
                 </p>
               ) : (
                 <div className="mt-3 space-y-5">
-                  {tradeGroupsToShow.map(({ label, color, trades }) => (
+                  {tradeGroups.map(({ label, color, trades }) => (
                       <div key={label}>
                         {/* Headings are neutral by default; a flagged group (e.g.
                             "Not on recommended list") gets a crisp accent so it
@@ -801,7 +767,7 @@ const RebalanceExplanation = () => {
 
             {/* Funds you're keeping — everything in the portfolio NOT being sold,
                 tagged performing-well / neutral, with the same fund details. */}
-            {keptFundsToShow.length > 0 && (
+            {keptFunds.length > 0 && (
               <section className="px-4 py-4" style={cardStyle}>
                 <p className="text-[11px] tracking-[0.16em] uppercase" style={{ color: "hsl(var(--muted-foreground))" }}>
                   Funds you're keeping
@@ -810,7 +776,7 @@ const RebalanceExplanation = () => {
                   Ahead or neutral — staying in your portfolio, not part of these trades.
                 </p>
                 <div className="mt-3 divide-y divide-border">
-                  {keptFundsToShow.map((f) => (
+                  {keptFunds.map((f) => (
                     <button
                       key={f.id}
                       type="button"
@@ -847,27 +813,16 @@ const RebalanceExplanation = () => {
               </section>
             )}
 
-            {isExample ? (
-              <button
-                type="button"
-                onClick={() => setGateEditSignal((n) => n + 1)}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground py-3.5 text-[15px] font-semibold tracking-wide text-background transition-all active:scale-[0.98]"
-              >
-                Add your details to proceed
-                <ArrowRight className="h-4 w-4" />
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => void proceed()}
-                disabled={approving || isApproved || uiTrades.length === 0}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground py-3.5 text-[15px] font-semibold tracking-wide text-background transition-all active:scale-[0.98] disabled:opacity-60"
-              >
-                {approving ? <Loader2 className="h-4 w-4 animate-spin" /> : isApproved ? <Check className="h-4 w-4" /> : null}
-                {isApproved ? "Plan approved" : approving ? "Approving…" : "Approve plan"}
-                {!isApproved && !approving && <ArrowRight className="h-4 w-4" />}
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => void proceed()}
+              disabled={approving || isApproved || uiTrades.length === 0}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground py-3.5 text-[15px] font-semibold tracking-wide text-background transition-all active:scale-[0.98] disabled:opacity-60"
+            >
+              {approving ? <Loader2 className="h-4 w-4 animate-spin" /> : isApproved ? <Check className="h-4 w-4" /> : null}
+              {isApproved ? "Plan approved" : approving ? "Approving…" : "Approve plan"}
+              {!isApproved && !approving && <ArrowRight className="h-4 w-4" />}
+            </button>
           </>
         )}
       </div>

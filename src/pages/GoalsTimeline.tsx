@@ -1765,9 +1765,9 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   }, [tornadoCorpusByYear, currentYear]);
 
   // The projection is the engine's per-FY corpus path ONLY — never a client-side
-  // fabrication. Empty until the plan loads — the page then renders as an example
-  // (ages + blank tornado axis) and CashflowGate shows a dismissible prompt for
-  // the missing inputs rather than blocking.
+  // fabrication. Empty until the plan loads — the page then renders the scaffold
+  // only (ages + blank tornado axis, no numbers) and CashflowGate shows a
+  // dismissible prompt for the missing inputs rather than blocking.
   const projection = useMemo<ProjectionPoint[]>(
     () => cashflowProjection ?? [],
     [cashflowProjection],
@@ -2482,19 +2482,15 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                             g.inflationRate,
                             yearsAway,
                           );
-                          // Dummy per-goal funding progress. Hardcoded so the demo
-                          // shows distinct numbers per goal rather than all maxing
-                          // out at 100%.
-                          const HARDCODED_ACHIEVED: Record<string, number> = {
-                            "seed-home": 72,
-                            "seed-education": 48,
-                            "seed-retirement": 25,
-                          };
-                          const computedPct =
+                          // Funding progress against this goal's future value,
+                          // from the engine's own corpus path. (A hardcoded
+                          // per-goal override for three demo goal ids used to
+                          // sit here; those ids never existed on a real goal,
+                          // so it only stood to fake someone's numbers.)
+                          const pctAchieved =
                             fv > 0
                               ? Math.min(100, Math.round(((corpusClosing + withdrawal) / fv) * 100))
                               : 0;
-                          const pctAchieved = HARDCODED_ACHIEVED[g.id] ?? computedPct;
                           const GoalIcon = goalIconFor(g.name);
                           const isExpanded = expandedGoals.has(g.id);
                           const isDragging = draggingGoalId === g.id;
@@ -2813,8 +2809,9 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
       <BottomNav />
 
       {/* Never blocks the goal-planning page. When inputs are missing it shows a
-          dismissible prompt (the page stays usable as an example); when they're
-          present it loads the real projection. Every "open the inputs" request
+          dismissible prompt (the page stays usable, with an empty projection —
+          nothing is fabricated); when they're present it loads the real
+          projection. Every "open the inputs" request
           (prompt CTA, ?inputs=1 auto-open) lands on the side panel's Inputs tab.
           Remounts via gateRefresh after a save so its readiness stays fresh. */}
       <CashflowGate

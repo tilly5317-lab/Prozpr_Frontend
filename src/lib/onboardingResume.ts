@@ -1,4 +1,5 @@
 import {
+  getMe,
   getOnboardingProfile,
   getRebalancingReadiness,
   getRiskProfile,
@@ -12,7 +13,9 @@ import {
  * session flags, so progress survives any time away, another device, or a
  * cleared browser.
  *
- * Step order: tell-us wizard (on "/") → /cams-upload → /about-you → done.
+ * Step order: tell-us wizard (on "/") → /cams-upload → /about-you → done. The
+ * CAMS step is OPTIONAL — deferring it ("I'll do this later") is recorded on the
+ * user row and counts as done for resume purposes.
  */
 
 export type OnboardingQuestionKey =
@@ -57,9 +60,14 @@ export function missingOnboardingQuestions(
 /**
  * Resolve the route to resume an unfinished onboarding at:
  *  - holdings already imported → "/about-you" (last step left)
+ *  - CAMS explicitly deferred ("I'll do this later") → "/about-you" too
  *  - wizard questions all answered → "/cams-upload"
  *  - otherwise → null (stay on "/" and run the tell-us wizard, which itself
  *    only asks the missing questions)
+ *
+ * The deferral is read from the backend (`users.cams_skipped_at`, surfaced as
+ * `cams_skipped` on /auth/me), not a session flag — otherwise a reload or a
+ * second device would drop the user straight back onto the step they declined.
  */
 export async function resolveOnboardingResumeRoute(): Promise<
   "/about-you" | "/cams-upload" | null
@@ -82,7 +90,14 @@ export async function resolveOnboardingResumeRoute(): Promise<
   } catch {
     /* no risk profile yet */
   }
-  return missingOnboardingQuestions(profile, risk).length === 0
-    ? "/cams-upload"
-    : null;
+  // Wizard first — the CAMS step sits after it, so an unanswered question wins
+  // over any CAMS state.
+  if (missingOnboardingQuestions(profile, risk).length > 0) return null;
+  try {
+    const me = await getMe();
+    if (me.cams_skipped) return "/about-you";
+  } catch {
+    /* unknown → treat as not skipped; the CAMS step is still offered */
+  }
+  return "/cams-upload";
 }

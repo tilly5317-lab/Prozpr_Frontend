@@ -282,6 +282,12 @@ export interface UserInfo {
   first_name: string | null;
   last_name: string | null;
   is_onboarding_complete: boolean;
+  /**
+   * The user chose "I'll do this later" on the onboarding CAMS step. Onboarding
+   * no longer resumes onto that step; every in-app upload entry point stays.
+   * Cleared by the backend as soon as a statement is imported.
+   */
+  cams_skipped?: boolean;
 }
 
 export interface UserUpdatePayload {
@@ -428,6 +434,27 @@ export async function completeOnboarding() {
     method: "POST",
     body: JSON.stringify({ is_complete: true }),
   });
+}
+
+export interface CamsSkipStatus {
+  cams_skipped: boolean;
+  skipped_at: string | null;
+}
+
+/**
+ * Record (or clear) the "I'll do this later" choice on the onboarding CAMS step.
+ *
+ * Durable on the backend, so a reload — or another device — doesn't drop the
+ * user back onto /cams-upload. The cached `/auth/me` payload carries
+ * `cams_skipped`, so it is invalidated here.
+ */
+export async function setCamsSkipped(skipped = true): Promise<CamsSkipStatus> {
+  const res = await request<CamsSkipStatus>("/onboarding/cams-skip", {
+    method: "POST",
+    body: JSON.stringify({ skipped }),
+  });
+  invalidateUserContextCache();
+  return res;
 }
 
 /** Maps About You investment-preference letters (A–E) to backend risk_level 0–4. */
@@ -840,6 +867,11 @@ export interface ChatSendResponse {
   /** Present when chat persisted an ideal allocation — use for CTA to `/invest/rebalance-explanation`. */
   ideal_allocation_rebalancing_id?: string | null;
   ideal_allocation_snapshot_id?: string | null;
+  /**
+   * The question needed the user's holdings and none are imported yet. Pi's
+   * reply says so; the client pairs it with an "Add CAMS statement" CTA.
+   */
+  portfolio_data_missing?: boolean;
 }
 
 export interface ChatSessionDetail extends ChatSessionInfo {

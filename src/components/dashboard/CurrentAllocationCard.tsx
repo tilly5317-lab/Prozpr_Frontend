@@ -16,12 +16,15 @@ import type { PortfolioDetail } from "@/lib/api";
 // list below is the whole-fund view, the donut above is the split view.
 type HoldingBucket = "Equity" | "Debt" | "Others";
 
-// Canonical asset-class palette (app-wide).
+// Canonical asset-class palette (app-wide). There are exactly three classes —
+// scheme_classification.py is the single authority and emits only Equity / Debt
+// / Others, so there is no Gold, Hybrid or Alternatives slice to colour. (A
+// legacy bank "Cash" row can still be carried forward by the backend from a
+// SimBanks balance, hence the one extra colour.)
 const EQUITY_COLOR = "#2563EB";
 const DEBT_COLOR = "hsl(188 52% 41%)";
-const GOLD_COLOR = "hsl(38 64% 47%)";   // Hybrid / Others
+const OTHERS_COLOR = "hsl(38 64% 47%)";
 const CASH_COLOR = "hsl(214 14% 47%)";
-const ALT_COLOR = "hsl(348 35% 43%)";   // Alternatives
 
 const BUCKET_ORDER: HoldingBucket[] = ["Equity", "Debt", "Others"];
 
@@ -63,47 +66,36 @@ function formatInr1(n: number): string {
 }
 
 
+// The API's `asset_class` values, one colour each. Anything unrecognised falls
+// through to the Others colour — it is, by definition, the catch-all bucket.
 const DONUT_COLORS: Record<string, string> = {
   Equity: EQUITY_COLOR,
-  "India Equity": EQUITY_COLOR,
-  "US Equity": EQUITY_COLOR,
-  "Fixed Income": DEBT_COLOR,
   Debt: DEBT_COLOR,
-  "Inflation-Linked": GOLD_COLOR,
-  Gold: GOLD_COLOR,
-  Others: GOLD_COLOR,
+  Others: OTHERS_COLOR,
   Cash: CASH_COLOR,
-  Other: CASH_COLOR,
-  "Cash/Other": CASH_COLOR,
-  "Hybrid & Others": GOLD_COLOR,
-  Alternatives: ALT_COLOR,
 };
 
-const FALLBACK_PALETTE = [EQUITY_COLOR, DEBT_COLOR, GOLD_COLOR, CASH_COLOR, ALT_COLOR];
-
-function getColor(name: string, i: number) {
+function getColor(name: string) {
   if (DONUT_COLORS[name]) return DONUT_COLORS[name];
   const normalized = name.trim().toLowerCase();
   if (normalized.includes("equity")) return EQUITY_COLOR;
-  if (normalized.includes("debt") || normalized.includes("fixed income")) return DEBT_COLOR;
-  if (normalized.includes("gold") || normalized.includes("inflation") || normalized.includes("hybrid")) return GOLD_COLOR;
-  if (normalized.includes("alternative")) return ALT_COLOR;
-  if (normalized.includes("cash") || normalized.includes("other")) return CASH_COLOR;
-  return FALLBACK_PALETTE[i % FALLBACK_PALETTE.length];
+  if (normalized.includes("debt")) return DEBT_COLOR;
+  if (normalized.includes("cash")) return CASH_COLOR;
+  return OTHERS_COLOR;
 }
 
 /** Map a donut slice's asset-class name to one of the three holding buckets. */
 function normalizeBucket(name: string): HoldingBucket {
   const n = name.trim().toLowerCase();
   if (n.includes("equity")) return "Equity";
-  if (n.includes("debt") || n.includes("fixed income")) return "Debt";
+  if (n.includes("debt")) return "Debt";
   return "Others";
 }
 
 const HOLDINGS_BAR_BY_BUCKET: Record<HoldingBucket, { bg: string; border?: string }> = {
   Equity: { bg: EQUITY_COLOR },
   Debt: { bg: DEBT_COLOR },
-  Others: { bg: GOLD_COLOR },
+  Others: { bg: OTHERS_COLOR },
 };
 
 /**
@@ -188,7 +180,11 @@ interface CurrentAllocationCardProps {
   horizonLabel: string | null;
 }
 
-const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: CurrentAllocationCardProps) => {
+const CurrentAllocationCard = ({
+  portfolio,
+  riskCategory,
+  horizonLabel,
+}: CurrentAllocationCardProps) => {
   const [holdingsOpen, setHoldingsOpen] = useState(false);
   const [expandedHolding, setExpandedHolding] = useState<string | null>(null);
   // Donut slice the user tapped — swaps the right-hand legend for that bucket's
@@ -202,12 +198,18 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
   // Metric used to rank holdings within each bucket.
   const [sortKey, setSortKey] = useState<HoldingSort>("value");
   const hasAllocations = portfolio && portfolio.allocations.length > 0;
-  /** Placeholder funds only when there is no real allocation or holding data. */
-  const showSampleHoldingsBanner =
-    portfolio &&
-    portfolio.holdings.length === 0 &&
-    portfolio.allocations.length === 0 &&
-    portfolio.total_value <= 0;
+  /**
+   * Nothing imported yet. This used to render a fabricated 48/28/16/8 donut
+   * (Equity / Debt / Gold / Cash) plus three invented funds behind a small
+   * "(sample)" note. A made-up allocation is indistinguishable from a real one
+   * at a glance — and "Gold" isn't even a class we classify into — so the empty
+   * state now says so plainly and shows no numbers at all.
+   */
+  const isEmpty =
+    !portfolio ||
+    (portfolio.holdings.length === 0 &&
+      portfolio.allocations.length === 0 &&
+      portfolio.total_value <= 0);
 
   const allocations: {
     name: string;
@@ -217,20 +219,15 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
     bucket: HoldingBucket;
     subCategories?: { name: string; value: number }[];
   }[] = hasAllocations
-    ? portfolio!.allocations.map((a, i) => ({
+    ? portfolio!.allocations.map((a) => ({
         name: a.asset_class,
         value: Math.round(a.allocation_percentage * 10) / 10,
-        color: getColor(a.asset_class, i),
+        color: getColor(a.asset_class),
         amount: a.amount,
         bucket: normalizeBucket(a.asset_class),
         subCategories: a.sub_categories?.map((s) => ({ name: s.name, value: s.amount })),
       }))
-    : [
-        { name: "Equity", value: 48, color: EQUITY_COLOR, bucket: "Equity" },
-        { name: "Debt", value: 28, color: DEBT_COLOR, bucket: "Debt" },
-        { name: "Gold", value: 16, color: GOLD_COLOR, bucket: "Others" },
-        { name: "Cash/Other", value: 8, color: CASH_COLOR, bucket: "Others" },
-      ];
+    : [];
 
   const centerLabel =
     portfolio && portfolio.total_value > 0 ? formatInr1(portfolio.total_value) : "₹—";
@@ -260,60 +257,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
             subCategory: h.sub_category ?? null,
           };
         })
-      : portfolio.allocations.length > 0
-        ? portfolio.allocations.map((a) => allocationBucketToClassifiedRow(a))
-        : portfolio.total_value <= 0
-          ? [
-              {
-                id: "d1",
-                name: "ICICI Prudential Nifty 50 ETF",
-                value: "₹4.8L",
-                pct: "48%",
-                allocationPct: 48,
-                returnPct: 18.2,
-                avgCost: 406000,
-                investedTotal: 406000,
-                currentValue: 480000,
-                barBg: HOLDINGS_BAR_BY_BUCKET.Equity.bg,
-                barBorder: HOLDINGS_BAR_BY_BUCKET.Equity.border,
-                bucket: "Equity" as HoldingBucket,
-                schemeCode: null,
-                subCategory: "Large Cap",
-              },
-              {
-                id: "d2",
-                name: "HDFC Corporate Bond Fund",
-                value: "₹2.8L",
-                pct: "28%",
-                allocationPct: 28,
-                returnPct: 7.1,
-                avgCost: 261000,
-                investedTotal: 261000,
-                currentValue: 280000,
-                barBg: HOLDINGS_BAR_BY_BUCKET.Debt.bg,
-                barBorder: HOLDINGS_BAR_BY_BUCKET.Debt.border,
-                bucket: "Debt" as HoldingBucket,
-                schemeCode: null,
-                subCategory: "Corporate Bond",
-              },
-              {
-                id: "d3",
-                name: "SBI Gold ETF",
-                value: "₹1.6L",
-                pct: "16%",
-                allocationPct: 16,
-                returnPct: 12.4,
-                avgCost: 142000,
-                investedTotal: 142000,
-                currentValue: 160000,
-                barBg: HOLDINGS_BAR_BY_BUCKET.Others.bg,
-                barBorder: HOLDINGS_BAR_BY_BUCKET.Others.border,
-                bucket: "Others" as HoldingBucket,
-                schemeCode: null,
-                subCategory: "Gold",
-              },
-            ]
-          : [];
+      : portfolio.allocations.map((a) => allocationBucketToClassifiedRow(a));
 
   const holdingsCountLabel =
     portfolio == null
@@ -322,7 +266,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
         ? String(portfolio.holdings.length)
         : portfolio.allocations.length > 0
           ? String(portfolio.allocations.length)
-          : String(holdingsRows.length);
+          : "—";
 
   const stats = [
     { label: "Holdings", value: holdingsCountLabel },
@@ -375,15 +319,66 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
         ).sort((a, b) => b.value - a.value)
       : [];
 
+  if (isEmpty) {
+    // Quiet placeholder, NOT a second call to action. The page already carries
+    // one "add your CAMS statement" button (in the NAV-history slot above);
+    // repeating it here read as nagging on a screen that is empty for a single
+    // reason. So this shows the shape of what will appear — the three classes,
+    // dimmed, with no numbers — and says nothing the card above already said.
+    return (
+      <div>
+        <p className="mb-3 text-[16.2px] font-semibold text-foreground">
+          Current allocation
+        </p>
+        <div className="flex items-start gap-4">
+          <div className="relative h-28 w-28 shrink-0" aria-hidden>
+            <svg viewBox="0 0 100 100" className="h-full w-full">
+              <circle
+                cx="50"
+                cy="50"
+                r="43"
+                fill="none"
+                stroke="hsl(var(--muted))"
+                strokeWidth="18"
+                strokeDasharray="4 6"
+                strokeLinecap="round"
+              />
+            </svg>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className="text-sm font-bold text-muted-foreground/60">₹—</span>
+            </div>
+          </div>
+
+          <div className="flex min-w-0 flex-1 flex-col gap-2">
+            {BUCKET_ORDER.map((bucket) => (
+              <div key={bucket} className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className="h-2.5 w-2.5 shrink-0 rounded-full opacity-25"
+                    style={{ backgroundColor: HOLDINGS_BAR_BY_BUCKET[bucket].bg }}
+                  />
+                  <span className="text-[12px] leading-tight text-muted-foreground/70">
+                    {BUCKET_LABEL[bucket]}
+                  </span>
+                </div>
+                <span className="text-[12px] font-semibold text-muted-foreground/50">—</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <p className="mt-3 text-[11.5px] leading-relaxed text-muted-foreground">
+          Your Equity / Debt / Others split is read straight from the funds you
+          hold — it fills in as soon as your statement is imported.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div onClick={() => setSelectedSlice(null)}>
       <p className="mb-3 text-[16.2px] font-semibold text-foreground">
         Current allocation
-        {showSampleHoldingsBanner && (
-          <span className="ml-2 font-normal normal-case text-[11px] text-muted-foreground">
-            (sample — add holdings or import a statement)
-          </span>
-        )}
       </p>
 
       <div className="flex items-start gap-4">

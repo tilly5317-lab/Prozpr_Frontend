@@ -179,6 +179,9 @@ function PortfolioMainPanel({
 
       {/* Current allocation — borderless, blends into the page like the total. */}
       <div className="rounded-[14px] p-[14px]">
+        {/* No CAMS prompt in here — the NAV-history slot above owns the page's
+            single "add your statement" call to action; this card just shows an
+            empty Equity / Debt / Others placeholder until holdings exist. */}
         <CurrentAllocationCard
           portfolio={portfolio}
           riskCategory={riskCategory}

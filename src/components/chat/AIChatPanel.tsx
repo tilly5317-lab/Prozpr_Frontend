@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Send, Mic, MicOff, AlertCircle, Loader2, Sparkles, Check, Square, ChevronDown, ChevronUp, Pencil, ArrowRight, Plus, Trash2, MessageSquare, Menu, Star } from "lucide-react";
+import { X, Send, Mic, MicOff, AlertCircle, Loader2, Sparkles, Check, Square, ChevronDown, ChevronUp, Pencil, ArrowRight, Plus, Trash2, MessageSquare, Menu, Star, UploadCloud } from "lucide-react";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { formatInrCompact } from "@/lib/utils";
@@ -30,6 +30,7 @@ import {
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useChatThinking } from "@/hooks/useChatThinking";
+import CamsUploadModal from "@/components/onboarding/CamsUploadModal";
 
 const PENDING_CHAT_BOOTSTRAP_KEY = "askProzpr.pendingChatBootstrap.v1";
 
@@ -71,6 +72,12 @@ interface Message {
   widgetKind?: "emergency-fund";
   /** Backend saved an ideal rebalancing plan — show CTA to open `/invest/rebalance-explanation`. */
   showViewExecutePlan?: boolean;
+  /**
+   * The question needed the user's holdings and none are imported yet (CAMS was
+   * skipped or never added). Pi's reply says so; this renders the upload CTA
+   * beside it so the fix is one tap away, without a modal opening uninvited.
+   */
+  showAddCams?: boolean;
   /** Chart visualization payloads from backend AI modules. */
   chartPayloads?: any[] | null;
   /** Bubble currently being filled by SSE deltas; replaced by the done event. */
@@ -857,6 +864,10 @@ const AIChatPanel = ({
   const [expandedReviewSection, setExpandedReviewSection] = useState<number | null>(null);
   const [reviewChipOpen, setReviewChipOpen] = useState(false);
 
+  /* ── CAMS import, opened only from the "Portfolio data missing" CTA that Pi
+        attaches to a reply it couldn't answer without holdings. Never auto-opens. ── */
+  const [camsModalOpen, setCamsModalOpen] = useState(false);
+
   const handleNewChat = useCallback(async () => {
     try {
       const session = await createChatSession("New conversation");
@@ -1325,6 +1336,7 @@ const AIChatPanel = ({
         role: "ai",
         content: resp.assistant_message.content,
         ...(hasSavedPlan ? { showViewExecutePlan: true } : {}),
+        ...(resp.portfolio_data_missing ? { showAddCams: true } : {}),
         chartPayloads: resp.assistant_message.chart_payloads || null,
       };
       setMessages((prev) => {
@@ -1460,6 +1472,28 @@ const AIChatPanel = ({
 
   const hasMessages = messages.length > 0 || isTyping;
 
+  /* ── CAMS import host, shared by both render modes. On success we clear the
+        CTA off every message: the holdings now exist, so re-asking the question
+        will get a real answer. ── */
+  const camsImportModal = (
+    <CamsUploadModal
+      open={camsModalOpen}
+      onClose={() => setCamsModalOpen(false)}
+      onUploaded={() => {
+        setCamsModalOpen(false);
+        setMessages((prev) => [
+          ...prev.map((m) => (m.showAddCams ? { ...m, showAddCams: false } : m)),
+          {
+            role: "ai",
+            content:
+              "Your portfolio is in — I can see your folios, holdings and transactions now. Ask me that again and I'll answer it on your real numbers.",
+          },
+        ]);
+      }}
+      replaceExisting
+    />
+  );
+
   /* ── Shared message renderer ── */
   const renderMessages = () => (
     <>
@@ -1536,6 +1570,32 @@ const AIChatPanel = ({
                   <MarkdownMessage text={msg.content} />
                 </div>
               </div>
+              {msg.showAddCams ? (
+                <button
+                  type="button"
+                  onClick={() => setCamsModalOpen(true)}
+                  className="ml-7 mt-2 self-start flex items-center gap-3 rounded-xl border px-4 py-3 transition-opacity hover:opacity-90"
+                  style={{
+                    borderColor: "rgba(212, 168, 104, 0.35)",
+                    backgroundColor: "rgba(212, 168, 104, 0.07)",
+                  }}
+                >
+                  <div className="flex flex-col text-left">
+                    <span className="text-[11px] font-medium text-muted-foreground">
+                      Portfolio data missing
+                    </span>
+                    <span className="text-[13px] font-semibold text-foreground">
+                      Add CAMS statement
+                    </span>
+                  </div>
+                  <div
+                    className="flex h-8 w-8 items-center justify-center rounded-full"
+                    style={{ backgroundColor: "rgba(212, 168, 104, 0.18)" }}
+                  >
+                    <UploadCloud className="h-4 w-4" style={{ color: "#D4A868" }} />
+                  </div>
+                </button>
+              ) : null}
               {msg.showViewExecutePlan ? (
                 <button
                   type="button"
@@ -2043,6 +2103,8 @@ const AIChatPanel = ({
             </button>
           </form>
         </div>
+
+        {camsImportModal}
       </div>
     );
   }
@@ -2191,6 +2253,7 @@ const AIChatPanel = ({
               </button>
             </form>
           </div>
+          {camsImportModal}
         </motion.div>
       )}
     </AnimatePresence>

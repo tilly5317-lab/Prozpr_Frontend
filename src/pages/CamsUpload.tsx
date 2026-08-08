@@ -2,7 +2,9 @@ import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ArrowRight, CheckCircle2 } from "lucide-react";
-import { type CamsPdfImportResponse } from "@/lib/api";
+import { setCamsSkipped, type CamsPdfImportResponse } from "@/lib/api";
+import { toast } from "@/hooks/use-toast";
+import { useAuth } from "@/context/AuthContext";
 import { useOnboardingStep } from "@/hooks/useOnboardingStep";
 import { camsImportedThisSession, useCamsMissing } from "@/hooks/useCamsMissing";
 import CamsImportFlow, { type CamsImportStep } from "@/components/onboarding/CamsImportFlow";
@@ -16,6 +18,10 @@ import CamsImportFlow, { type CamsImportStep } from "@/components/onboarding/Cam
  * entry point returns to /profile. Users whose statement is already imported
  * (e.g. resuming onboarding) get a Continue shortcut instead of being forced
  * to re-upload.
+ *
+ * CAMS is NOT compulsory: the flow's third option ("I'll do this later")
+ * records the choice on the backend and carries on to About You. Every surface
+ * that needs holdings then shows an in-page upload prompt rather than a block.
  */
 const CamsUpload = () => {
   const navigate = useNavigate();
@@ -26,12 +32,14 @@ const CamsUpload = () => {
   // Track as an onboarding step only during first-run onboarding — not when the
   // page is reused from Profile → "Update Holdings".
   const { completeStep } = useOnboardingStep("cams_upload", { enabled: !fromProfile });
+  const { refresh: refreshAuth } = useAuth();
   const cams = useCamsMissing();
   const alreadyImported = cams.hasCams === true || camsImportedThisSession();
   // Mirrors the flow's current step so the page heading can celebrate success
   // instead of still reading "Import your mutual funds" on the done screen.
   const [flowStep, setFlowStep] = useState<CamsImportStep>("request");
   const imported = flowStep === "done";
+  const [skipping, setSkipping] = useState(false);
 
   const markDoneFlags = () => {
     try {
@@ -53,6 +61,31 @@ const CamsUpload = () => {
     markDoneFlags();
     completeStep({ already_imported: true });
     navigate("/about-you");
+  };
+
+  /**
+   * "I'll do this later". The choice is persisted (users.cams_skipped_at) so the
+   * backend-driven resume resolver won't drop the user back here on their next
+   * visit, then onboarding carries on to About You. A failed write is not worth
+   * trapping anyone on this screen — we continue and let the next visit re-ask.
+   */
+  const handleSkip = async () => {
+    if (skipping) return;
+    setSkipping(true);
+    try {
+      await setCamsSkipped(true);
+      await refreshAuth();
+    } catch {
+      /* best-effort — proceeding matters more than recording the choice */
+    }
+    markDoneFlags();
+    completeStep({ skipped: true });
+    toast({
+      title: "No problem — you can add it later",
+      description:
+        "Your portfolio, rebalancing and net-worth history stay empty until you add a statement. We'll offer the upload wherever it's needed.",
+    });
+    navigate(fromProfile ? "/profile" : "/about-you");
   };
 
   return (
@@ -96,10 +129,16 @@ const CamsUpload = () => {
           </div>
         )}
 
-        <CamsImportFlow onImported={handleImported} onStepChange={setFlowStep} fillHeight />
+        <CamsImportFlow
+          onImported={handleImported}
+          onStepChange={setFlowStep}
+          fillHeight
+          // Onboarding offers the third option; the profile entry point already
+          // has its own Cancel below, so deferring there would be a duplicate.
+          onSkip={fromProfile ? undefined : () => void handleSkip()}
+          skipping={skipping}
+        />
 
-        {/* CAMS is compulsory during onboarding — only the profile "Update
-            Holdings" entry point may cancel without importing. */}
         {fromProfile && (
           <button
             type="button"

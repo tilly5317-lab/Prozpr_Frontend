@@ -16,7 +16,7 @@ import {
   type PortfolioNavHorizon,
 } from "@/lib/api";
 import { formatInr0 } from "@/lib/utils";
-import { UploadCloud } from "lucide-react";
+import CamsMissingNotice from "@/components/onboarding/CamsMissingNotice";
 
 const HORIZONS: PortfolioNavHorizon[] = ["1M", "3M", "1Y", "3Y", "MAX"];
 
@@ -320,24 +320,11 @@ const PortfolioNavChart = ({ camsMissing, onUploadCams, onPeriodChange }: Portfo
             NAV-history space. It only shows while CAMS is absent and disappears
             once a statement is imported (then the real chart builds). */}
         {camsMissing && onUploadCams ? (
-          <div className="flex h-full w-full flex-col items-center justify-center gap-1.5 px-4 text-center">
-            <UploadCloud className="h-6 w-6 text-[#D4A868]" />
-            <p className="text-[12px] font-medium text-foreground">See your portfolio history</p>
-            <p className="text-[11px] leading-snug text-muted-foreground">
-              Upload your CAMS statement — we&apos;ll build your net-worth history from your real holdings.
-            </p>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onUploadCams();
-              }}
-              className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-[#D4A868] px-4 py-1.5 text-[11px] font-semibold text-white transition-opacity hover:opacity-90"
-            >
-              <UploadCloud className="h-3.5 w-3.5" />
-              Upload CAMS statement
-            </button>
-          </div>
+          <CamsMissingNotice
+            onAdd={onUploadCams}
+            title="See your portfolio history"
+            description="Add your CAMS statement — we'll build your net-worth history from your real holdings."
+          />
         ) : (
           <>
         {loading && !hasPoints && (
