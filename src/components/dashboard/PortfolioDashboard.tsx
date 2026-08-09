@@ -1,4 +1,4 @@
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { Compass, TrendingUp, TrendingDown, Wallet, Target, Activity, Landmark, Check, Sparkles, Banknote, Droplet, Coins, type LucideIcon } from "lucide-react";
 import { motion } from "framer-motion";
@@ -10,6 +10,7 @@ import CurrentAllocationCard from "./CurrentAllocationCard";
 // Zoom team-call feature disabled for now — keep the code, don't delete.
 // import AdvisorMeetingsSlot from "./AdvisorMeetingsSlot";
 import PortfolioAnalysisModal from "./PortfolioAnalysisModal";
+import PortfolioInsightsModal from "./PortfolioInsightsModal";
 import ProfileSwitcher from "./ProfileSwitcher";
 import CamsUploadModal from "@/components/onboarding/CamsUploadModal";
 import { useCamsMissing } from "@/hooks/useCamsMissing";
@@ -68,6 +69,7 @@ function PortfolioMainPanel({
   useNavChart = false,
   camsMissing = false,
   onUploadCams,
+  onOpenInsights,
 }: {
   portfolio: PortfolioDetail;
   timePeriod: "1M" | "6M" | "1Y" | "All";
@@ -82,6 +84,8 @@ function PortfolioMainPanel({
   camsMissing?: boolean;
   /** Open the CAMS upload popup from the chart. */
   onUploadCams?: () => void;
+  /** Re-open the insights popup after its once-per-session auto-open. */
+  onOpenInsights?: () => void;
 }) {
   const [analysisOpen, setAnalysisOpen] = useState(false);
   // Overall gain/loss vs what the user has put in (today's value − invested),
@@ -166,14 +170,25 @@ function PortfolioMainPanel({
         )}
 
         {/* Portfolio analysis — subtly lifted surface (bg-card + soft shadow, no border). */}
-        <div className="mt-2 pt-2" style={{ borderTop: "1px solid hsl(var(--hairline))" }}>
+        <div className="mt-2 flex gap-2 pt-2" style={{ borderTop: "1px solid hsl(var(--hairline))" }}>
           <button
             type="button"
             onClick={() => setAnalysisOpen(true)}
-            className="block w-full cursor-pointer rounded-xl bg-card px-4 py-2.5 text-center text-[13px] font-semibold text-foreground shadow-sm transition-all hover:shadow-md active:scale-[0.99]"
+            className="block flex-1 cursor-pointer rounded-xl bg-card px-3 py-2.5 text-center text-[13px] font-semibold text-foreground shadow-sm transition-all hover:shadow-md active:scale-[0.99]"
           >
             Portfolio analysis →
           </button>
+          {onOpenInsights && (
+            <button
+              type="button"
+              onClick={onOpenInsights}
+              className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-card px-3 py-2.5 text-center text-[13px] font-semibold text-foreground shadow-sm transition-all hover:shadow-md active:scale-[0.99]"
+              style={{ border: "1px solid rgba(212, 168, 104, 0.45)" }}
+            >
+              <Sparkles className="h-3.5 w-3.5" strokeWidth={2} style={{ color: "#D4A868" }} />
+              Insights →
+            </button>
+          )}
         </div>
       </div>
 
@@ -559,6 +574,33 @@ const PortfolioDashboard = () => {
   const cams = useCamsMissing();
   const [camsOpen, setCamsOpen] = useState(false);
 
+  const [insightsOpen, setInsightsOpen] = useState(false);
+
+  // The insights popup is scoped to ONE person's funds — the backend answers for
+  // whoever `X-Family-Member-Id` points at. The combined family view has no such
+  // person, so it gets no popup rather than one member's numbers mislabelled as
+  // the family's.
+  const insightsPortfolio =
+    activeView.type === "self"
+      ? selfPortfolio
+      : activeView.type === "member"
+        ? memberPortfolio
+        : null;
+
+  // Auto-open every time the portfolio page is landed on, once the data behind
+  // it actually exists — an empty popup on a brand-new account helps nobody.
+  //
+  // The guard is per MOUNT, not per session: navigating to the page opens the
+  // popup again, but a mid-visit refetch (a CAMS upload, switching family
+  // member) must not reopen it over a user who has already dismissed it.
+  const insightsAutoOpenedRef = useRef(false);
+  useEffect(() => {
+    if (insightsAutoOpenedRef.current) return;
+    if (!insightsPortfolio || insightsPortfolio.total_value <= 0) return;
+    insightsAutoOpenedRef.current = true;
+    setInsightsOpen(true);
+  }, [insightsPortfolio]);
+
   const handleCamsUploaded = () => {
     setCamsOpen(false);
     cams.refresh();
@@ -734,6 +776,7 @@ const PortfolioDashboard = () => {
                 sparkline={[memberPortfolio.total_value / 100000]}
                 riskCategory={null}
                 horizonLabel={null}
+                onOpenInsights={() => setInsightsOpen(true)}
               />
               <DiscoverSection />
               <EverydaySpendingSection />
@@ -796,6 +839,7 @@ const PortfolioDashboard = () => {
                 useNavChart
                 camsMissing={cams.missing}
                 onUploadCams={() => setCamsOpen(true)}
+                onOpenInsights={() => setInsightsOpen(true)}
               />
               <DiscoverSection />
               <EverydaySpendingSection />
@@ -825,6 +869,14 @@ const PortfolioDashboard = () => {
         onClose={() => setCamsOpen(false)}
         onUploaded={handleCamsUploaded}
         replaceExisting
+      />
+
+      {/* Section 2 reads the allocation the page already fetched; sections 1 and 3
+          fetch their own data, but only once the popup is actually opened. */}
+      <PortfolioInsightsModal
+        open={insightsOpen}
+        onClose={() => setInsightsOpen(false)}
+        portfolio={insightsPortfolio}
       />
 
       <BottomNav />

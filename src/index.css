@@ -42,6 +42,12 @@
     --wealth-blue-light: 215 40% 94%;
     --wealth-green: 164 54% 40%;     /* #2E9C7E — the app's buy/positive green */
     --wealth-green-light: 164 35% 93%;
+    /* Two-series chart pair (you vs benchmark). Distinct from --wealth-green /
+       --wealth-blue because those flip lightness between modes and the resulting
+       pairs fail colourblind separation (deutan ΔE 2.6 in dark). These two are
+       validated in BOTH modes — re-run the palette validator before changing them. */
+    --chart-you: 164 54% 40%;        /* #2f9d80 */
+    --chart-bench: 221 83% 53%;      /* #2463eb */
     --wealth-amber: 38 80% 48%;
     --wealth-amber-light: 38 60% 93%;
     --wealth-surface: 220 15% 98%;
@@ -117,6 +123,10 @@
     --wealth-blue-light: 215 55% 18%;
     --wealth-green: 156 51% 50%;     /* #3fbf8a brighter for legibility */
     --wealth-green-light: 156 40% 14%;
+    /* Chart pair, dark steps — green holds (already inside the dark lightness
+       band); only the benchmark blue lifts. Both validated against #1c1c1b. */
+    --chart-you: 164 54% 40%;        /* #2f9d80 */
+    --chart-bench: 217 90% 63%;      /* #4c8df6 */
     --wealth-amber: 35 57% 62%;      /* #d4a868 */
     --wealth-amber-light: 35 40% 16%;
     --wealth-surface: 0 0% 8%;

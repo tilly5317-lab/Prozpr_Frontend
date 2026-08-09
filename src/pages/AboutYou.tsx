@@ -8,6 +8,7 @@ import {
   getRiskProfile,
   markOnboardingComplete,
   persistOnboardingProfile,
+  startOnboardingGeneration,
 } from "@/lib/api";
 import { toast } from "@/hooks/use-toast";
 import { useOnboardingStep } from "@/hooks/useOnboardingStep";
@@ -91,7 +92,11 @@ const NumberInputINR = ({
 );
 
 /* ─── Constants ─── */
+// Keep in sync with DEFAULT_GOALS in NewOnboardingFlow — the same question is
+// asked in both places and a label missing from one side comes back as a custom
+// chip instead of the built-in goal it was saved as.
 const DEFAULT_GOALS = [
+  { label: "Wealth building", icon: "🌱" },
   { label: "Buying a home", icon: "🏡" }, { label: "Retiring", icon: "🌴" },
   { label: "Education", icon: "🎓" }, { label: "Marriage", icon: "💍" },
 ];
@@ -300,6 +305,15 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
       toast({ title: "Save failed", description: msg, variant: "destructive" });
       setSubmitting(false);
       return;
+    }
+    // Start the real personalisation job (risk profile, net-worth history,
+    // goal plan) and move to the loading page immediately — it polls the job's
+    // actual progress. Best-effort: the loading page also starts the job itself
+    // if this kickoff didn't land.
+    try {
+      await startOnboardingGeneration();
+    } catch {
+      /* loading page retries */
     }
     // Profile saved & backend marked onboarding complete → this is the funnel's
     // finish line. completeStep first so the "about_you" step isn't logged as

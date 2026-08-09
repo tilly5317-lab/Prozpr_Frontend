@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Mic, MicOff, AlertCircle, Loader2, Sparkles, Check, Square, ChevronDown, ChevronUp, Pencil, ArrowRight, Plus, Trash2, MessageSquare, Menu, Star } from "lucide-react";
+import { Send, Mic, MicOff, AlertCircle, Loader2, Sparkles, Check, Square, ChevronDown, ChevronUp, Globe, Pencil, ArrowRight, Plus, Trash2, MessageSquare, Menu, Star, X } from "lucide-react";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { formatInrCompact } from "@/lib/utils";
@@ -39,8 +39,6 @@ interface AIChatPanelProps {
   chatFirst?: boolean;
   completionMessage?: string;
   onCompletionShown?: () => void;
-  initialAiMessage?: string;
-  showBackToInvest?: boolean;
   /** Local demo: scripted goal-alignment walkthrough — no chat API calls. */
   goalPlanningDemo?: boolean;
 }
@@ -63,7 +61,7 @@ interface Message {
   kudosId?: number;
   /** Only when type === "goal-demo-widget" */
   widgetKind?: "emergency-fund";
-  /** Backend saved an ideal rebalancing plan — show CTA to open `/execute`. */
+  /** Backend saved an ideal rebalancing plan — show CTA to open `/invest/rebalance-explanation`. */
   showViewExecutePlan?: boolean;
   /** Chart visualization payloads from backend AI modules. */
   chartPayloads?: any[] | null;
@@ -351,6 +349,180 @@ const COMPOSER_PREFILLS: Record<string, { prefix: string; suggestion?: string }>
   "Goals achievable?": {
     prefix: "Are my goals achievable? Am I on track?",
   },
+};
+
+/**
+ * "Market outlook" opens a picker instead of pre-filling, because the two kinds
+ * of market question are answered by completely different machinery and the
+ * answers are worth different things. A general question is researched from
+ * public market data and the web — the same answer anyone would get. A Pi
+ * Insight question is grounded in the user's own holdings, so it can only be
+ * answered for them. Splitting them here sets the expectation before the
+ * question is asked, rather than surprising the user with a generic reply.
+ */
+type MarketQuestionKind = "web" | "pi";
+
+const MARKET_QUESTION_GROUPS: {
+  kind: MarketQuestionKind;
+  title: string;
+  blurb: string;
+  questions: string[];
+}[] = [
+  {
+    kind: "web",
+    title: "General market",
+    blurb: "Researched from public market data and the web — not specific to you.",
+    questions: [
+      "How is the market outlook right now? Is the Nifty overvalued?",
+      "What are the big risks facing Indian equities over the next year?",
+      "What are rate cuts likely to mean for debt funds from here?",
+    ],
+  },
+  {
+    kind: "pi",
+    title: "Pi Insights",
+    blurb: "Answered from your holdings and plan — personal to your portfolio.",
+    questions: [
+      "Given this market, how exposed is my portfolio to a correction?",
+      "Which of my funds are most sensitive to the current market?",
+    ],
+  },
+];
+
+const MARKET_KIND_STYLE: Record<
+  MarketQuestionKind,
+  { accent: string; tintBg: string; border: string }
+> = {
+  web: {
+    accent: "hsl(var(--muted-foreground))",
+    tintBg: "hsl(var(--muted) / 0.5)",
+    border: "hsl(var(--border))",
+  },
+  pi: {
+    accent: "hsl(38, 45%, 54%)",
+    tintBg: "hsla(38, 45%, 54%, 0.10)",
+    border: "hsla(38, 45%, 54%, 0.45)",
+  },
+};
+
+/**
+ * Suggested-question picker for the "Market outlook" chip.
+ *
+ * Choosing one pre-fills the composer rather than sending, matching every other
+ * chip in this panel: a mis-tap costs nothing, and the question stays editable.
+ */
+const MarketOutlookSheet = ({
+  open,
+  onClose,
+  onPick,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onPick: (question: string) => void;
+}) => {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[70] bg-black/45"
+            onClick={onClose}
+            aria-hidden="true"
+          />
+          <motion.div
+            initial={{ opacity: 0, y: 24, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 16, scale: 0.98 }}
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Suggested market questions"
+            className="fixed inset-0 z-[70] flex items-center justify-center px-4"
+          >
+            <div
+              className="mx-auto flex w-full max-w-md flex-col overflow-hidden rounded-2xl bg-card shadow-2xl"
+              style={{ maxHeight: "min(88dvh, 640px)" }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start gap-2 border-b border-border px-4 py-3">
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-base font-semibold text-foreground">Market outlook</h2>
+                  <p className="text-[11px] leading-snug text-muted-foreground">
+                    Pick a question to drop into the box — or close this and type your own.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="-m-1.5 p-1.5 text-muted-foreground hover:text-foreground"
+                  aria-label="Close"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="flex-1 space-y-4 overflow-y-auto px-4 py-3">
+                {MARKET_QUESTION_GROUPS.map((group) => {
+                  const style = MARKET_KIND_STYLE[group.kind];
+                  const Icon = group.kind === "pi" ? Sparkles : Globe;
+                  return (
+                    <section key={group.kind}>
+                      <div className="mb-1 flex items-center gap-1.5">
+                        <Icon className="h-3.5 w-3.5 shrink-0" style={{ color: style.accent }} />
+                        <h3
+                          className="text-[11px] font-bold uppercase tracking-wide"
+                          style={{ color: style.accent }}
+                        >
+                          {group.title}
+                        </h3>
+                      </div>
+                      <p className="mb-2 text-[11px] leading-snug text-muted-foreground">
+                        {group.blurb}
+                      </p>
+                      <div className="space-y-1.5">
+                        {group.questions.map((q) => (
+                          <button
+                            key={q}
+                            type="button"
+                            onClick={() => onPick(q)}
+                            className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left transition-colors hover:brightness-95 active:scale-[0.99]"
+                            style={{
+                              backgroundColor: style.tintBg,
+                              border: `1px solid ${style.border}`,
+                            }}
+                          >
+                            <span className="min-w-0 flex-1 text-[12.5px] leading-snug text-foreground">
+                              {q}
+                            </span>
+                            <ArrowRight
+                              className="h-3.5 w-3.5 shrink-0"
+                              style={{ color: style.accent }}
+                            />
+                          </button>
+                        ))}
+                      </div>
+                    </section>
+                  );
+                })}
+              </div>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
 };
 
 /**
@@ -809,8 +981,6 @@ const AIChatPanel = ({
   chatFirst = false,
   completionMessage,
   onCompletionShown,
-  initialAiMessage,
-  showBackToInvest = false,
   goalPlanningDemo = false,
 }: AIChatPanelProps) => {
   const navigate = useNavigate();
@@ -825,6 +995,8 @@ const AIChatPanel = ({
    * keystroke clears it so the user simply types over it.
    */
   const [inputSuggestion, setInputSuggestion] = useState<string | null>(null);
+  /** Suggested-question picker behind the "Market outlook" chip. */
+  const [marketSheetOpen, setMarketSheetOpen] = useState(false);
   const composerRef = useRef<HTMLInputElement>(null);
   const [isTyping, setIsTyping] = useState(false);
   const [micState, setMicState] = useState<MicState>("idle");
@@ -1017,14 +1189,6 @@ const AIChatPanel = ({
     setMessages((prev) => [...prev, { role: "ai", content: completionMessage }]);
     onCompletionShown?.();
   }, [completionMessage, onCompletionShown, goalPlanningDemo, clientContext]);
-
-  // Inject initial AI message (e.g. from /execute portfolio context)
-  const initialMessageSentRef = useRef(false);
-  useEffect(() => {
-    if (goalPlanningDemo || !initialAiMessage || initialMessageSentRef.current) return;
-    initialMessageSentRef.current = true;
-    setMessages((prev) => [...prev, { role: "ai", content: initialAiMessage }]);
-  }, [initialAiMessage, goalPlanningDemo]);
 
   useEffect(() => {
     if (!goalPlanningDemo) return;
@@ -1360,9 +1524,23 @@ const AIChatPanel = ({
       ]);
     } catch (err: any) {
       setIsTyping(false);
-      const fallback = err?.message?.includes("401") || err?.message?.includes("Not authenticated")
-        ? "Please log in to use the chat."
-        : (err?.message ? `Request failed: ${err.message}` : "Sorry, something went wrong. Please try again.");
+      const raw: string = typeof err?.message === "string" ? err.message : "";
+      let fallback: string;
+      if (raw.includes("401") || raw.includes("Not authenticated")) {
+        fallback = "Please log in to use the chat.";
+      } else if (
+        err?.name === "BackendOfflineError" ||
+        raw.includes("timed out") ||
+        raw.includes("took too long")
+      ) {
+        fallback =
+          "That one is taking longer than expected and the request timed out. Please try asking again in a moment.";
+      } else if (!raw || raw.includes("<")) {
+        // Gateway/proxy errors can carry raw HTML — never render markup in a chat bubble.
+        fallback = "Sorry, something went wrong. Please try again.";
+      } else {
+        fallback = `Request failed: ${raw}`;
+      }
       setMessages((prev) => [...prev, { role: "ai", content: fallback }]);
     }
   }, [
@@ -1477,18 +1655,10 @@ const AIChatPanel = ({
    * either send as-is or type over the suggested part. Add a chip here and to
    * `embeddedSuggestions` — no other wiring needed.
    */
-  const handleSuggestionChip = (label: string) => {
-    if (label === "Complete profile") {
-      navigate("/profile/complete");
-      return;
-    }
-    const prefill = COMPOSER_PREFILLS[label];
-    if (!prefill) {
-      void sendMessage(label);
-      return;
-    }
-    setInput(prefill.prefix);
-    setInputSuggestion(prefill.suggestion ?? null);
+  /** Drop a ready-made question into the composer, caret at the end, no ghost. */
+  const prefillComposer = useCallback((text: string, suggestion: string | null = null) => {
+    setInput(text);
+    setInputSuggestion(suggestion);
     // Focus after paint so the caret lands at the end of the pre-filled text —
     // the next keystroke then replaces the suggestion instead of inserting into it.
     requestAnimationFrame(() => {
@@ -1497,6 +1667,26 @@ const AIChatPanel = ({
       el.focus();
       el.setSelectionRange(el.value.length, el.value.length);
     });
+  }, []);
+
+  const handleSuggestionChip = (label: string) => {
+    if (label === "Complete profile") {
+      // `?from=chat` so the profile flow knows to route back here when done.
+      navigate("/profile/complete?from=chat");
+      return;
+    }
+    // Market questions split into web-researched vs portfolio-grounded, so this
+    // one asks which you meant before filling the box.
+    if (label === "Market outlook") {
+      setMarketSheetOpen(true);
+      return;
+    }
+    const prefill = COMPOSER_PREFILLS[label];
+    if (!prefill) {
+      void sendMessage(label);
+      return;
+    }
+    prefillComposer(prefill.prefix, prefill.suggestion ?? null);
   };
 
   /** Send the composer, folding in the ghost suggestion if it wasn't typed over. */
@@ -1588,24 +1778,6 @@ const AIChatPanel = ({
                   <MarkdownMessage text={msg.content} />
                 </div>
               </div>
-              {showBackToInvest && i === 0 && msg.role === "ai" && (
-                <button
-                  onClick={() => navigate("/invest/rebalance-explanation")}
-                  className="ml-7 mt-2 self-start flex items-center gap-3 rounded-xl px-4 py-3 transition-opacity hover:opacity-90"
-                  style={{ backgroundColor: "hsl(220, 40%, 20%)" }}
-                >
-                  <div className="flex flex-col">
-                    <span className="text-[11px] font-medium" style={{ color: "hsl(40, 50%, 70%)" }}>Ready to invest?</span>
-                    <span className="text-[13px] font-semibold" style={{ color: "hsl(40, 55%, 80%)" }}>View your plan</span>
-                  </div>
-                  <div
-                    className="flex h-7 w-7 items-center justify-center rounded-full"
-                    style={{ backgroundColor: "hsla(40, 55%, 65%, 0.2)" }}
-                  >
-                    <ArrowRight className="h-3.5 w-3.5" style={{ color: "hsl(40, 55%, 75%)" }} />
-                  </div>
-                </button>
-              )}
               {msg.showViewExecutePlan ? (
                 <button
                   type="button"
@@ -1637,14 +1809,23 @@ const AIChatPanel = ({
       {isTyping && (
         <div className="flex gap-2 items-start">
           <ProzprAvatar />
-          <div className="flex gap-1.5 px-3 py-2.5 rounded-2xl" style={{ backgroundColor: "hsl(var(--prozpr-bubble))" }}>
-            {[0, 1, 2].map((i) => (
-              <span
-                key={i}
-                className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40 animate-pulse"
-                style={{ animationDelay: `${i * 0.2}s` }}
-              />
-            ))}
+          {/* Just "Thinking" — the backend's step-by-step reasoning is
+              deliberately NOT surfaced; it read as noise mid-conversation. */}
+          <div
+            className="flex items-center gap-2 rounded-2xl rounded-tl-sm px-3.5 py-2.5"
+            style={{ backgroundColor: "hsl(var(--prozpr-bubble))" }}
+          >
+            <Sparkles className="h-3 w-3 shrink-0 text-primary" />
+            <span className="text-[12px] font-medium text-muted-foreground">Thinking</span>
+            <span className="flex gap-1">
+              {[0, 1, 2].map((i) => (
+                <span
+                  key={i}
+                  className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40 animate-pulse"
+                  style={{ animationDelay: `${i * 0.2}s` }}
+                />
+              ))}
+            </span>
           </div>
         </div>
       )}
@@ -1738,6 +1919,16 @@ const AIChatPanel = ({
           onSelectSession={handleSelectSession}
           onNewChat={handleNewChat}
           activeSessionId={sessionIdRef.current}
+        />
+
+        {/* Suggested market questions — fills the composer, never sends. */}
+        <MarketOutlookSheet
+          open={marketSheetOpen}
+          onClose={() => setMarketSheetOpen(false)}
+          onPick={(q) => {
+            setMarketSheetOpen(false);
+            prefillComposer(q);
+          }}
         />
 
         {/* Top header bar */}
@@ -2062,6 +2253,16 @@ const AIChatPanel = ({
   /* ── FULL-PAGE MODE (non-embedded, unused currently) ── */
   return (
     <>
+    {/* Kept in step with the embedded branch so the chip behaves the same if
+        this mode is ever switched back on. */}
+    <MarketOutlookSheet
+      open={marketSheetOpen}
+      onClose={() => setMarketSheetOpen(false)}
+      onPick={(q) => {
+        setMarketSheetOpen(false);
+        prefillComposer(q);
+      }}
+    />
     <AnimatePresence>
       {isOpen && (
         <motion.div

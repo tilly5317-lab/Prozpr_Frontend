@@ -9,6 +9,7 @@ import {
   type DetailedOnboardingSection,
 } from "@/lib/detailedOnboardingAnalytics";
 import { MARGINAL_TAX_RATE_OPTIONS } from "@/lib/taxRates";
+import { useEnterSubmit } from "@/hooks/useEnterSubmit";
 import { Slider } from "@/components/ui/slider";
 import { formatMoneyInput } from "@/lib/utils";
 import {
@@ -136,6 +137,11 @@ const SECTION_SLUGS = [
 const SECTION_DISPLAY_ORDER = [0, 2, 3, 1];
 
 const CARDS_PATH = "/profile/complete";
+
+// sessionStorage key remembering where the user entered this flow from (e.g.
+// chat), so the exit buttons return them there instead of always /profile.
+const RETURN_TO_KEY = "completeProfileReturnTo";
+// One-time "how this page works" guide on the card list; dismissed per device.
 const pathForSection = (idx: number): string =>
   idx >= 0 && idx < SECTION_SLUGS.length ? `/profile/${SECTION_SLUGS[idx]}` : CARDS_PATH;
 /** Section index for a pathname, or -1 for the card list / anything else. */
@@ -153,7 +159,7 @@ const SECTION_ANALYTICS_NAME: Record<number, DetailedOnboardingSection> = {
 /** Card meta for the section list — icon, one-line description, time estimate. */
 const SECTION_META: { Icon: typeof Wallet; description: string; estimate: string }[] = [
   { Icon: Wallet, description: "Income, expenses, assets, property and what's coming up", estimate: "~4 min" },
-  { Icon: Target, description: "Set your goals and complete your cashflow inputs in Goal planning", estimate: "~3 min" },
+  { Icon: Target, description: "Add at least one goal and complete your cashflow inputs in Goal planning", estimate: "~3 min" },
   { Icon: TrendingUp, description: "Your horizon and how you behave when markets move", estimate: "~2 min" },
   { Icon: Landmark, description: "Your tax slab and regime, for tax-efficient advice", estimate: "~1 min" },
 ];
@@ -1053,6 +1059,32 @@ const CompleteProfile = () => {
     toast.success(`Section ${idx + 1} confirmed ✓`);
   };
 
+  // The step view's primary action: "Save and next", or — on a section's final
+  // step — "Save and exit" (persist + confirm + back to the cards). Hoisted to
+  // component scope so the Enter key can trigger it from anywhere in the step.
+  const handlePrimaryStep = async () => {
+    if (openSection === -1 || saving) return;
+    const total = sectionGroups(openSection).length;
+    const gi = Math.min(groupIndex, total - 1);
+    if (gi >= total - 1) {
+      await confirmSection(openSection, gi);
+      return;
+    }
+    // Untouched step → just advance, no API call (no lag / spinner).
+    if (!isGroupDirty(openSection, gi)) {
+      setGroupIndex((i) => i + 1);
+      return;
+    }
+    // Persist this step before advancing; only move on if it saved.
+    setSaving(true);
+    const ok = await persistGroup(openSection, gi);
+    setSaving(false);
+    if (ok) setGroupIndex((i) => i + 1);
+  };
+
+  // Enter anywhere inside a step = the primary button.
+  useEnterSubmit(() => void handlePrimaryStep(), openSection !== -1);
+
   // Persist just the fields belonging to one question group, so answers are
   // saved step-by-step as the user taps "Next" (not only on final confirm).
   // The backend PUT endpoints use exclude_unset, so sending a partial payload
@@ -1218,6 +1250,32 @@ const CompleteProfile = () => {
   };
 
   const [searchParams, setSearchParams] = useSearchParams();
+
+  // Where the header back arrow / Done button should exit to. Chat opens this
+  // page with ?from=chat; the origin is kept in sessionStorage so it survives
+  // the goal-planner round trip (which re-enters with ?from=resume). Any entry
+  // without a recognised origin resets to the default, /profile.
+  useEffect(() => {
+    const from = searchParams.get("from");
+    try {
+      if (from === "chat") sessionStorage.setItem(RETURN_TO_KEY, "/chat");
+      else if (from !== "resume") sessionStorage.removeItem(RETURN_TO_KEY);
+    } catch {
+      /* storage unavailable — back falls back to /profile */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const exitProfileFlow = () => {
+    let target = "/profile";
+    try {
+      target = sessionStorage.getItem(RETURN_TO_KEY) ?? "/profile";
+      sessionStorage.removeItem(RETURN_TO_KEY);
+    } catch {
+      /* ignore */
+    }
+    navigate(target);
+  };
 
   // Back-compat: the portfolio "Unlock" circles link to /profile/complete?section=N.
   // Rewrite that once to the section's named URL so there's a single URL scheme;
@@ -2026,9 +2084,9 @@ const CompleteProfile = () => {
     <div className="mobile-container bg-background min-h-screen pb-28">
       {/* Header */}
       <div className="px-5 pt-10 pb-1 flex items-center gap-3">
-        {/* The page header arrow always returns to /profile, regardless of how the
-            user reached this page (onboarding, deep link, goal-planner round-trip). */}
-        <button onClick={() => navigate("/profile")} className="flex h-8 w-8 items-center justify-center rounded-full bg-muted hover:bg-muted/80 transition-colors">
+        {/* The page header arrow returns to wherever the user entered from
+            (chat passes ?from=chat); default is /profile. */}
+        <button onClick={exitProfileFlow} className="flex h-8 w-8 items-center justify-center rounded-full bg-muted hover:bg-muted/80 transition-colors">
           <ArrowLeft className="h-4 w-4 text-foreground" />
         </button>
         <div>
@@ -2127,13 +2185,36 @@ const CompleteProfile = () => {
           const group = groups[gi];
           const isLastGroup = gi >= total - 1;
           const SIcon = SECTION_META[openSection].Icon;
+          // Persist the visible step's edits (if any) before leaving it — shared
+          // by step-jumping, "Save & exit" and the header back button so no
+          // route out of a step ever silently drops answers.
+          const persistCurrentIfDirty = async (): Promise<boolean> => {
+            if (!isGroupDirty(openSection, gi)) return true;
+            setSaving(true);
+            const ok = await persistGroup(openSection, gi);
+            setSaving(false);
+            return ok;
+          };
+          // Answers are prefilled and saved per step, so returning users can hop
+          // straight to the step they want instead of re-walking the wizard.
+          const jumpToStep = async (target: number) => {
+            if (saving || target === gi) return;
+            if (!(await persistCurrentIfDirty())) return;
+            setGroupIndex(target);
+          };
+          const saveAndExit = async () => {
+            if (saving) return;
+            if (!(await persistCurrentIfDirty())) return;
+            navigate(CARDS_PATH);
+          };
           return (
             <div className="px-5 pb-32">
               {/* Section identity */}
               <div className="pt-3 pb-3 flex items-center gap-3">
                 <button
-                  onClick={() => navigate(CARDS_PATH)}
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted hover:bg-muted/80 transition-colors"
+                  onClick={() => void saveAndExit()}
+                  disabled={saving}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted hover:bg-muted/80 transition-colors disabled:opacity-50"
                   aria-label="Back to sections"
                 >
                   <ChevronLeft className="h-4 w-4 text-foreground" />
@@ -2154,18 +2235,29 @@ const CompleteProfile = () => {
                 </div>
               </div>
 
-              {/* Segmented step progress — one pill per question group */}
-              <div className="flex gap-1.5 pb-4">
-                {groups.map((_, i) => (
-                  <div key={i} className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
-                    <motion.div
-                      className="h-full rounded-full"
-                      style={{ backgroundColor: "hsl(var(--wealth-navy))" }}
-                      initial={false}
-                      animate={{ width: i <= gi ? "100%" : "0%" }}
-                      transition={{ duration: 0.25 }}
-                    />
-                  </div>
+              {/* Segmented step progress — one tappable pill per question group,
+                  so returning users can jump straight to the step they want. */}
+              <div className="flex gap-1.5 pb-2.5">
+                {groups.map((g, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => void jumpToStep(i)}
+                    disabled={saving}
+                    aria-label={`Go to step ${i + 1}: ${g.label}`}
+                    aria-current={i === gi ? "step" : undefined}
+                    className="flex-1 py-1.5 disabled:cursor-not-allowed"
+                  >
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted transition-colors hover:bg-muted-foreground/25">
+                      <motion.div
+                        className="h-full rounded-full"
+                        style={{ backgroundColor: "hsl(var(--wealth-navy))" }}
+                        initial={false}
+                        animate={{ width: i <= gi ? "100%" : "0%" }}
+                        transition={{ duration: 0.25 }}
+                      />
+                    </div>
+                  </button>
                 ))}
               </div>
 
@@ -2185,38 +2277,37 @@ const CompleteProfile = () => {
                 </motion.div>
               </AnimatePresence>
 
-              {/* Fixed step nav */}
+              {/* Fixed step nav: Back · Save and exit · Save and next (primary,
+                  Enter). The final step drops the middle button — its primary
+                  IS "Save and exit" (persist + confirm + back to the cards). */}
               <div className="fixed bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-t border-border px-5 py-4">
-                <div className="max-w-md mx-auto flex items-center gap-3">
-                  {gi > 0 && (
+                <div className="max-w-md mx-auto flex items-center gap-2">
+                  <button
+                    onClick={() =>
+                      gi > 0
+                        ? setGroupIndex((i) => Math.max(0, i - 1))
+                        : void saveAndExit()
+                    }
+                    disabled={saving}
+                    aria-label={gi > 0 ? "Previous step" : "Back to sections"}
+                    className="flex items-center justify-center gap-1 rounded-xl border border-border bg-card px-3.5 py-3 text-sm font-semibold text-foreground transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Back
+                  </button>
+                  {/* Mid-section exit that never loses the current step's edits */}
+                  {!isLastGroup && (
                     <button
-                      onClick={() => setGroupIndex((i) => Math.max(0, i - 1))}
+                      onClick={() => void saveAndExit()}
                       disabled={saving}
-                      className="flex items-center justify-center gap-1 rounded-xl border border-border bg-card px-5 py-3 text-sm font-semibold text-foreground transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="flex items-center justify-center rounded-xl border border-border bg-card px-4 py-3 text-sm font-semibold text-foreground transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      <ChevronLeft className="h-4 w-4" />
-                      Back
+                      Save and exit
                     </button>
                   )}
                   <button
                     disabled={saving}
-                    onClick={async () => {
-                      if (saving) return;
-                      if (isLastGroup) {
-                        await confirmSection(openSection, gi);
-                        return;
-                      }
-                      // Untouched step → just advance, no API call (no lag / spinner).
-                      if (!isGroupDirty(openSection, gi)) {
-                        setGroupIndex((i) => i + 1);
-                        return;
-                      }
-                      // Persist this step before advancing; only move on if it saved.
-                      setSaving(true);
-                      const ok = await persistGroup(openSection, gi);
-                      setSaving(false);
-                      if (ok) setGroupIndex((i) => i + 1);
-                    }}
+                    onClick={() => void handlePrimaryStep()}
                     className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl py-3 text-sm font-semibold text-primary-foreground transition-all active:scale-[0.98] ${saving ? "cursor-wait opacity-80" : "hover:opacity-90"}`}
                     style={{ backgroundColor: "hsl(var(--wealth-navy))" }}
                   >
@@ -2227,7 +2318,7 @@ const CompleteProfile = () => {
                       </>
                     ) : (
                       <>
-                        Save and continue
+                        {isLastGroup ? "Save and exit" : "Save and next"}
                         <Check className="h-4 w-4" />
                       </>
                     )}
@@ -2248,7 +2339,7 @@ const CompleteProfile = () => {
         <div className="max-w-md mx-auto">
           <button
             disabled={!allConfirmed}
-            onClick={() => navigate("/profile")}
+            onClick={exitProfileFlow}
             style={allConfirmed ? { backgroundColor: "hsl(var(--wealth-navy))" } : undefined}
             className={`w-full rounded-xl py-3 text-sm font-semibold transition-all ${allConfirmed ? "text-primary-foreground hover:opacity-90" : "bg-muted text-muted-foreground cursor-not-allowed"}`}
           >
