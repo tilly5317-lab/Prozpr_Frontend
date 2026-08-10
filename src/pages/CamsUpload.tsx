@@ -19,9 +19,12 @@ import CamsImportFlow, { type CamsImportStep } from "@/components/onboarding/Cam
  * (e.g. resuming onboarding) get a Continue shortcut instead of being forced
  * to re-upload.
  *
- * CAMS is NOT compulsory: the flow's third option ("I'll do this later")
- * records the choice on the backend and carries on to About You. Every surface
- * that needs holdings then shows an in-page upload prompt rather than a block.
+ * CAMS is NOT compulsory, but deferring is deliberately not a peer of the two
+ * import paths: the flow hides it behind a quiet link plus a confirmation of
+ * what stays empty, because as an equal third card most users took it by
+ * reflex. Confirming records the choice on the backend and carries on to About
+ * You; every surface that needs holdings then shows an in-page upload prompt
+ * rather than a block.
  */
 const CamsUpload = () => {
   const navigate = useNavigate();
@@ -102,7 +105,7 @@ const CamsUpload = () => {
         <p className="mb-6 text-xs leading-relaxed text-muted-foreground">
           {imported
             ? "We've read your folios, holdings and transactions and built your portfolio. You're all set to continue."
-            : "We'll fetch your CAMS/KFintech Consolidated Account Statement straight to your email — then read your folios, holdings and transactions to build your portfolio."}
+            : "Upload your CAMS/KFintech Consolidated Account Statement, or have a fresh one mailed to you — we read your folios, holdings and transactions and build your portfolio from it."}
         </p>
 
         {/* Resuming users with a statement already imported can continue without

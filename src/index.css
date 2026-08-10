@@ -276,6 +276,47 @@
   animation: ticker 28s linear infinite;
 }
 
+/* "Thinking aloud" text — a bright band sweeps across dim text, the standard
+   way an assistant shows it is still working (as opposed to a finished reply).
+   The gradient is 200% wide with its highlight at the middle stop, so walking
+   background-position from 100% to 0% carries that highlight left → right.
+   Percentage background-position moves an oversized image in the opposite
+   direction, which is why the keyframes count down rather than up. */
+@keyframes thinking-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0% 0;
+  }
+}
+.thinking-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    hsl(var(--muted-foreground) / 0.5) 0%,
+    hsl(var(--muted-foreground) / 0.5) 38%,
+    hsl(var(--foreground)) 50%,
+    hsl(var(--muted-foreground) / 0.5) 62%,
+    hsl(var(--muted-foreground) / 0.5) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: thinking-shimmer 2.4s linear infinite;
+}
+/* Clipped-to-text transparency has no meaning without the sweep — fall back to
+   plain dim text rather than an invisible line. */
+@media (prefers-reduced-motion: reduce) {
+  .thinking-shimmer {
+    background-image: none;
+    animation: none;
+    color: hsl(var(--muted-foreground));
+    -webkit-text-fill-color: currentColor;
+  }
+}
+
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
 }

@@ -793,6 +793,14 @@ const AIChatPanel = ({
   // Live backend "thinking aloud" lines shown in the typing bubble; the feed
   // vanishes with the bubble the moment the real reply lands.
   const thinkingLines = useChatThinking(isTyping && !goalPlanningDemo, thinkingSessionId);
+  // Only the step running right now is shown — finished steps are dropped, and
+  // until the backend reports one we say "Thinking". Trailing dots/ellipses are
+  // normalised to a single "…" so every line ends the same way, whatever the
+  // backend sent.
+  const currentThought = `${(thinkingLines[thinkingLines.length - 1] ?? "Thinking").replace(
+    /\s*(?:\.{2,}|…)\s*$/,
+    "",
+  )}…`;
 
   const [historyOpen, setHistoryOpen] = useState(false);
   // Shows the floating "jump to latest" arrow when scrolled away from the newest message.
@@ -1627,68 +1635,25 @@ const AIChatPanel = ({
       {isTyping && (
         <div className="flex gap-2 items-start">
           <ProzprAvatar />
-          {thinkingLines.length === 0 ? (
-            <div className="flex gap-1.5 px-3 py-2.5 rounded-2xl" style={{ backgroundColor: "hsl(var(--prozpr-bubble))" }}>
-              {[0, 1, 2].map((i) => (
-                <span
-                  key={i}
-                  className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40 animate-pulse"
-                  style={{ animationDelay: `${i * 0.2}s` }}
-                />
-              ))}
-            </div>
-          ) : (
-            /* Live "thinking aloud": the backend's real steps, appended as they
-               happen. The whole bubble disappears when the reply arrives. */
-            <div
-              className="max-w-[85%] rounded-2xl rounded-tl-sm px-3.5 py-3"
-              style={{
-                backgroundColor: "hsl(var(--prozpr-bubble))",
-                borderLeft: "2px solid hsla(38, 45%, 54%, 0.3)",
-              }}
+          {/* Live "thinking aloud" — ONE line, the step running right now. Past
+              steps are dropped rather than stacked: the feed is a status, not a
+              log. No bubble and no spinner either: a filled bubble made the
+              line read as a delivered reply, and a spinner reads as loading
+              chrome. Instead the text itself carries the motion — a highlight
+              sweeping across dim type, the usual "still thinking" treatment —
+              so the whole line is visibly unfinished. */}
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.p
+              key={currentThought}
+              initial={{ opacity: 0, y: 3 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -3 }}
+              transition={{ duration: 0.18 }}
+              className="thinking-shimmer max-w-[85%] pt-1 text-[12.5px] font-medium leading-snug"
             >
-              <div className="mb-2 flex items-center gap-1.5">
-                <Sparkles className="h-3 w-3 text-primary" />
-                <span className="text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Thinking
-                </span>
-              </div>
-              <div className="flex flex-col">
-                {thinkingLines.map((line, i) => {
-                  const current = i === thinkingLines.length - 1;
-                  return (
-                    <motion.div
-                      key={`${i}-${line}`}
-                      initial={{ opacity: 0, y: 4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.25 }}
-                      className="relative flex items-start gap-2 pb-2 last:pb-0"
-                    >
-                      {i < thinkingLines.length - 1 && (
-                        <span className="absolute left-[5.5px] top-4 -bottom-0.5 w-px bg-wealth-green/30" />
-                      )}
-                      {current ? (
-                        <Loader2 className="relative z-10 mt-0.5 h-3 w-3 shrink-0 animate-spin text-primary" />
-                      ) : (
-                        <span className="relative z-10 mt-0.5 flex h-3 w-3 shrink-0 items-center justify-center rounded-full bg-wealth-green">
-                          <Check className="h-2 w-2 text-white" />
-                        </span>
-                      )}
-                      <span
-                        className={`text-[12px] leading-snug ${
-                          current
-                            ? "font-medium text-foreground/85 animate-pulse"
-                            : "text-muted-foreground/75"
-                        }`}
-                      >
-                        {line}
-                      </span>
-                    </motion.div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+              {currentThought}
+            </motion.p>
+          </AnimatePresence>
         </div>
       )}
 
