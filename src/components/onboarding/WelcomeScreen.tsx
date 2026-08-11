@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { TrendingUp, Sparkles, ChevronDown, Clock } from "lucide-react";
+import { TrendingUp, Sparkles, ChevronDown } from "lucide-react";
 import OnboardingNav from "./OnboardingNav";
 import prozprLogoLight from "@/assets/prozpr-logo-light.png";
 import prozprLogoDark from "@/assets/prozpr-logo-dark.png";
@@ -64,8 +64,8 @@ const MOBILE_DIGITS = 10;
 
 /**
  * Forgot-PIN is BUILT end to end (screen below, `/auth/pin-reset/*` on the
- * backend) but switched off, so the PIN screen shows a "coming soon" note
- * instead of a working link.
+ * backend) but switched off, and shows NOTHING on the PIN screen while off —
+ * no link, no placeholder.
  *
  * Why: the reset code is emailed from support@prozpr.com via Resend, and
  * Resend only delivers from a domain verified with DNS records. Until
@@ -648,28 +648,18 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
             <p className="text-xs text-destructive text-center mb-4">{pinError}</p>
           )}
 
-          {FORGOT_PIN_ENABLED ? (
+          {/* Nothing is shown while the flow is off — no link, no notice. The
+              spacer keeps the Continue button pinned to the bottom either way. */}
+          {FORGOT_PIN_ENABLED && (
             <button
               type="button"
               onClick={openReset}
-              className="mx-auto mb-auto text-[12px] font-medium text-primary underline-offset-2 transition-colors hover:underline"
+              className="mx-auto text-[12px] font-medium text-primary underline-offset-2 transition-colors hover:underline"
             >
               Forgot your PIN?
             </button>
-          ) : (
-            /* Coming-soon notice. Says what to do in the meantime rather than
-               dangling a dead link — a disabled "Forgot your PIN?" reads as a
-               bug to anyone who is actually locked out. */
-            <div className="mx-auto mb-auto flex max-w-[280px] items-start gap-2 rounded-xl border border-border bg-muted/40 px-3 py-2.5">
-              <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              <p className="text-[11px] leading-relaxed text-muted-foreground">
-                <span className="font-medium text-foreground">
-                  PIN reset is coming soon.
-                </span>{" "}
-                For now, contact support@prozpr.com if you can&apos;t sign in.
-              </p>
-            </div>
           )}
+          <div className="mb-auto" />
         </motion.div>
 
         <motion.div
