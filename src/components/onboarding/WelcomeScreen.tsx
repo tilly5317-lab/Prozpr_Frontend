@@ -5,7 +5,15 @@ import { TrendingUp, Sparkles, ChevronDown } from "lucide-react";
 import OnboardingNav from "./OnboardingNav";
 import prozprLogoLight from "@/assets/prozpr-logo-light.png";
 import prozprLogoDark from "@/assets/prozpr-logo-dark.png";
-import { signup, login, getMe, updateMe, checkMobileStatus } from "@/lib/api";
+import {
+  signup,
+  login,
+  getMe,
+  updateMe,
+  checkMobileStatus,
+  requestPinReset,
+  confirmPinReset,
+} from "@/lib/api";
 import { resolveOnboardingResumeRoute } from "@/lib/onboardingResume";
 import { useEnterSubmit } from "@/hooks/useEnterSubmit";
 import {
@@ -44,9 +52,15 @@ const countryCodes = [
 /**
  * Account setup only — phone, then either the returning-user PIN or the
  * new-user setup page. The CAMS import lives on its own route (/cams-upload),
- * which this screen hands off to once the account exists.
+ * which this screen hands off to once the account exists. "reset" is the
+ * forgot-PIN detour off the PIN step; it returns there when done.
  */
-type Step = "phone" | "setup" | "pin";
+type Step = "phone" | "setup" | "pin" | "reset";
+
+/** Accounts are keyed on a 10-digit national number; the country code is
+    picked separately and is never part of this count. Mirrors the backend
+    rule in `identity/schemas/auth.py` — keep the two in step. */
+const MOBILE_DIGITS = 10;
 
 const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
   const navigate = useNavigate();
@@ -57,7 +71,6 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
   const [showCodes, setShowCodes] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const [isReturningUser, setIsReturningUser] = useState(false);
   const [returningUserOnboardingDone, setReturningUserOnboardingDone] = useState(false);
 
   const [pin, setPin] = useState("");
@@ -71,12 +84,26 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
   const [email, setEmail] = useState("");
   const [emailError, setEmailError] = useState("");
 
-  const isValid = phone.replace(/\s/g, "").length >= 7;
+  // Forgot-PIN reset (emailed 6-digit code)
+  const [resetSent, setResetSent] = useState(false);
+  const [resetHint, setResetHint] = useState<string | null>(null);
+  const [resetCode, setResetCode] = useState("");
+  const [resetPin, setResetPin] = useState("");
+  const [resetConfirm, setResetConfirm] = useState("");
+  const [resetError, setResetError] = useState("");
+  const [resetNotice, setResetNotice] = useState("");
+
+  // The input only ever holds digits, so this is a plain length check.
+  const isValid = phone.length === MOBILE_DIGITS;
 
   // Enter anywhere = the step's primary (highlighted) button.
   useEnterSubmit(() => void handlePhoneSubmit(), step === "phone" && !showCodes);
   useEnterSubmit(() => void handlePinSubmit(), step === "pin");
   useEnterSubmit(() => void handleCreateAccount(), step === "setup");
+  useEnterSubmit(
+    () => void (resetSent ? handleResetConfirm() : handleResetRequest()),
+    step === "reset",
+  );
 
   // WelcomeScreen is a single component that swaps between internal sub-steps,
   // so the onboarding "viewed" events are emitted here on each sub-step change
@@ -112,10 +139,8 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
         mobile: digits,
       });
       exists = status.exists;
-      setIsReturningUser(status.exists);
       setReturningUserOnboardingDone(status.exists && status.is_onboarding_complete);
     } catch {
-      setIsReturningUser(false);
       setReturningUserOnboardingDone(false);
     }
 
@@ -171,16 +196,16 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
       password: pin,
     };
 
+    // A failed PIN must FAIL. There used to be a retry here that called
+    // login() without the password, which signed the user in on any wrong PIN
+    // and made the PIN decorative. Accounts that never set one still sign in,
+    // because the backend only checks a password when a hash exists.
     try {
       await login(creds);
     } catch {
-      try {
-        await login({ country_code: creds.country_code, mobile: creds.mobile });
-      } catch {
-        setPinError("Could not sign in. Check your PIN and try again.");
-        setLoading(false);
-        return;
-      }
+      setPinError("That PIN doesn't match. Try again, or reset it below.");
+      setLoading(false);
+      return;
     }
     await refresh();
     setLoading(false);
@@ -197,6 +222,86 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
       }
     }
     await resumeOnboarding();
+  };
+
+  const openReset = () => {
+    setStep("reset");
+    setResetSent(false);
+    setResetHint(null);
+    setResetCode("");
+    setResetPin("");
+    setResetConfirm("");
+    setResetError("");
+    setResetNotice("");
+  };
+
+  const backToPin = () => {
+    setStep("pin");
+    setPin("");
+    setPinError("");
+  };
+
+  /** Ask for a code. The backend answers the same whether or not the number is
+      registered, so a "sent" state here is never proof an account exists. */
+  const handleResetRequest = async () => {
+    if (loading) return;
+    setResetError("");
+    setLoading(true);
+    try {
+      const res = await requestPinReset({
+        country_code: countryCode.code,
+        mobile: phone,
+      });
+      setResetHint(res.email_hint);
+      setResetSent(true);
+      setResetNotice(
+        res.email_hint
+          ? `Code sent to ${res.email_hint}. It expires in ${res.expires_in_minutes} minutes.`
+          : res.message,
+      );
+    } catch (e) {
+      setResetError(
+        e instanceof Error ? e.message : "Could not send a reset code. Try again.",
+      );
+    }
+    setLoading(false);
+  };
+
+  const handleResetConfirm = async () => {
+    if (loading) return;
+    if (resetCode.length !== 6) {
+      setResetError("Enter the 6-digit code from your email");
+      return;
+    }
+    if (resetPin.length !== 4) {
+      setResetError("Choose a 4-digit PIN");
+      return;
+    }
+    if (resetPin !== resetConfirm) {
+      setResetError("The two PINs don't match");
+      return;
+    }
+    setResetError("");
+    setLoading(true);
+    try {
+      await confirmPinReset({
+        country_code: countryCode.code,
+        mobile: phone,
+        code: resetCode,
+        new_pin: resetPin,
+      });
+    } catch (e) {
+      setResetError(
+        e instanceof Error ? e.message : "Could not reset your PIN. Try again.",
+      );
+      setLoading(false);
+      return;
+    }
+    setLoading(false);
+    // Straight back to the PIN prompt rather than auto-signing in: typing the
+    // new PIN once confirms it landed, and keeps one sign-in path.
+    backToPin();
+    setPinError("PIN updated — sign in with your new PIN.");
   };
 
   const isEmailValid = (v: string) => {
@@ -381,6 +486,116 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
     );
   }
 
+  /* ─── Forgot PIN: emailed code → new PIN ─── */
+  if (step === "reset") {
+    return (
+      <div className="mobile-container flex flex-col bg-background px-6 pb-6 pt-12">
+        <motion.div
+          initial={{ opacity: 0, x: 40 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.35 }}
+          className="flex-1 flex flex-col"
+        >
+          <h1 className="text-xl font-semibold text-foreground mb-2">Reset your PIN</h1>
+          <p className="text-xs text-muted-foreground mb-1">
+            {resetSent
+              ? "Enter the code we emailed you, then choose a new PIN."
+              : "We'll email a 6-digit code to the address on your account."}
+          </p>
+          <p className="text-xs font-semibold text-foreground mb-6">
+            {countryCode.code} {phone}
+          </p>
+
+          {resetNotice && (
+            <p className="text-[11px] text-muted-foreground mb-4 leading-relaxed">
+              {resetNotice}
+            </p>
+          )}
+
+          {resetSent && (
+            <div className="space-y-5">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-2 block">
+                  6-digit code
+                </label>
+                <InputOTP maxLength={6} value={resetCode} onChange={setResetCode}>
+                  <InputOTPGroup>
+                    {[0, 1, 2, 3, 4, 5].map((i) => (
+                      <InputOTPSlot key={i} index={i} />
+                    ))}
+                  </InputOTPGroup>
+                </InputOTP>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-2 block">
+                  New 4-digit PIN
+                </label>
+                <InputOTP maxLength={4} value={resetPin} onChange={setResetPin}>
+                  <InputOTPGroup>
+                    <InputOTPSlot index={0} />
+                    <InputOTPSlot index={1} />
+                    <InputOTPSlot index={2} />
+                    <InputOTPSlot index={3} />
+                  </InputOTPGroup>
+                </InputOTP>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-2 block">
+                  Confirm new PIN
+                </label>
+                <InputOTP maxLength={4} value={resetConfirm} onChange={setResetConfirm}>
+                  <InputOTPGroup>
+                    <InputOTPSlot index={0} />
+                    <InputOTPSlot index={1} />
+                    <InputOTPSlot index={2} />
+                    <InputOTPSlot index={3} />
+                  </InputOTPGroup>
+                </InputOTP>
+              </div>
+            </div>
+          )}
+
+          {resetError && (
+            <p className="text-xs text-destructive mt-4">{resetError}</p>
+          )}
+
+          <div className="mb-auto" />
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2, duration: 0.4 }}
+        >
+          <OnboardingNav
+            nextLabel={resetSent ? "Set new PIN" : "Email me a code"}
+            onNext={() =>
+              void (resetSent ? handleResetConfirm() : handleResetRequest())
+            }
+            nextLoading={loading}
+            loadingLabel={resetSent ? "Updating your PIN…" : "Sending the code…"}
+            onBack={backToPin}
+            backLabel="Back to sign in"
+            secondary={
+              resetSent ? (
+                <button
+                  type="button"
+                  onClick={() => void handleResetRequest()}
+                  disabled={loading}
+                  className="text-[12px] font-medium text-primary transition-colors hover:text-primary/80 disabled:opacity-50"
+                >
+                  Send a new code
+                </button>
+              ) : undefined
+            }
+          />
+        </motion.div>
+      </div>
+    );
+  }
+
   /* ─── Returning user: PIN ─── */
   if (step === "pin") {
     return (
@@ -416,11 +631,13 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
             <p className="text-xs text-destructive text-center mb-4">{pinError}</p>
           )}
 
-          {isReturningUser && (
-            <p className="text-[11px] text-muted-foreground text-center mb-auto">
-              Seeded test accounts may use any 4-digit PIN, or the PIN set at signup.
-            </p>
-          )}
+          <button
+            type="button"
+            onClick={openReset}
+            className="mx-auto mb-auto text-[12px] font-medium text-primary underline-offset-2 transition-colors hover:underline"
+          >
+            Forgot your PIN?
+          </button>
         </motion.div>
 
         <motion.div
@@ -520,11 +737,18 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
               </div>
             )}
           </div>
+          {/* Digits only, capped at the exact length the backend accepts —
+              letters and separators are dropped as they're typed rather than
+              failing on submit. */}
           <input
             type="tel"
+            inputMode="numeric"
+            maxLength={MOBILE_DIGITS}
             value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            placeholder="Phone number"
+            onChange={(e) =>
+              setPhone(e.target.value.replace(/\D/g, "").slice(0, MOBILE_DIGITS))
+            }
+            placeholder={`${MOBILE_DIGITS}-digit mobile number`}
             className="flex-1 bg-transparent py-2.5 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none"
           />
         </div>
@@ -541,6 +765,9 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
         </p>
         <p className="text-xs text-muted-foreground leading-relaxed">
           New users set a PIN, then can import holdings from a CAMS CAS PDF.
+        </p>
+        <p className="text-[11px] text-muted-foreground/80 leading-relaxed mt-1">
+          Enter your {MOBILE_DIGITS}-digit number without the country code.
         </p>
       </motion.div>
 
