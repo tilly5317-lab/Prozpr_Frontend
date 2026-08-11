@@ -480,12 +480,12 @@ const SipPlanner = () => {
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground py-3.5 text-[15px] font-semibold tracking-wide text-background opacity-60"
             >
               <Lock className="h-4 w-4" />
-              Invest in these funds — coming soon
+              Start this SIP — coming soon
             </button>
             <p className="mt-2 text-center text-[11px] leading-snug text-muted-foreground">
-              Soon you&apos;ll be able to start this SIP with one tap, right here.
-              Until then, use this plan as your guide when investing through your
-              platform of choice.
+              Soon you&apos;ll be able to start this monthly SIP in one tap, right
+              here. Until then, use this plan as your guide when you set it up on
+              your platform of choice.
             </p>
           </div>
         )}

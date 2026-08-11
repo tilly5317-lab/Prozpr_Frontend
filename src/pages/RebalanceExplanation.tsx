@@ -1,14 +1,13 @@
-import { type CSSProperties, useCallback, useMemo, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowRight, Check, Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { ArrowRight, Loader2, Lock, RefreshCw, Sparkles } from "lucide-react";
 import BottomNav from "@/components/BottomNav";
 import { CurrentVsTargetChart } from "@/components/invest/CurrentVsTargetChart";
 import { Skeleton } from "@/components/ui/skeleton";
 import RebalanceGate from "@/components/invest/RebalanceGate";
 import { ComputeProgressSteps } from "@/components/invest/ComputeProgressSteps";
 import TradeFundDetailView from "@/components/fund/TradeFundDetailView";
-import { toast } from "@/hooks/use-toast";
 import { useComputeProgress } from "@/hooks/useComputeProgress";
 import {
   getMyPortfolio,
@@ -16,7 +15,7 @@ import {
   getRebalancingRunDetail,
   listRebalancingRuns,
   runRebalancing,
-  updateRebalancingStatus,
+  searchMfFunds,
   type PortfolioDetail,
   type RebalancingAssetClassBreakdown,
   type RebalancingReadiness,
@@ -246,7 +245,7 @@ function costBasisOf(quantity: number | null, averageCost: number | null): numbe
   return null;
 }
 
-/** Normalise a fund name for matching trades against holdings. */
+/** Normalise a fund name for display / loose matching (folio suffix stripped). */
 function normalizeFundName(raw: string): string {
   return (raw || "")
     .toLowerCase()
@@ -257,8 +256,90 @@ function normalizeFundName(raw: string): string {
     .trim();
 }
 
-/** One "kept" holding (not being sold) shown with its performance. */
-interface KeptFund {
+/* Plan/option words that decorate the same fund differently in a CAS statement
+   ("… - Direct Plan - Growth Option") and in our fund metadata ("… Direct
+   Growth"). They carry no fund identity, so they're dropped before comparing.
+   Distinguishing words (income, yield, dividend-yield, …) are deliberately NOT
+   in this list — they name different schemes. */
+const PLAN_NOISE_TOKENS = new Set([
+  "fund",
+  "scheme",
+  "plan",
+  "direct",
+  "regular",
+  "growth",
+  "option",
+  "opt",
+  "payout",
+  "reinvestment",
+  "reinvest",
+  "idcw",
+  "the",
+]);
+
+/** A fund name split into its scheme identity and its plan/option facets.
+    `base` is order-insensitive with the plan/option noise stripped, so "HDFC
+    Mid-Cap Opportunities Fund - Direct Plan - Growth Option" and "HDFC Mid Cap
+    Opportunities Direct Growth" produce the same base. The facets are kept
+    aside so two genuinely different plans of one scheme (Regular IDCW vs Direct
+    Growth) don't collapse into each other. */
+type FundNameId = {
+  base: string;
+  plan: "direct" | "regular" | null;
+  option: "growth" | "idcw" | null;
+};
+
+function fundNameId(raw: string): FundNameId {
+  // Facets read from the full name: normalizeFundName() drops the trailing
+  // "- Direct/Regular Plan …" chunk, which is where the plan and option words
+  // usually live, so reading them from its output would lose them.
+  const words = (raw || "")
+    .toLowerCase()
+    .replace(/\s*·\s*folio.*$/i, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean);
+  const has = (w: string) => words.includes(w);
+  return {
+    base: normalizeFundName(raw)
+      .split(" ")
+      .filter((t) => t && !PLAN_NOISE_TOKENS.has(t))
+      .sort()
+      .join(" "),
+    plan: has("direct") ? "direct" : has("regular") ? "regular" : null,
+    option:
+      has("idcw") || has("payout") || has("reinvestment") || has("reinvest")
+        ? "idcw"
+        : has("growth")
+          ? "growth"
+          : null,
+  };
+}
+
+/** Same fund? Bases must match exactly; a facet only rules the pair out when
+    both names actually state it (CAS and metadata names often state neither). */
+function sameFundName(a: FundNameId, b: FundNameId): boolean {
+  if (!a.base || a.base !== b.base) return false;
+  if (a.plan && b.plan && a.plan !== b.plan) return false;
+  if (a.option && b.option && a.option !== b.option) return false;
+  return true;
+}
+
+/** Identifiers of every fund the plan trades, resolved beyond the trade's ISIN.
+    Holdings are keyed on the canonical AMFI scheme code (not the ISIN), so the
+    trade ISINs are resolved to scheme codes + metadata names before matching. */
+type TradedIdentity = {
+  /** Upper-cased ISINs and AMFI scheme codes of every fund in the plan. */
+  codes: Set<string>;
+  /** Parsed names of every traded fund (trade name + resolved metadata name). */
+  names: FundNameId[];
+};
+
+const EMPTY_TRADED: TradedIdentity = { codes: new Set(), names: [] };
+
+/** One holding the plan leaves alone, shown with its performance. */
+interface UntouchedFund {
   id: string;
   /** ISIN of the held fund; drives the tap-through to its detail page (null → not clickable). */
   isin: string | null;
@@ -269,20 +350,32 @@ interface KeptFund {
   tone: "well" | "neutral";
 }
 
-/** Holdings the plan is NOT selling, tagged performing-well / neutral. */
-function buildKeptFunds(portfolio: PortfolioDetail | null, trades: UITrade[]): KeptFund[] {
+/** Holdings the plan doesn't trade at all, tagged performing-well / neutral.
+
+    A fund the plan touches — trimmed, exited, or topped up — must never also
+    appear here, or the same fund reads twice on the page (once under "Proposed
+    trades", once in this list). BUY trades count too: a top-up into a fund the
+    user already holds is the same fund, not a second one. Matching is by
+    identifier first (ISIN / AMFI scheme code, via `traded`), with the name id
+    as the fallback for holdings whose ticker never resolved. */
+function buildUntouchedFunds(
+  portfolio: PortfolioDetail | null,
+  trades: UITrade[],
+  traded: TradedIdentity,
+): UntouchedFund[] {
   if (!portfolio || portfolio.holdings.length === 0) return [];
-  const soldIsins = new Set(
-    trades.filter((t) => t.type === "SELL" && t.isin).map((t) => t.isin.toLowerCase()),
-  );
-  const soldNames = new Set(
-    trades.filter((t) => t.type === "SELL").map((t) => normalizeFundName(t.name)),
-  );
+  const tradedCodes = new Set(traded.codes);
+  const tradedNames = [...traded.names];
+  for (const t of trades) {
+    if (t.isin) tradedCodes.add(t.isin.trim().toUpperCase());
+    tradedNames.push(fundNameId(t.name));
+  }
   return portfolio.holdings
     .filter((h) => {
-      const isinMatch = h.ticker_symbol && soldIsins.has(h.ticker_symbol.toLowerCase());
-      const nameMatch = soldNames.has(normalizeFundName(h.instrument_name));
-      return !isinMatch && !nameMatch;
+      const ticker = (h.ticker_symbol ?? "").trim().toUpperCase();
+      if (ticker && tradedCodes.has(ticker)) return false;
+      const name = fundNameId(h.instrument_name);
+      return !tradedNames.some((tn) => sameFundName(tn, name));
     })
     .map((h) => {
       const basis = costBasisOf(h.quantity, h.average_cost);
@@ -298,6 +391,33 @@ function buildKeptFunds(portfolio: PortfolioDetail | null, trades: UITrade[]): K
       };
     })
     .sort((a, b) => (b.gainPct ?? -Infinity) - (a.gainPct ?? -Infinity));
+}
+
+/* ISIN → fund metadata, memoised for the session. Trades carry the fund's ISIN
+   while `portfolio_holdings.ticker_symbol` carries the canonical AMFI scheme
+   code, so the two only line up after this lookup. The search endpoint matches
+   scheme name / AMC / scheme code / ISIN, so we keep only an exact ISIN hit. */
+const isinLookupCache = new Map<
+  string,
+  Promise<{ schemeCode: string; schemeName: string } | null>
+>();
+
+function lookupTradedFund(isin: string) {
+  const key = isin.trim().toUpperCase();
+  const cached = isinLookupCache.get(key);
+  if (cached) return cached;
+  const pending = searchMfFunds({ q: key, limit: 5, active_only: false })
+    .then((res) => {
+      const hit = res.items.find((i) => (i.isin ?? "").toUpperCase() === key);
+      return hit ? { schemeCode: hit.scheme_code, schemeName: hit.scheme_name } : null;
+    })
+    .catch(() => {
+      // Transient failure — don't poison the cache, the name key still matches.
+      isinLookupCache.delete(key);
+      return null;
+    });
+  isinLookupCache.set(key, pending);
+  return pending;
 }
 
 const cardStyle: CSSProperties = {
@@ -325,7 +445,6 @@ const RebalanceExplanation = () => {
   const [portfolio, setPortfolio] = useState<PortfolioDetail | null>(null);
   const [dataLoading, setDataLoading] = useState(false);
   const [dataError, setDataError] = useState<string | null>(null);
-  const [approving, setApproving] = useState(false);
   // Whether the rebalancing inputs are complete. null = still checking (the gate
   // shows a pill); false = missing inputs → render the "not ready yet" panel;
   // true = real plan loads via onReady → loadData.
@@ -361,10 +480,10 @@ const RebalanceExplanation = () => {
     [navigate],
   );
 
-  // Open the same fund-detail page for a fund we're keeping (no trade, so no
-  // "Why this trade" card). Rows without an ISIN stay inert.
-  const openKeptFund = useCallback(
-    (fund: KeptFund) => {
+  // Open the same fund-detail page for a fund the plan leaves alone (no trade,
+  // so no "Why this trade" card). Rows without an ISIN stay inert.
+  const openUntouchedFund = useCallback(
+    (fund: UntouchedFund) => {
       if (!fund.isin) return;
       navigate(`/portfolio/fund/${encodeURIComponent(fund.isin)}`);
     },
@@ -437,13 +556,53 @@ const RebalanceExplanation = () => {
   }, [detail, portfolio]);
   const uiTrades = useMemo(() => (detail?.trades ?? []).map(mapTrade), [detail]);
   const tradeGroups = useMemo(() => groupTradesByReason(uiTrades), [uiTrades]);
-  const keptFunds = useMemo(() => buildKeptFunds(portfolio, uiTrades), [portfolio, uiTrades]);
+  // Trade ISINs (sells AND top-up buys) resolved to AMFI scheme codes + metadata
+  // names, so a fund the plan touches is filtered out of the untouched list even
+  // when the CAS name and the metadata name differ. `tradedResolved` gates the
+  // section so it never shows a traded fund while the lookup is in flight.
+  const [tradedIdentity, setTradedIdentity] = useState<TradedIdentity>(EMPTY_TRADED);
+  const [tradedResolved, setTradedResolved] = useState(true);
+  const tradeIsins = useMemo(
+    () =>
+      Array.from(
+        new Set(uiTrades.filter((t) => t.isin).map((t) => t.isin.trim().toUpperCase())),
+      ).sort(),
+    [uiTrades],
+  );
+
+  useEffect(() => {
+    if (tradeIsins.length === 0) {
+      setTradedIdentity(EMPTY_TRADED);
+      setTradedResolved(true);
+      return;
+    }
+    let cancelled = false;
+    setTradedResolved(false);
+    void Promise.all(tradeIsins.map(lookupTradedFund)).then((hits) => {
+      if (cancelled) return;
+      const codes = new Set(tradeIsins);
+      const names: FundNameId[] = [];
+      for (const hit of hits) {
+        if (!hit) continue;
+        if (hit.schemeCode) codes.add(hit.schemeCode.trim().toUpperCase());
+        if (hit.schemeName) names.push(fundNameId(hit.schemeName));
+      }
+      setTradedIdentity({ codes, names });
+      setTradedResolved(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [tradeIsins]);
+
+  const untouchedFunds = useMemo(
+    () => buildUntouchedFunds(portfolio, uiTrades, tradedIdentity),
+    [portfolio, uiTrades, tradedIdentity],
+  );
   const taxText = useMemo(() => {
     const tax = detail?.totals?.total_tax_estimate_inr ?? 0;
     return tax > 0 ? `Tax impact · ${fmtINR(tax)} est.` : "Tax impact · ₹0";
   }, [detail]);
-
-  const isApproved = detail?.status === "approved" || detail?.status === "executed";
 
   // Inputs are missing and there is no run to show. The page previously filled
   // this state with a fully-populated SAMPLE plan (invented drift %, invented
@@ -459,20 +618,6 @@ const RebalanceExplanation = () => {
     .filter((f) => !f.optional && !f.present)
     .map((f) => f.label);
   const summaryToShow: HeadlineCopy = detail?.summary ?? DEFAULT_SUMMARY;
-
-  const proceed = useCallback(async () => {
-    if (!detail) return;
-    setApproving(true);
-    try {
-      await updateRebalancingStatus(detail.id, "approved");
-      setDetail((prev) => (prev ? { ...prev, status: "approved" } : prev));
-      toast({ title: "Plan approved", description: "Your rebalancing trades are ready to execute." });
-    } catch {
-      toast({ title: "Couldn't approve", description: "Please try again.", variant: "destructive" });
-    } finally {
-      setApproving(false);
-    }
-  }, [detail]);
 
   return (
     <div className="mobile-container bg-background min-h-screen pb-24">
@@ -765,22 +910,27 @@ const RebalanceExplanation = () => {
               )}
             </section>
 
-            {/* Funds you're keeping — everything in the portfolio NOT being sold,
-                tagged performing-well / neutral, with the same fund details. */}
-            {keptFunds.length > 0 && (
+            {/* Everything in the portfolio the plan does NOT trade — no sell, no
+                top-up buy — tagged performing-well / neutral. Funds that appear
+                under "Proposed trades" are excluded, so nothing reads twice. The
+                old "Funds you're keeping" heading was wrong: a fund the plan
+                trims is also still kept, just not left alone. */}
+            {tradedResolved && untouchedFunds.length > 0 && (
               <section className="px-4 py-4" style={cardStyle}>
                 <p className="text-[11px] tracking-[0.16em] uppercase" style={{ color: "hsl(var(--muted-foreground))" }}>
-                  Funds you're keeping
+                  No action needed
                 </p>
                 <p className="mt-1 text-[11.5px] leading-snug text-muted-foreground">
-                  Ahead or neutral — staying in your portfolio, not part of these trades.
+                  {untouchedFunds.length === 1
+                    ? "The plan doesn't buy or sell this one — it stays exactly as it is."
+                    : "The plan doesn't buy or sell these — they stay exactly as they are."}
                 </p>
                 <div className="mt-3 divide-y divide-border">
-                  {keptFunds.map((f) => (
+                  {untouchedFunds.map((f) => (
                     <button
                       key={f.id}
                       type="button"
-                      onClick={() => openKeptFund(f)}
+                      onClick={() => openUntouchedFund(f)}
                       disabled={!f.isin}
                       className="w-full flex items-center gap-3 py-2.5 text-left -mx-1 px-1 rounded-lg transition-colors enabled:hover:bg-muted/40 disabled:cursor-default"
                     >
@@ -813,16 +963,26 @@ const RebalanceExplanation = () => {
               </section>
             )}
 
-            <button
-              type="button"
-              onClick={() => void proceed()}
-              disabled={approving || isApproved || uiTrades.length === 0}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground py-3.5 text-[15px] font-semibold tracking-wide text-background transition-all active:scale-[0.98] disabled:opacity-60"
-            >
-              {approving ? <Loader2 className="h-4 w-4 animate-spin" /> : isApproved ? <Check className="h-4 w-4" /> : null}
-              {isApproved ? "Plan approved" : approving ? "Approving…" : "Approve plan"}
-              {!isApproved && !approving && <ArrowRight className="h-4 w-4" />}
-            </button>
+            {/* Bottom CTA — in-app trade execution isn't live yet, so this stays
+                disabled until the transactions feature ships (same as the SIP
+                and lump-sum tabs). */}
+            {uiTrades.length > 0 && (
+              <div>
+                <button
+                  type="button"
+                  disabled
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground py-3.5 text-[15px] font-semibold tracking-wide text-background opacity-60"
+                >
+                  <Lock className="h-4 w-4" />
+                  Place these trades — coming soon
+                </button>
+                <p className="mt-2 text-center text-[11px] leading-snug text-muted-foreground">
+                  Soon you&apos;ll be able to place these buys and sells in one
+                  tap, right here. Until then, use this plan as your guide when
+                  you trade through your platform of choice.
+                </p>
+              </div>
+            )}
           </>
         )}
       </div>

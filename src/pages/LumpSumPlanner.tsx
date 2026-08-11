@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, Coins, Pencil, ChevronRight, Check, ArrowRight } from "lucide-react";
+import { Loader2, Coins, Pencil, ChevronRight, Lock } from "lucide-react";
 import BottomNav from "@/components/BottomNav";
 import {
   getMyLumpSumPlan,
@@ -231,8 +231,6 @@ function LumpSumCard({
  */
 const LumpSumPlanner = () => {
   const [plan, setPlan] = useState<LumpSumPlanResponse | null>(null);
-  const [accepting, setAccepting] = useState(false);
-  const [accepted, setAccepted] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -244,27 +242,8 @@ const LumpSumPlanner = () => {
     };
   }, []);
 
-  const handleCreated = (p: LumpSumPlanResponse) => {
-    setPlan(p);
-    setAccepted(false);
-  };
-
   const shownPlan = plan ?? EMPTY_LUMPSUM_PLAN;
   const hasPlan = shownPlan.has_plan && shownPlan.buys.length > 0;
-
-  const acceptLumpSum = async () => {
-    if (accepting || shownPlan.amount_inr <= 0) return;
-    setAccepting(true);
-    try {
-      const p = await createLumpSumPlan(shownPlan.amount_inr, "add");
-      setPlan(p);
-      setAccepted(true);
-    } catch {
-      /* leave the button idle so the user can retry */
-    } finally {
-      setAccepting(false);
-    }
-  };
 
   return (
     <div className="mobile-container bg-background min-h-screen pb-24">
@@ -296,7 +275,7 @@ const LumpSumPlanner = () => {
         </p>
 
         {plan ? (
-          <LumpSumCard plan={shownPlan} onCreated={handleCreated} />
+          <LumpSumCard plan={shownPlan} onCreated={setPlan} />
         ) : (
           <div className="flex items-center justify-center gap-2 pt-16 text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -304,18 +283,24 @@ const LumpSumPlanner = () => {
           </div>
         )}
 
-        {/* Bottom CTA — mirrors the rebalancing "Approve plan" button. */}
+        {/* Bottom CTA — in-app lump-sum execution isn't live yet, so this stays
+            disabled until the transactions feature ships (same as the SIP tab). */}
         {hasPlan && (
-          <button
-            type="button"
-            onClick={() => void acceptLumpSum()}
-            disabled={accepting || accepted}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground py-3.5 text-[15px] font-semibold tracking-wide text-background transition-all active:scale-[0.98] disabled:opacity-60"
-          >
-            {accepting ? <Loader2 className="h-4 w-4 animate-spin" /> : accepted ? <Check className="h-4 w-4" /> : null}
-            {accepted ? "Lump sum accepted" : accepting ? "Accepting…" : "Accept lump sum"}
-            {!accepted && !accepting && <ArrowRight className="h-4 w-4" />}
-          </button>
+          <div>
+            <button
+              type="button"
+              disabled
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground py-3.5 text-[15px] font-semibold tracking-wide text-background opacity-60"
+            >
+              <Lock className="h-4 w-4" />
+              Invest this lump sum — coming soon
+            </button>
+            <p className="mt-2 text-center text-[11px] leading-snug text-muted-foreground">
+              Soon you&apos;ll be able to invest this lump sum in one tap, right
+              here. Until then, use this plan as your guide when you invest
+              through your platform of choice.
+            </p>
+          </div>
         )}
       </div>
 
