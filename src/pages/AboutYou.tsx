@@ -14,6 +14,7 @@ import { toast } from "@/hooks/use-toast";
 import { useOnboardingStep } from "@/hooks/useOnboardingStep";
 import { useEnterSubmit } from "@/hooks/useEnterSubmit";
 import { trackOnboardingCompleted } from "@/lib/onboardingAnalytics";
+import OnboardingNav from "@/components/onboarding/OnboardingNav";
 
 interface Props {
   onComplete: () => void;
@@ -179,8 +180,8 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
         setCustomGoals((prev) => (prev.length ? prev : savedCustom));
       }
       if (profile.investment_horizon) {
-        // The tell-us wizard stores "Short/Medium/Long term"; this page uses
-        // year ranges — map either form onto this page's options.
+        // Profiles saved by the old tell-us wizard hold "Short/Medium/Long
+        // term"; this page uses year ranges — map either form onto its options.
         const saved = profile.investment_horizon;
         const wizardToRange: Record<string, string> = {
           "Short term": "< 2 years",
@@ -361,7 +362,9 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
           <div className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary">
             <Check className="h-3.5 w-3.5 text-muted-foreground" />
           </div>
-          <span className="text-[11px] text-muted-foreground mt-1.5">Link accounts</span>
+          {/* Step 1 is the CAMS import (/cams-upload) — the old "Link accounts"
+              page it used to name was removed. */}
+          <span className="text-[11px] text-muted-foreground mt-1.5">Import statement</span>
           <span className="text-[11px] text-muted-foreground">~90 secs</span>
         </div>
         <div className="flex-1 h-[1.5px] bg-border mx-2 mt-[-22px]" />
@@ -593,21 +596,18 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
 
       {/* Fixed bottom actions */}
       <div className="fixed bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-background via-background to-transparent">
-        <div className="max-w-md mx-auto flex flex-col items-center gap-3">
-          <button onClick={onBack} disabled={submitting} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40">
-            ← Back
-          </button>
-          <button onClick={handleSaveAndContinue} disabled={!allComplete || submitting}
-            className={`flex w-full items-center justify-center gap-2 rounded-xl py-3.5 text-[15px] font-semibold tracking-wide transition-all active:scale-[0.98] disabled:pointer-events-none ${allComplete ? "bg-foreground text-background" : "bg-secondary text-muted-foreground"}`}>
-            {submitting ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Generating your portfolio…
-              </>
-            ) : (
-              "Generate my portfolio ✦"
-            )}
-          </button>
+        <div className="max-w-md mx-auto">
+          <OnboardingNav
+            tone="foreground"
+            nextLabel="Generate my portfolio ✦"
+            nextArrow={false}
+            onNext={() => void handleSaveAndContinue()}
+            nextDisabled={!allComplete}
+            nextLoading={submitting}
+            loadingLabel="Generating your portfolio…"
+            onBack={onBack}
+            backLabel="Back to statement import"
+          />
         </div>
       </div>
     </div>

@@ -44,24 +44,12 @@ const CamsUpload = () => {
   const imported = flowStep === "done";
   const [skipping, setSkipping] = useState(false);
 
-  const markDoneFlags = () => {
-    try {
-      // Legacy flag from the removed link-accounts page — resume/options
-      // screens still read it, so keep it in sync.
-      if (!fromProfile) sessionStorage.setItem("completedLinkAccounts", "true");
-    } catch {
-      /* ignore */
-    }
-  };
-
   const handleImported = (res: CamsPdfImportResponse) => {
-    markDoneFlags();
     completeStep({ schemes: res.schemes, folios: res.folios });
     navigate(fromProfile ? "/profile" : "/about-you");
   };
 
   const handleContinueExisting = () => {
-    markDoneFlags();
     completeStep({ already_imported: true });
     navigate("/about-you");
   };
@@ -81,7 +69,6 @@ const CamsUpload = () => {
     } catch {
       /* best-effort — proceeding matters more than recording the choice */
     }
-    markDoneFlags();
     completeStep({ skipped: true });
     toast({
       title: "No problem — you can add it later",

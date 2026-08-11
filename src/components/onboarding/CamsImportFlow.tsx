@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  ArrowLeft,
   ArrowRight,
   Check,
   CheckCircle2,
@@ -23,6 +22,7 @@ import {
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useEnterSubmit } from "@/hooks/useEnterSubmit";
+import OnboardingNav from "./OnboardingNav";
 import {
   getCamsCapabilities,
   getMe,
@@ -41,6 +41,8 @@ const CAMS_MANUAL_URL =
   "https://www.camsonline.com/Investors/Statements/Consolidated-Account-Statement";
 
 export type CamsImportStep = "choose" | "request" | "sent" | "upload" | "done";
+
+// Shared Back / Next pair — see OnboardingNav for why it lives in one place.
 type Step = CamsImportStep;
 
 /** Which of the guided entry paths the user picked on the choice screen. */
@@ -538,36 +540,40 @@ const CamsImportFlow = ({
             </div>
 
             <div className={ctaBlock}>
-              <button
-                type="button"
-                onClick={chooseHave}
-                disabled={skipping}
-                className="flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold tracking-wide text-primary-foreground transition-all active:scale-[0.98] disabled:opacity-50"
+              <OnboardingNav
+                nextLabel="Upload CAS"
+                nextIcon={<UploadCloud className="h-4 w-4" />}
+                onNext={chooseHave}
+                nextDisabled={skipping}
+                // Back returns to whichever step opened this panel, so changing
+                // your mind about deferring never costs the step you were on.
+                onBack={() => setConfirmSkip(false)}
+                backDisabled={skipping}
+                secondary={
+                  <button
+                    type="button"
+                    onClick={onSkip}
+                    disabled={skipping}
+                    className="flex items-center gap-1.5 text-[12px] text-muted-foreground/80 underline-offset-2 transition-colors hover:text-foreground hover:underline disabled:opacity-50"
+                  >
+                    {skipping && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    Skip anyway
+                  </button>
+                }
               >
-                <UploadCloud className="h-4 w-4" />
-                Upload CAS
-              </button>
-              {/* Only offer the mailback path where the plan actually supports it. */}
-              {mailbackAvailable !== false && (
-                <button
-                  type="button"
-                  onClick={chooseGet}
-                  disabled={skipping}
-                  className="mt-2.5 flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-background py-3 text-[14px] font-medium text-foreground transition-colors hover:bg-accent/40 disabled:opacity-50"
-                >
-                  <Mail className="h-4 w-4" />
-                  Mail me my CAS
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={onSkip}
-                disabled={skipping}
-                className="mt-3 flex w-full items-center justify-center gap-1.5 text-[12px] text-muted-foreground/80 underline-offset-2 transition-colors hover:text-foreground hover:underline disabled:opacity-50"
-              >
-                {skipping && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                Skip anyway — I&apos;ll add it later
-              </button>
+                {/* Only offer the mailback path where the plan supports it. */}
+                {mailbackAvailable !== false && (
+                  <button
+                    type="button"
+                    onClick={chooseGet}
+                    disabled={skipping}
+                    className="mt-2.5 flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-background py-3 text-[14px] font-medium text-foreground transition-colors hover:bg-accent/40 disabled:opacity-50"
+                  >
+                    <Mail className="h-4 w-4" />
+                    Mail me my CAS
+                  </button>
+                )}
+              </OnboardingNav>
             </div>
           </motion.div>
         )}
@@ -671,36 +677,16 @@ const CamsImportFlow = ({
 
             {requestError && <p className="mt-3 text-xs text-destructive">{requestError}</p>}
 
-            <div className={ctaBlock}>
-              <button
-                type="button"
-                onClick={() => void handleRequest()}
-                disabled={!canRequest}
-                className="flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold tracking-wide text-primary-foreground transition-all active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
-              >
-                {requesting ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Requesting…
-                  </>
-                ) : (
-                  <>
-                    <Send className="h-4 w-4" />
-                    Mail me my CAS
-                  </>
-                )}
-              </button>
-
-              <div className="mt-3 flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={() => setStep("choose")}
-                  disabled={requesting}
-                  className="flex items-center gap-1 text-[12px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
-                >
-                  <ArrowLeft className="h-3.5 w-3.5" />
-                  Back
-                </button>
+            <OnboardingNav
+              className={ctaBlock}
+              nextLabel="Mail me my CAS"
+              nextIcon={<Send className="h-4 w-4" />}
+              onNext={() => void handleRequest()}
+              nextDisabled={!canRequest}
+              nextLoading={requesting}
+              loadingLabel="Requesting…"
+              onBack={() => setStep("choose")}
+              secondary={
                 <button
                   type="button"
                   onClick={chooseHave}
@@ -710,8 +696,8 @@ const CamsImportFlow = ({
                   Upload CAS instead
                   <ArrowRight className="h-3.5 w-3.5" />
                 </button>
-              </div>
-            </div>
+              }
+            />
           </motion.div>
         )}
 
@@ -742,25 +728,13 @@ const CamsImportFlow = ({
               <li>• The PDF opens with the password you just set.</li>
             </ul>
 
-            <div className={ctaBlock}>
-              <button
-                type="button"
-                onClick={() => setStep("upload")}
-                className="flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold tracking-wide text-primary-foreground transition-all active:scale-[0.98]"
-              >
-                I&apos;ve received the PDF — upload it
-                <ArrowRight className="h-4 w-4" />
-              </button>
-
-              <div className="mt-3 flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={() => setStep("request")}
-                  className="flex items-center gap-1 text-[12px] text-muted-foreground transition-colors hover:text-foreground"
-                >
-                  <ArrowLeft className="h-3.5 w-3.5" />
-                  Edit details
-                </button>
+            <OnboardingNav
+              className={ctaBlock}
+              nextLabel="I've received the PDF — upload it"
+              onNext={() => setStep("upload")}
+              onBack={() => setStep("request")}
+              backLabel="Edit details"
+              secondary={
                 <button
                   type="button"
                   onClick={() => void handleRequest()}
@@ -770,8 +744,8 @@ const CamsImportFlow = ({
                   <RefreshCw className={`h-3.5 w-3.5 ${requesting ? "animate-spin" : ""}`} />
                   {resendIn > 0 ? `Resend in ${resendIn}s` : "Resend email"}
                 </button>
-              </div>
-            </div>
+              }
+            />
           </motion.div>
         )}
 
@@ -889,52 +863,32 @@ const CamsImportFlow = ({
             {uploadError && <p className="mt-3 text-xs text-destructive">{uploadError}</p>}
 
             <div className={ctaBlock}>
-            <button
-              type="button"
-              onClick={() => void handleUpload()}
-              disabled={uploading || !file}
-              className="flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold tracking-wide text-primary-foreground transition-all active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
-            >
-              {uploading ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Reading your statement…
-                </>
-              ) : (
-                <>
-                  Import my portfolio
-                  <ArrowRight className="h-4 w-4" />
-                </>
-              )}
-            </button>
-
-            <div
-              className={`mt-3 flex items-center ${
-                mailbackAvailable === false ? "justify-center" : "justify-between"
-              }`}
-            >
-              {mailbackAvailable !== false && (
-                <button
-                  type="button"
-                  onClick={() => setStep(path === "get" ? "sent" : "choose")}
-                  disabled={uploading}
-                  className="flex items-center gap-1 text-[12px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
-                >
-                  <ArrowLeft className="h-3.5 w-3.5" />
-                  Back
-                </button>
-              )}
-              <a
-                href={CAMS_MANUAL_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1 text-[12px] text-muted-foreground transition-colors hover:text-foreground"
-              >
-                Generate on CAMS site
-                <ExternalLink className="h-3 w-3" />
-              </a>
-            </div>
-            {deferLink}
+              {/* Without mailback this IS the first step, so there is nothing to
+                  go back to — the CAMS-site link then centres on its own row. */}
+              <OnboardingNav
+                nextLabel="Import my portfolio"
+                onNext={() => void handleUpload()}
+                nextDisabled={!file}
+                nextLoading={uploading}
+                loadingLabel="Reading your statement…"
+                onBack={
+                  mailbackAvailable === false
+                    ? undefined
+                    : () => setStep(path === "get" ? "sent" : "choose")
+                }
+                secondary={
+                  <a
+                    href={CAMS_MANUAL_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 text-[12px] text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    Generate on CAMS site
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                }
+              />
+              {deferLink}
             </div>
           </motion.div>
         )}
@@ -981,16 +935,13 @@ const CamsImportFlow = ({
               reference.
             </p>
 
-            <div className={ctaBlock}>
-              <button
-                type="button"
-                onClick={() => onImported(result)}
-                className="flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold tracking-wide text-primary-foreground transition-all active:scale-[0.98]"
-              >
-                Continue
-                <ArrowRight className="h-4 w-4" />
-              </button>
-            </div>
+            {/* Terminal step — the import is already applied, so there is no
+                meaningful way back; only forward. */}
+            <OnboardingNav
+              className={ctaBlock}
+              nextLabel="Continue"
+              onNext={() => onImported(result)}
+            />
           </motion.div>
         )}
       </AnimatePresence>

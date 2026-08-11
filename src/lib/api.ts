@@ -89,8 +89,6 @@ const ONBOARDING_SESSION_FLAGS = [
   "onboardingComplete",
   "camsStatementImported",
   "camsUploadPromptShown",
-  "completedLinkAccounts",
-  "completedTellUs",
 ] as const;
 
 function clearOnboardingSessionFlags() {
@@ -527,7 +525,6 @@ export async function markOnboardingComplete(): Promise<void> {
   await completeOnboarding();
   try {
     sessionStorage.setItem("onboardingComplete", "true");
-    sessionStorage.setItem("completedTellUs", "true");
   } catch {
     // Ignore private browsing / quota errors.
   }

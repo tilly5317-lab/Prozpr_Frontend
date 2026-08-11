@@ -40,7 +40,7 @@ function RequireAuth() {
 
 /**
  * Second gate for the app proper: a signed-in user who hasn't FINISHED the
- * initial onboarding (tell-us → CAMS import → about-you) can't deep-link into
+ * initial onboarding (CAMS import → about-you) can't deep-link into
  * app pages — they're sent to "/" where the resume logic drops them at their
  * exact onboarding step. The onboarding routes themselves sit outside this
  * gate (auth-only), so the flow can actually be completed.

@@ -1,8 +1,8 @@
-﻿import { useState, useRef, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, TrendingUp, Sparkles, ChevronDown, ArrowLeft, Loader2, FileText, UploadCloud } from "lucide-react";
-import CamsStatementPasswordModal from "./CamsStatementPasswordModal";
+import { TrendingUp, Sparkles, ChevronDown } from "lucide-react";
+import OnboardingNav from "./OnboardingNav";
 import prozprLogoLight from "@/assets/prozpr-logo-light.png";
 import prozprLogoDark from "@/assets/prozpr-logo-dark.png";
 import { signup, login, getMe, updateMe, checkMobileStatus } from "@/lib/api";
@@ -41,9 +41,12 @@ const countryCodes = [
   { code: "+65", label: "SG", flag: flagEmoji("SG") },
 ];
 
-const MAX_PDF_BYTES = 20 * 1024 * 1024;
-
-type Step = "phone" | "setup" | "pin" | "cams";
+/**
+ * Account setup only — phone, then either the returning-user PIN or the
+ * new-user setup page. The CAMS import lives on its own route (/cams-upload),
+ * which this screen hands off to once the account exists.
+ */
+type Step = "phone" | "setup" | "pin";
 
 const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
   const navigate = useNavigate();
@@ -68,20 +71,12 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
   const [email, setEmail] = useState("");
   const [emailError, setEmailError] = useState("");
 
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [camsFile, setCamsFile] = useState<File | null>(null);
-  const [camsPickError, setCamsPickError] = useState("");
-  const [showCamsPasswordModal, setShowCamsPasswordModal] = useState(false);
-
   const isValid = phone.replace(/\s/g, "").length >= 7;
 
   // Enter anywhere = the step's primary (highlighted) button.
   useEnterSubmit(() => void handlePhoneSubmit(), step === "phone" && !showCodes);
   useEnterSubmit(() => void handlePinSubmit(), step === "pin");
   useEnterSubmit(() => void handleCreateAccount(), step === "setup");
-  useEnterSubmit(() => {
-    if (camsFile) setShowCamsPasswordModal(true);
-  }, step === "cams" && !showCamsPasswordModal);
 
   // WelcomeScreen is a single component that swaps between internal sub-steps,
   // so the onboarding "viewed" events are emitted here on each sub-step change
@@ -90,6 +85,20 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
     if (step === "phone") trackOnboardingStepViewed("phone_entry");
     else if (step === "setup") trackOnboardingStepViewed("account_setup");
   }, [step]);
+
+  // Back from either post-phone step returns to the number entry with that
+  // step's inputs cleared, so nothing half-typed leaks into a different number.
+  const backToPhone = () => {
+    setStep("phone");
+    setPin("");
+    setName("");
+    setNewPin("");
+    setConfirmPin("");
+    setEmail("");
+    setNameError("");
+    setPinError("");
+    setEmailError("");
+  };
 
   const handlePhoneSubmit = async () => {
     if (!isValid || loading) return;
@@ -133,21 +142,18 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
   };
 
   // A returning user with unfinished onboarding lands EXACTLY where they left
-  // off — resolved from backend state (answers saved + holdings imported), so
+  // off — resolved from backend state (holdings imported / CAMS deferred), so
   // progress survives any time away or a different device.
   const resumeOnboarding = async () => {
     setLoading(true);
     try {
-      const route = await resolveOnboardingResumeRoute();
-      if (route) {
-        navigate(route);
-        return;
-      }
+      navigate(await resolveOnboardingResumeRoute());
+      return;
     } catch {
-      /* resolution failed → safest is the wizard, which re-checks itself */
+      /* resolution failed → fall back to the first onboarding step */
     }
     setLoading(false);
-    onNext(); // tell-us wizard — asks only the still-missing questions
+    onNext(); // /cams-upload — the step right after account setup
   };
 
   // Returning user: verify the PIN they set at signup and drop them into the app.
@@ -267,142 +273,6 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
     navigate("/cams-upload");
   };
 
-  const pickCamsFile = (f: File | null) => {
-    setCamsPickError("");
-    if (!f) {
-      setCamsFile(null);
-      return;
-    }
-    const isPdf = f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf");
-    if (!isPdf) {
-      setCamsPickError("Please choose a PDF (CAMS or KFintech Consolidated Account Statement).");
-      setCamsFile(null);
-      return;
-    }
-    if (f.size > MAX_PDF_BYTES) {
-      setCamsPickError("That PDF is larger than 20 MB. Try a shorter statement period.");
-      setCamsFile(null);
-      return;
-    }
-    setCamsFile(f);
-    setShowCamsPasswordModal(true);
-  };
-
-  /* â”€â”€â”€ CAMS upload (new users only) â”€â”€â”€ */
-  if (step === "cams") {
-    return (
-      <div className="mobile-container flex flex-col bg-background px-6 pb-6 pt-12">
-        <motion.div
-          initial={{ opacity: 0, x: 40 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.35 }}
-          className="flex-1 flex flex-col"
-        >
-          <button
-            type="button"
-            onClick={() => {
-              setStep("pin");
-              setCamsFile(null);
-              setCamsPickError("");
-              setShowCamsPasswordModal(false);
-            }}
-            className="flex items-center gap-1 text-sm text-muted-foreground mb-6 hover:text-foreground transition-colors"
-          >
-            <ArrowLeft className="h-4 w-4" /> Back
-          </button>
-
-          <h1 className="text-xl font-semibold text-foreground mb-2">
-            Upload your CAMS statement
-          </h1>
-          <p className="text-xs text-muted-foreground mb-6 leading-relaxed">
-            Add your CAMS or KFintech Consolidated Account Statement (CAS) as a PDF. After you choose
-            the file, we&apos;ll ask for the PDF password on the next step to read folios and holdings.
-          </p>
-
-          <div className="mb-6">
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="flex w-full items-center gap-3 rounded-xl border border-dashed border-border bg-card px-3.5 py-4 text-left transition-colors hover:bg-accent/40"
-            >
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-secondary">
-                {camsFile ? (
-                  <FileText className="h-5 w-5 text-foreground" />
-                ) : (
-                  <UploadCloud className="h-5 w-5 text-muted-foreground" />
-                )}
-              </div>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-foreground">
-                  {camsFile ? camsFile.name : "Choose CAMS / KFintech CAS PDF"}
-                </p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">
-                  {camsFile
-                    ? `${(camsFile.size / 1024).toFixed(0)} KB Â· tap to change file`
-                    : "PDF only Â· up to 20 MB"}
-                </p>
-              </div>
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="application/pdf,.pdf"
-              className="hidden"
-              onChange={(e) => pickCamsFile(e.target.files?.[0] ?? null)}
-            />
-            {camsPickError && (
-              <p className="text-xs text-destructive mt-3">{camsPickError}</p>
-            )}
-          </div>
-
-          <p className="text-[11px] text-muted-foreground leading-relaxed mb-auto">
-            The password is only used to open the PDF on our servers and is not stored.
-          </p>
-        </motion.div>
-
-        <motion.button
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2, duration: 0.4 }}
-          type="button"
-          onClick={() => camsFile && setShowCamsPasswordModal(true)}
-          disabled={!camsFile}
-          className="flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold text-primary-foreground tracking-wide transition-all active:scale-[0.98] disabled:opacity-90 disabled:pointer-events-none"
-        >
-          Enter password & extract
-          <ArrowRight className="h-4 w-4" />
-        </motion.button>
-
-        <button
-          type="button"
-          onClick={() => navigate("/cams-upload")}
-          className="mt-3 w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors"
-        >
-          No PDF handy? Get your statement by email instead
-        </button>
-
-        <CamsStatementPasswordModal
-          open={showCamsPasswordModal}
-          file={camsFile}
-          onClose={() => {
-            setShowCamsPasswordModal(false);
-          }}
-          onImportedContinue={() => {
-            try {
-              // The link-accounts confirmation page is gone — mark its legacy
-              // session flag so resume/options screens agree, and continue
-              // straight to About You.
-              sessionStorage.setItem("completedLinkAccounts", "true");
-            } catch {
-              /* ignore */
-            }
-            navigate("/about-you");
-          }}
-        />
-      </div>
-    );
-  }
-
   /* ─── New user: account setup (name + PIN + confirm + email on one page) ─── */
   if (step === "setup") {
     return (
@@ -413,23 +283,6 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
           transition={{ duration: 0.35 }}
           className="flex-1 flex flex-col overflow-y-auto"
         >
-          <button
-            type="button"
-            onClick={() => {
-              setStep("phone");
-              setName("");
-              setNewPin("");
-              setConfirmPin("");
-              setEmail("");
-              setNameError("");
-              setPinError("");
-              setEmailError("");
-            }}
-            className="flex items-center gap-1 text-sm text-muted-foreground mb-6 hover:text-foreground transition-colors"
-          >
-            <ArrowLeft className="h-4 w-4" /> Back
-          </button>
-
           <h1 className="text-xl font-semibold text-foreground mb-2">Set up your account</h1>
           <p className="text-xs text-muted-foreground mb-1">
             A few quick details to get you started.
@@ -509,24 +362,21 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
           </div>
         </motion.div>
 
-        <motion.button
+        <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2, duration: 0.4 }}
-          type="button"
-          onClick={() => void handleCreateAccount()}
-          disabled={loading}
-          className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold text-primary-foreground tracking-wide transition-all active:scale-[0.98] disabled:opacity-90 disabled:pointer-events-none"
+          className="mt-4"
         >
-          {loading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <>
-              Create account
-              <ArrowRight className="h-4 w-4" />
-            </>
-          )}
-        </motion.button>
+          <OnboardingNav
+            nextLabel="Create account"
+            onNext={() => void handleCreateAccount()}
+            nextLoading={loading}
+            loadingLabel="Creating your account…"
+            onBack={backToPhone}
+            backLabel="Back to phone number"
+          />
+        </motion.div>
       </div>
     );
   }
@@ -541,18 +391,6 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
           transition={{ duration: 0.35 }}
           className="flex-1 flex flex-col"
         >
-          <button
-            type="button"
-            onClick={() => {
-              setStep("phone");
-              setPin("");
-              setPinError("");
-            }}
-            className="flex items-center gap-1 text-sm text-muted-foreground mb-6 hover:text-foreground transition-colors"
-          >
-            <ArrowLeft className="h-4 w-4" /> Back
-          </button>
-
           <h1 className="text-xl font-semibold text-foreground mb-2">
             Welcome back
           </h1>
@@ -585,24 +423,21 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
           )}
         </motion.div>
 
-        <motion.button
+        <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2, duration: 0.4 }}
-          type="button"
-          onClick={() => void handlePinSubmit()}
-          disabled={pin.length < 4 || loading}
-          className="flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold text-primary-foreground tracking-wide transition-all active:scale-[0.98] disabled:opacity-90 disabled:pointer-events-none"
         >
-          {loading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <>
-              Continue
-              <ArrowRight className="h-4 w-4" />
-            </>
-          )}
-        </motion.button>
+          <OnboardingNav
+            nextLabel="Continue"
+            onNext={() => void handlePinSubmit()}
+            nextDisabled={pin.length < 4}
+            nextLoading={loading}
+            loadingLabel="Signing you in…"
+            onBack={backToPhone}
+            backLabel="Back to phone number"
+          />
+        </motion.div>
       </div>
     );
   }
@@ -709,24 +544,20 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
         </p>
       </motion.div>
 
-      <motion.button
+      {/* Entry point of the whole flow — nothing precedes it, so no Back. */}
+      <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.9, duration: 0.5 }}
-        type="button"
-        onClick={() => void handlePhoneSubmit()}
-        disabled={!isValid || loading}
-        className="flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold text-primary-foreground tracking-wide transition-all active:scale-[0.98] disabled:opacity-90 disabled:pointer-events-none"
       >
-        {loading ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <>
-            Get Started
-            <ArrowRight className="h-4 w-4" />
-          </>
-        )}
-      </motion.button>
+        <OnboardingNav
+          nextLabel="Get Started"
+          onNext={() => void handlePhoneSubmit()}
+          nextDisabled={!isValid}
+          nextLoading={loading}
+          loadingLabel="Checking your number…"
+        />
+      </motion.div>
     </div>
   );
 };
