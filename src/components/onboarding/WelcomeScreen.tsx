@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { TrendingUp, Sparkles, ChevronDown } from "lucide-react";
+import { TrendingUp, Sparkles, ChevronDown, Clock } from "lucide-react";
 import OnboardingNav from "./OnboardingNav";
 import prozprLogoLight from "@/assets/prozpr-logo-light.png";
 import prozprLogoDark from "@/assets/prozpr-logo-dark.png";
@@ -61,6 +61,19 @@ type Step = "phone" | "setup" | "pin" | "reset";
     picked separately and is never part of this count. Mirrors the backend
     rule in `identity/schemas/auth.py` — keep the two in step. */
 const MOBILE_DIGITS = 10;
+
+/**
+ * Forgot-PIN is BUILT end to end (screen below, `/auth/pin-reset/*` on the
+ * backend) but switched off, so the PIN screen shows a "coming soon" note
+ * instead of a working link.
+ *
+ * Why: the reset code is emailed from support@prozpr.com via Resend, and
+ * Resend only delivers from a domain verified with DNS records. Until
+ * prozpr.com is verified there, every request would fail after telling the
+ * user a mail was on its way. Flip this to `true` once verification is done —
+ * nothing else needs changing.
+ */
+const FORGOT_PIN_ENABLED = false;
 
 const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
   const navigate = useNavigate();
@@ -203,7 +216,11 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
     try {
       await login(creds);
     } catch {
-      setPinError("That PIN doesn't match. Try again, or reset it below.");
+      setPinError(
+        FORGOT_PIN_ENABLED
+          ? "That PIN doesn't match. Try again, or reset it below."
+          : "That PIN doesn't match. Please try again.",
+      );
       setLoading(false);
       return;
     }
@@ -631,13 +648,28 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
             <p className="text-xs text-destructive text-center mb-4">{pinError}</p>
           )}
 
-          <button
-            type="button"
-            onClick={openReset}
-            className="mx-auto mb-auto text-[12px] font-medium text-primary underline-offset-2 transition-colors hover:underline"
-          >
-            Forgot your PIN?
-          </button>
+          {FORGOT_PIN_ENABLED ? (
+            <button
+              type="button"
+              onClick={openReset}
+              className="mx-auto mb-auto text-[12px] font-medium text-primary underline-offset-2 transition-colors hover:underline"
+            >
+              Forgot your PIN?
+            </button>
+          ) : (
+            /* Coming-soon notice. Says what to do in the meantime rather than
+               dangling a dead link — a disabled "Forgot your PIN?" reads as a
+               bug to anyone who is actually locked out. */
+            <div className="mx-auto mb-auto flex max-w-[280px] items-start gap-2 rounded-xl border border-border bg-muted/40 px-3 py-2.5">
+              <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                <span className="font-medium text-foreground">
+                  PIN reset is coming soon.
+                </span>{" "}
+                For now, contact support@prozpr.com if you can&apos;t sign in.
+              </p>
+            </div>
+          )}
         </motion.div>
 
         <motion.div
