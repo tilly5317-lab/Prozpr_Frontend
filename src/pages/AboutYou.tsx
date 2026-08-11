@@ -2,7 +2,7 @@ import type React from "react";
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, Briefcase, Calendar, Check, Plus, Target, Wallet, X, ShieldCheck, ChevronDown, Loader2 } from "lucide-react";
+import { ArrowRight, Briefcase, Calendar, Check, Plus, Target, Wallet, X, ShieldCheck, ChevronDown, Loader2, Home, Umbrella, GraduationCap, Heart, TrendingUp, Sparkles } from "lucide-react";
 import {
   getOnboardingProfile,
   getRiskProfile,
@@ -93,9 +93,21 @@ const NumberInputINR = ({
 );
 
 /* ─── Constants ─── */
+/**
+ * Goal tags offered on this page. The labels are free text end to end — they
+ * are stored verbatim as `selected_goals` and nothing matches on them — so the
+ * list can grow without any backend change.
+ *
+ * NOTE the labels are NOT the goals on /goal-planner. These are tags captured
+ * during onboarding; real goals (with a target amount and date) are created
+ * separately on that page.
+ */
 const DEFAULT_GOALS = [
-  { label: "Buying a home", icon: "🏡" }, { label: "Retiring", icon: "🌴" },
-  { label: "Education", icon: "🎓" }, { label: "Marriage", icon: "💍" },
+  { label: "Buying a home", icon: Home },
+  { label: "Retiring", icon: Umbrella },
+  { label: "Education", icon: GraduationCap },
+  { label: "Marriage", icon: Heart },
+  { label: "Wealth building", icon: TrendingUp },
 ];
 
 const HORIZON_OPTIONS = [
@@ -471,13 +483,14 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
                     <div>
                       <p className="text-xs font-medium text-muted-foreground mb-2.5">What are your key financial goals?</p>
                       <div className="flex flex-wrap gap-2">
-                        {[...DEFAULT_GOALS, ...customGoals.map((g) => ({ label: g, icon: "✦" }))].map((g) => {
+                        {[...DEFAULT_GOALS, ...customGoals.map((g) => ({ label: g, icon: Sparkles }))].map((g) => {
                           const isSelected = selectedGoals.includes(g.label);
+                          const GoalIcon = g.icon;
                           return (
                             <button key={g.label} onClick={() => toggleGoal(g.label)}
                               className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-medium transition-all ${isSelected ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground hover:bg-muted"}`}>
                               {isSelected && <Check className="h-3 w-3" />}
-                              <span>{g.icon}</span>
+                              <GoalIcon className="h-3.5 w-3.5" />
                               {g.label}
                             </button>
                           );
