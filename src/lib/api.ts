@@ -345,6 +345,59 @@ export async function updateMe(p: UserUpdatePayload): Promise<UserInfo> {
   });
 }
 
+/**
+ * Change the signed-in user's 4-digit sign-in PIN.
+ *
+ * `current_pin` is required whenever the account already has one — the session
+ * alone is not enough to replace the credential it was issued against. Needs no
+ * email or SMS: the user proves themselves with the PIN they already know.
+ * (A "forgot PIN" reset is a different problem and does need a delivery channel.)
+ */
+export async function changePin(p: {
+  current_pin?: string;
+  new_pin: string;
+}): Promise<void> {
+  await request<void>("/auth/me/pin", {
+    method: "PUT",
+    body: JSON.stringify(p),
+  });
+}
+
+export interface PinResetRequestResult {
+  message: string;
+  /** Masked address the code went to (`j••n@gmail.com`), or null if nothing
+      was sent — the backend answers identically either way so the response
+      can't be used to discover which numbers are registered. */
+  email_hint: string | null;
+  expires_in_minutes: number;
+}
+
+/** Start a forgot-PIN reset: emails a 6-digit code to the address on file. */
+export async function requestPinReset(p: {
+  country_code: string;
+  mobile: string;
+}): Promise<PinResetRequestResult> {
+  return request<PinResetRequestResult>(
+    "/auth/pin-reset/request",
+    { method: "POST", body: JSON.stringify(p) },
+    false,
+  );
+}
+
+/** Finish a forgot-PIN reset: exchange the emailed code for a new PIN. */
+export async function confirmPinReset(p: {
+  country_code: string;
+  mobile: string;
+  code: string;
+  new_pin: string;
+}): Promise<void> {
+  await request<void>(
+    "/auth/pin-reset/confirm",
+    { method: "POST", body: JSON.stringify(p) },
+    false,
+  );
+}
+
 // ── Onboarding API ──────────────────────────────────────
 export interface OnboardingProfilePayload {
   date_of_birth?: string;
