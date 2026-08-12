@@ -318,6 +318,13 @@ export async function login(p: LoginPayload): Promise<{ user_id: string; access_
 export interface MobileStatus {
   exists: boolean;
   is_onboarding_complete: boolean;
+  /**
+   * Masked address on the account (`j••••••n@gmail.com`), or null when the
+   * number is unknown or has no email on file. Lets the forgot-PIN screen name
+   * the inbox before sending anything. Masked by the backend — the app never
+   * receives the address in full.
+   */
+  email_hint: string | null;
 }
 
 export async function checkMobileStatus(p: {

@@ -108,6 +108,10 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
   const [resetError, setResetError] = useState("");
   const [resetNotice, setResetNotice] = useState("");
   const [resetExpiryMinutes, setResetExpiryMinutes] = useState<number | null>(null);
+  /** Masked address for this number, learned from the check-mobile call the
+      phone step already makes — so the reset screen can name the inbox before
+      a code is sent, without a second request. */
+  const [accountEmailHint, setAccountEmailHint] = useState<string | null>(null);
 
   // The input only ever holds digits, so this is a plain length check.
   const isValid = phone.length === MOBILE_DIGITS;
@@ -156,8 +160,10 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
       });
       exists = status.exists;
       setReturningUserOnboardingDone(status.exists && status.is_onboarding_complete);
+      setAccountEmailHint(status.email_hint ?? null);
     } catch {
       setReturningUserOnboardingDone(false);
+      setAccountEmailHint(null);
     }
 
     setLoading(false);
@@ -247,7 +253,8 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
   const openReset = () => {
     setStep("reset");
     setResetSent(false);
-    setResetHint(null);
+    // Seeded from check-mobile, so the screen opens already naming the inbox.
+    setResetHint(accountEmailHint);
     setResetCode("");
     setResetPin("");
     setResetConfirm("");
@@ -519,17 +526,25 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
           className="flex-1 flex flex-col"
         >
           <h1 className="text-xl font-semibold text-foreground mb-2">Reset your PIN</h1>
-          {/* Say EMAIL, twice over. The only thing on screen is a phone number,
-              so the unprompted assumption is an SMS — and a user waiting on a
-              text never opens the inbox the code is actually sitting in. */}
+          {/* Say EMAIL, and then show the inbox. Leading with the phone number
+              invites the assumption that a text is coming, and someone waiting
+              on an SMS never opens the inbox the code is actually sitting in. */}
           <p className="text-xs text-muted-foreground mb-1">
             {resetSent
               ? "Enter the 6-digit code from your email, then choose a new PIN."
-              : "We'll email you a 6-digit code — it goes to the email address on your account, not to this number."}
+              : resetHint
+                ? "We'll email a 6-digit code to:"
+                : "We'll email you a 6-digit code — it goes to the email address on your account, not to this number."}
           </p>
-          <p className="text-xs font-semibold text-foreground mb-6">
-            {countryCode.code} {phone}
-          </p>
+          {/* The address once it is known, the number only as a fallback: an
+              account with no email on file still has to see WHICH account is
+              being reset. Hidden after sending, where the block below says it
+              with the expiry attached. */}
+          {!(resetSent && resetHint) && (
+            <p className="mb-6 truncate text-xs font-semibold text-foreground">
+              {resetHint ?? `${countryCode.code} ${phone}`}
+            </p>
+          )}
 
           {/* The address the code went to, named as plainly as the masking
               allows. The backend masks it; the app never sees it in full. */}
