@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { TrendingUp, Sparkles, ChevronDown } from "lucide-react";
+import { TrendingUp, Sparkles, ChevronDown, Mail } from "lucide-react";
 import OnboardingNav from "./OnboardingNav";
 import prozprLogoLight from "@/assets/prozpr-logo-light.png";
 import prozprLogoDark from "@/assets/prozpr-logo-dark.png";
@@ -107,6 +107,7 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
   const [resetConfirm, setResetConfirm] = useState("");
   const [resetError, setResetError] = useState("");
   const [resetNotice, setResetNotice] = useState("");
+  const [resetExpiryMinutes, setResetExpiryMinutes] = useState<number | null>(null);
 
   // The input only ever holds digits, so this is a plain length check.
   const isValid = phone.length === MOBILE_DIGITS;
@@ -252,6 +253,7 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
     setResetConfirm("");
     setResetError("");
     setResetNotice("");
+    setResetExpiryMinutes(null);
   };
 
   const backToPin = () => {
@@ -272,12 +274,13 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
         mobile: phone,
       });
       setResetHint(res.email_hint);
+      setResetExpiryMinutes(res.expires_in_minutes);
       setResetSent(true);
-      setResetNotice(
-        res.email_hint
-          ? `Code sent to ${res.email_hint}. It expires in ${res.expires_in_minutes} minutes.`
-          : res.message,
-      );
+      // When there's an address to name, it gets its own block below rather
+      // than a sentence — which inbox to open is the one thing the user needs
+      // off this screen. The plain message is kept for the deliberately vague
+      // answer a number with no account on file gets.
+      setResetNotice(res.email_hint ? "" : res.message);
     } catch (e) {
       setResetError(
         e instanceof Error ? e.message : "Could not send a reset code. Try again.",
@@ -516,14 +519,37 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
           className="flex-1 flex flex-col"
         >
           <h1 className="text-xl font-semibold text-foreground mb-2">Reset your PIN</h1>
+          {/* Say EMAIL, twice over. The only thing on screen is a phone number,
+              so the unprompted assumption is an SMS — and a user waiting on a
+              text never opens the inbox the code is actually sitting in. */}
           <p className="text-xs text-muted-foreground mb-1">
             {resetSent
-              ? "Enter the code we emailed you, then choose a new PIN."
-              : "We'll email a 6-digit code to the address on your account."}
+              ? "Enter the 6-digit code from your email, then choose a new PIN."
+              : "We'll email you a 6-digit code — it goes to the email address on your account, not to this number."}
           </p>
           <p className="text-xs font-semibold text-foreground mb-6">
             {countryCode.code} {phone}
           </p>
+
+          {/* The address the code went to, named as plainly as the masking
+              allows. The backend masks it; the app never sees it in full. */}
+          {resetSent && resetHint && (
+            <div className="mb-5 flex items-start gap-2.5 rounded-lg border border-border bg-muted/40 px-3 py-2.5">
+              <Mail className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+              <div className="min-w-0">
+                <p className="text-[11px] text-muted-foreground">Code sent to</p>
+                <p className="truncate text-xs font-semibold text-foreground">
+                  {resetHint}
+                </p>
+                {resetExpiryMinutes !== null && (
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Expires in {resetExpiryMinutes} minutes. Check spam if it
+                    hasn't arrived.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
 
           {resetNotice && (
             <p className="text-[11px] text-muted-foreground mb-4 leading-relaxed">
