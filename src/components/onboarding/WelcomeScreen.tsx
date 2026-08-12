@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { TrendingUp, Sparkles, ChevronDown } from "lucide-react";
+import { TrendingUp, Sparkles, ChevronDown, Mail } from "lucide-react";
 import OnboardingNav from "./OnboardingNav";
 import prozprLogoLight from "@/assets/prozpr-logo-light.png";
 import prozprLogoDark from "@/assets/prozpr-logo-dark.png";
@@ -63,17 +63,19 @@ type Step = "phone" | "setup" | "pin" | "reset";
 const MOBILE_DIGITS = 10;
 
 /**
- * Forgot-PIN is BUILT end to end (screen below, `/auth/pin-reset/*` on the
- * backend) but switched off, and shows NOTHING on the PIN screen while off —
- * no link, no placeholder.
+ * Forgot-PIN (screen below, `/auth/pin-reset/*` on the backend), now live.
  *
- * Why: the reset code is emailed from support@prozpr.com via Resend, and
- * Resend only delivers from a domain verified with DNS records. Until
- * prozpr.com is verified there, every request would fail after telling the
- * user a mail was on its way. Flip this to `true` once verification is done —
- * nothing else needs changing.
+ * Kept as a kill switch rather than deleted: the flow depends on an outside
+ * mail provider (Resend), and if sending breaks — key revoked, domain
+ * verification lapsed, quota hit — a request tells the user a code is on its
+ * way and then fails. Setting this back to `false` hides the entry point
+ * entirely (no link, no notice) until the provider is healthy again.
+ *
+ * Sending requires `RESEND_API_KEY` on the backend AND the sending domain in
+ * `RESEND_FROM_EMAIL` verified in Resend by DNS — Resend delivers from a
+ * verified domain only.
  */
-const FORGOT_PIN_ENABLED = false;
+const FORGOT_PIN_ENABLED = true;
 
 const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
   const navigate = useNavigate();
@@ -105,6 +107,11 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
   const [resetConfirm, setResetConfirm] = useState("");
   const [resetError, setResetError] = useState("");
   const [resetNotice, setResetNotice] = useState("");
+  const [resetExpiryMinutes, setResetExpiryMinutes] = useState<number | null>(null);
+  /** Masked address for this number, learned from the check-mobile call the
+      phone step already makes — so the reset screen can name the inbox before
+      a code is sent, without a second request. */
+  const [accountEmailHint, setAccountEmailHint] = useState<string | null>(null);
 
   // The input only ever holds digits, so this is a plain length check.
   const isValid = phone.length === MOBILE_DIGITS;
@@ -153,8 +160,10 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
       });
       exists = status.exists;
       setReturningUserOnboardingDone(status.exists && status.is_onboarding_complete);
+      setAccountEmailHint(status.email_hint ?? null);
     } catch {
       setReturningUserOnboardingDone(false);
+      setAccountEmailHint(null);
     }
 
     setLoading(false);
@@ -244,12 +253,14 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
   const openReset = () => {
     setStep("reset");
     setResetSent(false);
-    setResetHint(null);
+    // Seeded from check-mobile, so the screen opens already naming the inbox.
+    setResetHint(accountEmailHint);
     setResetCode("");
     setResetPin("");
     setResetConfirm("");
     setResetError("");
     setResetNotice("");
+    setResetExpiryMinutes(null);
   };
 
   const backToPin = () => {
@@ -270,12 +281,13 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
         mobile: phone,
       });
       setResetHint(res.email_hint);
+      setResetExpiryMinutes(res.expires_in_minutes);
       setResetSent(true);
-      setResetNotice(
-        res.email_hint
-          ? `Code sent to ${res.email_hint}. It expires in ${res.expires_in_minutes} minutes.`
-          : res.message,
-      );
+      // When there's an address to name, it gets its own block below rather
+      // than a sentence — which inbox to open is the one thing the user needs
+      // off this screen. The plain message is kept for the deliberately vague
+      // answer a number with no account on file gets.
+      setResetNotice(res.email_hint ? "" : res.message);
     } catch (e) {
       setResetError(
         e instanceof Error ? e.message : "Could not send a reset code. Try again.",
@@ -514,14 +526,45 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
           className="flex-1 flex flex-col"
         >
           <h1 className="text-xl font-semibold text-foreground mb-2">Reset your PIN</h1>
+          {/* Say EMAIL, and then show the inbox. Leading with the phone number
+              invites the assumption that a text is coming, and someone waiting
+              on an SMS never opens the inbox the code is actually sitting in. */}
           <p className="text-xs text-muted-foreground mb-1">
             {resetSent
-              ? "Enter the code we emailed you, then choose a new PIN."
-              : "We'll email a 6-digit code to the address on your account."}
+              ? "Enter the 6-digit code from your email, then choose a new PIN."
+              : resetHint
+                ? "We'll email a 6-digit code to:"
+                : "We'll email you a 6-digit code — it goes to the email address on your account, not to this number."}
           </p>
-          <p className="text-xs font-semibold text-foreground mb-6">
-            {countryCode.code} {phone}
-          </p>
+          {/* The address once it is known, the number only as a fallback: an
+              account with no email on file still has to see WHICH account is
+              being reset. Hidden after sending, where the block below says it
+              with the expiry attached. */}
+          {!(resetSent && resetHint) && (
+            <p className="mb-6 truncate text-xs font-semibold text-foreground">
+              {resetHint ?? `${countryCode.code} ${phone}`}
+            </p>
+          )}
+
+          {/* The address the code went to, named as plainly as the masking
+              allows. The backend masks it; the app never sees it in full. */}
+          {resetSent && resetHint && (
+            <div className="mb-5 flex items-start gap-2.5 rounded-lg border border-border bg-muted/40 px-3 py-2.5">
+              <Mail className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+              <div className="min-w-0">
+                <p className="text-[11px] text-muted-foreground">Code sent to</p>
+                <p className="truncate text-xs font-semibold text-foreground">
+                  {resetHint}
+                </p>
+                {resetExpiryMinutes !== null && (
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Expires in {resetExpiryMinutes} minutes. Check spam if it
+                    hasn't arrived.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
 
           {resetNotice && (
             <p className="text-[11px] text-muted-foreground mb-4 leading-relaxed">
