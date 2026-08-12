@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Send, Mic, MicOff, AlertCircle, Loader2, Sparkles, Check, Square, ChevronDown, ChevronUp, Pencil, ArrowRight, Plus, Trash2, MessageSquare, Menu, Star, UploadCloud } from "lucide-react";
+import { Send, Mic, MicOff, AlertCircle, Loader2, Sparkles, Check, Square, ChevronDown, ChevronUp, Pencil, ArrowRight, Plus, Trash2, MessageSquare, Menu, Star, UploadCloud } from "lucide-react";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { formatInrCompact } from "@/lib/utils";
@@ -333,6 +333,41 @@ const ProzprAvatar = () => (
     <Sparkles className="h-2.5 w-2.5 text-primary-foreground" />
   </div>
 );
+
+/**
+ * Sizing shared by the composer input and its ghost-suggestion overlay. Both
+ * must resolve to the SAME line box or the ghost sits visibly higher than the
+ * typed text — hence an explicit height + matching line-height on each, rather
+ * than leaning on flex centring or the input's intrinsic height.
+ */
+const COMPOSER_TEXT_CLASS = "text-[12px] leading-5 h-5";
+
+/**
+ * Grey-italic ghost suffix drawn over the composer, immediately after whatever
+ * is typed — the "you can type over this" affordance for a pre-filled value.
+ *
+ * The typed text is mirrored INVISIBLY at the same font size so the suggestion
+ * starts exactly where the caret sits; the layer is pointer-events-none so taps
+ * still reach the real input underneath.
+ */
+const ComposerSuggestion = ({
+  text,
+  suggestion,
+}: {
+  text: string;
+  suggestion: string | null;
+}) => {
+  if (!suggestion) return null;
+  return (
+    <span
+      aria-hidden="true"
+      className={`pointer-events-none absolute left-0 top-0 block w-full overflow-hidden whitespace-pre ${COMPOSER_TEXT_CLASS}`}
+    >
+      <span className="invisible">{text}</span>
+      <span className="italic text-muted-foreground/50">{suggestion}</span>
+    </span>
+  );
+};
 
 /* ── Particle burst component ── */
 const ParticleBurst = ({ active }: { active: boolean }) => {
@@ -770,6 +805,14 @@ const AIChatPanel = ({
     goalPlanningDemo ? [{ role: "ai", content: GOAL_DEMO_INTRO }] : [],
   );
   const [input, setInput] = useState("");
+  /**
+   * Ghost text rendered in grey italics right after the composer's own text — a
+   * suggested value a quick action pre-filled (e.g. the amount in "Where to
+   * invest with …"). It is NOT part of `input`: it's folded in on send, and any
+   * keystroke clears it so the user simply types over it.
+   */
+  const [inputSuggestion, setInputSuggestion] = useState<string | null>(null);
+  const composerRef = useRef<HTMLInputElement>(null);
   const [isTyping, setIsTyping] = useState(false);
   // Session whose live "thinking aloud" feed we poll while a reply is pending.
   const [thinkingSessionId, setThinkingSessionId] = useState<string | null>(null);
@@ -1283,6 +1326,10 @@ const AIChatPanel = ({
     if (!text.trim()) return;
     const trimmed = text.trim();
 
+    // Any send retires a pending composer suggestion — including sends that
+    // bypass the composer entirely (mic, another quick-action chip).
+    setInputSuggestion(null);
+
     // Dismiss any active kudos on interaction
     setDismissedKudos((prev) => {
       const next = new Set(prev);
@@ -1475,8 +1522,37 @@ const AIChatPanel = ({
   const embeddedSuggestions = goalPlanningDemo
     ? ["Retirement · 15+ years", "Home down payment", "Education fund"]
     : chatFirst
-      ? ["Review my portfolio", "Where to invest", "Complete profile"]
+      ? ["Review my portfolio", "Where to invest?", "Complete profile"]
       : ["Why is my portfolio up today?"];
+
+  // "Where to invest?" — pre-fill the composer with "Where to invest lump sum of"
+  // plus a greyed-out amount the user can type straight over (see `inputSuggestion`).
+  const WHERE_TO_INVEST_PREFIX = "Where to invest lump sum of ";
+  const WHERE_TO_INVEST_AMOUNT = "INR 10 lakhs";
+
+  const handleWhereToInvest = () => {
+    setInput(WHERE_TO_INVEST_PREFIX);
+    setInputSuggestion(WHERE_TO_INVEST_AMOUNT);
+    // Focus after paint so the caret lands at the end of the pre-filled text —
+    // the next keystroke then replaces the suggestion instead of inserting into it.
+    requestAnimationFrame(() => {
+      const el = composerRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    });
+  };
+
+  /** Send the composer, folding in the ghost suggestion if it wasn't typed over. */
+  const submitComposer = () => {
+    void sendMessage(inputSuggestion ? `${input}${inputSuggestion}` : input);
+  };
+
+  const onComposerChange = (value: string) => {
+    setInput(value);
+    // Any edit means the user is writing their own amount — drop the ghost.
+    setInputSuggestion(null);
+  };
 
   const hasMessages = messages.length > 0 || isTyping;
 
@@ -1998,7 +2074,9 @@ const AIChatPanel = ({
                       onClick={() =>
                         q === "Complete profile"
                           ? navigate("/profile/complete?from=chat")
-                          : sendMessage(q)
+                          : q === "Where to invest?"
+                            ? handleWhereToInvest()
+                            : sendMessage(q)
                       }
                       className="shrink-0 whitespace-nowrap rounded-full border border-border/50 bg-card px-3 py-1.5 text-[11px] font-medium text-muted-foreground shadow-sm transition-colors hover:bg-muted/60"
                     >
@@ -2015,7 +2093,9 @@ const AIChatPanel = ({
                     onClick={() =>
                       q === "Complete profile"
                         ? navigate("/profile/complete?from=chat")
-                        : sendMessage(q)
+                        : q === "Where to invest?"
+                          ? handleWhereToInvest()
+                          : sendMessage(q)
                     }
                     className="shrink-0 whitespace-nowrap rounded-full border border-border/50 bg-card px-3 py-1.5 text-[11px] font-medium text-muted-foreground shadow-sm transition-colors hover:bg-muted/60"
                   >
@@ -2029,19 +2109,23 @@ const AIChatPanel = ({
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              sendMessage(input);
+              submitComposer();
             }}
             className="flex items-center gap-2 px-4 pt-2 pb-4"
           >
             <div className="flex flex-1 items-center rounded-full border border-border/60 bg-card px-4 py-2 shadow-[0_1px_4px_0_hsl(var(--wealth-card-shadow)/0.15)]">
-              <input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder={
-                  onboardingActive ? "Speak or type your answer…" : goalPlanningDemo ? "Reply to Pi…" : "Ask Pi…"
-                }
-                className="flex-1 bg-transparent text-[12px] text-foreground outline-none placeholder:text-muted-foreground/40"
-              />
+              <div className="relative min-w-0 flex-1">
+                <input
+                  ref={composerRef}
+                  value={input}
+                  onChange={(e) => onComposerChange(e.target.value)}
+                  placeholder={
+                    onboardingActive ? "Speak or type your answer…" : goalPlanningDemo ? "Reply to Pi…" : "Ask Pi…"
+                  }
+                  className={`block w-full bg-transparent text-foreground outline-none placeholder:text-muted-foreground/40 ${COMPOSER_TEXT_CLASS}`}
+                />
+                <ComposerSuggestion text={input} suggestion={inputSuggestion} />
+              </div>
             </div>
             <div className="relative flex shrink-0 items-center justify-center">
               {micState !== "listening" && !onboardingActive && (
@@ -2076,6 +2160,7 @@ const AIChatPanel = ({
 
   /* ── FULL-PAGE MODE (non-embedded, unused currently) ── */
   return (
+    <>
     <AnimatePresence>
       {isOpen && (
         <motion.div
@@ -2198,9 +2283,12 @@ const AIChatPanel = ({
               )}
             </AnimatePresence>
 
-            <form onSubmit={(e) => { e.preventDefault(); sendMessage(input); }} className="flex items-center gap-2">
+            <form onSubmit={(e) => { e.preventDefault(); submitComposer(); }} className="flex items-center gap-2">
               <div className="flex flex-1 items-center rounded-full border border-border/60 bg-card px-4 py-2 shadow-[0_1px_4px_0_hsl(var(--wealth-card-shadow)/0.15)]">
-                <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Type instead…" className="flex-1 bg-transparent text-[12px] text-foreground placeholder:text-muted-foreground/40 outline-none" />
+                <div className="relative min-w-0 flex-1">
+                  <input value={input} onChange={(e) => onComposerChange(e.target.value)} placeholder="Type instead…" className={`block w-full bg-transparent text-foreground placeholder:text-muted-foreground/40 outline-none ${COMPOSER_TEXT_CLASS}`} />
+                  <ComposerSuggestion text={input} suggestion={inputSuggestion} />
+                </div>
               </div>
               <button
                 type="button"
@@ -2222,6 +2310,7 @@ const AIChatPanel = ({
         </motion.div>
       )}
     </AnimatePresence>
+    </>
   );
 };
 
