@@ -63,17 +63,19 @@ type Step = "phone" | "setup" | "pin" | "reset";
 const MOBILE_DIGITS = 10;
 
 /**
- * Forgot-PIN is BUILT end to end (screen below, `/auth/pin-reset/*` on the
- * backend) but switched off, and shows NOTHING on the PIN screen while off —
- * no link, no placeholder.
+ * Forgot-PIN (screen below, `/auth/pin-reset/*` on the backend), now live.
  *
- * Why: the reset code is emailed from support@prozpr.com via Resend, and
- * Resend only delivers from a domain verified with DNS records. Until
- * prozpr.com is verified there, every request would fail after telling the
- * user a mail was on its way. Flip this to `true` once verification is done —
- * nothing else needs changing.
+ * Kept as a kill switch rather than deleted: the flow depends on an outside
+ * mail provider (Resend), and if sending breaks — key revoked, domain
+ * verification lapsed, quota hit — a request tells the user a code is on its
+ * way and then fails. Setting this back to `false` hides the entry point
+ * entirely (no link, no notice) until the provider is healthy again.
+ *
+ * Sending requires `RESEND_API_KEY` on the backend AND the sending domain in
+ * `RESEND_FROM_EMAIL` verified in Resend by DNS — Resend delivers from a
+ * verified domain only.
  */
-const FORGOT_PIN_ENABLED = false;
+const FORGOT_PIN_ENABLED = true;
 
 const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
   const navigate = useNavigate();
