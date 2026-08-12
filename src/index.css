@@ -48,6 +48,10 @@
        validated in BOTH modes — re-run the palette validator before changing them. */
     --chart-you: 164 54% 40%;        /* #2f9d80 */
     --chart-bench: 221 83% 53%;      /* #2463eb */
+    /* Concern status — orange, deliberately not --destructive red (that reads as
+       "broken") and not the gold used for "worth watching". Deep enough here to
+       stay legible as small text on a light ground. */
+    --concern-orange: 24 88% 42%;
     --wealth-amber: 38 80% 48%;
     --wealth-amber-light: 38 60% 93%;
     --wealth-surface: 220 15% 98%;
@@ -127,6 +131,8 @@
        band); only the benchmark blue lifts. Both validated against #1c1c1b. */
     --chart-you: 164 54% 40%;        /* #2f9d80 */
     --chart-bench: 217 90% 63%;      /* #4c8df6 */
+    /* Concern orange, lifted for the dark ground. */
+    --concern-orange: 26 92% 62%;
     --wealth-amber: 35 57% 62%;      /* #d4a868 */
     --wealth-amber-light: 35 40% 16%;
     --wealth-surface: 0 0% 8%;

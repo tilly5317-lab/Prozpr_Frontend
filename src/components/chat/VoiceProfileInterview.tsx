@@ -167,6 +167,8 @@ const VoiceProfileInterview = ({
   // Mic loudness, tapped only while the sheet is open so the stream is released
   // the moment the user leaves.
   const micLevel = useMicLevel(open && phase !== "done");
+  /** Bumped on each word the synth speaks; the blob decays it into a throb. */
+  const speechPulse = useRef(0);
 
   const part = VOICE_PARTS[partIdx];
   const question = part?.questions[qIdx];
@@ -245,6 +247,7 @@ const VoiceProfileInterview = ({
     if (!question) return;
     setPhase("asking");
     setSpokenWords(0);
+    speechPulse.current = 0;
     setTranscript("");
     setParsed(null);
     setUnparsed(false);
@@ -262,6 +265,9 @@ const VoiceProfileInterview = ({
       if (e.name && e.name !== "word") return;
       const upto = question.prompt.slice(0, e.charIndex).trim();
       setSpokenWords(upto ? upto.split(/\s+/).length : 0);
+      // Same event drives the read-along highlight and the blob's throb, so the
+      // shape moves on the syllable the voice is actually on.
+      speechPulse.current = 1;
     };
     utter.onend = () => {
       setSpokenWords(promptWords.length);
@@ -803,7 +809,12 @@ const VoiceProfileInterview = ({
                 {/* The creature reacts to your actual voice; what it heard reads
                     underneath it as you speak. */}
                 <div className="mt-4 flex flex-col items-center">
-                  <VoiceBlob level={micLevel} listening={phase === "listening"} />
+                  <VoiceBlob
+                    level={micLevel}
+                    pulse={speechPulse}
+                    listening={phase === "listening"}
+                    speaking={phase === "asking"}
+                  />
                   <p
                     className="min-h-[46px] px-2 text-center text-[15px] leading-relaxed text-foreground"
                     aria-live="polite"

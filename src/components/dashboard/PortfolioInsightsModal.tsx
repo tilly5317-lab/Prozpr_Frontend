@@ -7,7 +7,6 @@ import {
   ChevronDown,
   CircleAlert,
   CircleCheck,
-  Sparkles,
   X,
 } from "lucide-react";
 import {
@@ -40,7 +39,202 @@ const GOLD_TINT = "rgba(212, 168, 104, 0.06)";
 const GOLD_TINT_STRONG = "rgba(212, 168, 104, 0.16)";
 
 const POSITIVE = "hsl(var(--wealth-green))";
-const NEGATIVE = "hsl(var(--destructive))";
+// Concerns are orange, not red: they want attention, they aren't breakage.
+const CONCERN = "hsl(var(--concern-orange))";
+
+// ── Portfolio health score ──────────────────────────────────────────────────
+
+/**
+ * PLACEHOLDER. Not computed from anything — a hardcoded number standing in for a
+ * scoring model that doesn't exist yet. Replace this with a real score before
+ * anyone treats it as a measurement of their portfolio.
+ */
+const PLACEHOLDER_HEALTH_SCORE = 76;
+const HEALTH_SCORE_MAX = 100;
+
+/** Band a score falls in. Boundaries belong to the higher band. */
+function healthBand(score: number): { label: string; color: string } {
+  if (score >= 80) return { label: "Strong", color: POSITIVE };
+  if (score >= 60) return { label: "Good", color: POSITIVE };
+  if (score >= 40) return { label: "Needs work", color: CONCERN };
+  return { label: "At risk", color: CONCERN };
+}
+
+/**
+ * The whole scale, painted across the track: cool concern at the bottom end
+ * warming through gold to green at the top. The fill reveals it left to right,
+ * so the colour under the leading edge is the colour of the score you're at —
+ * mercury climbing a thermometer rather than a bar in one flat tone.
+ */
+const HEALTH_SCALE_GRADIENT =
+  "linear-gradient(90deg, hsl(var(--concern-orange)) 0%, #D4A868 48%, hsl(var(--wealth-green)) 100%)";
+
+const FILL_DELAY_MS = 320;
+/** Two seconds of travel — long enough to watch the mercury climb the scale. */
+const FILL_MS = 2000;
+
+/**
+ * Counts 0 → target on one rAF loop.
+ *
+ * The pause before it moves is the point: a beat of stillness makes the sweep
+ * feel like a result arriving rather than a bar that was always there.
+ *
+ * Easing is quadratic-in-out rather than an ease-out, because over two seconds
+ * an ease-out spends the first second covering 94% of the distance and the
+ * second crawling — which reads as a fast fill followed by a stall. In-out keeps
+ * the mercury visibly travelling the whole way; quadratic rather than cubic so
+ * it gets moving promptly instead of idling through the first half-second.
+ */
+function useCountUp(target: number): { value: number; done: boolean } {
+  const [value, setValue] = useState(0);
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    if (
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+    ) {
+      setValue(target);
+      setDone(true);
+      return;
+    }
+    let raf = 0;
+    let start = 0;
+    const frame = (now: number) => {
+      if (!start) start = now;
+      const elapsed = now - start - FILL_DELAY_MS;
+      if (elapsed >= 0) {
+        const t = Math.min(1, elapsed / FILL_MS);
+        const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+        setValue(target * eased);
+        if (t >= 1) {
+          setDone(true);
+          return;
+        }
+      }
+      raf = requestAnimationFrame(frame);
+    };
+    raf = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(raf);
+  }, [target]);
+
+  return { value, done };
+}
+
+function HealthScore({ score }: { score: number }) {
+  const band = healthBand(score);
+  const { value, done } = useCountUp(score);
+  const pct = Math.max(0, Math.min(100, (value / HEALTH_SCORE_MAX) * 100));
+  const filling = pct > 0 && !done;
+
+  return (
+    <div
+      className="rounded-[14px] px-4 py-3.5"
+      style={{
+        border: `1px solid ${GOLD_BORDER}`,
+        background: `linear-gradient(135deg, ${GOLD_TINT_STRONG} 0%, transparent 75%)`,
+      }}
+    >
+      <div className="flex items-end justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[12px] font-semibold text-foreground">Portfolio health</p>
+          {/* The verdict lands only once the number has settled — arriving with
+              it would give the answer away before the sweep finishes. */}
+          <motion.p
+            className="mt-0.5 text-[11.5px] font-semibold leading-snug"
+            style={{ color: band.color }}
+            initial={{ opacity: 0, y: 3 }}
+            animate={done ? { opacity: 1, y: 0 } : { opacity: 0, y: 3 }}
+            transition={{ duration: 0.35, ease: "easeOut" }}
+          >
+            {band.label}
+          </motion.p>
+        </div>
+        <motion.p
+          className="shrink-0 leading-none tabular-nums"
+          style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
+          animate={done ? { scale: [1, 1.06, 1] } : { scale: 1 }}
+          transition={{ duration: 0.45, ease: "easeOut" }}
+        >
+          <span className="text-[30px] font-bold" style={{ color: band.color }}>
+            {Math.round(value)}
+          </span>
+          <span className="text-[14px] font-semibold text-muted-foreground">
+            /{HEALTH_SCORE_MAX}
+          </span>
+        </motion.p>
+      </div>
+
+      <div className="relative mt-3 h-3.5">
+        <div
+          className="absolute inset-0 overflow-hidden rounded-full"
+          style={{ backgroundColor: "hsl(var(--muted))" }}
+          role="meter"
+          aria-valuenow={score}
+          aria-valuemin={0}
+          aria-valuemax={HEALTH_SCORE_MAX}
+          aria-label="Portfolio health score"
+        >
+          {/* The unreached part of the scale, faint — you can see where you could get to. */}
+          <div
+            className="absolute inset-0"
+            style={{ background: HEALTH_SCALE_GRADIENT, opacity: 0.16 }}
+          />
+
+          {/* Reached part. The inner layer is stretched back to the full track
+              width so the gradient stays anchored to the scale rather than being
+              squeezed into whatever the fill currently measures. */}
+          <div className="absolute inset-y-0 left-0 overflow-hidden" style={{ width: `${pct}%` }}>
+            {pct > 0 && (
+              <div
+                className="absolute inset-y-0 left-0"
+                style={{ width: `${(100 / pct) * 100}%`, background: HEALTH_SCALE_GRADIENT }}
+              />
+            )}
+            {filling && (
+              <motion.div
+                className="absolute inset-y-0 w-12"
+                style={{
+                  background:
+                    "linear-gradient(90deg, transparent, rgba(255,255,255,0.65), transparent)",
+                }}
+                animate={{ x: ["-48px", "100%"] }}
+                transition={{ duration: 0.85, repeat: Infinity, ease: "easeInOut" }}
+              />
+            )}
+          </div>
+        </div>
+
+        {/* Bead riding the leading edge — the thing the eye actually follows.
+            Centring lives on this wrapper, not on the animated child: framer
+            writes `transform` for the scale, which would overwrite a translate
+            set alongside it and knock the dot off the line. */}
+        <span
+          className="pointer-events-none absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
+          style={{ left: `${pct}%` }}
+        >
+          <motion.span
+            className="block h-[18px] w-[18px] rounded-full"
+            style={{
+              backgroundColor: band.color,
+              border: "2.5px solid hsl(var(--card))",
+              boxShadow: `0 0 ${filling ? 14 : 8}px ${band.color}`,
+            }}
+            animate={done ? { scale: [1, 1.18, 1] } : { scale: 1 }}
+            transition={{ duration: 0.5, ease: "easeOut" }}
+          />
+        </span>
+      </div>
+
+      <div className="mt-1.5 flex justify-between text-[10px] text-muted-foreground/70">
+        <span>At risk</span>
+        <span>Needs work</span>
+        <span>Good</span>
+        <span>Strong</span>
+      </div>
+    </div>
+  );
+}
 
 // ── Section shell ───────────────────────────────────────────────────────────
 
@@ -149,8 +343,8 @@ const TONE_STYLE: Record<
   },
   concern: {
     label: "Concerns",
-    color: NEGATIVE,
-    tint: "hsl(var(--destructive) / 0.10)",
+    color: CONCERN,
+    tint: "hsl(var(--concern-orange) / 0.10)",
     Icon: AlertTriangle,
   },
 };
@@ -177,12 +371,12 @@ function StandingSection({ findings, loading }: { findings: Finding[]; loading: 
         const style = TONE_STYLE[tone];
         return (
           <div key={tone}>
-            <div className="mb-1.5 flex items-center gap-1.5">
-              <style.Icon className="h-3.5 w-3.5 shrink-0" style={{ color: style.color }} />
-              <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color: style.color }}>
+            <div className="mb-2 flex items-center gap-1.5">
+              <style.Icon className="h-4 w-4 shrink-0" style={{ color: style.color }} />
+              <p className="text-[14px] font-semibold" style={{ color: style.color }}>
                 {style.label}
               </p>
-              <span className="text-[11px] font-semibold text-muted-foreground/60 tabular-nums">
+              <span className="text-[12px] font-semibold text-muted-foreground/60 tabular-nums">
                 {group.length}
               </span>
             </div>
@@ -193,8 +387,8 @@ function StandingSection({ findings, loading }: { findings: Finding[]; loading: 
                   className="rounded-xl px-3 py-2.5"
                   style={{ backgroundColor: style.tint, border: `1px solid ${HAIRLINE}` }}
                 >
-                  <p className="text-[12.5px] font-semibold leading-snug text-foreground">{f.title}</p>
-                  <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{f.detail}</p>
+                  <p className="text-[13.5px] font-semibold leading-snug text-foreground">{f.title}</p>
+                  <p className="mt-1 text-[12px] leading-snug text-muted-foreground">{f.detail}</p>
                 </div>
               ))}
             </div>
@@ -395,7 +589,7 @@ const PortfolioInsightsModal = ({ open, onClose, portfolio }: Props) => {
             transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
             role="dialog"
             aria-modal="true"
-            aria-label="Portfolio insights"
+            aria-label="Pi insights"
             className="fixed inset-0 z-[60] flex items-center justify-center px-4"
           >
             <div
@@ -413,15 +607,9 @@ const PortfolioInsightsModal = ({ open, onClose, portfolio }: Props) => {
                   background: `linear-gradient(135deg, ${GOLD_TINT_STRONG} 0%, transparent 70%)`,
                 }}
               >
-                <div
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl"
-                  style={{ backgroundColor: GOLD_TINT_STRONG }}
-                >
-                  <Sparkles className="h-4 w-4" strokeWidth={2} style={{ color: GOLD }} />
-                </div>
                 <div className="min-w-0 flex-1">
                   <h2 className="truncate text-base font-semibold text-foreground">
-                    Portfolio insights
+                    Pi insights
                   </h2>
                   <p className="text-[11px] text-muted-foreground">
                     Where you stand, and what to do about it
@@ -438,6 +626,8 @@ const PortfolioInsightsModal = ({ open, onClose, portfolio }: Props) => {
               </div>
 
               <div className="flex-1 space-y-2 overflow-y-auto px-4 py-3">
+                <HealthScore score={PLACEHOLDER_HEALTH_SCORE} />
+
                 <Section
                   id="standing"
                   step={1}

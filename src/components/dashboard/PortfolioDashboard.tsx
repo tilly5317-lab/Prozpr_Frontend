@@ -185,8 +185,7 @@ function PortfolioMainPanel({
               className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-card px-3 py-2.5 text-center text-[13px] font-semibold text-foreground shadow-sm transition-all hover:shadow-md active:scale-[0.99]"
               style={{ border: "1px solid rgba(212, 168, 104, 0.45)" }}
             >
-              <Sparkles className="h-3.5 w-3.5" strokeWidth={2} style={{ color: "#D4A868" }} />
-              Insights →
+              Pi insights →
             </button>
           )}
         </div>
