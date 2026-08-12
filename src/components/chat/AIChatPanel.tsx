@@ -27,6 +27,7 @@ import {
   type FullProfileResponse,
   type LinkAccountInfo,
 } from "@/lib/api";
+import VoiceProfileInterview from "./VoiceProfileInterview";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -360,6 +361,9 @@ const COMPOSER_PREFILLS: Record<string, { prefix: string; suggestion?: string }>
  * answered for them. Splitting them here sets the expectation before the
  * question is asked, rather than surprising the user with a generic reply.
  */
+/** Label of the voice-onboarding chip — also its handler key, so it lives once. */
+const VOICE_PROFILE_CHIP = "Set up by voice";
+
 type MarketQuestionKind = "web" | "pi";
 
 const MARKET_QUESTION_GROUPS: {
@@ -997,6 +1001,8 @@ const AIChatPanel = ({
   const [inputSuggestion, setInputSuggestion] = useState<string | null>(null);
   /** Suggested-question picker behind the "Market outlook" chip. */
   const [marketSheetOpen, setMarketSheetOpen] = useState(false);
+  /** Spoken profile interview behind the "Set up by voice" chip. */
+  const [voiceProfileOpen, setVoiceProfileOpen] = useState(false);
   const composerRef = useRef<HTMLInputElement>(null);
   const [isTyping, setIsTyping] = useState(false);
   const [micState, setMicState] = useState<MicState>("idle");
@@ -1646,6 +1652,7 @@ const AIChatPanel = ({
           "Market outlook",
           "Goals achievable?",
           "Complete profile",
+          VOICE_PROFILE_CHIP,
         ]
       : ["Why is my portfolio up today?"];
 
@@ -1679,6 +1686,11 @@ const AIChatPanel = ({
     // one asks which you meant before filling the box.
     if (label === "Market outlook") {
       setMarketSheetOpen(true);
+      return;
+    }
+    // Spoken alternative to the Complete profile form — same four sections.
+    if (label === VOICE_PROFILE_CHIP) {
+      setVoiceProfileOpen(true);
       return;
     }
     const prefill = COMPOSER_PREFILLS[label];
@@ -1929,6 +1941,12 @@ const AIChatPanel = ({
             setMarketSheetOpen(false);
             prefillComposer(q);
           }}
+        />
+
+        {/* Spoken Complete-profile interview — four parts, saved part by part. */}
+        <VoiceProfileInterview
+          open={voiceProfileOpen}
+          onClose={() => setVoiceProfileOpen(false)}
         />
 
         {/* Top header bar */}
@@ -2262,6 +2280,10 @@ const AIChatPanel = ({
         setMarketSheetOpen(false);
         prefillComposer(q);
       }}
+    />
+    <VoiceProfileInterview
+      open={voiceProfileOpen}
+      onClose={() => setVoiceProfileOpen(false)}
     />
     <AnimatePresence>
       {isOpen && (

@@ -1,9 +1,14 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import {
-  BASE_SCENARIO_ID,
-  readSavedScenarioId,
+  bandForRate,
+  clampRate,
+  formatRate,
+  PROJECTION_BASE_RATE,
+  ratePct,
+  readSavedRate,
+  RETURN_MAX,
   scaleAnnualRowsToRate,
-  writeSavedScenarioId,
+  writeSavedRate,
 } from "./projectionScenario";
 import type { AnnualCashflowRow } from "./api";
 
@@ -105,22 +110,74 @@ describe("scaleAnnualRowsToRate", () => {
   });
 });
 
-describe("saved scenario", () => {
+describe("bandForRate", () => {
+  it("names each band", () => {
+    expect(bandForRate(0).label).toBe("Conservative");
+    expect(bandForRate(3.5).label).toBe("Conservative");
+    expect(bandForRate(9).label).toBe("Base");
+    expect(bandForRate(14).label).toBe("Optimistic");
+  });
+
+  it("gives a boundary to the higher band", () => {
+    // 5 and 11 are the band edges the UI labels; they read as the band above.
+    expect(bandForRate(5).label).toBe("Base");
+    expect(bandForRate(4.5).label).toBe("Conservative");
+    expect(bandForRate(11).label).toBe("Optimistic");
+    expect(bandForRate(10.5).label).toBe("Base");
+  });
+
+  it("includes the top of the scale in the last band", () => {
+    expect(bandForRate(RETURN_MAX).label).toBe("Optimistic");
+  });
+
+  it("puts the engine's own rate in Base", () => {
+    // If this ever fails, the default view would be labelled as a scenario.
+    expect(bandForRate(PROJECTION_BASE_RATE).label).toBe("Base");
+  });
+});
+
+describe("clampRate / ratePct / formatRate", () => {
+  it("clamps to the scale", () => {
+    expect(clampRate(-4)).toBe(0);
+    expect(clampRate(25)).toBe(20);
+    expect(clampRate(7.5)).toBe(7.5);
+  });
+
+  it("falls back to the engine rate for a non-number", () => {
+    expect(clampRate(Number.NaN)).toBe(PROJECTION_BASE_RATE);
+  });
+
+  it("maps a rate onto the track", () => {
+    expect(ratePct(0)).toBe(0);
+    expect(ratePct(10)).toBe(50);
+    expect(ratePct(20)).toBe(100);
+  });
+
+  it("shows a decimal only when there is one", () => {
+    expect(formatRate(9)).toBe("9%");
+    expect(formatRate(7.5)).toBe("7.5%");
+  });
+});
+
+describe("saved rate", () => {
   beforeEach(() => window.localStorage.clear());
 
-  it("defaults to Base when nothing has been applied", () => {
-    expect(readSavedScenarioId()).toBe(BASE_SCENARIO_ID);
+  it("defaults to the engine rate when nothing has been applied", () => {
+    expect(readSavedRate()).toBe(PROJECTION_BASE_RATE);
   });
 
-  it("round-trips an applied scenario across a reload", () => {
-    writeSavedScenarioId("cons");
-    expect(readSavedScenarioId()).toBe("cons");
+  it("round-trips an applied rate across a reload", () => {
+    writeSavedRate(4.5);
+    expect(readSavedRate()).toBe(4.5);
   });
 
-  it("falls back to Base for an unknown stored id", () => {
-    // A renamed or removed scenario must not resolve to Base's numbers while
-    // still being labelled with the dead id.
-    window.localStorage.setItem("goals-projection-scenario", "aggressive-2019");
-    expect(readSavedScenarioId()).toBe(BASE_SCENARIO_ID);
+  it("falls back to the engine rate for junk or out-of-range values", () => {
+    // Projecting on a number the user never chose is worse than ignoring it.
+    window.localStorage.setItem("goals-projection-rate", "not-a-number");
+    expect(readSavedRate()).toBe(PROJECTION_BASE_RATE);
+    window.localStorage.setItem("goals-projection-rate", "45");
+    expect(readSavedRate()).toBe(PROJECTION_BASE_RATE);
+    window.localStorage.setItem("goals-projection-rate", "-3");
+    expect(readSavedRate()).toBe(PROJECTION_BASE_RATE);
   });
 });

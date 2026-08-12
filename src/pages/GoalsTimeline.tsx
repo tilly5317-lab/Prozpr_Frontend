@@ -57,13 +57,18 @@ import {
 } from "@/lib/api";
 import { exportCashflowXls } from "@/lib/export-xls";
 import {
-  BASE_SCENARIO_ID,
+  bandForRate,
+  clampRate,
+  formatRate,
   PROJECTION_BASE_RATE,
-  PROJECTION_SCENARIOS,
-  readSavedScenarioId,
+  ratePct,
+  readSavedRate,
+  RETURN_BANDS,
+  RETURN_MAX,
+  RETURN_MIN,
+  RETURN_STEP,
   scaleAnnualRowsToRate,
-  scenarioById,
-  writeSavedScenarioId,
+  writeSavedRate,
 } from "@/lib/projectionScenario";
 import CashflowGate from "@/components/goals/CashflowGate";
 import CashflowInputsForm from "@/components/goals/CashflowInputsForm";
@@ -80,7 +85,9 @@ interface TimelineGoal {
 }
 
 const INFLATION_DEFAULT = 6;
-const PRIORITIES: Priority[] = ["Low", "Medium", "High"];
+// Most important first — the order the filter chips and the goal-sheet picker
+// both read in, so "High" is where the eye lands rather than buried last.
+const PRIORITIES: Priority[] = ["High", "Medium", "Low"];
 
 // Timeline-extent assumptions. The visible timeline ends at the later of the
 // last goal year and the retirement year (age 60 by default); dragging a goal
@@ -917,10 +924,10 @@ interface ProjectionContentProps {
   sipMonthly: number | null;
   /** Jump to the Inputs tab when no plan exists yet. */
   onGoToInputs?: () => void;
-  /** The scenario currently driving the goal-planning page's cashflow. */
-  appliedScenarioId: string;
-  /** Commit a scenario to the plan — only fired by the explicit Apply button. */
-  onApplyScenario: (id: string) => void;
+  /** The return rate currently driving the goal-planning page's cashflow. */
+  appliedRate: number;
+  /** Commit a rate to the plan — only fired by the explicit Apply button. */
+  onApplyRate: (rate: number) => void;
 }
 
 type WaterfallItem = { axis: string; label: string; value: number; kind: WaterfallKind };
@@ -958,18 +965,18 @@ function ProjectionContent({
   headline,
   sipMonthly,
   onGoToInputs,
-  appliedScenarioId,
-  onApplyScenario,
+  appliedRate,
+  onApplyRate,
 }: ProjectionContentProps) {
-  // Picking a scenario only previews it in this panel. The goal-planning page's
-  // cashflow changes when — and only when — the user presses Apply, so nobody
-  // has their plan rewritten underneath them by an exploratory tap.
-  const [draftId, setDraftId] = useState(appliedScenarioId);
+  // Moving the slider only previews here — every figure below it recalculates
+  // live. The goal-planning page's cashflow changes when, and only when, the
+  // user presses Apply, so nobody has their plan rewritten by an exploratory drag.
+  const [draftRate, setDraftRate] = useState(appliedRate);
   useEffect(() => {
-    setDraftId(appliedScenarioId);
-  }, [appliedScenarioId]);
-  const scenario = scenarioById(draftId);
-  const isDirty = draftId !== appliedScenarioId;
+    setDraftRate(appliedRate);
+  }, [appliedRate]);
+  const band = bandForRate(draftRate);
+  const isDirty = draftRate !== appliedRate;
 
   const currentYear = new Date().getFullYear();
   // Horizon comes from the engine: last FY-end = max(retirement, last goal).
@@ -995,10 +1002,10 @@ function ProjectionContent({
   const horizonYears = Math.max(1, horizonYear - currentYear);
   const ROI = useMemo(() => {
     const factor =
-      Math.pow(1 + scenario.rate / 100, horizonYears) /
+      Math.pow(1 + draftRate / 100, horizonYears) /
       Math.pow(1 + PROJECTION_BASE_RATE / 100, horizonYears);
     return Math.round(ROI_BASE * factor);
-  }, [scenario.rate, horizonYears, ROI_BASE]);
+  }, [draftRate, horizonYears, ROI_BASE]);
 
   // No plan yet → don't fabricate a waterfall; prompt to complete inputs.
   if (!fundFlow) {
@@ -1065,47 +1072,77 @@ function ProjectionContent({
   return (
     <div className="space-y-4">
       <p className="text-[11px] text-muted-foreground">
-        Through {horizonLabel} · {monthlyLabel} · {scenario.rate}% post-tax
+        Through {horizonLabel} · {monthlyLabel} · {formatRate(draftRate)} post-tax
       </p>
       <div className="space-y-4">
-                {/* Sensitivity — return scenario */}
+                {/* Assumed return — everything below recalculates as this moves. */}
                 <div>
-                  <p className="mb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
-                    Return scenario
-                  </p>
-                  <div className="flex rounded-full bg-muted/60 p-0.5">
-                    {PROJECTION_SCENARIOS.map((s) => {
-                      const active = s.id === draftId;
-                      return (
-                        <button
-                          key={s.id}
-                          type="button"
-                          onClick={() => setDraftId(s.id)}
-                          className={`flex-1 rounded-full py-1.5 text-[11px] font-semibold transition-colors ${
-                            active
-                              ? "bg-card text-foreground shadow-sm"
-                              : "text-muted-foreground hover:text-foreground"
-                          }`}
-                          aria-pressed={active}
-                        >
-                          {s.label}
-                          <span className="ml-1 text-[10px] font-normal tabular-nums opacity-70">
-                            {s.rate}%
-                          </span>
-                          {s.id === appliedScenarioId && (
-                            <span className="sr-only"> (applied to your plan)</span>
-                          )}
-                        </button>
-                      );
-                    })}
+                  <div className="mb-2 flex items-end justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                        Assumed return
+                      </p>
+                      <p className="text-[11px] leading-snug text-muted-foreground/70">
+                        {band.blurb}
+                      </p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p
+                        className="text-[20px] font-bold leading-none tabular-nums"
+                        style={{ color: "#D4A868", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
+                      >
+                        {formatRate(draftRate)}
+                      </p>
+                      <p className="mt-0.5 text-[11px] font-semibold text-foreground">{band.label}</p>
+                    </div>
+                  </div>
+
+                  {/* Track painted by the wrapper; the input supplies only the thumb.
+                      One hue deepening with the rate — the bands are a labelling of
+                      that magnitude, not four unrelated categories. */}
+                  <div className="relative">
+                    <div
+                      className="pointer-events-none absolute inset-x-0 top-1/2 h-2.5 -translate-y-1/2 overflow-hidden rounded-full"
+                      style={{
+                        background:
+                          "linear-gradient(90deg, rgba(212,168,104,0.14) 0%, rgba(212,168,104,0.42) 55%, rgba(212,168,104,0.85) 100%)",
+                      }}
+                    >
+                      {RETURN_BANDS.slice(1).map((b) => (
+                        <span
+                          key={b.label}
+                          className="absolute top-0 h-full w-px"
+                          style={{ left: `${ratePct(b.from)}%`, backgroundColor: "hsl(var(--card))" }}
+                        />
+                      ))}
+                    </div>
+                    <input
+                      type="range"
+                      className="return-slider relative"
+                      min={RETURN_MIN}
+                      max={RETURN_MAX}
+                      step={RETURN_STEP}
+                      value={draftRate}
+                      onChange={(e) => setDraftRate(Number(e.target.value))}
+                      aria-label="Assumed annual post-tax return"
+                      aria-valuetext={`${formatRate(draftRate)}, ${band.label}`}
+                    />
+                  </div>
+
+                  <div className="flex justify-between text-[9.5px] text-muted-foreground/70">
+                    {RETURN_BANDS.map((b) => (
+                      <span key={b.label} className="tabular-nums">
+                        {b.label} {b.from}–{b.to}%
+                      </span>
+                    ))}
                   </div>
 
                   {/* Preview stays in this panel until applied. */}
                   <button
                     type="button"
                     disabled={!isDirty}
-                    onClick={() => onApplyScenario(draftId)}
-                    className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl py-2.5 text-[12px] font-bold transition-all active:scale-[0.99] disabled:cursor-not-allowed"
+                    onClick={() => onApplyRate(draftRate)}
+                    className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-xl py-2.5 text-[12px] font-bold transition-all active:scale-[0.99] disabled:cursor-not-allowed"
                     style={
                       isDirty
                         ? {
@@ -1122,19 +1159,19 @@ function ProjectionContent({
                     {isDirty ? (
                       <>
                         <Check className="h-3.5 w-3.5" />
-                        Apply {scenario.label} to my plan
+                        Apply {formatRate(draftRate)} to my plan
                       </>
                     ) : (
-                      `${scenario.label} is applied to your plan`
+                      `${formatRate(appliedRate)} is applied to your plan`
                     )}
                   </button>
 
                   <p className="mt-1.5 text-[10.5px] leading-snug text-muted-foreground/70">
                     {isDirty
-                      ? "Previewing here only — the goal-planning page still shows your applied scenario until you press Apply."
-                      : appliedScenarioId === BASE_SCENARIO_ID
-                        ? "Your plan as the engine computed it. Preview another return above, then apply it."
-                        : "The goal-planning page is running on this scenario. Contributions, one-offs and goal payouts are unchanged — only returns move."}
+                      ? "The figures below are already on this rate. The goal-planning page keeps your applied rate until you press Apply."
+                      : appliedRate === PROJECTION_BASE_RATE
+                        ? "Your plan as the engine computed it. Drag to see another return, then apply it."
+                        : "The goal-planning page is running on this rate. Contributions, one-offs and goal payouts are unchanged — only returns move."}
                   </p>
                 </div>
 
@@ -1351,30 +1388,30 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   const [cashflowLoading, setCashflowLoading] = useState(false);
   const [cashflowError, setCashflowError] = useState<string | null>(null);
 
-  // The return scenario currently APPLIED to the plan. Owned here rather than in
-  // the panel because it drives this page's cashflow; the panel only previews a
-  // draft until the user presses Apply. Saved so the choice survives a reload —
-  // a user who applied Conservative should not silently be back on Base.
-  const [scenarioId, setScenarioId] = useState(readSavedScenarioId);
-  const scenario = scenarioById(scenarioId);
-  const isBaseScenario = scenarioId === BASE_SCENARIO_ID;
+  // The return rate currently APPLIED to the plan. Owned here rather than in the
+  // panel because it drives this page's cashflow; the panel only previews a draft
+  // until the user presses Apply. Saved so the choice survives a reload — someone
+  // who applied 4% should not silently be back on the engine's 9%.
+  const [appliedRate, setAppliedRate] = useState(readSavedRate);
+  const band = bandForRate(appliedRate);
+  const isBaseRate = appliedRate === PROJECTION_BASE_RATE;
 
-  const applyScenario = useCallback((id: string) => {
-    setScenarioId(id);
-    writeSavedScenarioId(id);
-    const applied = scenarioById(id);
-    toast.success(`${applied.label} applied`, {
+  const applyRate = useCallback((rate: number) => {
+    const next = clampRate(rate);
+    setAppliedRate(next);
+    writeSavedRate(next);
+    toast.success(`${formatRate(next)} applied`, {
       description:
-        id === BASE_SCENARIO_ID
+        next === PROJECTION_BASE_RATE
           ? "Your goal plan is back on the engine's computed returns."
-          : `Your goal plan now runs on ${applied.rate}% post-tax returns.`,
+          : `Your goal plan now runs on ${formatRate(next)} post-tax returns (${bandForRate(next).label.toLowerCase()}).`,
     });
   }, []);
 
-  /** Engine rows replayed at the selected return — identical to the engine at Base. */
+  /** Engine rows replayed at the applied return — identical to the engine at 9%. */
   const scenarioAnnualRows = useMemo(
-    () => scaleAnnualRowsToRate(cashflowData?.annual_cashflow ?? [], scenario.rate),
-    [cashflowData, scenario.rate],
+    () => scaleAnnualRowsToRate(cashflowData?.annual_cashflow ?? [], appliedRate),
+    [cashflowData, appliedRate],
   );
 
   const reloadGoals = useCallback(async () => {
@@ -2178,20 +2215,20 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
 
         {/* Applied return scenario. Read-only on purpose: the plan changes only
             via Apply in the Projection panel, never by a stray tap out here. */}
-        {tornadoCorpusByYear && !isBaseScenario && (
+        {tornadoCorpusByYear && !isBaseRate && (
           <div className="flex items-start gap-2 px-1">
             <span
-              className="mt-[1px] inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold"
+              className="mt-[1px] inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold tabular-nums"
               style={{
                 backgroundColor: "rgba(212,168,104,0.16)",
                 color: "#D4A868",
                 border: "1px solid rgba(212,168,104,0.45)",
               }}
             >
-              {scenario.label} · {scenario.rate}%
+              {formatRate(appliedRate)} · {band.label}
             </span>
             <p className="text-[10.5px] leading-snug text-muted-foreground/70">
-              Showing an applied {scenario.rate}% return scenario, not the engine's computed plan.
+              Showing an applied {formatRate(appliedRate)} return, not the engine's computed plan.
               Contributions, one-offs and goal payouts are unchanged — only returns move.{" "}
               <button
                 type="button"
@@ -2872,8 +2909,8 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                     headline={cashflowData?.headline ?? null}
                     sipMonthly={planSip}
                     onGoToInputs={() => setPanelTab("inputs")}
-                    appliedScenarioId={scenarioId}
-                    onApplyScenario={applyScenario}
+                    appliedRate={appliedRate}
+                    onApplyRate={applyRate}
                   />
                 ) : (
                   <CashflowInputsForm
