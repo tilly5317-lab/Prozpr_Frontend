@@ -16,7 +16,6 @@ import {
 import {
   BriefcaseBusiness,
   Car,
-  Check,
   ChevronLeft,
   Download,
   GraduationCap,
@@ -56,20 +55,6 @@ import {
   type GoalResponse,
 } from "@/lib/api";
 import { exportCashflowXls } from "@/lib/export-xls";
-import {
-  bandForRate,
-  clampRate,
-  formatRate,
-  PROJECTION_BASE_RATE,
-  ratePct,
-  readSavedRate,
-  RETURN_BANDS,
-  RETURN_MAX,
-  RETURN_MIN,
-  RETURN_STEP,
-  scaleAnnualRowsToRate,
-  writeSavedRate,
-} from "@/lib/projectionScenario";
 import CashflowGate from "@/components/goals/CashflowGate";
 import CashflowInputsForm from "@/components/goals/CashflowInputsForm";
 
@@ -85,9 +70,7 @@ interface TimelineGoal {
 }
 
 const INFLATION_DEFAULT = 6;
-// Most important first — the order the filter chips and the goal-sheet picker
-// both read in, so "High" is where the eye lands rather than buried last.
-const PRIORITIES: Priority[] = ["High", "Medium", "Low"];
+const PRIORITIES: Priority[] = ["Low", "Medium", "High"];
 
 // Timeline-extent assumptions. The visible timeline ends at the later of the
 // last goal year and the retirement year (age 60 by default); dragging a goal
@@ -924,13 +907,19 @@ interface ProjectionContentProps {
   sipMonthly: number | null;
   /** Jump to the Inputs tab when no plan exists yet. */
   onGoToInputs?: () => void;
-  /** The return rate currently driving the goal-planning page's cashflow. */
-  appliedRate: number;
-  /** Commit a rate to the plan — only fired by the explicit Apply button. */
-  onApplyRate: (rate: number) => void;
 }
 
 type WaterfallItem = { axis: string; label: string; value: number; kind: WaterfallKind };
+
+// Sensitivity scenarios for the projection — only return-on-investment reacts
+// to the assumed post-tax rate; everything else (contributions, one-offs, goals)
+// is held constant so the user sees the pure effect of returns.
+const PROJECTION_BASE_RATE = 9;
+const PROJECTION_SCENARIOS: { id: string; label: string; rate: number }[] = [
+  { id: "cons", label: "Conservative", rate: 7 },
+  { id: "base", label: "Base", rate: 9 },
+  { id: "opt", label: "Optimistic", rate: 11 },
+];
 
 type WaterfallKind = "base" | "positive" | "negative" | "total";
 
@@ -960,23 +949,9 @@ const ProjectionAxisTick = (props: { x?: number; y?: number; payload?: { value?:
   );
 };
 
-function ProjectionContent({
-  fundFlow,
-  headline,
-  sipMonthly,
-  onGoToInputs,
-  appliedRate,
-  onApplyRate,
-}: ProjectionContentProps) {
-  // Moving the slider only previews here — every figure below it recalculates
-  // live. The goal-planning page's cashflow changes when, and only when, the
-  // user presses Apply, so nobody has their plan rewritten by an exploratory drag.
-  const [draftRate, setDraftRate] = useState(appliedRate);
-  useEffect(() => {
-    setDraftRate(appliedRate);
-  }, [appliedRate]);
-  const band = bandForRate(draftRate);
-  const isDirty = draftRate !== appliedRate;
+function ProjectionContent({ fundFlow, headline, sipMonthly, onGoToInputs }: ProjectionContentProps) {
+  const [scenarioId, setScenarioId] = useState("base");
+  const scenario = PROJECTION_SCENARIOS.find((s) => s.id === scenarioId) ?? PROJECTION_SCENARIOS[1];
 
   const currentYear = new Date().getFullYear();
   // Horizon comes from the engine: last FY-end = max(retirement, last goal).
@@ -1002,10 +977,10 @@ function ProjectionContent({
   const horizonYears = Math.max(1, horizonYear - currentYear);
   const ROI = useMemo(() => {
     const factor =
-      Math.pow(1 + draftRate / 100, horizonYears) /
+      Math.pow(1 + scenario.rate / 100, horizonYears) /
       Math.pow(1 + PROJECTION_BASE_RATE / 100, horizonYears);
     return Math.round(ROI_BASE * factor);
-  }, [draftRate, horizonYears, ROI_BASE]);
+  }, [scenario.rate, horizonYears, ROI_BASE]);
 
   // No plan yet → don't fabricate a waterfall; prompt to complete inputs.
   if (!fundFlow) {
@@ -1072,107 +1047,37 @@ function ProjectionContent({
   return (
     <div className="space-y-4">
       <p className="text-[11px] text-muted-foreground">
-        Through {horizonLabel} · {monthlyLabel} · {formatRate(draftRate)} post-tax
+        Through {horizonLabel} · {monthlyLabel} · {scenario.rate}% post-tax
       </p>
       <div className="space-y-4">
-                {/* Assumed return — everything below recalculates as this moves. */}
+                {/* Sensitivity — return scenario */}
                 <div>
-                  <div className="mb-2 flex items-end justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                        Assumed return
-                      </p>
-                      <p className="text-[11px] leading-snug text-muted-foreground/70">
-                        {band.blurb}
-                      </p>
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <p
-                        className="text-[20px] font-bold leading-none tabular-nums"
-                        style={{ color: "#D4A868", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
-                      >
-                        {formatRate(draftRate)}
-                      </p>
-                      <p className="mt-0.5 text-[11px] font-semibold text-foreground">{band.label}</p>
-                    </div>
-                  </div>
-
-                  {/* Track painted by the wrapper; the input supplies only the thumb.
-                      One hue deepening with the rate — the bands are a labelling of
-                      that magnitude, not four unrelated categories. */}
-                  <div className="relative">
-                    <div
-                      className="pointer-events-none absolute inset-x-0 top-1/2 h-2.5 -translate-y-1/2 overflow-hidden rounded-full"
-                      style={{
-                        background:
-                          "linear-gradient(90deg, rgba(212,168,104,0.14) 0%, rgba(212,168,104,0.42) 55%, rgba(212,168,104,0.85) 100%)",
-                      }}
-                    >
-                      {RETURN_BANDS.slice(1).map((b) => (
-                        <span
-                          key={b.label}
-                          className="absolute top-0 h-full w-px"
-                          style={{ left: `${ratePct(b.from)}%`, backgroundColor: "hsl(var(--card))" }}
-                        />
-                      ))}
-                    </div>
-                    <input
-                      type="range"
-                      className="return-slider relative"
-                      min={RETURN_MIN}
-                      max={RETURN_MAX}
-                      step={RETURN_STEP}
-                      value={draftRate}
-                      onChange={(e) => setDraftRate(Number(e.target.value))}
-                      aria-label="Assumed annual post-tax return"
-                      aria-valuetext={`${formatRate(draftRate)}, ${band.label}`}
-                    />
-                  </div>
-
-                  <div className="flex justify-between text-[9.5px] text-muted-foreground/70">
-                    {RETURN_BANDS.map((b) => (
-                      <span key={b.label} className="tabular-nums">
-                        {b.label} {b.from}–{b.to}%
-                      </span>
-                    ))}
-                  </div>
-
-                  {/* Preview stays in this panel until applied. */}
-                  <button
-                    type="button"
-                    disabled={!isDirty}
-                    onClick={() => onApplyRate(draftRate)}
-                    className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-xl py-2.5 text-[12px] font-bold transition-all active:scale-[0.99] disabled:cursor-not-allowed"
-                    style={
-                      isDirty
-                        ? {
-                            backgroundColor: "#D4A868",
-                            color: "#2D1F05",
-                            boxShadow: "0 2px 8px rgba(212,168,104,0.45)",
-                          }
-                        : {
-                            backgroundColor: "hsl(var(--muted) / 0.6)",
-                            color: "hsl(var(--muted-foreground))",
-                          }
-                    }
-                  >
-                    {isDirty ? (
-                      <>
-                        <Check className="h-3.5 w-3.5" />
-                        Apply {formatRate(draftRate)} to my plan
-                      </>
-                    ) : (
-                      `${formatRate(appliedRate)} is applied to your plan`
-                    )}
-                  </button>
-
-                  <p className="mt-1.5 text-[10.5px] leading-snug text-muted-foreground/70">
-                    {isDirty
-                      ? "The figures below are already on this rate. The goal-planning page keeps your applied rate until you press Apply."
-                      : appliedRate === PROJECTION_BASE_RATE
-                        ? "Your plan as the engine computed it. Drag to see another return, then apply it."
-                        : "The goal-planning page is running on this rate. Contributions, one-offs and goal payouts are unchanged — only returns move."}
+                  <p className="mb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
+                    Return scenario · sensitivity
                   </p>
+                  <div className="flex rounded-full bg-muted/60 p-0.5">
+                    {PROJECTION_SCENARIOS.map((s) => {
+                      const active = s.id === scenarioId;
+                      return (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => setScenarioId(s.id)}
+                          className={`flex-1 rounded-full py-1.5 text-[11px] font-semibold transition-colors ${
+                            active
+                              ? "bg-card text-foreground shadow-sm"
+                              : "text-muted-foreground hover:text-foreground"
+                          }`}
+                          aria-pressed={active}
+                        >
+                          {s.label}
+                          <span className="ml-1 text-[10px] font-normal tabular-nums opacity-70">
+                            {s.rate}%
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 {/* Closing headline (live) */}
@@ -1387,32 +1292,6 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   const [cashflowData, setCashflowData] = useState<CashflowPlanRunDetail | null>(null);
   const [cashflowLoading, setCashflowLoading] = useState(false);
   const [cashflowError, setCashflowError] = useState<string | null>(null);
-
-  // The return rate currently APPLIED to the plan. Owned here rather than in the
-  // panel because it drives this page's cashflow; the panel only previews a draft
-  // until the user presses Apply. Saved so the choice survives a reload — someone
-  // who applied 4% should not silently be back on the engine's 9%.
-  const [appliedRate, setAppliedRate] = useState(readSavedRate);
-  const band = bandForRate(appliedRate);
-  const isBaseRate = appliedRate === PROJECTION_BASE_RATE;
-
-  const applyRate = useCallback((rate: number) => {
-    const next = clampRate(rate);
-    setAppliedRate(next);
-    writeSavedRate(next);
-    toast.success(`${formatRate(next)} applied`, {
-      description:
-        next === PROJECTION_BASE_RATE
-          ? "Your goal plan is back on the engine's computed returns."
-          : `Your goal plan now runs on ${formatRate(next)} post-tax returns (${bandForRate(next).label.toLowerCase()}).`,
-    });
-  }, []);
-
-  /** Engine rows replayed at the applied return — identical to the engine at 9%. */
-  const scenarioAnnualRows = useMemo(
-    () => scaleAnnualRowsToRate(cashflowData?.annual_cashflow ?? [], appliedRate),
-    [cashflowData, appliedRate],
-  );
 
   const reloadGoals = useCallback(async () => {
     setGoalsLoading(true);
@@ -1851,8 +1730,8 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
 
   /** FY-end corpus_closing keyed by FY end calendar year (from fy_end_date). */
   const tornadoCorpusByYear = useMemo((): Map<number, TornadoCorpusRow> | null => {
-    if (!scenarioAnnualRows.length) return null;
-    const rows = [...scenarioAnnualRows].sort(
+    if (!cashflowData?.annual_cashflow?.length) return null;
+    const rows = [...cashflowData.annual_cashflow].sort(
       (a, b) => Date.parse(a.fy_end_date) - Date.parse(b.fy_end_date),
     );
     const map = new Map<number, TornadoCorpusRow>();
@@ -1865,7 +1744,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
       });
     }
     return map.size > 0 ? map : null;
-  }, [scenarioAnnualRows]);
+  }, [cashflowData]);
 
   const cashflowProjection: ProjectionPoint[] | null = useMemo(() => {
     if (!tornadoCorpusByYear) return null;
@@ -2212,37 +2091,6 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
             })}
           </div>
         </div>
-
-        {/* Applied return scenario. Read-only on purpose: the plan changes only
-            via Apply in the Projection panel, never by a stray tap out here. */}
-        {tornadoCorpusByYear && !isBaseRate && (
-          <div className="flex items-start gap-2 px-1">
-            <span
-              className="mt-[1px] inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold tabular-nums"
-              style={{
-                backgroundColor: "rgba(212,168,104,0.16)",
-                color: "#D4A868",
-                border: "1px solid rgba(212,168,104,0.45)",
-              }}
-            >
-              {formatRate(appliedRate)} · {band.label}
-            </span>
-            <p className="text-[10.5px] leading-snug text-muted-foreground/70">
-              Showing an applied {formatRate(appliedRate)} return, not the engine's computed plan.
-              Contributions, one-offs and goal payouts are unchanged — only returns move.{" "}
-              <button
-                type="button"
-                onClick={() => {
-                  setPanelTab("projection");
-                  setPanelOpen(true);
-                }}
-                className="font-semibold text-[#D4A868] underline underline-offset-2"
-              >
-                Change or reset
-              </button>
-            </p>
-          </div>
-        )}
 
         {isTornado && !tornadoCorpusByYear && !cashflowLoading && (
           <p className="px-1 text-[11px] text-amber-600">
@@ -2905,8 +2753,6 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                     headline={cashflowData?.headline ?? null}
                     sipMonthly={planSip}
                     onGoToInputs={() => setPanelTab("inputs")}
-                    appliedRate={appliedRate}
-                    onApplyRate={applyRate}
                   />
                 ) : (
                   <CashflowInputsForm

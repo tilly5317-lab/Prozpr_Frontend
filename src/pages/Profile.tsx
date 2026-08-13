@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   User, Pencil, Check, ChevronRight, ChevronDown,
-  MessageSquareText, Calculator, BarChart3, Users, Briefcase, AlertCircle, LogOut, UploadCloud, Bug, FileText, Lock,
+  MessageSquareText, Calculator, BarChart3, Users, Briefcase, AlertCircle, LogOut, UploadCloud, Bug, FileText,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -22,10 +22,6 @@ import {
 } from "@/lib/api";
 
 /* ── tiny helpers ── */
-
-// The two statements behind the Reports row — listed here purely as the row's
-// subtitle; each is rendered (with filters + Excel/PDF download) on `/reports`.
-const REPORT_NAMES = ["Portfolio holdings", "Capital gains"];
 
 const EmptyHint = ({ label }: { label: string }) => (
   <span className="text-[11px] italic text-muted-foreground/60">
@@ -499,7 +495,6 @@ const Profile = () => {
         { icon: User, title: "Tell Us More About You", sub: "Goals, risk tolerance & mandates", route: "/profile/complete", showDot: !aboutYouConfirmed },
         { icon: UploadCloud, title: "Update Holdings", sub: "Upload your latest CAMS / KFintech statement", route: "/cams-upload?from=profile", showDot: false },
         { icon: FileText, title: "My CAS Statements", sub: "Download statements you've imported", route: "/cas-statements", showDot: false },
-        { icon: Lock, title: "Your Data & Privacy", sub: "What we store, who sees it, how long we keep it", route: "/privacy", showDot: false },
       ]).map((item) => (
         <div key={item.title} className="px-5 mb-1.5">
           <button
@@ -523,25 +518,6 @@ const Profile = () => {
         </div>
       ))}
 
-      {/* Reports — opens the statements screen (view, filter, download) */}
-      <div className="px-5 mb-1.5">
-        <button
-          onClick={() => navigate("/reports")}
-          className="wealth-card !p-2.5 w-full text-left flex items-center gap-2.5 active:scale-[0.98] transition-transform"
-        >
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-secondary">
-            <FileText className="h-3 w-3 text-muted-foreground" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <h3 className="text-xs font-semibold text-foreground">Reports</h3>
-            <p className="text-[11px] text-muted-foreground">
-              {REPORT_NAMES.join(" · ")} — view or download
-            </p>
-          </div>
-          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-        </button>
-      </div>
-
       {/* Report an Issue */}
       <div className="px-5 mb-1.5">
         <ReportIssueDialog>
@@ -561,6 +537,7 @@ const Profile = () => {
       {/* Coming Soon items */}
       {([
         { icon: Users, title: "Family Members", sub: undefined },
+        { icon: BarChart3, title: "Reports", sub: "Track performance & analytics" },
         { icon: Calculator, title: "Tax Optimisation", sub: "Smart tax-efficient strategies" },
       ]).map((item) => (
         <div key={item.title} className="px-5 mb-1.5">

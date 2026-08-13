@@ -84,7 +84,6 @@ import Notifications from "./pages/Notifications";
 import CompleteProfile from "./pages/CompleteProfile";
 import Profile from "./pages/Profile";
 import CasStatements from "./pages/CasStatements";
-import PrivacyDisclaimer from "./pages/PrivacyDisclaimer";
 import Chat from "./pages/Chat";
 import GoalsTimeline from "./pages/GoalsTimeline";
 import SipPlanner from "./pages/SipPlanner";
@@ -104,10 +103,6 @@ import PortfolioFundDetail from "./pages/PortfolioFundDetail";
 import OnboardingLoading from "./pages/OnboardingLoading";
 import FamilyMembers from "./pages/FamilyMembers";
 import LiquidFunds from "./pages/LiquidFunds";
-import ApproveOrders from "./pages/ApproveOrders";
-import SavingsPot from "./pages/SavingsPot";
-import IncomeArbitrage from "./pages/IncomeArbitrage";
-import Reports from "./pages/Reports";
 
 const queryClient = new QueryClient();
 
@@ -139,9 +134,7 @@ const App = () => (
             <Route path="/portfolio" element={<Portfolio />} />
             <Route path="/portfolio/fund/:schemeCode" element={<PortfolioFundDetail />} />
             <Route path="/profile" element={<Profile />} />
-            <Route path="/reports" element={<Reports />} />
             <Route path="/cas-statements" element={<CasStatements />} />
-            <Route path="/privacy" element={<PrivacyDisclaimer />} />
             <Route path="/chat" element={<Chat />} />
             <Route path="/notifications" element={<Notifications />} />
             {/* Invest section — layout route so the top toggle (InvestTabs)
@@ -179,9 +172,6 @@ const App = () => (
             <Route path="/goal-planner/timeline-2" element={<GoalsTimeline variant="tornado" />} />
             <Route path="/family" element={<FamilyMembers />} />
             <Route path="/liquid-funds" element={<LiquidFunds />} />
-            <Route path="/approve-orders" element={<ApproveOrders />} />
-            <Route path="/savings-pot" element={<SavingsPot />} />
-            <Route path="/income-arbitrage" element={<IncomeArbitrage />} />
             </Route>
             </Route>
             <Route path="*" element={<NotFound />} />

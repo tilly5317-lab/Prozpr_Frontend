@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { TrendingUp, Sparkles, Shield, Lock, ChevronDown, Mail } from "lucide-react";
+import { TrendingUp, Sparkles, Shield, ChevronDown, Mail } from "lucide-react";
 import OnboardingNav from "./OnboardingNav";
 import prozprLogoLight from "@/assets/prozpr-logo-light.png";
 import prozprLogoDark from "@/assets/prozpr-logo-dark.png";
@@ -856,21 +856,6 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
           loadingLabel="Checking your number…"
         />
       </motion.div>
-
-      {/* Privacy note, brought over from mvp_v2. The long-form version lives at
-          /privacy, linked from Profile. */}
-      <motion.p
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.95, duration: 0.5 }}
-        className="mt-3 flex items-start justify-center gap-1.5 text-center text-[11px] leading-relaxed text-muted-foreground"
-      >
-        <Lock className="mt-[1px] h-3 w-3 shrink-0" aria-hidden="true" />
-        <span>
-          Anything you upload is stored securely. Our team does not track or review individual
-          customer data.
-        </span>
-      </motion.p>
     </div>
   );
 };
