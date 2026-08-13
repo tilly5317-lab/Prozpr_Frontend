@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { TrendingUp, Sparkles, ChevronDown, Mail } from "lucide-react";
+import { TrendingUp, Sparkles, Shield, ChevronDown, Mail } from "lucide-react";
 import OnboardingNav from "./OnboardingNav";
 import prozprLogoLight from "@/assets/prozpr-logo-light.png";
 import prozprLogoDark from "@/assets/prozpr-logo-dark.png";
@@ -744,6 +744,12 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
           {[
             { icon: TrendingUp, label: "Track all investments", sub: "Mutual funds, stocks and more" },
             { icon: Sparkles, label: "Prozpr, your own AI wealth advisor", sub: "Personalized recommendations" },
+            // Restored third card. It sat here originally as "Bank-grade
+            // security / 256-bit encryption" and was dropped somewhere before
+            // release/mvp-v2; the slot is back with plainer words. The number
+            // field is directly below, and "why should I hand this over" is
+            // where people actually stop — so this answers that, not specs.
+            { icon: Shield, label: "Your data stays private", sub: "Encrypted, never sold or shared" },
           ].map((item, i) => (
             <motion.div
               key={item.label}
