@@ -1756,6 +1756,86 @@ export async function getMfHoldingDetail(schemeCode: string): Promise<MfHoldingD
   return request<MfHoldingDetailResponse>(`/mf/funds/${encoded}/holding-detail`);
 }
 
+// ── MF transaction ledger (`mf_transactions`) ───────────────────────────────
+
+export type MfTransactionType =
+  | "BUY"
+  | "SELL"
+  | "SWITCH_IN"
+  | "SWITCH_OUT"
+  | "DIVIDEND_REINVEST";
+
+/**
+ * One row of `mf_transactions` across ALL schemes (CAMS/SimBanks ingest +
+ * manual entries) — the per-scheme view lives on `MfHoldingDetailResponse`.
+ *
+ * Sign convention matches the backend: CAS stores redemption units/amounts as
+ * negatives, so consumers must take `Math.abs()` and let `transaction_type`
+ * decide direction (see `holding_detail_service._position_from_txns`).
+ */
+export interface MfTransactionItem {
+  id: string;
+  user_id: string;
+  scheme_code: string;
+  sip_mandate_id: string | null;
+  folio_number: string;
+  transaction_type: MfTransactionType;
+  transaction_date: string;
+  units: number;
+  nav: number;
+  amount: number;
+  isin: string | null;
+  fund_name: string | null;
+  category: string | null;
+  sub_category: string | null;
+  sub_group: string | null;
+  stamp_duty: number | null;
+  source_system: string;
+  created_at: string;
+}
+
+/** Backend caps `limit` at 200 per page. */
+const MF_TXN_PAGE_SIZE = 200;
+/** Safety stop so a runaway ledger can never spin forever (200 × 60 = 12k rows). */
+const MF_TXN_MAX_PAGES = 60;
+
+/** One page of the MF transaction ledger. */
+export async function listMfTransactions(opts?: {
+  skip?: number;
+  limit?: number;
+  schemeCode?: string;
+  from?: string;
+  to?: string;
+}): Promise<MfTransactionItem[]> {
+  const params = new URLSearchParams();
+  params.set("skip", String(opts?.skip ?? 0));
+  params.set("limit", String(opts?.limit ?? MF_TXN_PAGE_SIZE));
+  if (opts?.schemeCode) params.set("scheme_code", opts.schemeCode);
+  if (opts?.from) params.set("transaction_date_from", opts.from);
+  if (opts?.to) params.set("transaction_date_to", opts.to);
+  // Mounted under the MF domain router (`/mf` + `/transactions`) — a bare
+  // `/transactions/` 404s.
+  return request<MfTransactionItem[]>(`/mf/transactions/?${params.toString()}`);
+}
+
+/**
+ * The user's WHOLE MF ledger, paged out of `/mf/transactions/`. Capital-gains
+ * matching is FIFO over the full history, so a partial ledger would silently
+ * mis-cost lots — always pull everything.
+ */
+export async function getAllMfTransactions(): Promise<MfTransactionItem[]> {
+  const all: MfTransactionItem[] = [];
+  for (let page = 0; page < MF_TXN_MAX_PAGES; page++) {
+    const batch = await listMfTransactions({
+      skip: page * MF_TXN_PAGE_SIZE,
+      limit: MF_TXN_PAGE_SIZE,
+    });
+    all.push(...batch);
+    if (batch.length < MF_TXN_PAGE_SIZE) break;
+  }
+  return all;
+}
+
 /**
  * Heuristic: profile rows in DB look filled even if `is_onboarding_complete` was never flipped.
  * Used to skip redundant onboarding / account-link nudges in the chat shell.
@@ -1990,6 +2070,64 @@ export async function refreshPortfolioNavHistory(): Promise<PortfolioNavHistoryR
   return request<PortfolioNavHistoryResponse>("/portfolio/nav-history/refresh", {
     method: "POST",
   });
+}
+
+// ── Portfolio insights (dashboard popup) ────────────────────────────────────
+
+/** Our conviction on a fund. "neutral" = we have no rating for it yet. */
+export type InsightVerdict = "like" | "dislike" | "neutral";
+
+/** One held mutual fund with its returns, weight and our verdict on it. */
+export interface InsightFundRow {
+  holding_id: string;
+  scheme_code: string | null;
+  isin: string | null;
+  name: string;
+  amc_name: string | null;
+  asset_class: string | null;
+  sub_category: string | null;
+  current_value: number;
+  invested: number | null;
+  /** Share of the invested portfolio — rows in a group sum to that group's weight. */
+  weight_pct: number;
+  /** Total return on YOUR money in this fund (value vs cost basis). */
+  holding_return_pct: number | null;
+  /** Scheme NAV returns, anchored to `as_of` so they match the benchmark's window. */
+  nav_return_1y_pct: number | null;
+  nav_return_3y_pct: number | null;
+  our_rating: number | null;
+  is_recommended: boolean | null;
+  /** Latest rebalancing run's call: BUY | SELL | EXIT | HOLD. */
+  rebalance_action: string | null;
+  rebalance_reason: string | null;
+  verdict: InsightVerdict;
+  verdict_reason: string;
+}
+
+/** Benchmark returns over the SAME window as every fund row. */
+export interface InsightBenchmark {
+  code: string;
+  display_name: string;
+  return_1y_pct: number | null;
+  return_3y_pct: number | null;
+}
+
+export interface PortfolioInsightsResponse {
+  /** Shared anchor date for every return here — funds and benchmark alike. */
+  as_of: string | null;
+  holdings_total: number;
+  funds: InsightFundRow[];
+  benchmark: InsightBenchmark | null;
+  rating_floor: number;
+  rating_scale_max: number;
+  /** Null when the user has never run rebalancing — verdicts then rest on the rating alone. */
+  rebalancing_run_id: string | null;
+  rebalancing_computed_at: string | null;
+}
+
+/** Per-fund returns, weights and verdicts for the portfolio-insights popup. */
+export async function getPortfolioInsights(): Promise<PortfolioInsightsResponse> {
+  return request<PortfolioInsightsResponse>("/portfolio/insights");
 }
 
 export type NetworthJobState =
