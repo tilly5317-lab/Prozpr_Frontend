@@ -1,15 +1,18 @@
-import { type CSSProperties, useCallback, useMemo, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
-import { ArrowRight, Check, Loader2, Sparkles } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { ArrowRight, Check, CheckCircle2, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import BottomNav from "@/components/BottomNav";
 import { CurrentVsTargetChart } from "@/components/invest/CurrentVsTargetChart";
 import { Skeleton } from "@/components/ui/skeleton";
 import RebalanceGate from "@/components/invest/RebalanceGate";
+import { ComputeProgressSteps } from "@/components/invest/ComputeProgressSteps";
 import TradeFundDetailView from "@/components/fund/TradeFundDetailView";
 import { toast } from "@/hooks/use-toast";
+import { useComputeProgress } from "@/hooks/useComputeProgress";
 import {
   getMyPortfolio,
+  getRebalanceComputeProgress,
   getRebalancingRunDetail,
   listRebalancingRuns,
   runRebalancing,
@@ -26,6 +29,20 @@ import {
    backend (scheme_classification.asset_class_for_subgroup) and shipped on each
    subgroup_summary / trade, so there is no client-side classification. ── */
 type Bucket = "equity" | "debt" | "others";
+
+// Sequential pre-flight checks shown after "Approve plan" (mock; each spends ~2s
+// running its sub-checks, ticks green, then the next starts).
+const PREFLIGHT_STEPS: { label: string; checks: string[] }[] = [
+  {
+    label: "Eligibility & KYC",
+    checks: ["KYC status", "Purchase / redemption constraints", "Min / max amount thresholds"],
+  },
+  {
+    label: "Backend order review",
+    checks: ["Investment account", "Scheme (ISIN)", "Amount / units", "Order type"],
+  },
+  { label: "Consent / 2FA — please approve", checks: [] },
+];
 
 const BUCKET_ORDER: Bucket[] = ["equity", "debt", "others"];
 const BUCKET_META: Record<Bucket, { label: string; color: string }> = {
@@ -427,7 +444,10 @@ const RebalanceExplanation = () => {
   const [portfolio, setPortfolio] = useState<PortfolioDetail | null>(null);
   const [dataLoading, setDataLoading] = useState(false);
   const [dataError, setDataError] = useState<string | null>(null);
-  const [approving, setApproving] = useState(false);
+  const [preflightOpen, setPreflightOpen] = useState(false);
+  const [preCompleted, setPreCompleted] = useState(0);
+  // How many of the ACTIVE step's sub-checks have rolled in so far.
+  const [preRevealed, setPreRevealed] = useState(0);
   // Whether the rebalancing inputs are complete. null = still checking (the gate
   // shows a pill); false = missing inputs → render the example plan; true = real
   // plan loads via onReady → loadData.
@@ -467,35 +487,61 @@ const RebalanceExplanation = () => {
     [navigate],
   );
 
+  // True only while the engine is actually computing a plan (first-ever visit
+  // with no run, or the Recalculate button). Plain reads never set this — the
+  // progress % / stage UI shows only during a real compute.
+  const [computing, setComputing] = useState(false);
+  const computeProgress = useComputeProgress(computing, getRebalanceComputeProgress);
+
+  // Run the engine and load the resulting run. Used once when no plan exists,
+  // and by the Recalculate button; chat is the other producer of runs.
+  const compute = useCallback(async () => {
+    setComputing(true);
+    setDataError(null);
+    try {
+      const res = await runRebalancing();
+      if (res.blocking_message) {
+        setDataError(res.blocking_message);
+        return;
+      }
+      const run = (await listRebalancingRuns())[0];
+      if (!run) {
+        setDataError("No rebalancing plan is available yet.");
+        return;
+      }
+      setDetail(await getRebalancingRunDetail(run.id));
+      getMyPortfolio().then(setPortfolio).catch(() => { /* section just hides */ });
+    } catch {
+      setDataError("Couldn't build your rebalancing plan. Please try again.");
+    } finally {
+      setComputing(false);
+    }
+  }, []);
+
   // Load the latest rebalancing run's real trades + subgroup roll-ups. Called by
-  // the gate's onReady once every required input is present.
+  // the gate's onReady once every required input is present. READ-ONLY except
+  // the very first visit: with no run on record it computes one, exactly once —
+  // afterwards new runs come from chat or the Recalculate button.
   const loadData = useCallback(async () => {
     setDataLoading(true);
     setDataError(null);
     try {
       const runs = await listRebalancingRuns().catch(() => []);
-      let run = runs[0];
+      const run = runs[0];
       if (!run) {
-        const res = await runRebalancing();
-        if (res.blocking_message) {
-          setDataError(res.blocking_message);
-          return;
-        }
-        run = (await listRebalancingRuns())[0];
+        setDataLoading(false);
+        await compute();
+        return;
       }
-      if (run) {
-        setDetail(await getRebalancingRunDetail(run.id));
-        // Best-effort: load holdings so we can show the funds we're keeping.
-        getMyPortfolio().then(setPortfolio).catch(() => { /* section just hides */ });
-      } else {
-        setDataError("No rebalancing plan is available yet.");
-      }
+      setDetail(await getRebalancingRunDetail(run.id));
+      // Best-effort: load holdings so we can show the funds we're keeping.
+      getMyPortfolio().then(setPortfolio).catch(() => { /* section just hides */ });
     } catch {
       setDataError("Couldn't load your rebalancing plan. Please try again.");
     } finally {
       setDataLoading(false);
     }
-  }, []);
+  }, [compute]);
 
   const driftRows = useMemo(() => {
     // Prefer the backend's multi-asset-aware breakdown; fall back to the local
@@ -517,7 +563,8 @@ const RebalanceExplanation = () => {
 
   // Render an example plan when the inputs aren't ready and there's no real plan
   // to show. The same sections render either the real or the sample data.
-  const isExample = gateReady === false && !detail && !dataLoading && !dataError;
+  const isExample =
+    gateReady === false && !detail && !dataLoading && !computing && !dataError;
   const driftRowsToShow = isExample ? EXAMPLE_DRIFT_ROWS : driftRows;
   const tradeGroupsToShow = isExample ? EXAMPLE_TRADE_GROUPS : tradeGroups;
   const tradeCountToShow = isExample
@@ -529,19 +576,47 @@ const RebalanceExplanation = () => {
     ? EXAMPLE_SUMMARY
     : detail?.summary ?? DEFAULT_SUMMARY;
 
-  const proceed = useCallback(async () => {
-    if (!detail) return;
-    setApproving(true);
-    try {
-      await updateRebalancingStatus(detail.id, "approved");
-      setDetail((prev) => (prev ? { ...prev, status: "approved" } : prev));
-      toast({ title: "Plan approved", description: "Your rebalancing trades are ready to execute." });
-    } catch {
-      toast({ title: "Couldn't approve", description: "Please try again.", variant: "destructive" });
-    } finally {
-      setApproving(false);
+  // Orders handed to the confirmation page (SELL → redemption, BUY → purchase).
+  const ordersForApproval = useMemo(
+    () =>
+      uiTrades.map((t) => ({
+        id: t.id,
+        kind: t.type === "SELL" ? ("redemption" as const) : ("purchase" as const),
+        name: t.name,
+        amount: t.amount,
+      })),
+    [uiTrades],
+  );
+
+  const startApproval = useCallback(() => {
+    setPreCompleted(0);
+    setPreRevealed(0);
+    setPreflightOpen(true);
+  }, []);
+
+  // Roll each step's sub-checks in ~0.7s apart; once all are shown, tick the
+  // step green and move to the next. When every step passes → confirmation page.
+  useEffect(() => {
+    if (!preflightOpen) return;
+    if (preCompleted >= PREFLIGHT_STEPS.length) {
+      const t = window.setTimeout(() => {
+        setPreflightOpen(false);
+        navigate("/approve-orders", { state: { orders: ordersForApproval } });
+      }, 750);
+      return () => window.clearTimeout(t);
     }
-  }, [detail]);
+    const step = PREFLIGHT_STEPS[preCompleted];
+    if (preRevealed < step.checks.length) {
+      const t = window.setTimeout(() => setPreRevealed((r) => r + 1), 1000);
+      return () => window.clearTimeout(t);
+    }
+    const hold = step.checks.length === 0 ? 1500 : 600;
+    const t = window.setTimeout(() => {
+      setPreCompleted((c) => c + 1);
+      setPreRevealed(0);
+    }, hold);
+    return () => window.clearTimeout(t);
+  }, [preflightOpen, preCompleted, preRevealed, navigate, ordersForApproval]);
 
   return (
     <div className="mobile-container bg-background min-h-screen pb-24">
@@ -551,11 +626,41 @@ const RebalanceExplanation = () => {
       <RebalanceGate onReady={loadData} onResolved={setGateReady} editSignal={gateEditSignal} />
 
       <div className="px-5 pt-2 pb-2 space-y-3">
-        {dataLoading && (
+        {/* Recalculating: no skeletons, no duplicate status line — just the
+            live process checklist centred; done lines stay ticked until the
+            whole compute finishes and the plan renders. */}
+        {computing && (
+          <div
+            className="flex justify-center pt-14"
+            aria-busy="true"
+            aria-label="Recalculating your plan"
+          >
+            <div className="w-full max-w-[340px] rounded-2xl border border-border bg-card p-5 shadow-sm">
+              <div className="mb-4 flex items-center gap-2.5">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/50" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
+                </span>
+                <span className="text-[13.5px] font-semibold text-foreground">
+                  Building your rebalancing plan
+                </span>
+              </div>
+              <ComputeProgressSteps
+                progress={computeProgress}
+                startingLabel="Reviewing your portfolio & profile…"
+              />
+              <p className="mt-4 border-t border-border/60 pt-3 text-[11px] leading-snug text-muted-foreground">
+                Working with your live portfolio — this can take a minute.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {dataLoading && !computing && (
           <div className="space-y-3" aria-busy="true" aria-label="Loading your plan">
             <div className="flex items-center gap-2 text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
-              <span className="text-[12px]">Building your plan…</span>
+              <span className="text-[12px]">Loading your plan…</span>
             </div>
             {/* Drift card placeholder */}
             <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
@@ -581,13 +686,13 @@ const RebalanceExplanation = () => {
           </div>
         )}
 
-        {!dataLoading && dataError && (
+        {!dataLoading && !computing && dataError && (
           <div className="rounded-2xl border border-border bg-card p-6 text-center text-sm text-muted-foreground">
             {dataError}
           </div>
         )}
 
-        {!dataLoading && !dataError && (detail || isExample) && (
+        {!dataLoading && !computing && !dataError && (detail || isExample) && (
           <>
             <div className="-mb-1 flex items-center gap-2">
               <span className="text-lg font-semibold text-foreground">Rebalancing</span>
@@ -595,6 +700,16 @@ const RebalanceExplanation = () => {
                 <span className="rounded-full border border-[#D4A868]/40 bg-[#D4A868]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[#9A7B2E]">
                   Example
                 </span>
+              )}
+              {!isExample && detail && (
+                <button
+                  type="button"
+                  onClick={() => void compute()}
+                  className="ml-auto flex items-center gap-1 rounded-full border border-border px-3 py-1.5 text-[11.5px] font-semibold text-foreground transition-colors hover:bg-muted/50"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  Recalculate
+                </button>
               )}
             </div>
 
@@ -789,18 +904,95 @@ const RebalanceExplanation = () => {
             ) : (
               <button
                 type="button"
-                onClick={() => void proceed()}
-                disabled={approving || isApproved || uiTrades.length === 0}
+                onClick={startApproval}
+                disabled={uiTrades.length === 0}
                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-foreground py-3.5 text-[15px] font-semibold tracking-wide text-background transition-all active:scale-[0.98] disabled:opacity-60"
               >
-                {approving ? <Loader2 className="h-4 w-4 animate-spin" /> : isApproved ? <Check className="h-4 w-4" /> : null}
-                {isApproved ? "Plan approved" : approving ? "Approving…" : "Approve plan"}
-                {!isApproved && !approving && <ArrowRight className="h-4 w-4" />}
+                Approve plan
+                <ArrowRight className="h-4 w-4" />
               </button>
             )}
           </>
         )}
       </div>
+
+      {/* Pre-flight checks — each ticks green ~1.5s apart, then → confirmation. */}
+      <AnimatePresence>
+        {preflightOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[60] bg-black/45"
+              aria-hidden="true"
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 16, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.98 }}
+              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Approving your plan"
+              className="fixed inset-0 z-[60] flex items-center justify-center px-6"
+            >
+              <div className="w-full max-w-sm rounded-2xl bg-card p-5 shadow-2xl">
+                <p className="mb-4 text-[15px] font-semibold text-foreground">Approving your plan</p>
+                <div className="space-y-3">
+                  {PREFLIGHT_STEPS.map((step, i) => {
+                    if (i > preCompleted) return null; // reveal one step at a time
+                    const done = i < preCompleted;
+                    const active = i === preCompleted;
+                    return (
+                      <motion.div
+                        key={step.label}
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="flex h-6 w-6 shrink-0 items-center justify-center">
+                            {done ? (
+                              <CheckCircle2 className="h-5 w-5 text-wealth-green" />
+                            ) : (
+                              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                            )}
+                          </span>
+                          <span
+                            className={`text-[13px] ${
+                              done ? "font-medium text-foreground" : "font-medium text-foreground"
+                            }`}
+                          >
+                            {step.label}
+                          </span>
+                        </div>
+
+                        {/* Sub-checks roll in one at a time while this step runs. */}
+                        {active && step.checks.length > 0 && (
+                          <div className="mt-1.5 ml-9 space-y-1.5">
+                            {step.checks.slice(0, preRevealed).map((c) => (
+                              <motion.div
+                                key={c}
+                                initial={{ opacity: 0, y: 4 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.25 }}
+                                className="flex items-center gap-2 text-[11.5px] italic text-muted-foreground"
+                              >
+                                <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-muted-foreground/50" />
+                                Checking {c}…
+                              </motion.div>
+                            ))}
+                          </div>
+                        )}
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       <BottomNav />
     </div>

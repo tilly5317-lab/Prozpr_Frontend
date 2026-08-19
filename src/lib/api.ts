@@ -134,12 +134,35 @@ export class BackendOfflineError extends Error {
   }
 }
 
+/**
+ * Non-JSON error bodies are usually gateway pages (nginx "504 Gateway Time-out" HTML,
+ * Cloudflare interstitials). Never surface raw markup to users — map to a readable message.
+ */
+function readableErrorBody(text: string, status: number): string {
+  const trimmed = text.trim();
+  if (!trimmed || trimmed.startsWith("<")) {
+    if (status === 413)
+      return "The file is too large for the server to accept. Files up to 20 MB are supported.";
+    if (status === 504)
+      return "The server took too long to respond. Please try again.";
+    if (status === 502 || status === 503)
+      return "The server is temporarily unavailable. Please try again in a moment.";
+    return `Request failed (${status})`;
+  }
+  return trimmed;
+}
+
 let backendOfflineUntil = 0;
 const OFFLINE_RETRY_MS = 15_000;
 /** Default for most API calls */
 const REQUEST_TIMEOUT_MS = 45_000;
-/** Chat can run intent classification + optional market commentary + LLM — allow longer */
-const CHAT_REQUEST_TIMEOUT_MS = 120_000;
+/**
+ * Chat can run intent classification + optional market commentary + LLM — allow longer.
+ * Must stay ABOVE the backend's _FLOW_TIMEOUT_S (180s in ai_engine/services/brain.py) and
+ * nginx's proxy_read_timeout (200s) so the backend's own timeout fallback reaches the user
+ * instead of a client-side abort.
+ */
+const CHAT_REQUEST_TIMEOUT_MS = 210_000;
 /** Issue reporting blocks a user-facing submit button — keep it snappy and bounded. */
 const ISSUE_REQUEST_TIMEOUT_MS = 20_000;
 // till this
@@ -202,7 +225,7 @@ async function request<T>(
         msg = JSON.stringify(body);
       }
     } catch {
-      msg = text.trim() || `Request failed (${res.status})`;
+      msg = readableErrorBody(text, res.status);
     }
     // Treat common gateway/unavailable statuses as "offline" to avoid noisy errors.
     if ([502, 503, 504].includes(res.status)) {
@@ -483,6 +506,36 @@ export async function markOnboardingComplete(): Promise<void> {
   }
 }
 
+// ── Onboarding "Generate my portfolio" job ──────────────────────────
+export type OnboardingGenerationState = "none" | "pending" | "running" | "success" | "failed";
+
+export interface OnboardingGenerationStep {
+  key: string;
+  label: string;
+  state: "pending" | "active" | "done";
+}
+
+/** Polled status of the post-signup personalisation job (real backend progress). */
+export interface OnboardingGenerationStatus {
+  status: OnboardingGenerationState;
+  phase: string | null;
+  progress_pct: number;
+  message: string | null;
+  steps: OnboardingGenerationStep[];
+  started_at: string | null;
+  finished_at: string | null;
+}
+
+/** Kick off the personalisation job (idempotent — returns the running job if any). */
+export async function startOnboardingGeneration(): Promise<OnboardingGenerationStatus> {
+  return request<OnboardingGenerationStatus>("/onboarding/generate", { method: "POST" });
+}
+
+/** Latest personalisation-job status — the loading page polls this. */
+export async function getOnboardingGenerationStatus(): Promise<OnboardingGenerationStatus> {
+  return request<OnboardingGenerationStatus>("/onboarding/generate/status");
+}
+
 // ── SimBanks (account aggregator simulator) ─────────────────────────
 export interface SimBankDiscoveredAccount {
   account_ref_no: string;
@@ -653,7 +706,9 @@ export async function uploadCamsStatement(
       const body = JSON.parse(text) as { detail?: unknown };
       msg = typeof body?.detail === "string" ? body.detail : JSON.stringify(body);
     } catch {
-      msg = text.trim() || `Upload failed (${res.status})`;
+      // A 413 that arrives as HTML never reached FastAPI — the reverse proxy's
+      // client_max_body_size rejected the body at the edge.
+      msg = readableErrorBody(text, res.status);
     }
     if ([502, 503, 504].includes(res.status)) {
       backendOfflineUntil = Date.now() + OFFLINE_RETRY_MS;
@@ -664,6 +719,43 @@ export async function uploadCamsStatement(
   // A successful ingest changes portfolio + linked accounts — drop the cached user context.
   invalidateUserContextCache();
   return JSON.parse(text) as CamsPdfImportResponse;
+}
+
+// ── Archived CAS statements ("My CAS statements" on the profile) ──
+export interface CasDocumentItem {
+  id: string;
+  uploaded_at: string;
+  source_filename: string | null;
+  file_size_bytes: number | null;
+  cas_type: string | null;
+  file_type: string | null;
+  statement_from: string | null;
+  statement_to: string | null;
+  folios: number | null;
+  schemes: number | null;
+  transactions: number | null;
+}
+
+export interface CasDocumentListResponse {
+  documents: CasDocumentItem[];
+}
+
+export async function listCasDocuments(): Promise<CasDocumentListResponse> {
+  return request<CasDocumentListResponse>("/mf-ingest/cas-documents");
+}
+
+/** Short-lived (5 min) presigned URL; the PDF still opens with the user's own
+ * statement password. */
+export async function getCasDocumentDownloadUrl(
+  id: string,
+): Promise<{ url: string; expires_in_seconds: number }> {
+  return request<{ url: string; expires_in_seconds: number }>(
+    `/mf-ingest/cas-documents/${id}/download`,
+  );
+}
+
+export async function deleteCasDocument(id: string): Promise<void> {
+  return request<void>(`/mf-ingest/cas-documents/${id}`, { method: "DELETE" });
 }
 
 // ── Finvu / AA bucket snapshot — DEPRECATED (account-aggregator flow paused for licensing).
@@ -745,7 +837,7 @@ export interface ChatMessageInfo {
 export interface ChatSendResponse {
   user_message: ChatMessageInfo;
   assistant_message: ChatMessageInfo;
-  /** Present when chat persisted an ideal allocation — use for CTA to `/execute`. */
+  /** Present when chat persisted an ideal allocation — use for CTA to `/invest/rebalance-explanation`. */
   ideal_allocation_rebalancing_id?: string | null;
   ideal_allocation_snapshot_id?: string | null;
 }
@@ -1512,6 +1604,86 @@ export async function getMfHoldingDetail(schemeCode: string): Promise<MfHoldingD
   return request<MfHoldingDetailResponse>(`/mf/funds/${encoded}/holding-detail`);
 }
 
+// ── MF transaction ledger (`mf_transactions`) ───────────────────────────────
+
+export type MfTransactionType =
+  | "BUY"
+  | "SELL"
+  | "SWITCH_IN"
+  | "SWITCH_OUT"
+  | "DIVIDEND_REINVEST";
+
+/**
+ * One row of `mf_transactions` across ALL schemes (CAMS/SimBanks ingest +
+ * manual entries) — the per-scheme view lives on `MfHoldingDetailResponse`.
+ *
+ * Sign convention matches the backend: CAS stores redemption units/amounts as
+ * negatives, so consumers must take `Math.abs()` and let `transaction_type`
+ * decide direction (see `holding_detail_service._position_from_txns`).
+ */
+export interface MfTransactionItem {
+  id: string;
+  user_id: string;
+  scheme_code: string;
+  sip_mandate_id: string | null;
+  folio_number: string;
+  transaction_type: MfTransactionType;
+  transaction_date: string;
+  units: number;
+  nav: number;
+  amount: number;
+  isin: string | null;
+  fund_name: string | null;
+  category: string | null;
+  sub_category: string | null;
+  sub_group: string | null;
+  stamp_duty: number | null;
+  source_system: string;
+  created_at: string;
+}
+
+/** Backend caps `limit` at 200 per page. */
+const MF_TXN_PAGE_SIZE = 200;
+/** Safety stop so a runaway ledger can never spin forever (200 × 60 = 12k rows). */
+const MF_TXN_MAX_PAGES = 60;
+
+/** One page of the MF transaction ledger. */
+export async function listMfTransactions(opts?: {
+  skip?: number;
+  limit?: number;
+  schemeCode?: string;
+  from?: string;
+  to?: string;
+}): Promise<MfTransactionItem[]> {
+  const params = new URLSearchParams();
+  params.set("skip", String(opts?.skip ?? 0));
+  params.set("limit", String(opts?.limit ?? MF_TXN_PAGE_SIZE));
+  if (opts?.schemeCode) params.set("scheme_code", opts.schemeCode);
+  if (opts?.from) params.set("transaction_date_from", opts.from);
+  if (opts?.to) params.set("transaction_date_to", opts.to);
+  // Mounted under the MF domain router (`/mf` + `/transactions`) — a bare
+  // `/transactions/` 404s.
+  return request<MfTransactionItem[]>(`/mf/transactions/?${params.toString()}`);
+}
+
+/**
+ * The user's WHOLE MF ledger, paged out of `/mf/transactions/`. Capital-gains
+ * matching is FIFO over the full history, so a partial ledger would silently
+ * mis-cost lots — always pull everything.
+ */
+export async function getAllMfTransactions(): Promise<MfTransactionItem[]> {
+  const all: MfTransactionItem[] = [];
+  for (let page = 0; page < MF_TXN_MAX_PAGES; page++) {
+    const batch = await listMfTransactions({
+      skip: page * MF_TXN_PAGE_SIZE,
+      limit: MF_TXN_PAGE_SIZE,
+    });
+    all.push(...batch);
+    if (batch.length < MF_TXN_PAGE_SIZE) break;
+  }
+  return all;
+}
+
 /**
  * Heuristic: profile rows in DB look filled even if `is_onboarding_complete` was never flipped.
  * Used to skip redundant onboarding / account-link nudges in the chat shell.
@@ -1632,120 +1804,6 @@ export function shouldSkipPostSetupChatPrompts(
   return inferOnboardingComplete(me, profile) && inferAccountLinkingComplete(portfolio, linkedAccounts);
 }
 
-/** Goal-based allocation output (mirrors ``goal_based_allocation_pydantic.models.GoalAllocationOutput``). */
-export interface GoalAllocationGoal {
-  goal_name: string;
-  time_to_goal_months: number;
-  amount_needed: number;
-  goal_priority: string;
-  investment_goal: string;
-}
-
-export interface GoalAllocationFutureInvestment {
-  bucket?: string | null;
-  future_investment_amount: number;
-  message?: string | null;
-}
-
-export interface GoalAllocationSubgroupFundMapping {
-  asset_class: "equity" | "debt" | "others";
-  asset_subgroup: string;
-  sub_category: string;
-  recommended_fund: string;
-  isin: string;
-  amount: number;
-}
-
-export interface AggregatedSubgroupRow {
-  subgroup: string;
-  sub_category?: string | null;
-  emergency: number;
-  short_term: number;
-  medium_term: number;
-  long_term: number;
-  total: number;
-  fund_mapping?: GoalAllocationSubgroupFundMapping | null;
-}
-
-export interface GoalAllocationBucket {
-  bucket: "emergency" | "short_term" | "medium_term" | "long_term";
-  goals: GoalAllocationGoal[];
-  total_goal_amount: number;
-  allocated_amount: number;
-  future_investment?: GoalAllocationFutureInvestment | null;
-  subgroup_amounts: Record<string, number>;
-  rationale?: string | null;
-  goal_rationales: Record<string, string>;
-}
-
-export interface GoalAllocationAssetClassSplit {
-  bucket: "emergency" | "short_term" | "medium_term" | "long_term";
-  equity: number;
-  debt: number;
-  others: number;
-  equity_pct: number;
-  debt_pct: number;
-  others_pct: number;
-}
-
-export interface GoalAllocationAssetClassBlock {
-  per_bucket: GoalAllocationAssetClassSplit[];
-  equity_total: number;
-  debt_total: number;
-  others_total: number;
-  equity_total_pct: number;
-  debt_total_pct: number;
-  others_total_pct: number;
-}
-
-export interface GoalAllocationAssetClassBreakdown {
-  planned: GoalAllocationAssetClassBlock;
-  actual: GoalAllocationAssetClassBlock;
-  actual_sum_matches_grand_total: boolean;
-}
-
-export interface GoalAllocationOutput {
-  client_summary: {
-    age: number;
-    occupation?: string | null;
-    effective_risk_score: number;
-    total_corpus: number;
-    goals: GoalAllocationGoal[];
-  };
-  bucket_allocations: GoalAllocationBucket[];
-  aggregated_subgroups: AggregatedSubgroupRow[];
-  future_investments_summary: GoalAllocationFutureInvestment[];
-  grand_total: number;
-  all_amounts_in_multiples_of_100: boolean;
-  asset_class_breakdown?: GoalAllocationAssetClassBreakdown | null;
-}
-
-export interface RecommendedPlanSnapshot {
-  id: string;
-  snapshot_kind: string;
-  allocation: {
-    rows?: Array<{ asset_class: string; weight_pct: number }>;
-    equity_pct?: number;
-    debt_pct?: number;
-    others_pct?: number;
-    goal_allocation_output?: GoalAllocationOutput;
-  };
-  effective_at: string;
-  source?: string | null;
-  notes?: string | null;
-  created_at: string;
-}
-
-export interface RecommendedPlanResponse {
-  snapshot: RecommendedPlanSnapshot | null;
-  latest_rebalancing_id: string | null;
-}
-
-/** Latest persisted ideal allocation from chat or asset-allocation module (requires auth). */
-export async function getRecommendedPlan(): Promise<RecommendedPlanResponse> {
-  return request<RecommendedPlanResponse>("/portfolio/recommended-plan");
-}
-
 export interface PortfolioAllocationInput {
   asset_class: string;
   allocation_percentage: number;
@@ -1860,6 +1918,64 @@ export async function refreshPortfolioNavHistory(): Promise<PortfolioNavHistoryR
   return request<PortfolioNavHistoryResponse>("/portfolio/nav-history/refresh", {
     method: "POST",
   });
+}
+
+// ── Portfolio insights (dashboard popup) ────────────────────────────────────
+
+/** Our conviction on a fund. "neutral" = we have no rating for it yet. */
+export type InsightVerdict = "like" | "dislike" | "neutral";
+
+/** One held mutual fund with its returns, weight and our verdict on it. */
+export interface InsightFundRow {
+  holding_id: string;
+  scheme_code: string | null;
+  isin: string | null;
+  name: string;
+  amc_name: string | null;
+  asset_class: string | null;
+  sub_category: string | null;
+  current_value: number;
+  invested: number | null;
+  /** Share of the invested portfolio — rows in a group sum to that group's weight. */
+  weight_pct: number;
+  /** Total return on YOUR money in this fund (value vs cost basis). */
+  holding_return_pct: number | null;
+  /** Scheme NAV returns, anchored to `as_of` so they match the benchmark's window. */
+  nav_return_1y_pct: number | null;
+  nav_return_3y_pct: number | null;
+  our_rating: number | null;
+  is_recommended: boolean | null;
+  /** Latest rebalancing run's call: BUY | SELL | EXIT | HOLD. */
+  rebalance_action: string | null;
+  rebalance_reason: string | null;
+  verdict: InsightVerdict;
+  verdict_reason: string;
+}
+
+/** Benchmark returns over the SAME window as every fund row. */
+export interface InsightBenchmark {
+  code: string;
+  display_name: string;
+  return_1y_pct: number | null;
+  return_3y_pct: number | null;
+}
+
+export interface PortfolioInsightsResponse {
+  /** Shared anchor date for every return here — funds and benchmark alike. */
+  as_of: string | null;
+  holdings_total: number;
+  funds: InsightFundRow[];
+  benchmark: InsightBenchmark | null;
+  rating_floor: number;
+  rating_scale_max: number;
+  /** Null when the user has never run rebalancing — verdicts then rest on the rating alone. */
+  rebalancing_run_id: string | null;
+  rebalancing_computed_at: string | null;
+}
+
+/** Per-fund returns, weights and verdicts for the portfolio-insights popup. */
+export async function getPortfolioInsights(): Promise<PortfolioInsightsResponse> {
+  return request<PortfolioInsightsResponse>("/portfolio/insights");
 }
 
 export type NetworthJobState =
@@ -2462,43 +2578,6 @@ export async function markAllNotificationsAsRead(): Promise<{ message: string }>
   });
 }
 
-// ── Meeting Notes API ───────────────────────────────────
-export interface MeetingNoteInfo {
-  id: string;
-  title: string;
-  meeting_date: string | null;
-  is_mandate_approved: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface MeetingNoteItemInfo {
-  id: string;
-  item_type: "transcript" | "summary";
-  role: string | null;
-  content: string;
-  sort_order: number;
-  created_at: string;
-}
-
-export interface MeetingNoteDetailInfo extends MeetingNoteInfo {
-  items: MeetingNoteItemInfo[];
-}
-
-export async function listMeetingNotes(): Promise<MeetingNoteInfo[]> {
-  return request<MeetingNoteInfo[]>("/meeting-notes/");
-}
-
-export async function getMeetingNote(noteId: string): Promise<MeetingNoteDetailInfo> {
-  return request<MeetingNoteDetailInfo>(`/meeting-notes/${noteId}`);
-}
-
-export async function approveMeetingMandate(noteId: string): Promise<{ message: string; meeting_note_id: string }> {
-  return request<{ message: string; meeting_note_id: string }>(`/meeting-notes/${noteId}/approve-mandate`, {
-    method: "POST",
-  });
-}
-
 // ── Rebalancing API ─────────────────────────────────────
 export type RebalancingStatus = "pending" | "approved" | "executed" | "rejected";
 
@@ -2686,6 +2765,30 @@ export async function runRebalancing(
   );
 }
 
+/** Live stage of an in-flight synchronous compute (polled while the POST runs). */
+export interface ComputeProgress {
+  active: boolean;
+  progress_pct: number;
+  message: string | null;
+  /** Full stage history so far (oldest first) — no stage is missed between polls. */
+  messages?: string[];
+}
+
+/** Real pipeline stage + % of an in-flight rebalancing compute. */
+export async function getRebalanceComputeProgress(): Promise<ComputeProgress> {
+  return request<ComputeProgress>("/ai-modules/rebalancing/compute-progress");
+}
+
+/** Real pipeline stage + % of an in-flight SIP plan build. */
+export async function getSipBuildProgress(): Promise<ComputeProgress> {
+  return request<ComputeProgress>("/additional-investment/sip/progress");
+}
+
+/** Live "thinking aloud" line of a session's in-flight chat turn. */
+export async function getChatThinking(sessionId: string): Promise<ComputeProgress> {
+  return request<ComputeProgress>(`/chat/sessions/${sessionId}/thinking`);
+}
+
 // ── Support: report an issue ────────────────────────────
 export const ISSUE_SOURCES = [
   "Chat Response",
@@ -2758,7 +2861,7 @@ export async function reportIssue(
       const body = JSON.parse(text) as { detail?: unknown };
       msg = typeof body?.detail === "string" ? body.detail : JSON.stringify(body);
     } catch {
-      msg = text.trim() || `Request failed (${res.status})`;
+      msg = readableErrorBody(text, res.status);
     }
     if ([502, 503, 504].includes(res.status)) {
       backendOfflineUntil = Date.now() + OFFLINE_RETRY_MS;

@@ -83,15 +83,13 @@ import NotFound from "./pages/NotFound";
 import Notifications from "./pages/Notifications";
 import CompleteProfile from "./pages/CompleteProfile";
 import Profile from "./pages/Profile";
+import CasStatements from "./pages/CasStatements";
+import PrivacyDisclaimer from "./pages/PrivacyDisclaimer";
 import Chat from "./pages/Chat";
-import MeetingNotes from "./pages/MeetingNotes";
-import MeetingNotesIndex from "./pages/MeetingNotesIndex";
-import GoalPlanner from "./pages/GoalPlanner";
 import GoalsTimeline from "./pages/GoalsTimeline";
 import SipPlanner from "./pages/SipPlanner";
 import LumpSumPlanner from "./pages/LumpSumPlanner";
 import InvestLayout from "@/components/invest/InvestLayout";
-import Execute from "./pages/Execute";
 import RebalanceExplanation from "./pages/RebalanceExplanation";
 import Discovery from "./pages/Discovery";
 import MfAllFunds from "./pages/MfAllFunds";
@@ -106,6 +104,10 @@ import PortfolioFundDetail from "./pages/PortfolioFundDetail";
 import OnboardingLoading from "./pages/OnboardingLoading";
 import FamilyMembers from "./pages/FamilyMembers";
 import LiquidFunds from "./pages/LiquidFunds";
+import ApproveOrders from "./pages/ApproveOrders";
+import SavingsPot from "./pages/SavingsPot";
+import IncomeArbitrage from "./pages/IncomeArbitrage";
+import Reports from "./pages/Reports";
 
 const queryClient = new QueryClient();
 
@@ -137,6 +139,9 @@ const App = () => (
             <Route path="/portfolio" element={<Portfolio />} />
             <Route path="/portfolio/fund/:schemeCode" element={<PortfolioFundDetail />} />
             <Route path="/profile" element={<Profile />} />
+            <Route path="/reports" element={<Reports />} />
+            <Route path="/cas-statements" element={<CasStatements />} />
+            <Route path="/privacy" element={<PrivacyDisclaimer />} />
             <Route path="/chat" element={<Chat />} />
             <Route path="/notifications" element={<Notifications />} />
             {/* Invest section — layout route so the top toggle (InvestTabs)
@@ -147,9 +152,9 @@ const App = () => (
               <Route path="sip" element={<SipPlanner />} />
               <Route path="lumpsum" element={<LumpSumPlanner />} />
             </Route>
-            <Route path="/execute" element={<Execute />} />
-            <Route path="/excecute" element={<Execute />} />
-            {/* Back-compat: old flat rebalancing URLs redirect into the invest section */}
+            {/* Back-compat: old flat rebalancing/execute URLs redirect into the invest section */}
+            <Route path="/execute" element={<Navigate to="/invest/rebalance-explanation" replace />} />
+            <Route path="/rebalancing" element={<Navigate to="/invest/rebalance-explanation" replace />} />
             <Route path="/rebalance-explanation" element={<Navigate to="/invest/rebalance-explanation" replace />} />
             <Route path="/rebalance-explanation/trade/:tradeId" element={<Navigate to="/invest/rebalance-explanation" replace />} />
             <Route path="/discovery/compare" element={<MfCompare />} />
@@ -168,15 +173,15 @@ const App = () => (
               <Route path="/profile/investment-preferences" element={null} />
               <Route path="/profile/tax-details" element={null} />
             </Route>
-            <Route path="/meeting-notes" element={<MeetingNotesIndex />} />
-            <Route path="/meeting-notes/detail" element={<MeetingNotes />} />
-            <Route path="/rebalancing" element={<Execute />} />
             <Route path="/goal-planner" element={<GoalsTimeline variant="tornado" />} />
-            <Route path="/goal-planner/cards" element={<GoalPlanner />} />
+            <Route path="/goal-planner/cards" element={<Navigate to="/goal-planner" replace />} />
             <Route path="/goal-planner/timeline" element={<GoalsTimeline />} />
             <Route path="/goal-planner/timeline-2" element={<GoalsTimeline variant="tornado" />} />
             <Route path="/family" element={<FamilyMembers />} />
             <Route path="/liquid-funds" element={<LiquidFunds />} />
+            <Route path="/approve-orders" element={<ApproveOrders />} />
+            <Route path="/savings-pot" element={<SavingsPot />} />
+            <Route path="/income-arbitrage" element={<IncomeArbitrage />} />
             </Route>
             </Route>
             <Route path="*" element={<NotFound />} />

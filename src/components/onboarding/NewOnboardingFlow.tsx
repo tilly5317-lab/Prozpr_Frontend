@@ -154,7 +154,11 @@ const DualRangeSlider = ({
 };
 
 /* ─── Constants ─── */
+// Keep in sync with the same list on /about-you — a returning user is re-asked
+// this question there, and a label missing from one side comes back as a custom
+// chip instead of the built-in goal it was saved as.
 const DEFAULT_GOALS = [
+  { label: "Wealth building", icon: "🌱" },
   { label: "Buying a home", icon: "🏡" },
   { label: "Retiring", icon: "🌴" },
   { label: "Education", icon: "🎓" },

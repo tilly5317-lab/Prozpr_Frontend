@@ -1,7 +1,7 @@
 ﻿import { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, TrendingUp, Sparkles, ChevronDown, ArrowLeft, Loader2, FileText, UploadCloud } from "lucide-react";
+import { ArrowRight, TrendingUp, Sparkles, ChevronDown, ArrowLeft, Loader2, FileText, Lock, UploadCloud } from "lucide-react";
 import CamsStatementPasswordModal from "./CamsStatementPasswordModal";
 import prozprLogoLight from "@/assets/prozpr-logo-light.png";
 import prozprLogoDark from "@/assets/prozpr-logo-dark.png";
@@ -727,6 +727,20 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
           </>
         )}
       </motion.button>
+
+      {/* Privacy note. The long-form version lives at /privacy, linked from Profile. */}
+      <motion.p
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.95, duration: 0.5 }}
+        className="mt-3 flex items-start justify-center gap-1.5 text-center text-[11px] leading-relaxed text-muted-foreground"
+      >
+        <Lock className="mt-[1px] h-3 w-3 shrink-0" aria-hidden="true" />
+        <span>
+          Anything you upload is stored securely. Our team does not track or review individual
+          customer data.
+        </span>
+      </motion.p>
     </div>
   );
 };

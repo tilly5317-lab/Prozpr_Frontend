@@ -9,6 +9,7 @@
     "build:dev": "vite build --mode development",
     "verify:dist": "node scripts/check-dist.mjs",
     "lint": "eslint .",
+    "typecheck": "tsc -b --noEmit",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"

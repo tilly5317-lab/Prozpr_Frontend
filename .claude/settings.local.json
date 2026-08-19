@@ -65,7 +65,15 @@
       "Bash(grep \"/node_modules/react$\")",
       "Bash(grep -nA12 \"test:\" vite.config.ts)",
       "Bash(grep -nB2 -A25 \"export default function\\\\|export function CurrentAllocationCard\\\\|interface.*Props\" src/components/dashboard/CurrentAllocationCard.tsx)",
-      "Bash(npx vitest *)"
+      "Bash(npx vitest *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" --max-time 10 http://43.205.235.185/api/v1/health)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" --max-time 10 http://43.205.235.185/)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" --max-time 10 https://registry.npmjs.org/)",
+      "Bash(curl -s --max-time 15 http://localhost:8080/)",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' --max-time 15 http://localhost:8080/)",
+      "Bash(echo \"--- HTTP: $\\(curl -s -o /dev/null -w '%{http_code}' --max-time 15 http://localhost:8080/\\)\")",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' --max-time 10 http://localhost:8080/)",
+      "Bash(echo \"--- dev server still up? HTTP: $\\(curl -s -o /dev/null -w '%{http_code}' --max-time 10 http://localhost:8080/\\)\")"
     ]
   }
 }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Loader2, ShieldCheck, AlertCircle, Upload, CheckCircle2, Sparkles, X } from "lucide-react";
 import {
+  getRebalanceComputeProgress,
   getRebalancingReadiness,
   saveRebalancingInputs,
   runRebalancing,
@@ -11,6 +12,7 @@ import {
 } from "@/lib/api";
 import CamsUploadModal from "@/components/onboarding/CamsUploadModal";
 import { toast } from "@/hooks/use-toast";
+import { useComputeProgress } from "@/hooks/useComputeProgress";
 
 /**
  * Helps the user complete what the rebalancing engine needs — modelled on the
@@ -66,6 +68,9 @@ const RebalanceGate = ({ onReady, onResolved, editSignal }: RebalanceGateProps) 
   // The missing-inputs prompt is a dismissible hint, never a blocker. Once
   // dismissed it stays hidden for this visit (re-surfaces on the next mount).
   const [promptDismissed, setPromptDismissed] = useState(false);
+  // Live pipeline stage + % while the engine runs — makes the pill feel alive
+  // instead of a stuck spinner.
+  const computeProgress = useComputeProgress(generating, getRebalanceComputeProgress);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -277,7 +282,11 @@ const RebalanceGate = ({ onReady, onResolved, editSignal }: RebalanceGateProps) 
           <div className="flex items-center gap-2 rounded-full border border-border bg-card/90 px-3 py-1 shadow-sm backdrop-blur-sm">
             <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
             <span className="text-[11px] text-muted-foreground">
-              {generating ? "Generating your rebalancing plan…" : "Checking your plan…"}
+              {generating
+                ? `${computeProgress?.message ?? "Generating your rebalancing plan…"}${
+                    computeProgress ? ` · ${Math.round(computeProgress.progress_pct)}%` : ""
+                  }`
+                : "Checking your plan…"}
             </span>
           </div>
         </div>
