@@ -64,9 +64,20 @@ interface TimelineGoal {
   id: string;
   name: string;
   year: number;
+  /** The SELF-FUNDED share — the down payment when the goal is part-financed. */
   presentValue: number;
   inflationRate: number;
   priority: Priority;
+  /**
+   * Loan / down-payment block. The form has always collected these; until now
+   * they were dropped at submit, so reopening a part-financed goal showed an
+   * empty loan section and `presentValue` alone could not say whether it was
+   * the whole cost or a deposit.
+   */
+  fundedByLoan?: boolean;
+  loanPct?: number;
+  totalValue?: number;
+  loanTermYears?: number;
 }
 
 const INFLATION_DEFAULT = 6;
@@ -151,6 +162,10 @@ function mapGoalFromApi(g: GoalResponse, currentYear: number): TimelineGoal {
     presentValue: g.target_amount ?? 0,
     inflationRate: g.inflation_rate ?? 6,
     priority: mapApiPriority(g.priority),
+    fundedByLoan: g.funded_by_loan ?? undefined,
+    loanPct: g.loan_pct ?? undefined,
+    totalValue: g.total_value ?? undefined,
+    loanTermYears: g.loan_tenure_years ?? undefined,
   };
 }
 
@@ -380,17 +395,43 @@ function AddGoalSheet({
       // seed property value with it (no loan) as a starting point.
       setCategory("custom");
       setCustomName(editingGoal.name);
-      setAmount(Math.round(editingGoal.presentValue).toLocaleString("en-IN"));
-      setPropertyValue(
-        isPropertyGoalName(editingGoal.name)
-          ? formatPropertyAmount(editingGoal.presentValue)
-          : "",
+      /**
+       * Restore the TOTAL cost, not `presentValue`.
+       *
+       * `presentValue` is what the plan has to build — for a part-financed goal
+       * that is the down payment, i.e. the total already reduced by the loan.
+       * Seeding the total-cost box with it meant the loan was subtracted again
+       * on every save: a ₹2cr flat at 75% went 2cr → 50L → 12.5L → … → ₹19
+       * after ten reopens. `totalValue` is the round-trip-safe figure; older
+       * goals saved before it was stored fall back to presentValue, and those
+       * have no loan recorded so nothing is double-deducted.
+       */
+      const storedTotal = editingGoal.totalValue ?? editingGoal.presentValue;
+      setAmount(Math.round(storedTotal).toLocaleString("en-IN"));
+      // Prefer the stored total value: for a part-financed goal the property is
+      // worth far more than the down payment, and seeding the field from
+      // presentValue used to silently halve (or worse) what the user entered.
+      // Both boxes carry the same total, so switching category or renaming the
+      // goal mid-edit never loses the figure.
+      setPropertyValue(formatPropertyAmount(storedTotal));
+      setFundedByLoan(Boolean(editingGoal.fundedByLoan));
+      setLoanPct(
+        editingGoal.loanPct !== undefined ? String(Math.round(editingGoal.loanPct)) : "",
       );
-      setFundedByLoan(false);
-      setLoanPct("");
-      setLoanTermYears("");
+      setLoanTermYears(
+        editingGoal.loanTermYears !== undefined ? String(editingGoal.loanTermYears) : "",
+      );
       setYear(editingGoal.year);
-      setInflation(String(editingGoal.inflationRate));
+      // A future-dated goal is stored with 0% inflation so the engine leaves the
+      // entered amount alone. Don't put that 0 in the box: if they switch back
+      // to "today's money" it would silently mean no inflation at all.
+      setInflation(
+        String(
+          editingGoal.inflationRate > 0
+            ? editingGoal.inflationRate
+            : (suggestInflationForGoal(editingGoal.name)?.rate ?? INFLATION_DEFAULT),
+        ),
+      );
       setPriority(editingGoal.priority);
       setAmountKind(editingGoal.inflationRate === 0 ? "future" : "present");
       return;
@@ -429,8 +470,19 @@ function AddGoalSheet({
   const yearsAway = Math.max(0, year - currentYear);
   const propertyVal = parsePropertyAmount(propertyValue);
   const baseAmount = Number(amount.replace(/[^\d.]/g, "")) || 0;
-  // Total value the goal targets — property value for property goals, else cost.
-  const totalValue = showHouseDetails ? propertyVal : baseAmount;
+  /**
+   * The FULL cost of the goal — never the down payment.
+   *
+   * Two boxes can hold it (a plain cost field, and a property-value field for
+   * property goals) and which one is visible depends on the chosen category
+   * AND, for custom goals, on the goal's NAME. That meant naming a custom goal
+   * something property-ish mid-entry silently switched which box counted and
+   * the typed figure read as zero. Falling back to the other box makes the
+   * switch harmless — whichever one the number is in, it is the same number.
+   */
+  const totalValue = showHouseDetails
+    ? propertyVal || baseAmount
+    : baseAmount || propertyVal;
   const loanPctNum = Math.min(100, Math.max(0, Number(loanPct.replace(/[^\d.]/g, "")) || 0));
   const loanAmount = fundedByLoan ? (totalValue * loanPctNum) / 100 : 0;
   // The portion the user actually saves toward (down payment / self-funded share).
@@ -822,31 +874,78 @@ function AddGoalSheet({
                   </div>
                 </div>
 
+                {/*
+                  The full chain, not just the final number. Cost, loan and the
+                  today-vs-future toggle all move this figure, and showing only
+                  the end result meant a customer could not tell which input had
+                  changed what — or notice when the box they typed into was not
+                  the one being read.
+                */}
                 <div className="rounded-xl border border-border bg-muted/30 p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                        {fundedByLoan && loanAmount > 0 ? "Down payment at" : "Cost at"} {year}
-                      </p>
-                      <p className="mt-0.5 text-[11px] text-muted-foreground/80">
-                        {amountKind === "future"
-                          ? fundedByLoan && loanAmount > 0
-                            ? `Future-dated down payment only — the remaining ${formatINR(loanAmount)} is covered by your mortgage`
-                            : "Entered as the future-dated amount"
-                          : fundedByLoan && loanAmount > 0
-                            ? `Today's down payment compounded at ${infl || 0}% for ${yearsAway} yr — the remaining ${formatINR(loanAmount)} is covered by your mortgage`
-                            : `Today's cost compounded at ${infl || 0}% for ${yearsAway} yr`}
-                      </p>
+                  <div className="space-y-1.5 text-[12px]">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="text-muted-foreground">
+                        Total cost{amountKind === "future" ? ` in ${year}` : " today"}
+                      </span>
+                      <span className="tabular-nums font-medium text-foreground">
+                        {totalValue > 0 ? formatINR(totalValue) : "—"}
+                      </span>
                     </div>
-                    <span
-                      className="text-base font-semibold tabular-nums text-foreground"
-                      style={{
-                        fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-                      }}
-                    >
-                      {pv > 0 ? formatINR(fv) : "—"}
-                    </span>
+
+                    {fundedByLoan && loanAmount > 0 && (
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="text-muted-foreground">
+                          Covered by loan ({loanPctNum}%)
+                        </span>
+                        <span className="tabular-nums text-muted-foreground">
+                          -{formatINR(loanAmount)}
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="flex items-baseline justify-between gap-3 border-t border-border/70 pt-1.5">
+                      <span className="font-medium text-foreground">
+                        You need to save
+                        {amountKind === "future" ? "" : " (today's money)"}
+                      </span>
+                      <span className="tabular-nums font-medium text-foreground">
+                        {pv > 0 ? formatINR(pv) : "—"}
+                      </span>
+                    </div>
+
+                    {amountKind === "present" && yearsAway > 0 && (
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="text-muted-foreground">
+                          Grown at {infl || 0}% for {yearsAway} yr
+                        </span>
+                        <span className="tabular-nums text-muted-foreground">
+                          {pv > 0 ? formatINR(fv) : "—"}
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="flex items-baseline justify-between gap-3 border-t border-border/70 pt-1.5">
+                      <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                        Target in {year}
+                      </span>
+                      <span
+                        className="text-base font-semibold tabular-nums text-foreground"
+                        style={{
+                          fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                        }}
+                      >
+                        {pv > 0 ? formatINR(fv) : "—"}
+                      </span>
+                    </div>
                   </div>
+
+                  {fundedByLoan && loanAmount > 0 && (
+                    <p className="mt-2 border-t border-border/70 pt-2 text-[11px] leading-snug text-muted-foreground/85">
+                      Your plan builds the down payment only. The{" "}
+                      {formatINR(loanAmount)} loan is an EMI commitment from{" "}
+                      {year}, not something to save up.
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -873,6 +972,12 @@ function AddGoalSheet({
                         presentValue: pv,
                         inflationRate: amountKind === "future" ? 0 : infl,
                         priority,
+                        fundedByLoan,
+                        ...(fundedByLoan ? { loanPct: loanPctNum } : {}),
+                        ...(totalValue > 0 ? { totalValue } : {}),
+                        ...(fundedByLoan && Number(loanTermYears)
+                          ? { loanTermYears: Number(loanTermYears) }
+                          : {}),
                       },
                       editingGoal?.id,
                     );
@@ -1548,6 +1653,18 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
         target_date: yearToTargetDate(incoming.year),
         priority: incoming.priority.toUpperCase(),
         inflation_rate: incoming.inflationRate,
+        // The loan block. `target_amount` stays the self-funded share; these
+        // say what the whole thing costs and how much of it is borrowed.
+        ...(incoming.fundedByLoan !== undefined
+          ? { funded_by_loan: incoming.fundedByLoan }
+          : {}),
+        ...(incoming.loanPct !== undefined ? { loan_pct: incoming.loanPct } : {}),
+        ...(incoming.totalValue !== undefined
+          ? { total_value: Math.round(incoming.totalValue) }
+          : {}),
+        ...(incoming.loanTermYears !== undefined
+          ? { loan_tenure_years: incoming.loanTermYears }
+          : {}),
       };
 
       setGoalSaving(true);

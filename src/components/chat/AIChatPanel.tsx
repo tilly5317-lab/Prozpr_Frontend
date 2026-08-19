@@ -21,16 +21,21 @@ import {
   inferOnboardingComplete,
   inferAccountLinkingComplete,
   shouldSkipPostSetupChatPrompts,
+  undoPlanningChange,
   type ChatSessionInfo,
   type PortfolioDetail,
   type UserInfo,
   type FullProfileResponse,
   type LinkAccountInfo,
+  type SavedGoal,
+  type SavedPlanField,
 } from "@/lib/api";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useChatThinking } from "@/hooks/useChatThinking";
+import { useProfileCompleteness } from "@/hooks/useProfileCompleteness";
 import CamsUploadModal from "@/components/onboarding/CamsUploadModal";
+import PlanChangedChip from "@/components/chat/PlanChangedChip";
 
 const PENDING_CHAT_BOOTSTRAP_KEY = "askProzpr.pendingChatBootstrap.v1";
 
@@ -64,10 +69,7 @@ export function queueChatBootstrapMessage(text: string): void {
 interface Message {
   role: "user" | "ai";
   content: string;
-  type?: "section-start" | "summary" | "kudos" | "goal-demo-widget";
-  sectionName?: string;
-  summaryNotes?: string[];
-  kudosId?: number;
+  type?: "goal-demo-widget";
   /** Only when type === "goal-demo-widget" */
   widgetKind?: "emergency-fund";
   /** Backend saved an ideal rebalancing plan — show CTA to open `/invest/rebalance-explanation`. */
@@ -78,6 +80,12 @@ interface Message {
    * beside it so the fix is one tap away, without a modal opening uninvited.
    */
   showAddCams?: boolean;
+  /** Plan inputs written on this turn — a saved chip with a one-tap undo. */
+  planSaved?: SavedPlanField[] | null;
+  /** A goal added or re-costed on this turn. */
+  goalSaved?: SavedGoal | null;
+  /** Goals removed on this turn; the same undo puts them back. */
+  goalRemoved?: { goal: string }[] | null;
   /** Chart visualization payloads from backend AI modules. */
   chartPayloads?: any[] | null;
   /** Bubble currently being filled by SSE deltas; replaced by the done event. */
@@ -246,33 +254,6 @@ type MicState = "idle" | "listening" | "processing";
 const suggestedQuestions = [
   "Best performing asset?",
   "How should I rebalance?",
-];
-
-/* ── Onboarding sections (matches /profile/complete) ── */
-const CHAT_ONBOARDING_SECTIONS = [
-  { name: "Your financial picture", prompt: "Let's talk about your finances. Walk me through your income, savings, assets, any property you own, and any large expenses coming up.", estimate: "~5 minutes" },
-  { name: "What are you trying to achieve?", prompt: "What are your main investment goals? Think about what you're saving for, how much you need, and when you'll need the money.", estimate: "~5 minutes" },
-  { name: "Your investment preference and focus", prompt: "Let's talk about risk. How would you describe your investment experience, and how would you react if your portfolio dropped 20% in a month?", estimate: "~1 minute" },
-  { name: "Tax details", prompt: "Last bit — tax. Which slab does your income fall into (0%, 5%, 10%, 15%, 20%, or 30%), and are you on the old or new tax regime? This helps me recommend tax-efficient instruments.", estimate: "~1 minute" },
-];
-
-const CHAT_ONBOARDING_SECTIONS_COUNT = CHAT_ONBOARDING_SECTIONS.length;
-
-const CHAT_ONBOARDING_NOTES: Record<number, string[]> = {
-  0: ["Monthly income ₹1.8L", "Expenses around ₹90K/month", "Existing FD of ₹12L", "Property valued at ₹85L, no major liabilities"],
-  1: ["Retirement by 55 — primary goal", "Children's education fund in 8 years", "Target corpus: ₹2Cr", "Secondary: vacation fund"],
-  2: ["Moderate experience with mutual funds", "Comfortable with 15-20% drawdowns", "Prefers steady growth over quick gains", "10-15 year horizon"],
-  3: ["Marginal tax rate: 30% slab", "Old regime — claims 80C, HRA, home loan interest", "Open to ELSS for next FY", "Will revisit after appraisal"],
-};
-
-const KUDOS_MESSAGES = [
-  "Great progress — that's one more piece of the picture. 🌟",
-  "You're doing brilliantly. Keep going.",
-  "Section complete. You're ahead of 80% of people who start this.",
-  "Nice work. Every answer brings your plan closer to reality.",
-  "That was smooth — onwards! ✨",
-  "You're building something great here.",
-  "Another step closer to your financial clarity. 💎",
 ];
 
 const formatTimestamp = (date: Date = new Date()) => {
@@ -599,139 +580,6 @@ const ParticleBurst = ({ active }: { active: boolean }) => {
   );
 };
 
-/* ── Collapsible summary card ── */
-const SummaryCard = ({ sectionName, notes }: { sectionName: string; notes: string[] }) => {
-  const [expanded, setExpanded] = useState(true);
-  const [editing, setEditing] = useState(false);
-  const [editNotes, setEditNotes] = useState(notes);
-  const [showParticles, setShowParticles] = useState(true);
-
-  useEffect(() => {
-    const t = setTimeout(() => setShowParticles(false), 1400);
-    return () => clearTimeout(t);
-  }, []);
-
-  const handleSave = () => {
-    setEditing(false);
-  };
-
-  return (
-    <div className="relative flex gap-2 items-start max-w-[88%]">
-      <ProzprAvatar />
-      <div
-        className="rounded-xl flex-1 px-3 py-2.5 relative overflow-visible"
-        style={{
-          background: "linear-gradient(135deg, hsla(222, 47%, 14%, 0.85), hsla(220, 35%, 20%, 0.9))",
-          border: "1px solid hsla(215, 60%, 48%, 0.35)",
-          backdropFilter: "blur(12px)",
-          boxShadow: "0 4px 20px -4px hsla(215, 60%, 48%, 0.15)",
-        }}
-      >
-        <ParticleBurst active={showParticles} />
-        {/* Header — text stays light in both themes because the bubble itself is always dark navy. */}
-        <div className="flex items-center justify-between gap-1.5 mb-1">
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px]">✅</span>
-            <span className="text-[11px] font-semibold text-white/90">{sectionName} — captured</span>
-          </div>
-          <div className="flex items-center gap-1">
-            {!editing && (
-              <button
-                onClick={() => setEditing(true)}
-                className="p-0.5 rounded hover:bg-white/10 transition-colors"
-              >
-                <Pencil className="h-2.5 w-2.5 text-white/60" />
-              </button>
-            )}
-            <button
-              onClick={() => setExpanded(!expanded)}
-              className="p-0.5 rounded hover:bg-white/10 transition-colors"
-            >
-              {expanded ? (
-                <ChevronUp className="h-3 w-3 text-white/60" />
-              ) : (
-                <ChevronDown className="h-3 w-3 text-white/60" />
-              )}
-            </button>
-          </div>
-        </div>
-        {/* Content */}
-        <AnimatePresence>
-          {expanded && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: "auto", opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="overflow-hidden"
-            >
-              {editing ? (
-                <div className="space-y-1 mt-1">
-                  {editNotes.map((note, ni) => (
-                    <input
-                      key={ni}
-                      value={note}
-                      onChange={(e) => {
-                        const updated = [...editNotes];
-                        updated[ni] = e.target.value;
-                        setEditNotes(updated);
-                      }}
-                      className="w-full bg-white/10 rounded px-2 py-1 text-[11px] text-white/85 outline-none border border-white/10 focus:border-accent/50"
-                    />
-                  ))}
-                  <button
-                    onClick={handleSave}
-                    className="mt-1 rounded-full bg-accent/20 border border-accent/30 px-3 py-0.5 text-[11px] font-medium text-accent hover:bg-accent/30 transition-colors"
-                  >
-                    Save
-                  </button>
-                </div>
-              ) : (
-                <ul className="space-y-0.5">
-                  {editNotes.map((note, ni) => (
-                    <li key={ni} className="text-[11px] text-white/75 leading-relaxed">• {note}</li>
-                  ))}
-                </ul>
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-    </div>
-  );
-};
-
-/* ── Kudos bubble (auto-fades) ── */
-const KudosBubble = ({ text, onDismiss }: { text: string; onDismiss: () => void }) => {
-  useEffect(() => {
-    const t = setTimeout(onDismiss, 4000);
-    return () => clearTimeout(t);
-  }, [onDismiss]);
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      transition={{ duration: 0.3 }}
-      className="flex justify-center my-1"
-      onClick={onDismiss}
-    >
-      <div
-        className="rounded-2xl px-4 py-2 text-center text-[11px] italic cursor-pointer"
-        style={{
-          background: "linear-gradient(135deg, hsla(215, 60%, 48%, 0.12), hsla(222, 47%, 14%, 0.08))",
-          border: "1px solid hsla(215, 60%, 48%, 0.2)",
-          boxShadow: "0 0 16px -4px hsla(215, 60%, 48%, 0.2)",
-          color: "hsl(var(--accent))",
-        }}
-      >
-        {text}
-      </div>
-    </motion.div>
-  );
-};
-
 const GOAL_DEMO_INTRO = `Hi — I'm **Pi**. I'll help you shape a clear, investable goal plan in a few quick steps.
 
 Let's start with outcomes: what financial goals are you planning for (for example: retirement, home, education, travel, business)? You can share one or multiple goals.`;
@@ -1033,7 +881,6 @@ const AIChatPanel = ({
   const stickToBottomRef = useRef(true);
   const recognitionRef = useRef<any>(null);
   const sessionIdRef = useRef<string | null>(null);
-  const kudosCounterRef = useRef(0);
 
   // Live backend "thinking aloud" lines shown in the typing bubble; the feed
   // vanishes with the bubble the moment the real reply lands.
@@ -1102,24 +949,25 @@ const AIChatPanel = ({
     }
   }, []);
 
-  /* ── Kudos dismissal ── */
-  const [dismissedKudos, setDismissedKudos] = useState<Set<number>>(new Set());
-
-  const dismissKudos = useCallback((id: number) => {
-    setDismissedKudos((prev) => new Set(prev).add(id));
-  }, []);
-
-  /* ── Onboarding state ── */
-  const [onboardingActive, setOnboardingActive] = useState(false);
-  const [onboardingSection, setOnboardingSection] = useState(0);
-  const [awaitingResponse, setAwaitingResponse] = useState(false);
-  const [completedSections, setCompletedSections] = useState<number[]>([]);
-  const [expandedReviewSection, setExpandedReviewSection] = useState<number | null>(null);
-  const [reviewChipOpen, setReviewChipOpen] = useState(false);
-
   /* ── CAMS import, opened only from the "Portfolio data missing" CTA that Pi
         attaches to a reply it couldn't answer without holdings. Never auto-opens. ── */
   const [camsModalOpen, setCamsModalOpen] = useState(false);
+
+  /* ── In-chat planning is CHAT-ONLY. Pi asks in prose, the customer answers
+        in prose, and the backend reads it — there is deliberately no typed
+        input, no chips and no "not now" button anywhere in the thread. A form
+        rendered inside a conversation is still a form, and the whole point of
+        doing this here is that the customer never has to fill one in. The only
+        UI this feature owns is the changed chip below, which appears AFTER they
+        have confirmed in words. ── */
+  const { completeness, refresh: refreshCompleteness } = useProfileCompleteness();
+
+  const handlePlanUndo = useCallback(async () => {
+    const sid = sessionIdRef.current;
+    if (!sid) return;
+    await undoPlanningChange(sid);
+    void refreshCompleteness();
+  }, [refreshCompleteness]);
 
   const handleNewChat = useCallback(async () => {
     try {
@@ -1134,8 +982,6 @@ const AIChatPanel = ({
       setRatingComment("");
       setChatStartTime(formatTimestamp());
       setShowFirstUseHint(true);
-      setOnboardingActive(false);
-      setCompletedSections([]);
     } catch { /* ignore */ }
   }, []);
 
@@ -1154,8 +1000,6 @@ const AIChatPanel = ({
       setMessages(dummyMessages.map((m) => ({ ...m })));
       setChatStartTime(formatTimestamp(new Date(dummy?.created_at ?? Date.now())));
       setShowFirstUseHint(false);
-      setOnboardingActive(false);
-      setCompletedSections([]);
       return;
     }
     try {
@@ -1178,8 +1022,6 @@ const AIChatPanel = ({
       );
       setChatStartTime(formatTimestamp(new Date(session.created_at)));
       setShowFirstUseHint(false);
-      setOnboardingActive(false);
-      setCompletedSections([]);
     } catch { /* ignore */ }
   }, []);
 
@@ -1216,13 +1058,6 @@ const AIChatPanel = ({
   useEffect(() => {
     if (stickToBottomRef.current) scrollToBottom("auto");
   }, [messages, isTyping, interimTranscript, thinkingLines, scrollToBottom]);
-
-  const showVoiceOnboardingChips = useMemo(() => {
-    if (!clientContext?.user) return true;
-    const me = clientContext.user as UserInfo;
-    const profile = clientContext.profile as FullProfileResponse | null | undefined;
-    return !inferOnboardingComplete(me, profile ?? null);
-  }, [clientContext]);
 
   // Inject completion message from voice onboarding (skip if profile + accounts already in DB)
   useEffect(() => {
@@ -1347,89 +1182,6 @@ const AIChatPanel = ({
     return session.id;
   }, []);
 
-  /* ── Onboarding handlers ── */
-  const startOnboarding = useCallback(() => {
-    setOnboardingActive(true);
-    setOnboardingSection(0);
-    setAwaitingResponse(false);
-    setShowFirstUseHint(false);
-
-    // Show greeting first, then first question after a delay
-    setMessages((prev) => [
-      ...prev,
-      { role: "ai", content: "Hi there! 👋 Great to have you here. I'm Pi, your personal financial guide. There are no wrong answers — we'll go at your pace. Ready to get started? 😊" },
-    ]);
-
-    setTimeout(() => {
-      const section = CHAT_ONBOARDING_SECTIONS[0];
-      setMessages((prev) => [
-        ...prev,
-        { role: "ai", content: `Section 1 of ${CHAT_ONBOARDING_SECTIONS_COUNT} · ${section.name}`, type: "section-start", sectionName: section.name },
-        { role: "ai", content: section.prompt },
-      ]);
-      setAwaitingResponse(true);
-    }, 1000);
-  }, []);
-
-  const stopOnboarding = useCallback(() => {
-    setOnboardingActive(false);
-    setAwaitingResponse(false);
-    setCompletedSections([]);
-    setExpandedReviewSection(null);
-    setMessages((prev) => [
-      ...prev,
-      { role: "ai", content: "No problem — I've saved your progress. You can resume anytime by tapping **Voice onboarding** again." },
-    ]);
-  }, []);
-
-  const handleOnboardingResponse = useCallback((text: string) => {
-    setMessages((prev) => [...prev, { role: "user", content: text }]);
-    setInput("");
-    setInterimTranscript("");
-    setAwaitingResponse(false);
-
-    // Show summary card after a brief pause
-    setTimeout(() => {
-      const notes = CHAT_ONBOARDING_NOTES[onboardingSection] || ["Response captured"];
-      const sName = CHAT_ONBOARDING_SECTIONS[onboardingSection].name;
-
-      // Pick a kudos message
-      const kudosIdx = kudosCounterRef.current % KUDOS_MESSAGES.length;
-      const kudosText = KUDOS_MESSAGES[kudosIdx];
-      const kudosId = kudosCounterRef.current;
-      kudosCounterRef.current += 1;
-
-      setCompletedSections((prev) => [...new Set([...prev, onboardingSection])]);
-      setMessages((prev) => [
-        ...prev,
-        { role: "ai", content: "", type: "summary", sectionName: sName, summaryNotes: notes },
-        { role: "ai", content: kudosText, type: "kudos", kudosId },
-      ]);
-
-      // Advance to next section
-      setTimeout(() => {
-        const next = onboardingSection + 1;
-        if (next < CHAT_ONBOARDING_SECTIONS.length) {
-          setOnboardingSection(next);
-          setAwaitingResponse(true);
-          const section = CHAT_ONBOARDING_SECTIONS[next];
-          setMessages((prev) => [
-            ...prev,
-            { role: "ai", content: `Section ${next + 1} of ${CHAT_ONBOARDING_SECTIONS_COUNT} · ${section.name}`, type: "section-start", sectionName: section.name },
-            { role: "ai", content: section.prompt },
-          ]);
-        } else {
-          // All done
-          setOnboardingActive(false);
-          setMessages((prev) => [
-            ...prev,
-            { role: "ai", content: "Great — your investment profile is complete! I've saved everything. You can now ask me anything about your portfolio." },
-          ]);
-        }
-      }, 800);
-    }, 500);
-  }, [onboardingSection]);
-
   const handleGoalDemoUserMessage = useCallback((text: string) => {
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     setInput("");
@@ -1532,21 +1284,8 @@ const AIChatPanel = ({
     // bypass the composer entirely (mic, another quick-action chip).
     setInputSuggestion(null);
 
-    // Dismiss any active kudos on interaction
-    setDismissedKudos((prev) => {
-      const next = new Set(prev);
-      messages.forEach((m) => { if (m.type === "kudos" && m.kudosId !== undefined) next.add(m.kudosId); });
-      return next;
-    });
-
     if (goalPlanningDemo) {
       handleGoalDemoUserMessage(trimmed);
-      return;
-    }
-
-    // Intercept during onboarding
-    if (onboardingActive && awaitingResponse) {
-      handleOnboardingResponse(trimmed);
       return;
     }
 
@@ -1594,6 +1333,9 @@ const AIChatPanel = ({
         content: resp.assistant_message.content,
         ...(hasSavedPlan ? { showViewExecutePlan: true } : {}),
         ...(resp.portfolio_data_missing ? { showAddCams: true } : {}),
+        ...(resp.planning_saved?.length ? { planSaved: resp.planning_saved } : {}),
+        ...(resp.goal_saved ? { goalSaved: resp.goal_saved } : {}),
+        ...(resp.goal_removed?.length ? { goalRemoved: resp.goal_removed } : {}),
         chartPayloads: resp.assistant_message.chart_payloads || null,
       };
       setMessages((prev) => {
@@ -1631,10 +1373,6 @@ const AIChatPanel = ({
   }, [
     ensureSession,
     clientContext,
-    onboardingActive,
-    awaitingResponse,
-    handleOnboardingResponse,
-    messages,
     goalPlanningDemo,
     handleGoalDemoUserMessage,
   ]);
@@ -1823,32 +1561,7 @@ const AIChatPanel = ({
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.2 }}
         >
-          {msg.type === "section-start" ? (
-            /* ── Section label pill with time estimate ── */
-            <div className="flex flex-col items-center my-1 gap-0.5">
-              <span className="rounded-full bg-primary/10 px-3 py-1 text-[11px] font-semibold text-primary tracking-wide">
-                {msg.content}
-              </span>
-              {(() => {
-                const sectionIdx = CHAT_ONBOARDING_SECTIONS.findIndex(s => msg.content.includes(s.name));
-                return sectionIdx >= 0 ? (
-                  <span className="text-[10px] text-muted-foreground/70 italic">
-                    takes {CHAT_ONBOARDING_SECTIONS[sectionIdx].estimate}
-                  </span>
-                ) : null;
-              })()}
-            </div>
-          ) : msg.type === "summary" && msg.summaryNotes ? (
-            /* ── Collapsible summary card ── */
-            <SummaryCard sectionName={msg.sectionName || ""} notes={msg.summaryNotes} />
-          ) : msg.type === "kudos" ? (
-            /* ── Kudos bubble ── */
-            <AnimatePresence>
-              {msg.kudosId !== undefined && !dismissedKudos.has(msg.kudosId) && (
-                <KudosBubble text={msg.content} onDismiss={() => dismissKudos(msg.kudosId!)} />
-              )}
-            </AnimatePresence>
-          ) : msg.type === "goal-demo-widget" && msg.widgetKind === "emergency-fund" ? (
+          {msg.type === "goal-demo-widget" && msg.widgetKind === "emergency-fund" ? (
             <div className="flex gap-2 items-start max-w-[95%]">
               <ProzprAvatar />
               <div className="flex-1 min-w-0">
@@ -1873,18 +1586,28 @@ const AIChatPanel = ({
             </div>
           ) : (
             <div className="flex flex-col gap-2">
-              <div className="flex gap-2 items-start max-w-[95%]">
-                <ProzprAvatar />
-                <div
-                  className="rounded-2xl rounded-tl-sm px-3 py-2 text-[13.8px] leading-relaxed text-foreground/90"
-                  style={{
-                    backgroundColor: "hsl(var(--prozpr-bubble))",
-                    borderLeft: "2px solid hsla(38, 45%, 54%, 0.3)",
-                  }}
-                >
-                  <MarkdownMessage text={msg.content} />
+              {msg.content ? (
+                <div className="flex gap-2 items-start max-w-[95%]">
+                  <ProzprAvatar />
+                  <div
+                    className="rounded-2xl rounded-tl-sm px-3 py-2 text-[13.8px] leading-relaxed text-foreground/90"
+                    style={{
+                      backgroundColor: "hsl(var(--prozpr-bubble))",
+                      borderLeft: "2px solid hsla(38, 45%, 54%, 0.3)",
+                    }}
+                  >
+                    <MarkdownMessage text={msg.content} />
+                  </div>
                 </div>
-              </div>
+              ) : null}
+              {msg.planSaved?.length || msg.goalSaved || msg.goalRemoved?.length ? (
+                <PlanChangedChip
+                  saved={msg.planSaved}
+                  goalSaved={msg.goalSaved}
+                  goalRemoved={msg.goalRemoved}
+                  onUndo={handlePlanUndo}
+                />
+              ) : null}
               {msg.showAddCams ? (
                 <button
                   type="button"
@@ -2076,6 +1799,24 @@ const AIChatPanel = ({
             >
               <Menu className="h-4 w-4" />
             </button>
+            {/* Profile progress. Hidden at 0% (a brand-new user has enough to
+                read already) and at 100% (nothing left to nudge about). */}
+            {completeness && completeness.percent > 0 && completeness.percent < 100 ? (
+              <button
+                type="button"
+                onClick={() => navigate("/profile/complete")}
+                className="flex items-center gap-2 rounded-full border border-border/50 px-2.5 py-1 text-[10.5px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+                title={`${completeness.filled} of ${completeness.total} profile details added`}
+              >
+                <span className="relative h-1.5 w-12 overflow-hidden rounded-full bg-muted">
+                  <span
+                    className="absolute inset-y-0 left-0 rounded-full bg-primary/70"
+                    style={{ width: `${completeness.percent}%` }}
+                  />
+                </span>
+                Profile {completeness.percent}%
+              </button>
+            ) : null}
           </div>
         )}
 
@@ -2169,132 +1910,8 @@ const AIChatPanel = ({
 
         {/* Input bar — always anchored at bottom */}
         <div className="mt-auto shrink-0">
-          {/* Onboarding exit bar */}
-          {onboardingActive && (
-            <div className="border-t border-border/30 bg-muted/30">
-              <div className="flex items-center justify-between px-4 py-2">
-                <div className="flex flex-col">
-                  <span className="text-[11px] font-medium text-muted-foreground">
-                    Section {onboardingSection + 1} of {CHAT_ONBOARDING_SECTIONS_COUNT} · {CHAT_ONBOARDING_SECTIONS[onboardingSection].name}
-                  </span>
-                  <span className="text-[10px] text-muted-foreground/70 italic">
-                    takes {CHAT_ONBOARDING_SECTIONS[onboardingSection].estimate}
-                  </span>
-                </div>
-                <motion.button
-                  onClick={stopOnboarding}
-                  className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium transition-all"
-                  style={{
-                    background: "rgba(50, 110, 230, 0.18)",
-                    color: "#7ab8ff",
-                    border: "1px solid rgba(80, 150, 255, 0.5)",
-                    boxShadow: "0 0 12px -2px rgba(80, 150, 255, 0.3)",
-                  }}
-                  animate={{
-                    boxShadow: [
-                      "0 0 12px -2px rgba(80, 150, 255, 0.3)",
-                      "0 0 20px -2px rgba(80, 150, 255, 0.5)",
-                      "0 0 12px -2px rgba(80, 150, 255, 0.3)",
-                    ],
-                  }}
-                  transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-                  whileHover={{ scale: 1.02, backgroundColor: "rgba(50, 110, 230, 0.25)" }}
-                >
-                  <Square className="h-2.5 w-2.5" />
-                  Stop
-                </motion.button>
-              </div>
-
-            </div>
-          )}
-
-          {/* Compact completed chip between messages and input */}
-          {onboardingActive && completedSections.length > 0 && (
-            <div className="px-4 pt-2 pb-1">
-              <div className="rounded-xl border border-border/40 bg-card/80 overflow-hidden">
-                {/* Chip row */}
-                <button
-                  onClick={() => setReviewChipOpen((p) => !p)}
-                  className="flex w-full items-center justify-between px-3 py-1.5 active:scale-[0.99] transition-transform"
-                >
-                  <div className="flex items-center gap-1.5">
-                    <div className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500/15">
-                      <Check className="h-2.5 w-2.5 text-emerald-500" />
-                    </div>
-                    <span className="text-[11px] font-medium text-foreground">
-                      {completedSections.length} of {CHAT_ONBOARDING_SECTIONS_COUNT} done
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-0.5">
-                    <span className="text-[11px] text-primary font-medium">review</span>
-                    {reviewChipOpen ? (
-                      <ChevronUp className="h-3 w-3 text-primary" />
-                    ) : (
-                      <ChevronDown className="h-3 w-3 text-primary" />
-                    )}
-                  </div>
-                </button>
-
-                {/* Expandable review list */}
-                <AnimatePresence>
-                  {reviewChipOpen && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: "auto", opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={{ duration: 0.25 }}
-                      className="overflow-hidden"
-                    >
-                      <div className="border-t border-border/30 px-3 py-2 max-h-[25vh] overflow-y-auto space-y-1">
-                        {completedSections.map((idx) => (
-                          <div key={idx} className="rounded-lg bg-muted/30">
-                            <button
-                              onClick={(e) => { e.stopPropagation(); setExpandedReviewSection(expandedReviewSection === idx ? null : idx); }}
-                              className="flex w-full items-center justify-between px-2.5 py-1.5 active:scale-[0.98] transition-transform"
-                            >
-                              <div className="flex items-center gap-1.5">
-                                <div className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-emerald-500/15">
-                                  <Check className="h-2 w-2 text-emerald-500" />
-                                </div>
-                                <span className="text-[11px] font-medium text-foreground">{CHAT_ONBOARDING_SECTIONS[idx].name}</span>
-                              </div>
-                              {expandedReviewSection === idx ? (
-                                <ChevronUp className="h-2.5 w-2.5 text-muted-foreground" />
-                              ) : (
-                                <ChevronDown className="h-2.5 w-2.5 text-muted-foreground" />
-                              )}
-                            </button>
-                            <AnimatePresence>
-                              {expandedReviewSection === idx && CHAT_ONBOARDING_NOTES[idx] && (
-                                <motion.div
-                                  initial={{ height: 0, opacity: 0 }}
-                                  animate={{ height: "auto", opacity: 1 }}
-                                  exit={{ height: 0, opacity: 0 }}
-                                  transition={{ duration: 0.2 }}
-                                  className="overflow-hidden"
-                                >
-                                  <div className="px-2.5 pb-1.5 pl-7">
-                                    <ul className="space-y-0.5">
-                                      {CHAT_ONBOARDING_NOTES[idx].map((note, ni) => (
-                                        <li key={ni} className="text-[11px] text-muted-foreground leading-relaxed">• {note}</li>
-                                      ))}
-                                    </ul>
-                                  </div>
-                                </motion.div>
-                              )}
-                            </AnimatePresence>
-                          </div>
-                        ))}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            </div>
-          )}
-
           {/* Quick-action chips — wrapped & centered */}
-          {!onboardingActive && !isClientContextLoading && (
+          {!isClientContextLoading && (
             (!hasMessages && !chatFirst) ? (
               <div className="flex flex-col items-center gap-3 px-4 pb-2">
                 <button
@@ -2349,7 +1966,7 @@ const AIChatPanel = ({
                   value={input}
                   onChange={(e) => onComposerChange(e.target.value)}
                   placeholder={
-                    onboardingActive ? "Speak or type your answer…" : goalPlanningDemo ? "Reply to Pi…" : "Ask Pi…"
+                    goalPlanningDemo ? "Reply to Pi…" : "Ask Pi…"
                   }
                   className={`block w-full bg-transparent text-foreground outline-none placeholder:text-muted-foreground/40 ${COMPOSER_TEXT_CLASS}`}
                 />
@@ -2357,7 +1974,7 @@ const AIChatPanel = ({
               </div>
             </div>
             <div className="relative flex shrink-0 items-center justify-center">
-              {micState !== "listening" && !onboardingActive && (
+              {micState !== "listening" && (
                 <span className="absolute inset-0 rounded-full bg-primary/30 animate-[pulse_2.5s_cubic-bezier(0.4,0,0.6,1)_infinite]" style={{ transform: "scale(1.5)" }} />
               )}
               <button

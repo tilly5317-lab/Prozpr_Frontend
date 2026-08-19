@@ -929,6 +929,102 @@ export interface ChatSendResponse {
    * reply says so; the client pairs it with an "Add CAMS statement" CTA.
    */
   portfolio_data_missing?: boolean;
+  /**
+   * Plan inputs written on this turn — shown as a saved chip with undo. Each
+   * carries an optional `basis` when the value was worked out from one we
+   * already held ("20% increase on the ₹30,00,000 on file"), so the user can
+   * catch a change applied to the wrong starting figure.
+   */
+  planning_saved?: SavedPlanField[] | null;
+  /** A goal created or re-costed on this turn. */
+  goal_saved?: SavedGoal | null;
+  /** Goals removed on this turn — the same undo puts them back. */
+  goal_removed?: { goal: string }[] | null;
+  /**
+   * The conversation's title after this turn. On the first turn this is the
+   * auto-generated one, so a client showing the title can rename it without
+   * refetching. The history drawer reloads on open, so it picks this up anyway.
+   */
+  session_title?: string | null;
+}
+
+/** One plan input written on a turn, as the user is shown it. */
+export interface SavedPlanField {
+  field_key: string;
+  label: string;
+  display_value: string;
+  /** Present for a relative change: what it was applied to, and how. */
+  basis?: string | null;
+}
+
+/** A goal added or re-costed in conversation. */
+export interface SavedGoal {
+  goal: string;
+  you_need_to_save?: string | null;
+  by?: string | null;
+}
+
+export interface ProfileCompletenessField {
+  key: string;
+  section: string;
+  label: string;
+  input_kind: string;
+  unit: string;
+  options: string[];
+  filled: boolean;
+}
+
+export interface ProfileCompleteness {
+  filled: number;
+  total: number;
+  percent: number;
+  sections: {
+    section: string;
+    label: string;
+    filled: number;
+    total: number;
+    complete: boolean;
+  }[];
+  fields: ProfileCompletenessField[];
+  capabilities: {
+    capability: string;
+    blocked: boolean;
+    missing: string[];
+    improves_with: string[];
+  }[];
+}
+
+/** What is open on a conversation, for re-rendering after a reload. */
+export interface PlanningState {
+  pending_question?: string | null;
+  pending_field_key?: string | null;
+  /** Stage of a goal being built: collecting | confirming | follow_up. */
+  goal_in_progress?: string | null;
+  asks_used: number;
+  asks_allowed: number;
+  completeness: ProfileCompleteness;
+}
+
+export async function getPlanningState(sessionId: string): Promise<PlanningState> {
+  return request<PlanningState>(`/chat/sessions/${sessionId}/planning/state`);
+}
+
+/** What the profile has, what it's missing, and what each gap blocks. One
+ *  truth for the chat gate, /profile/complete and the capture flow. */
+export async function getProfileCompleteness(): Promise<ProfileCompleteness> {
+  return request<ProfileCompleteness>("/profile/completeness");
+}
+
+/**
+ * Reverse the most recent plan change made in this conversation — a profile
+ * field or a whole goal. The backend restores it from the previous value on the
+ * audit row rather than reconstructing it, so this never has to guess, and it
+ * re-fires whatever the original change triggered.
+ */
+export async function undoPlanningChange(
+  sessionId: string
+): Promise<{ ok: boolean; field_key?: string | null; label?: string | null }> {
+  return request(`/chat/sessions/${sessionId}/planning/undo`, { method: "POST" });
 }
 
 export interface ChatSessionDetail extends ChatSessionInfo {
@@ -2041,6 +2137,13 @@ export interface GoalResponse {
   priority: string;
   status: string;
   inflation_rate?: number | null;
+  /** Loan / down-payment block, so reopening a goal shows what was entered. */
+  funded_by_loan?: boolean | null;
+  loan_pct?: number | null;
+  total_value?: number | null;
+  loan_amount?: number | null;
+  loan_interest_rate?: number | null;
+  loan_tenure_years?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -2058,6 +2161,17 @@ export interface GoalCreatePayload {
   inflation_rate?: number;
   notes?: string;
   monthly_contribution?: number;
+  /**
+   * Loan / down-payment block. `target_amount` remains the SELF-FUNDED share —
+   * the part the plan actually has to build — while `total_value` is the full
+   * cost. These were collected by the goal form and silently discarded until
+   * the backend learned to store them.
+   */
+  funded_by_loan?: boolean;
+  loan_pct?: number;
+  total_value?: number;
+  loan_interest_rate?: number;
+  loan_tenure_years?: number;
 }
 
 export async function createGoal(payload: GoalCreatePayload): Promise<GoalResponse> {
@@ -2075,6 +2189,17 @@ export interface GoalUpdatePayload {
   inflation_rate?: number;
   notes?: string;
   monthly_contribution?: number;
+  /**
+   * Loan / down-payment block. `target_amount` remains the SELF-FUNDED share —
+   * the part the plan actually has to build — while `total_value` is the full
+   * cost. These were collected by the goal form and silently discarded until
+   * the backend learned to store them.
+   */
+  funded_by_loan?: boolean;
+  loan_pct?: number;
+  total_value?: number;
+  loan_interest_rate?: number;
+  loan_tenure_years?: number;
 }
 
 export async function updateGoal(goalId: string, payload: GoalUpdatePayload): Promise<GoalResponse> {
