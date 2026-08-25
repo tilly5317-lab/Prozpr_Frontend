@@ -929,6 +929,12 @@ export interface ChatSendResponse {
    * reply says so; the client pairs it with an "Add CAMS statement" CTA.
    */
   portfolio_data_missing?: boolean;
+  /**
+   * The session's title after this turn. Only changes on the first turn, when
+   * the backend's auto-titler replaces the "New Chat" placeholder with a name
+   * derived from what the user actually asked.
+   */
+  session_title?: string | null;
 }
 
 export interface ChatSessionDetail extends ChatSessionInfo {
