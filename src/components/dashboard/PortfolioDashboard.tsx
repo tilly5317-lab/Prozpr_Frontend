@@ -1,6 +1,6 @@
 import { useState, useEffect, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { Compass, TrendingUp, TrendingDown, Wallet, Target, Activity, Landmark, Check, Sparkles, type LucideIcon } from "lucide-react";
+import { Compass, TrendingUp, TrendingDown, Wallet, Target, Activity, Landmark, Check, Sparkles, FileUp, type LucideIcon } from "lucide-react";
 import { motion } from "framer-motion";
 import BottomNav from "@/components/BottomNav";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -595,6 +595,22 @@ const PortfolioDashboard = () => {
           )}
         </div>
         <div className="flex items-center gap-2">
+          {/* Refreshing holdings used to be reachable only from the in-chart
+              prompt, which appears only when there are NO holdings — so a user
+              who already imported once had nowhere to upload a newer statement.
+              Own view only: family/member views aren't the user's own data. */}
+          {activeView.type === "self" && (
+            <button
+              type="button"
+              onClick={() => setCamsOpen(true)}
+              title="Import a newer CAMS statement to refresh your holdings"
+              aria-label="Update holdings from a new CAMS statement"
+              className="flex h-9 items-center gap-1.5 rounded-full bg-muted/60 pl-2.5 pr-3 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <FileUp className="h-4 w-4" aria-hidden="true" />
+              <span className="text-xs font-medium">Update holdings</span>
+            </button>
+          )}
           <a
             href="https://wa.me/919007016819"
             target="_blank"
