@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowLeft, Camera, Check, ChevronDown, Download, KeyRound, Loader2, Lock,
   Mail, MessageSquareWarning, Pencil, Phone, ShieldCheck, Smartphone, Trash2,
-  TriangleAlert, UserRound, X,
+  TriangleAlert, UserRound,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -13,21 +13,18 @@ import { useAuth } from "@/context/AuthContext";
 import { maskEmail, maskMobile } from "@/lib/utils";
 import {
   BackendOfflineError,
-  confirmSensitiveChange,
   deleteMyAccount,
   exportMyData,
   getAvatarUrl,
   getConsentState,
   raiseGrievance,
   removeAvatar,
-  requestSensitiveChange,
   updateConsent,
   uploadAvatar,
   updateMe,
   type ConsentPurpose,
   type ConsentState,
   type GrievanceCategory,
-  type SensitiveField,
 } from "@/lib/api";
 
 /* ── helpers ────────────────────────────────────────────────────────────── */
@@ -64,11 +61,6 @@ const squareDownscale = (file: File): Promise<Blob> =>
     };
     img.src = objectUrl;
   });
-
-const FIELD_LABEL: Record<SensitiveField, string> = {
-  email: "email address",
-  pan: "PAN",
-};
 
 /* ── layout primitives ──────────────────────────────────────────────────── */
 
@@ -213,19 +205,6 @@ const PrimaryButton = ({
 
 /* ── page ───────────────────────────────────────────────────────────────── */
 
-type SensitiveStage = "value" | "code";
-
-interface SensitiveFlow {
-  field: SensitiveField;
-  stage: SensitiveStage;
-  value: string;
-  code: string;
-  hint: string | null;
-  expiresIn: number | null;
-  error: string;
-  busy: boolean;
-}
-
 /**
  * /account — the one place identity, credentials and privacy rights live.
  *
@@ -248,12 +227,6 @@ const AccountCenter = () => {
   /* profile picture — the URL itself lives in AuthContext so the dashboard
      switcher and profile header pick up an upload without their own fetch. */
   const [avatarBusy, setAvatarBusy] = useState(false);
-
-  /* step-up flow for email / PAN */
-  const [flow, setFlow] = useState<SensitiveFlow | null>(null);
-
-  /* PIN reset handoff */
-  const [resetOpen, setResetOpen] = useState(false);
 
   /* privacy */
   const [consent, setConsent] = useState<ConsentState | null>(null);
@@ -346,56 +319,6 @@ const AccountCenter = () => {
     }
   }, [nameDraft, refresh]);
 
-  /* ── step-up flow ── */
-  const startFlow = (field: SensitiveField) =>
-    setFlow({
-      field, stage: "value", value: "", code: "",
-      hint: null, expiresIn: null, error: "", busy: false,
-    });
-
-  const submitValue = useCallback(async () => {
-    if (!flow) return;
-    setFlow({ ...flow, busy: true, error: "" });
-    try {
-      const res = await requestSensitiveChange(flow.field, flow.value.trim());
-      if (!res.verification_required) {
-        // First PAN on the account, or a bypass domain — already applied.
-        await refresh();
-        setFlow(null);
-        toast.success(res.message);
-        return;
-      }
-      setFlow({
-        ...flow, busy: false, stage: "code", code: "",
-        hint: res.email_hint, expiresIn: res.expires_in_minutes, error: "",
-      });
-    } catch (err) {
-      if (err instanceof BackendOfflineError) { setFlow({ ...flow, busy: false }); return; }
-      setFlow({
-        ...flow, busy: false,
-        error: err instanceof Error ? err.message : "Could not start that change",
-      });
-    }
-  }, [flow, refresh]);
-
-  const submitCode = useCallback(async () => {
-    if (!flow) return;
-    setFlow({ ...flow, busy: true, error: "" });
-    try {
-      await confirmSensitiveChange(flow.code);
-      await refresh();
-      const label = FIELD_LABEL[flow.field];
-      setFlow(null);
-      toast.success(`Your ${label} was updated`);
-    } catch (err) {
-      if (err instanceof BackendOfflineError) { setFlow({ ...flow, busy: false }); return; }
-      setFlow({
-        ...flow, busy: false, code: "",
-        error: err instanceof Error ? err.message : "That code didn't work",
-      });
-    }
-  }, [flow, refresh]);
-
   /* ── privacy ── */
   const togglePurpose = useCallback(async (purpose: ConsentPurpose, granted: boolean) => {
     setSavingPurpose(purpose);
@@ -451,26 +374,6 @@ const AccountCenter = () => {
       setSendingGrievance(false);
     }
   }, [grievance]);
-
-  /* ── PIN reset ── */
-  /**
-   * There is no "change my PIN" here on purpose.
-   *
-   * A change form only ever asked for the PIN the user already knows, which
-   * does nothing for the case that matters — someone else holding the session.
-   * Routing every reset through the forgot-PIN flow means a new PIN always
-   * costs a code sent to the account's email, whether the old one was
-   * forgotten or stolen. One path, one guarantee.
-   *
-   * That flow starts signed out, so this hands the number over and lets the
-   * sign-in screen open straight onto the reset step.
-   */
-  const startPinReset = useCallback(() => {
-    if (!user) return;
-    const resetPhone = { country_code: user.country_code, mobile: user.mobile };
-    signOut();
-    navigate("/", { state: { resetPhone } });
-  }, [navigate, signOut, user]);
 
   /* ── close account ── */
   const handleClose = useCallback(async () => {
@@ -613,7 +516,7 @@ const AccountCenter = () => {
             )
           }
           action={
-            <TextButton onClick={() => startFlow("email")}>
+            <TextButton onClick={() => navigate("/account/email")}>
               <Pencil className="h-3 w-3" /> Change
             </TextButton>
           }
@@ -631,7 +534,7 @@ const AccountCenter = () => {
           }
           hint={user?.pan_set ? undefined : "Used to match your statements and holdings"}
           action={
-            <TextButton onClick={() => startFlow("pan")}>
+            <TextButton onClick={() => navigate("/account/pan")}>
               <Pencil className="h-3 w-3" /> {user?.pan_set ? "Change" : "Add"}
             </TextButton>
           }
@@ -649,7 +552,12 @@ const AccountCenter = () => {
               ""
             )
           }
-          hint="Your account ID. It can't be changed here — contact support if it's wrong."
+          hint="What you sign in with"
+          action={
+            <TextButton onClick={() => navigate("/account/mobile")}>
+              <Pencil className="h-3 w-3" /> Change
+            </TextButton>
+          }
         />
       </Section>
 
@@ -664,7 +572,7 @@ const AccountCenter = () => {
           value="••••"
           hint="4 digits, asked for every time you sign in"
           action={
-            <TextButton onClick={() => setResetOpen(true)}>
+            <TextButton onClick={() => navigate("/account/pin")}>
               <KeyRound className="h-3 w-3" /> Reset
             </TextButton>
           }
@@ -889,157 +797,6 @@ const AccountCenter = () => {
           )}
         </AnimatePresence>
       </section>
-
-      {/* ── PIN reset confirmation ── */}
-      <AnimatePresence>
-        {resetOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 px-3 pb-[76px]"
-            onClick={() => setResetOpen(false)}
-          >
-            <motion.div
-              initial={{ y: 24, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 24, opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-md rounded-2xl bg-card border border-border p-4 shadow-lg"
-            >
-              <div className="flex items-start justify-between mb-2">
-                <div>
-                  <h3 className="text-sm font-semibold text-foreground">Reset your PIN</h3>
-                  <p className="text-[11px] leading-relaxed text-muted-foreground mt-1">
-                    You&apos;ll be signed out and taken to the sign-in screen, where
-                    we&apos;ll email a code to{" "}
-                    <span className="text-foreground">{email ? maskEmail(email) : "your account"}</span>{" "}
-                    so you can pick a new PIN.
-                  </p>
-                </div>
-                <button
-                  onClick={() => setResetOpen(false)}
-                  aria-label="Cancel"
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-              {!email && (
-                <p className="text-[11px] text-destructive mb-2">
-                  Add an email to your account first — that&apos;s where the code goes.
-                </p>
-              )}
-              <div className="flex items-center gap-2 mt-2">
-                <PrimaryButton onClick={startPinReset} disabled={!email}>
-                  Sign out and reset
-                </PrimaryButton>
-                <TextButton onClick={() => setResetOpen(false)}>Cancel</TextButton>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ── step-up sheet ── */}
-      <AnimatePresence>
-        {flow && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            /* Scrim sits UNDER the 72px bottom nav and the panel clears it —
-               same geometry as the app's own sheet in BottomNav, which is why
-               this reads as one pattern rather than a second modal system.
-               At z-50 it rendered behind the nav and the sheet was unreachable. */
-            className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 px-3 pb-[76px]"
-            onClick={() => !flow.busy && setFlow(null)}
-          >
-            <motion.div
-              initial={{ y: 24, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 24, opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-md rounded-2xl bg-card border border-border p-4 shadow-lg"
-            >
-              <div className="flex items-start justify-between mb-2.5">
-                <div>
-                  <h3 className="text-sm font-semibold text-foreground capitalize">
-                    {flow.stage === "value"
-                      ? `Change your ${FIELD_LABEL[flow.field]}`
-                      : "Enter the code"}
-                  </h3>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">
-                    {flow.stage === "value"
-                      ? flow.field === "email"
-                        ? "We'll send a code to your current email to confirm it's you."
-                        : "Your PAN is matched against your statements and holdings."
-                      : `Sent to ${flow.hint ?? "your email"}${
-                          flow.expiresIn ? ` — expires in ${flow.expiresIn} minutes` : ""
-                        }.`}
-                  </p>
-                </div>
-                <button
-                  onClick={() => setFlow(null)}
-                  disabled={flow.busy}
-                  aria-label="Cancel"
-                  className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-
-              {flow.stage === "value" ? (
-                <Field
-                  autoFocus
-                  value={flow.value}
-                  onChange={(v) => setFlow({ ...flow, value: v, error: "" })}
-                  placeholder={flow.field === "email" ? "you@example.com" : "ABCDE1234F"}
-                  maxLength={flow.field === "pan" ? 10 : undefined}
-                  uppercase={flow.field === "pan"}
-                />
-              ) : (
-                <input
-                  autoFocus
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  maxLength={6}
-                  value={flow.code}
-                  onChange={(e) =>
-                    setFlow({ ...flow, code: e.target.value.replace(/\D/g, "").slice(0, 6), error: "" })
-                  }
-                  placeholder="000000"
-                  className="w-full rounded-lg border border-border bg-background px-2.5 py-2.5 text-center text-[18px] font-mono tracking-[0.5em] text-foreground outline-none focus:border-primary transition-colors placeholder:tracking-[0.5em] placeholder:text-muted-foreground/40"
-                />
-              )}
-
-              {flow.error && <p className="text-[11px] text-destructive mt-1.5">{flow.error}</p>}
-
-              <div className="flex items-center gap-2 mt-3">
-                <PrimaryButton
-                  onClick={flow.stage === "value" ? submitValue : submitCode}
-                  busy={flow.busy}
-                  disabled={
-                    flow.stage === "value" ? !flow.value.trim() : flow.code.length !== 6
-                  }
-                >
-                  {flow.stage === "value" ? "Continue" : "Confirm change"}
-                </PrimaryButton>
-                {flow.stage === "code" && (
-                  <TextButton
-                    onClick={() => setFlow({ ...flow, stage: "value", code: "", error: "" })}
-                    disabled={flow.busy}
-                  >
-                    Use a different one
-                  </TextButton>
-                )}
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       <BottomNav />
     </div>

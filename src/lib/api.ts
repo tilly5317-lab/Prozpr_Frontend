@@ -2936,7 +2936,7 @@ export async function cancelTeamCall(meetingId: number): Promise<void> {
 // ── Sensitive edits (step-up verification) ───────────────
 
 /** Fields that cannot be changed on a session alone. */
-export type SensitiveField = "email" | "pan";
+export type SensitiveField = "email" | "pan" | "mobile";
 
 export interface SensitiveChangeResult {
   field: SensitiveField;
@@ -2963,10 +2963,12 @@ export interface SensitiveChangeResult {
 export async function requestSensitiveChange(
   field: SensitiveField,
   newValue: string,
+  /** Only read for `mobile`; the backend folds it into the parked value. */
+  countryCode?: string,
 ): Promise<SensitiveChangeResult> {
   const res = await request<SensitiveChangeResult>("/auth/me/sensitive/request", {
     method: "POST",
-    body: JSON.stringify({ field, new_value: newValue }),
+    body: JSON.stringify({ field, new_value: newValue, country_code: countryCode }),
   });
   // A straight-through apply (first PAN, bypass domain) has already changed the
   // user, so the cached /auth/me is stale the moment this returns.

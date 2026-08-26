@@ -85,6 +85,8 @@ import CompleteProfile from "./pages/CompleteProfile";
 import Profile from "./pages/Profile";
 import CasStatements from "./pages/CasStatements";
 import AccountCenter from "./pages/AccountCenter";
+import SensitiveChange from "./pages/SensitiveChange";
+import ResetPin from "./pages/ResetPin";
 import Chat from "./pages/Chat";
 import GoalsTimeline from "./pages/GoalsTimeline";
 import SipPlanner from "./pages/SipPlanner";
@@ -136,6 +138,10 @@ const App = () => (
             <Route path="/portfolio/fund/:schemeCode" element={<PortfolioFundDetail />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/account" element={<AccountCenter />} />
+            <Route path="/account/pin" element={<ResetPin />} />
+            {/* One screen per sensitive change — see SensitiveChange. Declared
+                after /account/pin so that literal path wins over :field. */}
+            <Route path="/account/:field" element={<SensitiveChange />} />
             <Route path="/cas-statements" element={<CasStatements />} />
             <Route path="/chat" element={<Chat />} />
             <Route path="/notifications" element={<Notifications />} />
