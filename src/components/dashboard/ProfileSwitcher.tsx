@@ -282,6 +282,11 @@ const ProfileSwitcher = () => {
               >
                 <UserPlus className="h-3 w-3" />
                 Manage Family
+                {/* Flagged here rather than only on the destination — a label
+                    that looks live and lands on "coming soon" wastes a tap. */}
+                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Soon
+                </span>
               </button>
               <button
                 onClick={() => {
