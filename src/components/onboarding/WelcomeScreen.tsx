@@ -1,6 +1,6 @@
 ﻿import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { TrendingUp, Sparkles, Shield, ChevronDown, Mail } from "lucide-react";
 import OnboardingNav from "./OnboardingNav";
 import prozprLogoLight from "@/assets/prozpr-logo-light.png";
@@ -79,6 +79,7 @@ const FORGOT_PIN_ENABLED = true;
 
 const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { refresh } = useAuth();
   const [step, setStep] = useState<Step>("phone");
   const [phone, setPhone] = useState("");
@@ -112,6 +113,35 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
       phone step already makes — so the reset screen can name the inbox before
       a code is sent, without a second request. */
   const [accountEmailHint, setAccountEmailHint] = useState<string | null>(null);
+
+  /**
+   * Deep link from Account Centre's "Reset PIN".
+   *
+   * That screen signs the user out and hands the number over, so the reset
+   * opens on the code step instead of making someone who is already signed in
+   * retype the phone number they just proved they own. The masked inbox hint
+   * normally comes off the phone step's check-mobile call, which this path
+   * skips, so it is fetched here — a null hint just falls back to "your email".
+   */
+  useEffect(() => {
+    const handoff = (location.state as { resetPhone?: { country_code: string; mobile: string } } | null)
+      ?.resetPhone;
+    if (!handoff || !FORGOT_PIN_ENABLED) return;
+    // Clear the state so a back-navigation doesn't drop into reset a second time.
+    navigate(".", { replace: true, state: null });
+    const match = countryCodes.find((c) => c.code === handoff.country_code);
+    if (match) setCountryCode(match);
+    setPhone(handoff.mobile);
+    setStep("reset");
+    void checkMobileStatus({
+      country_code: handoff.country_code,
+      mobile: handoff.mobile,
+    })
+      .then((status) => setAccountEmailHint(status.email_hint))
+      .catch(() => { /* hint is a nicety; the reset still works without it */ });
+    // Runs once, on the handoff that mounted this screen.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // The input only ever holds digits, so this is a plain length check.
   const isValid = phone.length === MOBILE_DIGITS;

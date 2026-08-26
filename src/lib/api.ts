@@ -286,11 +286,30 @@ export interface UserInfo {
    * Cleared by the backend as soon as a statement is imported.
    */
   cams_skipped?: boolean;
+  /**
+   * PAN as `ABCDE****F`, or null when none is on file. The full value never
+   * reaches this client — there is no reveal endpoint. Nothing in the app needs
+   * the whole thing, and `/auth/me` ends up in devtools and error reports.
+   */
+  pan_masked?: string | null;
+  /** Whether a PAN exists at all — tells "not set" apart from "set but hidden". */
+  pan_set?: boolean;
+  /** Field parked awaiting a step-up code, so the UI can show the pending
+      change instead of silently dropping it. */
+  pending_change_field?: string | null;
+  /** Whether a profile picture exists. The URL is fetched separately — see
+      `getAvatarUrl`. */
+  avatar_set?: boolean;
 }
 
 export interface UserUpdatePayload {
   first_name?: string;
   last_name?: string;
+  /**
+   * Only accepted while the account has NO email yet (the signup setup page).
+   * Replacing an existing address 403s — it goes through
+   * `requestSensitiveChange("email", ...)` instead.
+   */
   email?: string;
 }
 
@@ -2912,4 +2931,201 @@ export async function createTeamCall(startIso: string, agenda: string): Promise<
 /** Cancel a previously booked team call. 404/already-gone is treated as success server-side. */
 export async function cancelTeamCall(meetingId: number): Promise<void> {
   await request<void>(`/team-call/${meetingId}`, { method: "DELETE" });
+}
+
+// ── Sensitive edits (step-up verification) ───────────────
+
+/** Fields that cannot be changed on a session alone. */
+export type SensitiveField = "email" | "pan" | "mobile";
+
+export interface SensitiveChangeResult {
+  field: SensitiveField;
+  /**
+   * False when the backend applied the change immediately — the first PAN on an
+   * account (nothing to verify against), or an account on a bypass domain. The
+   * UI must not show a code screen in that case.
+   */
+  verification_required: boolean;
+  message: string;
+  /** Masked inbox the code went to (`j••n@gmail.com`) — always the address
+      ALREADY on file, never the proposed new one. */
+  email_hint: string | null;
+  expires_in_minutes: number | null;
+}
+
+/**
+ * Start a change to the email or PAN.
+ *
+ * The new value is parked on the backend, not applied. Nothing changes until
+ * `confirmSensitiveChange` is called with the code sent to the address already
+ * on the account.
+ */
+export async function requestSensitiveChange(
+  field: SensitiveField,
+  newValue: string,
+  /** Only read for `mobile`; the backend folds it into the parked value. */
+  countryCode?: string,
+): Promise<SensitiveChangeResult> {
+  const res = await request<SensitiveChangeResult>("/auth/me/sensitive/request", {
+    method: "POST",
+    body: JSON.stringify({ field, new_value: newValue, country_code: countryCode }),
+  });
+  // A straight-through apply (first PAN, bypass domain) has already changed the
+  // user, so the cached /auth/me is stale the moment this returns.
+  if (!res.verification_required) invalidateUserContextCache();
+  return res;
+}
+
+/**
+ * Finish the change. Carries only the code — the pending value lives on the
+ * backend, so an intercepted call can't redirect the change somewhere else.
+ */
+export async function confirmSensitiveChange(code: string): Promise<UserInfo> {
+  const me = await request<UserInfo>("/auth/me/sensitive/confirm", {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+  invalidateUserContextCache();
+  return me;
+}
+
+// ── DPDP privacy rights ─────────────────────────────────
+
+export type ConsentPurpose =
+  | "account_and_advisory"
+  | "cas_ingestion"
+  | "llm_processing"
+  | "analytics"
+  | "marketing_comms";
+
+export interface PurposeNotice {
+  purpose: ConsentPurpose;
+  title: string;
+  detail: string;
+  /** Necessary purposes cannot be declined while the account exists. */
+  necessary: boolean;
+  /** Null means never asked — which is NOT consent. */
+  granted: boolean | null;
+  recorded_at: string | null;
+  policy_version: string | null;
+}
+
+export interface ConsentState {
+  policy_version: string;
+  purposes: PurposeNotice[];
+}
+
+export async function getConsentState(): Promise<ConsentState> {
+  return request<ConsentState>("/privacy/consent");
+}
+
+/** Withdrawal is this same call with `granted: false` — the Act requires it to
+    be as easy as granting, so there is no separate withdraw endpoint. */
+export async function updateConsent(
+  consents: { purpose: ConsentPurpose; granted: boolean }[],
+): Promise<ConsentState> {
+  return request<ConsentState>("/privacy/consent", {
+    method: "POST",
+    body: JSON.stringify({ consents }),
+  });
+}
+
+export interface DataExport {
+  generated_at: string;
+  policy_version: string;
+  about: string;
+  purposes: Record<string, unknown>;
+  recipients: { name: string; purpose: string }[];
+  statement_archive: Record<string, unknown>[];
+  truncated_tables: string[];
+  row_cap_per_table: number;
+  tables: Record<string, unknown>;
+}
+
+export async function exportMyData(): Promise<DataExport> {
+  return request<DataExport>("/privacy/export");
+}
+
+export type GrievanceCategory =
+  | "access"
+  | "correction"
+  | "erasure"
+  | "consent"
+  | "general";
+
+export async function raiseGrievance(
+  category: GrievanceCategory,
+  message: string,
+): Promise<{ id: string; category: string; status: string; created_at: string }> {
+  return request("/privacy/grievance", {
+    method: "POST",
+    body: JSON.stringify({ category, message }),
+  });
+}
+
+export interface ErasureResult {
+  deleted_at: string;
+  purge_scheduled_for: string;
+  grace_days: number;
+  detail: string;
+}
+
+/**
+ * Erase the account.
+ *
+ * Identity columns are destroyed immediately and the session stops
+ * authenticating on the next request; the rows are purged after the grace
+ * window. Not reversible from the app — treat the returned dates as the real
+ * ones and show them to the user.
+ */
+export async function deleteMyAccount(): Promise<ErasureResult> {
+  const res = await request<ErasureResult>("/privacy/account", { method: "DELETE" });
+  invalidateUserContextCache();
+  return res;
+}
+
+// ── Profile picture ─────────────────────────────────────
+
+/**
+ * Short-lived read URL for the profile picture, or null.
+ *
+ * Deliberately not part of `UserInfo`: the URL is presigned and expires, so
+ * putting it on `/auth/me` — called on nearly every page load — would hand back
+ * a different URL each time and defeat image caching. Fetch it where the avatar
+ * is drawn.
+ */
+export async function getAvatarUrl(): Promise<string | null> {
+  const res = await request<{ url: string | null }>("/auth/me/avatar");
+  return res.url;
+}
+
+/** Upload a new profile picture. Send an already-downscaled square blob. */
+export async function uploadAvatar(image: Blob): Promise<string | null> {
+  if (Date.now() < backendOfflineUntil) throw new BackendOfflineError();
+
+  const form = new FormData();
+  form.append("file", image, "avatar.jpg");
+
+  // NB: do not set Content-Type — the browser must add the multipart boundary.
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const res = await fetch(`${API}/auth/me/avatar`, { method: "POST", headers, body: form });
+  const text = await res.text();
+  if (!res.ok) {
+    let msg = readableErrorBody(text, res.status);
+    try {
+      const body = JSON.parse(text) as { detail?: unknown };
+      if (typeof body?.detail === "string") msg = body.detail;
+    } catch { /* keep the readable fallback */ }
+    throw new Error(msg);
+  }
+  invalidateUserContextCache();
+  return (JSON.parse(text) as { url: string | null }).url;
+}
+
+export async function removeAvatar(): Promise<void> {
+  await request<void>("/auth/me/avatar", { method: "DELETE" });
+  invalidateUserContextCache();
 }

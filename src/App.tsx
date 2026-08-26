@@ -84,6 +84,10 @@ import Notifications from "./pages/Notifications";
 import CompleteProfile from "./pages/CompleteProfile";
 import Profile from "./pages/Profile";
 import CasStatements from "./pages/CasStatements";
+import AccountCenter from "./pages/AccountCenter";
+import SensitiveChange from "./pages/SensitiveChange";
+import ComingSoon from "./pages/ComingSoon";
+import ResetPin from "./pages/ResetPin";
 import Chat from "./pages/Chat";
 import GoalsTimeline from "./pages/GoalsTimeline";
 import SipPlanner from "./pages/SipPlanner";
@@ -101,7 +105,9 @@ import AboutYou from "./pages/AboutYou";
 import Portfolio from "./pages/Portfolio";
 import PortfolioFundDetail from "./pages/PortfolioFundDetail";
 import OnboardingLoading from "./pages/OnboardingLoading";
-import FamilyMembers from "./pages/FamilyMembers";
+// Family sharing is locked — /family serves ComingSoon. The page is kept in
+// the tree; restore this import and the route below to turn it back on.
+// import FamilyMembers from "./pages/FamilyMembers";
 import LiquidFunds from "./pages/LiquidFunds";
 
 const queryClient = new QueryClient();
@@ -134,6 +140,11 @@ const App = () => (
             <Route path="/portfolio" element={<Portfolio />} />
             <Route path="/portfolio/fund/:schemeCode" element={<PortfolioFundDetail />} />
             <Route path="/profile" element={<Profile />} />
+            <Route path="/account" element={<AccountCenter />} />
+            <Route path="/account/pin" element={<ResetPin />} />
+            {/* One screen per sensitive change — see SensitiveChange. Declared
+                after /account/pin so that literal path wins over :field. */}
+            <Route path="/account/:field" element={<SensitiveChange />} />
             <Route path="/cas-statements" element={<CasStatements />} />
             <Route path="/chat" element={<Chat />} />
             <Route path="/notifications" element={<Notifications />} />
@@ -170,7 +181,19 @@ const App = () => (
             <Route path="/goal-planner/cards" element={<Navigate to="/goal-planner" replace />} />
             <Route path="/goal-planner/timeline" element={<GoalsTimeline />} />
             <Route path="/goal-planner/timeline-2" element={<GoalsTimeline variant="tornado" />} />
-            <Route path="/family" element={<FamilyMembers />} />
+            {/* Family sharing is locked. The route serves ComingSoon instead of
+                FamilyMembers so none of that page's fetches or writes run;
+                FamilyMembers itself is left untouched, so re-enabling it is
+                this one line. */}
+            <Route
+              path="/family"
+              element={
+                <ComingSoon
+                  title="Family"
+                  blurb="Invite the people you plan with, see a combined picture of the household, and switch between their portfolios. We're still building it."
+                />
+              }
+            />
             <Route path="/liquid-funds" element={<LiquidFunds />} />
             </Route>
             </Route>
