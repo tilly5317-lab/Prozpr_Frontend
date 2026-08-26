@@ -8,6 +8,8 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import BottomNav from "@/components/BottomNav";
 import ReportIssueDialog from "@/components/ReportIssueDialog";
+import UserAvatar from "@/components/UserAvatar";
+import { maskEmail, maskMobile } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/context/AuthContext";
 import {
@@ -188,8 +190,11 @@ const Profile = () => {
   /* ── display ── */
   const displayName =
     [user?.first_name, user?.last_name].filter(Boolean).join(" ") || "User";
-  const displayEmail = user?.email ?? "";
-  const displayPhone = user ? `${user.country_code} ${user.mobile}` : "";
+  // Masked, like everywhere else. The header sits above the fold on a page
+  // people open in public; printing a full address here undid the masking the
+  // account page does.
+  const displayEmail = user?.email ? maskEmail(user.email) : "";
+  const displayPhone = user ? `${user.country_code} ${maskMobile(user.mobile)}` : "";
   const pi = profile?.personal_info;
 
   if (loading) {
@@ -214,12 +219,9 @@ const Profile = () => {
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="flex h-12 w-12 items-center justify-center rounded-full bg-accent/10 mb-1.5"
+          className="mb-1.5"
         >
-          <span className="text-sm font-bold text-accent">
-            {(user?.first_name?.[0] ?? "U").toUpperCase()}
-            {(user?.last_name?.[0] ?? "").toUpperCase()}
-          </span>
+          <UserAvatar size={48} />
         </motion.div>
         <p className="text-sm font-semibold text-foreground">{displayName}</p>
         <p className="text-[11px] text-muted-foreground">{displayEmail || displayPhone}</p>

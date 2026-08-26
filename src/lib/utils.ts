@@ -51,3 +51,31 @@ export function formatInrMillions(n: number): string {
   if (v >= 1e3) return `${sign}₹${(v / 1e3).toFixed(2)}k`;
   return `${sign}₹${v.toFixed(2)}`;
 }
+
+/**
+ * `jonathan@gmail.com` → `j••••••n@gmail.com`.
+ *
+ * Shared rather than per-page: an identifier that is masked on one screen and
+ * printed in full on the next is not masked at all, which is exactly what
+ * happened when this lived inside the account page.
+ *
+ * There is deliberately no reveal control anywhere in the app. A masked value
+ * with an eye icon beside it protects nothing — it adds a tap. Someone who
+ * needs their own address in full already knows it.
+ */
+export function maskEmail(email: string): string {
+  const [local, domain] = email.split("@");
+  if (!domain) return "•••";
+  const masked =
+    local.length <= 2
+      ? `${local[0] ?? "•"}•`
+      : `${local[0]}${"•".repeat(local.length - 2)}${local[local.length - 1]}`;
+  return `${masked}@${domain}`;
+}
+
+/** `9876543210` → `••••••3210`. Keeps the last four, the way a bank statement does. */
+export function maskMobile(mobile: string): string {
+  return mobile.length <= 4
+    ? mobile
+    : `${"•".repeat(mobile.length - 4)}${mobile.slice(-4)}`;
+}

@@ -8,7 +8,9 @@ import {
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import BottomNav from "@/components/BottomNav";
+import UserAvatar from "@/components/UserAvatar";
 import { useAuth } from "@/context/AuthContext";
+import { maskEmail, maskMobile } from "@/lib/utils";
 import {
   BackendOfflineError,
   confirmSensitiveChange,
@@ -30,39 +32,6 @@ import {
 
 /* ── helpers ────────────────────────────────────────────────────────────── */
 
-/**
- * `jonathan@gmail.com` → `j••••••n@gmail.com`.
- *
- * There is no reveal control anywhere on this page, for email, PAN or mobile.
- * A masked value with an eye icon next to it protects nothing — it just adds a
- * tap. What is masked here stays masked; a user who needs to check an
- * identifier in full already knows it, and one who doesn't should not be able
- * to read it off a screen someone else is holding.
- *
- * Email and mobile are masked in the UI, since `/auth/me` legitimately returns
- * both. The PAN is masked by the BACKEND and never sent here in full.
- */
-const maskEmail = (email: string): string => {
-  const [local, domain] = email.split("@");
-  if (!domain) return "•••";
-  const masked =
-    local.length <= 2
-      ? `${local[0] ?? "•"}•`
-      : `${local[0]}${"•".repeat(local.length - 2)}${local[local.length - 1]}`;
-  return `${masked}@${domain}`;
-};
-
-const maskMobile = (mobile: string): string =>
-  mobile.length <= 4 ? mobile : `${"•".repeat(mobile.length - 4)}${mobile.slice(-4)}`;
-
-/**
- * Centre-crop to a square and re-encode at 512px before upload.
- *
- * Done here rather than on the server on purpose: it keeps a phone photo from
- * crossing the network at 8 MB to be shown at 44px, and it means the backend
- * needs no image decoder — decoders are a classic memory-safety surface, and
- * this one would exist only to shrink a picture.
- */
 const AVATAR_PX = 512;
 
 const squareDownscale = (file: File): Promise<Blob> =>
@@ -269,15 +238,15 @@ interface SensitiveFlow {
  */
 const AccountCenter = () => {
   const navigate = useNavigate();
-  const { user, refresh, signOut } = useAuth();
+  const { user, refresh, signOut, avatarUrl, refreshAvatar } = useAuth();
 
   /* name */
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState({ first_name: "", last_name: "" });
   const [savingName, setSavingName] = useState(false);
 
-  /* profile picture */
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  /* profile picture — the URL itself lives in AuthContext so the dashboard
+     switcher and profile header pick up an upload without their own fetch. */
   const [avatarBusy, setAvatarBusy] = useState(false);
 
   /* step-up flow for email / PAN */
@@ -325,22 +294,15 @@ const AccountCenter = () => {
   }, []);
 
   /* ── profile picture ── */
-  useEffect(() => {
-    let cancelled = false;
-    if (!user?.avatar_set) { setAvatarUrl(null); return; }
-    getAvatarUrl()
-      .then((url) => { if (!cancelled) setAvatarUrl(url); })
-      .catch(() => { /* a missing picture is not worth a toast */ });
-    return () => { cancelled = true; };
-  }, [user?.avatar_set]);
-
   const handleAvatarPick = useCallback(async (file: File | undefined) => {
     if (!file) return;
     setAvatarBusy(true);
     try {
-      const url = await uploadAvatar(await squareDownscale(file));
-      setAvatarUrl(url);
+      await uploadAvatar(await squareDownscale(file));
+      // refresh() flips user.avatar_set, which is what the context watches to
+      // mint the URL — so this one call updates every avatar in the app.
       await refresh();
+      await refreshAvatar();
       toast.success("Profile picture updated");
     } catch (err) {
       if (err instanceof BackendOfflineError) return;
@@ -348,14 +310,14 @@ const AccountCenter = () => {
     } finally {
       setAvatarBusy(false);
     }
-  }, [refresh]);
+  }, [refresh, refreshAvatar]);
 
   const handleAvatarRemove = useCallback(async () => {
     setAvatarBusy(true);
     try {
       await removeAvatar();
-      setAvatarUrl(null);
       await refresh();
+      await refreshAvatar();
       toast.success("Profile picture removed");
     } catch (err) {
       if (err instanceof BackendOfflineError) return;
@@ -363,7 +325,7 @@ const AccountCenter = () => {
     } finally {
       setAvatarBusy(false);
     }
-  }, [refresh]);
+  }, [refresh, refreshAvatar]);
 
   /* ── name ── */
   const saveName = useCallback(async () => {
@@ -556,20 +518,7 @@ const AccountCenter = () => {
       <div className="px-5 mb-5">
         <div className="wealth-card !p-3.5 flex items-center gap-3.5">
           <div className="relative shrink-0">
-            {avatarUrl ? (
-              <img
-                src={avatarUrl}
-                alt=""
-                className="h-14 w-14 rounded-full object-cover bg-secondary"
-              />
-            ) : (
-              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-accent/10">
-                <span className="text-base font-bold text-accent">
-                  {(user?.first_name?.[0] ?? "U").toUpperCase()}
-                  {(user?.last_name?.[0] ?? "").toUpperCase()}
-                </span>
-              </div>
-            )}
+            <UserAvatar size={56} />
             {/* The input is the control; the label is what people see. Keeps the
                 native file picker without shipping a second click target. */}
             <label

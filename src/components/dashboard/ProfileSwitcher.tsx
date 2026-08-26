@@ -14,6 +14,7 @@ import {
   Monitor,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import UserAvatar from "@/components/UserAvatar";
 import { useFamily } from "@/context/FamilyContext";
 import { useTheme, type ThemeMode } from "@/context/ThemeContext";
 
@@ -83,18 +84,25 @@ const ProfileSwitcher = () => {
         }`}
         aria-label="Switch profile"
       >
+        {/* The photo is the signed-in user's, so it only stands in for the
+            SELF view — while acting as a family member or on the cumulative
+            view the pill must keep showing whose data is on screen. */}
         {showExtras ? (
-          <div
-            className={`flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold ${
-              isCumulative
-                ? "bg-gradient-to-br from-primary/20 to-accent/20 text-primary"
-                : isActingAs
-                ? "bg-primary/15 text-primary"
-                : "bg-accent/10 text-accent"
-            }`}
-          >
-            {isCumulative ? <Users className="h-3.5 w-3.5" /> : getActiveInitials()}
-          </div>
+          isSelf ? (
+            <UserAvatar size={28} />
+          ) : (
+            <div
+              className={`flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold ${
+                isCumulative
+                  ? "bg-gradient-to-br from-primary/20 to-accent/20 text-primary"
+                  : "bg-primary/15 text-primary"
+              }`}
+            >
+              {isCumulative ? <Users className="h-3.5 w-3.5" /> : getActiveInitials()}
+            </div>
+          )
+        ) : isSelf ? (
+          <UserAvatar size={28} />
         ) : (
           <span className="flex items-center justify-center text-[13px] font-bold text-accent">
             {isCumulative ? <Users className="h-4 w-4" /> : getActiveInitials()}
@@ -147,9 +155,7 @@ const ProfileSwitcher = () => {
               }}
               className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/50 transition-colors"
             >
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-accent/10 text-xs font-bold text-accent shrink-0">
-                {userInitials}
-              </div>
+              <UserAvatar size={32} />
               <div className="flex-1 min-w-0 text-left">
                 <p className="text-xs font-semibold text-foreground truncate">
                   {[user?.first_name, user?.last_name].filter(Boolean).join(" ") || "My Account"}
