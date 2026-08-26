@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  User, Pencil, Check, ChevronRight, ChevronDown,
-  MessageSquareText, Calculator, BarChart3, Users, Briefcase, AlertCircle, LogOut, UploadCloud, Bug, FileText,
+  User, ChevronRight, ChevronDown, ShieldCheck,
+  Calculator, BarChart3, Users, AlertCircle, LogOut, UploadCloud, Bug, FileText,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -11,34 +11,14 @@ import ReportIssueDialog from "@/components/ReportIssueDialog";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/context/AuthContext";
 import {
-  updateMe,
-  changePin,
   getFullProfile,
   getAboutYouStatus,
   updatePersonalInfo,
   BackendOfflineError,
   type FullProfileResponse,
-  type UserUpdatePayload,
 } from "@/lib/api";
 
 /* ── tiny helpers ── */
-
-const EmptyHint = ({ label }: { label: string }) => (
-  <span className="text-[11px] italic text-muted-foreground/60">
-    {label} — tap edit to add
-  </span>
-);
-
-const FieldRow = ({ label, value }: { label: string; value: string | null | undefined }) => (
-  <div>
-    <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">{label}</p>
-    {value ? (
-      <p className="text-xs text-foreground">{value}</p>
-    ) : (
-      <EmptyHint label={`No ${label.toLowerCase()}`} />
-    )}
-  </div>
-);
 
 const SectionCard = ({
   title,
@@ -100,56 +80,12 @@ const SectionCard = ({
   </div>
 );
 
-/* ── reusable sub-components (outside Profile to preserve identity across renders) ── */
-const ProfileInput = ({ value, onChange, placeholder, prefix }: { value: string; onChange: (v: string) => void; placeholder?: string; prefix?: string }) => (
-  <div className="relative">
-    {prefix && <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">{prefix}</span>}
-    <input
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      className={`w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary transition-colors ${prefix ? "pl-6" : ""}`}
-    />
-  </div>
-);
-
-/** 4-digit PIN entry — masked, numeric-only, and capped at 4 so the field can
-    never hold something the backend will reject. */
-const PinInput = ({
-  value,
-  onChange,
-  placeholder,
-  autoFocus,
-}: { value: string; onChange: (v: string) => void; placeholder?: string; autoFocus?: boolean }) => (
-  <input
-    type="password"
-    inputMode="numeric"
-    autoComplete="off"
-    maxLength={4}
-    autoFocus={autoFocus}
-    value={value}
-    onChange={(e) => onChange(e.target.value.replace(/\D/g, "").slice(0, 4))}
-    placeholder={placeholder}
-    className="w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs tracking-[0.4em] text-foreground outline-none focus:border-primary transition-colors placeholder:tracking-normal"
-  />
-);
-
 const ProfileChip = ({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) => (
   <button
     onClick={onClick}
     className={`rounded-full px-2.5 py-1 text-[11px] font-medium border transition-all ${active ? "bg-accent text-accent-foreground border-accent" : "bg-card text-muted-foreground border-border hover:border-accent/40"}`}
   >
     {label}
-  </button>
-);
-
-const EditSaveBtn = ({ editing, onEdit, onSave }: { editing: boolean; onEdit: () => void; onSave: () => void }) => (
-  <button
-    onClick={editing ? onSave : onEdit}
-    className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
-  >
-    {editing ? <Check className="h-3 w-3" /> : <Pencil className="h-3 w-3" />}
-    {editing ? "Save" : "Edit"}
   </button>
 );
 
@@ -166,21 +102,6 @@ const Profile = () => {
      know the profile is fully complete. */
   const [aboutYouConfirmed, setAboutYouConfirmed] = useState(false);
 
-  /* editable contact fields */
-  const [editingContact, setEditingContact] = useState(false);
-  const [contactDraft, setContactDraft] = useState({
-    first_name: "",
-    last_name: "",
-    email: "",
-  });
-
-  /* PIN change — kept out of `contactDraft` so a credential is never written by
-     the same Save that edits a display name. */
-  const [changingPin, setChangingPin] = useState(false);
-  const [pinDraft, setPinDraft] = useState({ current: "", next: "", confirm: "" });
-  const [pinError, setPinError] = useState("");
-  const [savingPin, setSavingPin] = useState(false);
-
   /* editable personal info */
   const [editingPersonal, setEditingPersonal] = useState(false);
   const [personalDraft, setPersonalDraft] = useState({
@@ -192,16 +113,6 @@ const Profile = () => {
   });
 
   /* ── load data ── */
-  useEffect(() => {
-    if (user) {
-      setContactDraft({
-        first_name: user.first_name ?? "",
-        last_name: user.last_name ?? "",
-        email: user.email ?? "",
-      });
-    }
-  }, [user]);
-
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -241,58 +152,6 @@ const Profile = () => {
   }, []);
 
   /* ── save handlers ── */
-  const saveContact = useCallback(async () => {
-    try {
-      const payload: UserUpdatePayload = {};
-      if (contactDraft.first_name) payload.first_name = contactDraft.first_name;
-      if (contactDraft.last_name) payload.last_name = contactDraft.last_name;
-      if (contactDraft.email) payload.email = contactDraft.email;
-      await updateMe(payload);
-      await refresh();
-      setEditingContact(false);
-      toast.success("Contact info updated");
-    } catch (err) {
-      if (err instanceof BackendOfflineError) return;
-      toast.error(err instanceof Error ? err.message : "Failed to save");
-    }
-  }, [contactDraft, refresh]);
-
-  const closePinForm = useCallback(() => {
-    setChangingPin(false);
-    setPinDraft({ current: "", next: "", confirm: "" });
-    setPinError("");
-  }, []);
-
-  const savePin = useCallback(async () => {
-    const { current, next, confirm } = pinDraft;
-    if (!/^\d{4}$/.test(next)) {
-      setPinError("Your new PIN must be exactly 4 digits");
-      return;
-    }
-    if (next !== confirm) {
-      setPinError("The two new PINs don't match");
-      return;
-    }
-    if (next === current) {
-      setPinError("That's already your PIN — pick a different one");
-      return;
-    }
-    setPinError("");
-    setSavingPin(true);
-    try {
-      // `current` is sent even when blank; the backend decides whether an
-      // account without a PIN yet may set one without proving the old one.
-      await changePin({ current_pin: current || undefined, new_pin: next });
-      closePinForm();
-      toast.success("PIN updated — use it next time you sign in");
-    } catch (err) {
-      if (err instanceof BackendOfflineError) return;
-      setPinError(err instanceof Error ? err.message : "Could not update your PIN");
-    } finally {
-      setSavingPin(false);
-    }
-  }, [pinDraft, closePinForm]);
-
   const savePersonal = useCallback(async () => {
     try {
       const res = await updatePersonalInfo({
@@ -387,111 +246,9 @@ const Profile = () => {
         </div>
       )}
 
-      {/* Contact Information */}
-      <div className="px-5 mb-2">
-        <div className="wealth-card !p-3">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-[11px] font-semibold text-foreground">Account Details</h3>
-            <EditSaveBtn editing={editingContact} onEdit={() => setEditingContact(true)} onSave={saveContact} />
-          </div>
-          <div className="space-y-1.5">
-            {editingContact ? (
-              <>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">First Name</p>
-                    <ProfileInput value={contactDraft.first_name} onChange={(v) => setContactDraft((d) => ({ ...d, first_name: v }))} placeholder="First name" />
-                  </div>
-                  <div>
-                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">Last Name</p>
-                    <ProfileInput value={contactDraft.last_name} onChange={(v) => setContactDraft((d) => ({ ...d, last_name: v }))} placeholder="Last name" />
-                  </div>
-                </div>
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">Email</p>
-                  <ProfileInput value={contactDraft.email} onChange={(v) => setContactDraft((d) => ({ ...d, email: v }))} placeholder="email@example.com" />
-                </div>
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">Phone</p>
-                  <p className="text-xs text-muted-foreground">{displayPhone || "Not set"}</p>
-                </div>
-              </>
-            ) : (
-              <>
-                <FieldRow label="Name" value={displayName !== "User" ? displayName : null} />
-                <FieldRow label="Email" value={displayEmail} />
-                <FieldRow label="Phone" value={displayPhone} />
-              </>
-            )}
-
-            {/* Sign-in PIN — its own control rather than a field of the Save
-                above, so changing a credential is always a deliberate act. */}
-            <div className="border-t border-border/40 pt-1.5">
-              {changingPin ? (
-                <div className="space-y-1.5">
-                  <div>
-                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">Current PIN</p>
-                    <PinInput
-                      autoFocus
-                      value={pinDraft.current}
-                      onChange={(v) => setPinDraft((d) => ({ ...d, current: v }))}
-                      placeholder="Leave blank if you've never set one"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">New PIN</p>
-                      <PinInput
-                        value={pinDraft.next}
-                        onChange={(v) => setPinDraft((d) => ({ ...d, next: v }))}
-                      />
-                    </div>
-                    <div>
-                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">Confirm</p>
-                      <PinInput
-                        value={pinDraft.confirm}
-                        onChange={(v) => setPinDraft((d) => ({ ...d, confirm: v }))}
-                      />
-                    </div>
-                  </div>
-                  {pinError && <p className="text-[11px] text-destructive">{pinError}</p>}
-                  <div className="flex items-center gap-2 pt-0.5">
-                    <button
-                      onClick={savePin}
-                      disabled={savingPin}
-                      className="rounded-lg bg-foreground px-3 py-1.5 text-[11px] font-semibold text-background transition-opacity disabled:opacity-50"
-                    >
-                      {savingPin ? "Updating…" : "Update PIN"}
-                    </button>
-                    <button
-                      onClick={closePinForm}
-                      disabled={savingPin}
-                      className="text-[11px] text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex items-end justify-between">
-                  <FieldRow label="Sign-in PIN" value="••••" />
-                  <button
-                    onClick={() => setChangingPin(true)}
-                    className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    <Pencil className="h-3 w-3" />
-                    Change
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-
       {/* Navigation rows */}
       {([
+        { icon: ShieldCheck, title: "Account Centre", sub: "Your details, sign-in PIN and privacy controls", route: "/account", showDot: false },
         { icon: User, title: "Tell Us More About You", sub: "Goals, risk tolerance & mandates", route: "/profile/complete", showDot: !aboutYouConfirmed },
         { icon: UploadCloud, title: "Update Holdings", sub: "Upload your latest CAMS / KFintech statement", route: "/cams-upload?from=profile", showDot: false },
         { icon: FileText, title: "My CAS Statements", sub: "Download statements you've imported", route: "/cas-statements", showDot: false },
