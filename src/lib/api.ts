@@ -287,10 +287,9 @@ export interface UserInfo {
    */
   cams_skipped?: boolean;
   /**
-   * PAN as `ABCDE****F`, or null when none is on file. The full value is NEVER
-   * in this payload — `/auth/me` is fetched on nearly every page load and ends
-   * up in devtools, HTTP caches and error reports. Use `revealPan()` when the
-   * user explicitly asks to see it.
+   * PAN as `ABCDE****F`, or null when none is on file. The full value never
+   * reaches this client — there is no reveal endpoint. Nothing in the app needs
+   * the whole thing, and `/auth/me` ends up in devtools and error reports.
    */
   pan_masked?: string | null;
   /** Whether a PAN exists at all — tells "not set" apart from "set but hidden". */
@@ -298,6 +297,9 @@ export interface UserInfo {
   /** Field parked awaiting a step-up code, so the UI can show the pending
       change instead of silently dropping it. */
   pending_change_field?: string | null;
+  /** Whether a profile picture exists. The URL is fetched separately — see
+      `getAvatarUrl`. */
+  avatar_set?: boolean;
 }
 
 export interface UserUpdatePayload {
@@ -2985,18 +2987,6 @@ export async function confirmSensitiveChange(code: string): Promise<UserInfo> {
   return me;
 }
 
-/**
- * The full PAN, on an explicit reveal.
- *
- * Split off `/auth/me` on purpose: that payload is fetched on nearly every page
- * load and ends up in devtools and error reports, so it carries only the masked
- * form. Never cache this result.
- */
-export async function revealPan(): Promise<string | null> {
-  const res = await request<{ pan: string | null }>("/auth/me/pan");
-  return res.pan;
-}
-
 // ── DPDP privacy rights ─────────────────────────────────
 
 export type ConsentPurpose =
@@ -3090,4 +3080,50 @@ export async function deleteMyAccount(): Promise<ErasureResult> {
   const res = await request<ErasureResult>("/privacy/account", { method: "DELETE" });
   invalidateUserContextCache();
   return res;
+}
+
+// ── Profile picture ─────────────────────────────────────
+
+/**
+ * Short-lived read URL for the profile picture, or null.
+ *
+ * Deliberately not part of `UserInfo`: the URL is presigned and expires, so
+ * putting it on `/auth/me` — called on nearly every page load — would hand back
+ * a different URL each time and defeat image caching. Fetch it where the avatar
+ * is drawn.
+ */
+export async function getAvatarUrl(): Promise<string | null> {
+  const res = await request<{ url: string | null }>("/auth/me/avatar");
+  return res.url;
+}
+
+/** Upload a new profile picture. Send an already-downscaled square blob. */
+export async function uploadAvatar(image: Blob): Promise<string | null> {
+  if (Date.now() < backendOfflineUntil) throw new BackendOfflineError();
+
+  const form = new FormData();
+  form.append("file", image, "avatar.jpg");
+
+  // NB: do not set Content-Type — the browser must add the multipart boundary.
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const res = await fetch(`${API}/auth/me/avatar`, { method: "POST", headers, body: form });
+  const text = await res.text();
+  if (!res.ok) {
+    let msg = readableErrorBody(text, res.status);
+    try {
+      const body = JSON.parse(text) as { detail?: unknown };
+      if (typeof body?.detail === "string") msg = body.detail;
+    } catch { /* keep the readable fallback */ }
+    throw new Error(msg);
+  }
+  invalidateUserContextCache();
+  return (JSON.parse(text) as { url: string | null }).url;
+}
+
+export async function removeAvatar(): Promise<void> {
+  await request<void>("/auth/me/avatar", { method: "DELETE" });
+  invalidateUserContextCache();
 }

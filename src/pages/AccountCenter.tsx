@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  ArrowLeft, Check, ChevronDown, Download, Eye, EyeOff, Loader2, Lock,
-  Mail, MessageSquareWarning, Pencil, Phone, ShieldCheck, Smartphone,
+  ArrowLeft, Camera, Check, ChevronDown, Download, KeyRound, Loader2, Lock,
+  Mail, MessageSquareWarning, Pencil, Phone, ShieldCheck, Smartphone, Trash2,
   TriangleAlert, UserRound, X,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -11,15 +11,16 @@ import BottomNav from "@/components/BottomNav";
 import { useAuth } from "@/context/AuthContext";
 import {
   BackendOfflineError,
-  changePin,
   confirmSensitiveChange,
   deleteMyAccount,
   exportMyData,
+  getAvatarUrl,
   getConsentState,
   raiseGrievance,
+  removeAvatar,
   requestSensitiveChange,
-  revealPan,
   updateConsent,
+  uploadAvatar,
   updateMe,
   type ConsentPurpose,
   type ConsentState,
@@ -32,10 +33,14 @@ import {
 /**
  * `jonathan@gmail.com` → `j••••••n@gmail.com`.
  *
- * Shoulder-surfing protection only, and honest about it: the full address is
- * already in this client, because `/auth/me` returns it. That is fine — the
- * address is the account's own login hint. The PAN is the opposite case: it is
- * masked by the BACKEND and the full value only arrives from `revealPan()`.
+ * There is no reveal control anywhere on this page, for email, PAN or mobile.
+ * A masked value with an eye icon next to it protects nothing — it just adds a
+ * tap. What is masked here stays masked; a user who needs to check an
+ * identifier in full already knows it, and one who doesn't should not be able
+ * to read it off a screen someone else is holding.
+ *
+ * Email and mobile are masked in the UI, since `/auth/me` legitimately returns
+ * both. The PAN is masked by the BACKEND and never sent here in full.
  */
 const maskEmail = (email: string): string => {
   const [local, domain] = email.split("@");
@@ -49,6 +54,47 @@ const maskEmail = (email: string): string => {
 
 const maskMobile = (mobile: string): string =>
   mobile.length <= 4 ? mobile : `${"•".repeat(mobile.length - 4)}${mobile.slice(-4)}`;
+
+/**
+ * Centre-crop to a square and re-encode at 512px before upload.
+ *
+ * Done here rather than on the server on purpose: it keeps a phone photo from
+ * crossing the network at 8 MB to be shown at 44px, and it means the backend
+ * needs no image decoder — decoders are a classic memory-safety surface, and
+ * this one would exist only to shrink a picture.
+ */
+const AVATAR_PX = 512;
+
+const squareDownscale = (file: File): Promise<Blob> =>
+  new Promise((resolve, reject) => {
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const side = Math.min(img.width, img.height);
+      const size = Math.min(side, AVATAR_PX);
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) { reject(new Error("Your browser can't process that image")); return; }
+      ctx.drawImage(
+        img,
+        (img.width - side) / 2, (img.height - side) / 2, side, side,
+        0, 0, size, size,
+      );
+      canvas.toBlob(
+        (blob) => blob ? resolve(blob) : reject(new Error("Could not read that image")),
+        "image/jpeg",
+        0.85,
+      );
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("That file isn't an image we can read"));
+    };
+    img.src = objectUrl;
+  });
 
 const FIELD_LABEL: Record<SensitiveField, string> = {
   email: "email address",
@@ -169,30 +215,6 @@ const Field = ({
   />
 );
 
-const PinField = ({
-  value,
-  onChange,
-  placeholder,
-  autoFocus,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  autoFocus?: boolean;
-}) => (
-  <input
-    type="password"
-    inputMode="numeric"
-    autoComplete="off"
-    maxLength={4}
-    autoFocus={autoFocus}
-    value={value}
-    onChange={(e) => onChange(e.target.value.replace(/\D/g, "").slice(0, 4))}
-    placeholder={placeholder}
-    className="w-full rounded-lg border border-border bg-background px-2.5 py-2 text-[13px] tracking-[0.4em] text-foreground outline-none focus:border-primary transition-colors placeholder:tracking-normal"
-  />
-);
-
 const PrimaryButton = ({
   onClick,
   busy,
@@ -254,19 +276,15 @@ const AccountCenter = () => {
   const [nameDraft, setNameDraft] = useState({ first_name: "", last_name: "" });
   const [savingName, setSavingName] = useState(false);
 
-  /* reveals — never persisted, reset on every mount */
-  const [emailShown, setEmailShown] = useState(false);
-  const [panPlain, setPanPlain] = useState<string | null>(null);
-  const [revealingPan, setRevealingPan] = useState(false);
+  /* profile picture */
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [avatarBusy, setAvatarBusy] = useState(false);
 
   /* step-up flow for email / PAN */
   const [flow, setFlow] = useState<SensitiveFlow | null>(null);
 
-  /* PIN */
-  const [changingPin, setChangingPin] = useState(false);
-  const [pinDraft, setPinDraft] = useState({ current: "", next: "", confirm: "" });
-  const [pinError, setPinError] = useState("");
-  const [savingPin, setSavingPin] = useState(false);
+  /* PIN reset handoff */
+  const [resetOpen, setResetOpen] = useState(false);
 
   /* privacy */
   const [consent, setConsent] = useState<ConsentState | null>(null);
@@ -306,6 +324,47 @@ const AccountCenter = () => {
     return () => { cancelled = true; };
   }, []);
 
+  /* ── profile picture ── */
+  useEffect(() => {
+    let cancelled = false;
+    if (!user?.avatar_set) { setAvatarUrl(null); return; }
+    getAvatarUrl()
+      .then((url) => { if (!cancelled) setAvatarUrl(url); })
+      .catch(() => { /* a missing picture is not worth a toast */ });
+    return () => { cancelled = true; };
+  }, [user?.avatar_set]);
+
+  const handleAvatarPick = useCallback(async (file: File | undefined) => {
+    if (!file) return;
+    setAvatarBusy(true);
+    try {
+      const url = await uploadAvatar(await squareDownscale(file));
+      setAvatarUrl(url);
+      await refresh();
+      toast.success("Profile picture updated");
+    } catch (err) {
+      if (err instanceof BackendOfflineError) return;
+      toast.error(err instanceof Error ? err.message : "Could not save that picture");
+    } finally {
+      setAvatarBusy(false);
+    }
+  }, [refresh]);
+
+  const handleAvatarRemove = useCallback(async () => {
+    setAvatarBusy(true);
+    try {
+      await removeAvatar();
+      setAvatarUrl(null);
+      await refresh();
+      toast.success("Profile picture removed");
+    } catch (err) {
+      if (err instanceof BackendOfflineError) return;
+      toast.error(err instanceof Error ? err.message : "Could not remove it");
+    } finally {
+      setAvatarBusy(false);
+    }
+  }, [refresh]);
+
   /* ── name ── */
   const saveName = useCallback(async () => {
     setSavingName(true);
@@ -325,20 +384,6 @@ const AccountCenter = () => {
     }
   }, [nameDraft, refresh]);
 
-  /* ── PAN reveal ── */
-  const handleRevealPan = useCallback(async () => {
-    if (panPlain) { setPanPlain(null); return; }
-    setRevealingPan(true);
-    try {
-      setPanPlain(await revealPan());
-    } catch (err) {
-      if (err instanceof BackendOfflineError) return;
-      toast.error("Could not fetch your PAN");
-    } finally {
-      setRevealingPan(false);
-    }
-  }, [panPlain]);
-
   /* ── step-up flow ── */
   const startFlow = (field: SensitiveField) =>
     setFlow({
@@ -354,7 +399,6 @@ const AccountCenter = () => {
       if (!res.verification_required) {
         // First PAN on the account, or a bypass domain — already applied.
         await refresh();
-        setPanPlain(null);
         setFlow(null);
         toast.success(res.message);
         return;
@@ -378,7 +422,6 @@ const AccountCenter = () => {
     try {
       await confirmSensitiveChange(flow.code);
       await refresh();
-      setPanPlain(null);
       const label = FIELD_LABEL[flow.field];
       setFlow(null);
       toast.success(`Your ${label} was updated`);
@@ -390,32 +433,6 @@ const AccountCenter = () => {
       });
     }
   }, [flow, refresh]);
-
-  /* ── PIN ── */
-  const closePinForm = useCallback(() => {
-    setChangingPin(false);
-    setPinDraft({ current: "", next: "", confirm: "" });
-    setPinError("");
-  }, []);
-
-  const savePin = useCallback(async () => {
-    const { current, next, confirm } = pinDraft;
-    if (!/^\d{4}$/.test(next)) { setPinError("Your new PIN must be exactly 4 digits"); return; }
-    if (next !== confirm) { setPinError("The two new PINs don't match"); return; }
-    if (next === current) { setPinError("That's already your PIN — pick a different one"); return; }
-    setPinError("");
-    setSavingPin(true);
-    try {
-      await changePin({ current_pin: current || undefined, new_pin: next });
-      closePinForm();
-      toast.success("PIN updated — use it next time you sign in");
-    } catch (err) {
-      if (err instanceof BackendOfflineError) return;
-      setPinError(err instanceof Error ? err.message : "Could not update your PIN");
-    } finally {
-      setSavingPin(false);
-    }
-  }, [pinDraft, closePinForm]);
 
   /* ── privacy ── */
   const togglePurpose = useCallback(async (purpose: ConsentPurpose, granted: boolean) => {
@@ -473,6 +490,26 @@ const AccountCenter = () => {
     }
   }, [grievance]);
 
+  /* ── PIN reset ── */
+  /**
+   * There is no "change my PIN" here on purpose.
+   *
+   * A change form only ever asked for the PIN the user already knows, which
+   * does nothing for the case that matters — someone else holding the session.
+   * Routing every reset through the forgot-PIN flow means a new PIN always
+   * costs a code sent to the account's email, whether the old one was
+   * forgotten or stolen. One path, one guarantee.
+   *
+   * That flow starts signed out, so this hands the number over and lets the
+   * sign-in screen open straight onto the reset step.
+   */
+  const startPinReset = useCallback(() => {
+    if (!user) return;
+    const resetPhone = { country_code: user.country_code, mobile: user.mobile };
+    signOut();
+    navigate("/", { state: { resetPhone } });
+  }, [navigate, signOut, user]);
+
   /* ── close account ── */
   const handleClose = useCallback(async () => {
     setClosing(true);
@@ -517,18 +554,62 @@ const AccountCenter = () => {
 
       {/* identity strip */}
       <div className="px-5 mb-5">
-        <div className="wealth-card !p-3.5 flex items-center gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent/10">
-            <span className="text-[13px] font-bold text-accent">
-              {(user?.first_name?.[0] ?? "U").toUpperCase()}
-              {(user?.last_name?.[0] ?? "").toUpperCase()}
-            </span>
+        <div className="wealth-card !p-3.5 flex items-center gap-3.5">
+          <div className="relative shrink-0">
+            {avatarUrl ? (
+              <img
+                src={avatarUrl}
+                alt=""
+                className="h-14 w-14 rounded-full object-cover bg-secondary"
+              />
+            ) : (
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-accent/10">
+                <span className="text-base font-bold text-accent">
+                  {(user?.first_name?.[0] ?? "U").toUpperCase()}
+                  {(user?.last_name?.[0] ?? "").toUpperCase()}
+                </span>
+              </div>
+            )}
+            {/* The input is the control; the label is what people see. Keeps the
+                native file picker without shipping a second click target. */}
+            <label
+              className={`absolute -bottom-0.5 -right-0.5 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border-2 border-card bg-foreground text-background transition-opacity ${
+                avatarBusy ? "opacity-50 pointer-events-none" : "hover:opacity-90"
+              }`}
+              aria-label={avatarUrl ? "Change profile picture" : "Add a profile picture"}
+            >
+              {avatarBusy ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Camera className="h-3 w-3" />
+              )}
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="sr-only"
+                disabled={avatarBusy}
+                onChange={(e) => {
+                  void handleAvatarPick(e.target.files?.[0]);
+                  // Reset so picking the same file twice still fires onChange.
+                  e.target.value = "";
+                }}
+              />
+            </label>
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold text-foreground truncate">{displayName}</p>
             <p className="text-[11px] text-muted-foreground">
               {user ? `${user.country_code} ${maskMobile(user.mobile)}` : ""}
             </p>
+            {avatarUrl && (
+              <button
+                onClick={handleAvatarRemove}
+                disabled={avatarBusy}
+                className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-destructive transition-colors disabled:opacity-40"
+              >
+                <Trash2 className="h-3 w-3" /> Remove photo
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -577,18 +658,7 @@ const AccountCenter = () => {
           label="Email"
           value={
             email ? (
-              <span className="inline-flex items-center gap-2">
-                <span className="font-mono text-[12px]">
-                  {emailShown ? email : maskEmail(email)}
-                </span>
-                <button
-                  onClick={() => setEmailShown((s) => !s)}
-                  aria-label={emailShown ? "Hide email" : "Show email"}
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  {emailShown ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-                </button>
-              </span>
+              <span className="font-mono text-[12px]">{maskEmail(email)}</span>
             ) : (
               <span className="text-[11px] italic text-muted-foreground/70">Not set</span>
             )
@@ -605,24 +675,7 @@ const AccountCenter = () => {
           label="PAN"
           value={
             user?.pan_set ? (
-              <span className="inline-flex items-center gap-2">
-                <span className="font-mono text-[12px] tracking-wide">
-                  {panPlain ?? user.pan_masked}
-                </span>
-                <button
-                  onClick={handleRevealPan}
-                  aria-label={panPlain ? "Hide PAN" : "Show PAN"}
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  {revealingPan ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : panPlain ? (
-                    <EyeOff className="h-3 w-3" />
-                  ) : (
-                    <Eye className="h-3 w-3" />
-                  )}
-                </button>
-              </span>
+              <span className="font-mono text-[12px] tracking-wide">{user.pan_masked}</span>
             ) : (
               <span className="text-[11px] italic text-muted-foreground/70">Not set</span>
             )
@@ -638,60 +691,35 @@ const AccountCenter = () => {
         <Row
           icon={Phone}
           label="Mobile"
-          value={user ? `${user.country_code} ${user.mobile}` : ""}
-          hint="Your mobile number is your account ID and can't be changed here"
+          value={
+            user ? (
+              <span className="font-mono text-[12px]">
+                {user.country_code} {maskMobile(user.mobile)}
+              </span>
+            ) : (
+              ""
+            )
+          }
+          hint="Your account ID. It can't be changed here — contact support if it's wrong."
         />
       </Section>
 
       {/* ── security ── */}
-      <Section title="Security">
+      <Section
+        title="Security"
+        caption="Resetting sends a code to the email on your account, so a forgotten PIN and a stolen session are handled the same way — neither can set a new PIN without the inbox."
+      >
         <Row
           icon={Lock}
           label="Sign-in PIN"
-          value={changingPin ? undefined : "••••"}
-          hint={changingPin ? undefined : "4 digits, asked for every time you sign in"}
+          value="••••"
+          hint="4 digits, asked for every time you sign in"
           action={
-            changingPin ? (
-              <TextButton onClick={closePinForm} disabled={savingPin}>
-                <X className="h-3 w-3" /> Cancel
-              </TextButton>
-            ) : (
-              <TextButton onClick={() => setChangingPin(true)}>
-                <Pencil className="h-3 w-3" /> Change
-              </TextButton>
-            )
+            <TextButton onClick={() => setResetOpen(true)}>
+              <KeyRound className="h-3 w-3" /> Reset
+            </TextButton>
           }
-        >
-          {changingPin && (
-            <div className="space-y-2">
-              <div>
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
-                  Current PIN
-                </p>
-                <PinField
-                  autoFocus
-                  value={pinDraft.current}
-                  onChange={(v) => setPinDraft((d) => ({ ...d, current: v }))}
-                  placeholder="Leave blank if you've never set one"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">New</p>
-                  <PinField value={pinDraft.next} onChange={(v) => setPinDraft((d) => ({ ...d, next: v }))} />
-                </div>
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Confirm</p>
-                  <PinField value={pinDraft.confirm} onChange={(v) => setPinDraft((d) => ({ ...d, confirm: v }))} />
-                </div>
-              </div>
-              {pinError && <p className="text-[11px] text-destructive">{pinError}</p>}
-              <PrimaryButton onClick={savePin} busy={savingPin}>
-                {savingPin ? "Updating" : "Update PIN"}
-              </PrimaryButton>
-            </div>
-          )}
-        </Row>
+        />
       </Section>
 
       {/* ── privacy ── */}
@@ -836,16 +864,29 @@ const AccountCenter = () => {
         </Row>
       </Section>
 
-      {/* ── close account: collapsed, then a typed confirmation ── */}
+      {/* ── close account ──
+           A labelled row rather than a bare heading: the first version was a
+           small uppercase caption, which hid it so well it read as a section
+           title and nobody found the control. It is still collapsed, and still
+           needs CLOSE typed to arm — discoverable is not the same as easy. */}
       <section className="px-5 mb-6">
+        <h2 className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground mb-1.5 px-0.5">
+          Danger zone
+        </h2>
         <button
           onClick={() => { setCloseOpen((o) => !o); setCloseConfirm(""); }}
-          className="w-full flex items-center justify-between px-0.5 py-1.5 text-left"
+          className="wealth-card !p-3 w-full text-left flex items-center gap-3 active:scale-[0.98] transition-transform"
         >
-          <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-            Close account
-          </span>
-          <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${closeOpen ? "rotate-180" : ""}`} />
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-destructive/10">
+            <TriangleAlert className="h-3.5 w-3.5 text-destructive" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-xs font-semibold text-destructive">Close my account</h3>
+            <p className="text-[11px] text-muted-foreground">
+              Permanently delete your account and data
+            </p>
+          </div>
+          <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground shrink-0 transition-transform ${closeOpen ? "rotate-180" : ""}`} />
         </button>
         <AnimatePresence>
           {closeOpen && (
@@ -856,12 +897,12 @@ const AccountCenter = () => {
               transition={{ duration: 0.18 }}
               className="overflow-hidden"
             >
-              <div className="wealth-card !p-3.5 border-destructive/30">
+              <div className="wealth-card !p-3.5 border-destructive/30 mt-1.5">
                 <div className="flex items-start gap-2.5 mb-2">
                   <TriangleAlert className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
                   <div>
                     <p className="text-[12px] font-semibold text-foreground">
-                      Closing your account cannot be undone
+                      This cannot be undone
                     </p>
                     <p className="text-[11px] leading-relaxed text-muted-foreground mt-1">
                       You'll be signed out straight away and won't be able to sign back in.
@@ -900,6 +941,58 @@ const AccountCenter = () => {
         </AnimatePresence>
       </section>
 
+      {/* ── PIN reset confirmation ── */}
+      <AnimatePresence>
+        {resetOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 px-3 pb-[76px]"
+            onClick={() => setResetOpen(false)}
+          >
+            <motion.div
+              initial={{ y: 24, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 24, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md rounded-2xl bg-card border border-border p-4 shadow-lg"
+            >
+              <div className="flex items-start justify-between mb-2">
+                <div>
+                  <h3 className="text-sm font-semibold text-foreground">Reset your PIN</h3>
+                  <p className="text-[11px] leading-relaxed text-muted-foreground mt-1">
+                    You&apos;ll be signed out and taken to the sign-in screen, where
+                    we&apos;ll email a code to{" "}
+                    <span className="text-foreground">{email ? maskEmail(email) : "your account"}</span>{" "}
+                    so you can pick a new PIN.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setResetOpen(false)}
+                  aria-label="Cancel"
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              {!email && (
+                <p className="text-[11px] text-destructive mb-2">
+                  Add an email to your account first — that&apos;s where the code goes.
+                </p>
+              )}
+              <div className="flex items-center gap-2 mt-2">
+                <PrimaryButton onClick={startPinReset} disabled={!email}>
+                  Sign out and reset
+                </PrimaryButton>
+                <TextButton onClick={() => setResetOpen(false)}>Cancel</TextButton>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ── step-up sheet ── */}
       <AnimatePresence>
         {flow && (
@@ -907,7 +1000,11 @@ const AccountCenter = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 px-3 pb-3"
+            /* Scrim sits UNDER the 72px bottom nav and the panel clears it —
+               same geometry as the app's own sheet in BottomNav, which is why
+               this reads as one pattern rather than a second modal system.
+               At z-50 it rendered behind the nav and the sheet was unreachable. */
+            className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 px-3 pb-[76px]"
             onClick={() => !flow.busy && setFlow(null)}
           >
             <motion.div
