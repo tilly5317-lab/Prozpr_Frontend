@@ -871,10 +871,17 @@ const AccountCenter = () => {
                     </p>
                   </div>
                 </div>
-                <p className="text-[11px] text-muted-foreground mb-1.5">
-                  Type <span className="font-mono font-semibold text-foreground">CLOSE</span> to confirm.
-                </p>
-                <div className="flex items-center gap-2">
+                {consentUnavailable ? (
+                  <p className="text-[11px] text-muted-foreground">
+                    Closing your account isn&apos;t available yet. Use Report an Issue on
+                    your profile and we&apos;ll close it for you.
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground mb-1.5">
+                    Type <span className="font-mono font-semibold text-foreground">CLOSE</span> to confirm.
+                  </p>
+                )}
+                <div className={`flex items-center gap-2 ${consentUnavailable ? "hidden" : ""}`}>
                   <div className="flex-1">
                     <Field value={closeConfirm} onChange={setCloseConfirm} placeholder="CLOSE" uppercase />
                   </div>
