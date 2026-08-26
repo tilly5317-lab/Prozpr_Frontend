@@ -6,7 +6,6 @@ import {
   ChevronDown,
   Check,
   Settings,
-  UserPlus,
   ShieldCheck,
   ArrowRightLeft,
   Sun,
@@ -270,30 +269,18 @@ const ProfileSwitcher = () => {
               </div>
             </div>
 
-            {/* Actions */}
+            {/* Actions — Manage Family is gone while family sharing is locked.
+                A disabled control with a "Soon" badge is still a row people
+                read and reason about; the honest version of an action that
+                does nothing is not showing it. */}
             <div className="h-px bg-border/40" />
-            <div className="px-1.5 py-1.5 flex gap-1">
-              <button
-                onClick={() => {
-                  setOpen(false);
-                  navigate("/family");
-                }}
-                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-[11px] font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
-              >
-                <UserPlus className="h-3 w-3" />
-                Manage Family
-                {/* Flagged here rather than only on the destination — a label
-                    that looks live and lands on "coming soon" wastes a tap. */}
-                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Soon
-                </span>
-              </button>
+            <div className="px-1.5 py-1.5">
               <button
                 onClick={() => {
                   setOpen(false);
                   navigate("/profile");
                 }}
-                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-[11px] font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
+                className="w-full flex items-center justify-center gap-1.5 rounded-lg py-2 text-[11px] font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
               >
                 <Settings className="h-3 w-3" />
                 {isActingAs ? `${activeView.member.nickname}'s Profile` : "My Profile"}
