@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  ArrowLeft, Camera, Check, ChevronDown, Download, KeyRound, Loader2, Lock,
-  Mail, MessageSquareWarning, Pencil, Phone, ShieldCheck, Smartphone, Trash2,
-  TriangleAlert, UserRound,
+  ArrowLeft, Camera, Check, ChevronDown, KeyRound, Loader2, Lock,
+  Mail, Pencil, Phone, Smartphone, Trash2, TriangleAlert, UserRound,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -14,17 +13,11 @@ import { maskEmail, maskMobile } from "@/lib/utils";
 import {
   BackendOfflineError,
   deleteMyAccount,
-  exportMyData,
   getAvatarUrl,
   getConsentState,
-  raiseGrievance,
   removeAvatar,
-  updateConsent,
   uploadAvatar,
   updateMe,
-  type ConsentPurpose,
-  type ConsentState,
-  type GrievanceCategory,
 } from "@/lib/api";
 
 /* ── helpers ────────────────────────────────────────────────────────────── */
@@ -206,7 +199,7 @@ const PrimaryButton = ({
 /* ── page ───────────────────────────────────────────────────────────────── */
 
 /**
- * /account — the one place identity, credentials and privacy rights live.
+ * /account — the one place identity and credentials live.
  *
  * Split out of /profile deliberately. The profile page is a dashboard people
  * open constantly; account controls are things they touch a handful of times
@@ -228,17 +221,10 @@ const AccountCenter = () => {
      switcher and profile header pick up an upload without their own fetch. */
   const [avatarBusy, setAvatarBusy] = useState(false);
 
-  /* privacy */
-  const [consent, setConsent] = useState<ConsentState | null>(null);
-  const [consentOpen, setConsentOpen] = useState(false);
+  /* The privacy endpoints ship with the DPDP branch. Until that is
+     deployed they 404, so account closure says so rather than looking
+     broken when someone taps it. */
   const [consentUnavailable, setConsentUnavailable] = useState(false);
-  const [savingPurpose, setSavingPurpose] = useState<ConsentPurpose | null>(null);
-  const [exporting, setExporting] = useState(false);
-
-  /* grievance */
-  const [grievanceOpen, setGrievanceOpen] = useState(false);
-  const [grievance, setGrievance] = useState({ category: "general" as GrievanceCategory, message: "" });
-  const [sendingGrievance, setSendingGrievance] = useState(false);
 
   /* close account — collapsed by default, then typed confirmation */
   const [closeOpen, setCloseOpen] = useState(false);
@@ -256,13 +242,7 @@ const AccountCenter = () => {
 
   useEffect(() => {
     let cancelled = false;
-    getConsentState()
-      .then((c) => { if (!cancelled) setConsent(c); })
-      .catch(() => {
-        // The privacy endpoints ship with the DPDP branch. Until that is
-        // deployed this 404s, and the section says so rather than looking broken.
-        if (!cancelled) setConsentUnavailable(true);
-      });
+    getConsentState().catch(() => { if (!cancelled) setConsentUnavailable(true); });
     return () => { cancelled = true; };
   }, []);
 
@@ -319,62 +299,6 @@ const AccountCenter = () => {
     }
   }, [nameDraft, refresh]);
 
-  /* ── privacy ── */
-  const togglePurpose = useCallback(async (purpose: ConsentPurpose, granted: boolean) => {
-    setSavingPurpose(purpose);
-    try {
-      setConsent(await updateConsent([{ purpose, granted }]));
-    } catch (err) {
-      if (err instanceof BackendOfflineError) return;
-      toast.error(err instanceof Error ? err.message : "Could not update that preference");
-    } finally {
-      setSavingPurpose(null);
-    }
-  }, []);
-
-  const handleExport = useCallback(async () => {
-    setExporting(true);
-    try {
-      const data = await exportMyData();
-      // Built and revoked in place: an artifact of the user's own data should
-      // not outlive the click that asked for it.
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `prozpr-my-data-${new Date().toISOString().slice(0, 10)}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast.success("Your data file has downloaded");
-    } catch (err) {
-      if (err instanceof BackendOfflineError) return;
-      toast.error(err instanceof Error ? err.message : "Could not build your export");
-    } finally {
-      setExporting(false);
-    }
-  }, []);
-
-  const sendGrievance = useCallback(async () => {
-    if (grievance.message.trim().length < 10) {
-      toast.error("Tell us a little more — at least a sentence");
-      return;
-    }
-    setSendingGrievance(true);
-    try {
-      await raiseGrievance(grievance.category, grievance.message.trim());
-      setGrievance({ category: "general", message: "" });
-      setGrievanceOpen(false);
-      toast.success("Complaint registered", {
-        description: "We'll come back to you at the email on your account.",
-      });
-    } catch (err) {
-      if (err instanceof BackendOfflineError) return;
-      toast.error(err instanceof Error ? err.message : "Could not register that");
-    } finally {
-      setSendingGrievance(false);
-    }
-  }, [grievance]);
-
   /* ── close account ── */
   const handleClose = useCallback(async () => {
     setClosing(true);
@@ -397,7 +321,6 @@ const AccountCenter = () => {
 
   const displayName = [user?.first_name, user?.last_name].filter(Boolean).join(" ") || "User";
   const email = user?.email ?? "";
-  const optionalPurposes = consent?.purposes.filter((p) => !p.necessary) ?? [];
 
   return (
     <div className="mobile-container bg-background pb-20 min-h-screen">
@@ -412,7 +335,7 @@ const AccountCenter = () => {
         <div>
           <h1 className="text-lg font-semibold text-foreground">Account Centre</h1>
           <p className="text-[11px] text-muted-foreground">
-            Your details, sign-in and privacy controls
+            Your details and sign-in
           </p>
         </div>
       </div>
@@ -577,148 +500,6 @@ const AccountCenter = () => {
             </TextButton>
           }
         />
-      </Section>
-
-      {/* ── privacy ── */}
-      <Section
-        title="Privacy and data"
-        caption={
-          consentUnavailable
-            ? undefined
-            : "You can withdraw any optional permission at any time. Withdrawing stops future processing; it doesn't undo what was already done."
-        }
-      >
-        <Row
-          icon={ShieldCheck}
-          label="Permissions"
-          value={
-            consentUnavailable
-              ? <span className="text-[11px] italic text-muted-foreground/70">Not available yet</span>
-              : consent
-                ? `${optionalPurposes.filter((p) => p.granted).length} of ${optionalPurposes.length} optional permissions on`
-                : "Loading"
-          }
-          action={
-            !consentUnavailable && consent ? (
-              <TextButton onClick={() => setConsentOpen((o) => !o)}>
-                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${consentOpen ? "rotate-180" : ""}`} />
-                {consentOpen ? "Hide" : "Manage"}
-              </TextButton>
-            ) : undefined
-          }
-        >
-          <AnimatePresence>
-            {consentOpen && consent && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.18 }}
-                className="overflow-hidden"
-              >
-                <div className="space-y-2.5 pt-1">
-                  {consent.purposes.map((p) => (
-                    <div key={p.purpose} className="flex items-start gap-3">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[12px] font-medium text-foreground">{p.title}</p>
-                        <p className="text-[11px] leading-relaxed text-muted-foreground">{p.detail}</p>
-                      </div>
-                      {p.necessary ? (
-                        <span className="text-[10px] uppercase tracking-wider text-muted-foreground shrink-0 pt-0.5">
-                          Required
-                        </span>
-                      ) : (
-                        <button
-                          role="switch"
-                          aria-checked={p.granted === true}
-                          aria-label={p.title}
-                          disabled={savingPurpose === p.purpose}
-                          onClick={() => togglePurpose(p.purpose, !(p.granted === true))}
-                          className={`relative h-5 w-9 shrink-0 rounded-full transition-colors disabled:opacity-50 ${
-                            p.granted ? "bg-accent" : "bg-muted"
-                          }`}
-                        >
-                          <span
-                            className={`absolute top-0.5 h-4 w-4 rounded-full bg-background transition-transform ${
-                              p.granted ? "translate-x-4" : "translate-x-0.5"
-                            }`}
-                          />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                  <p className="text-[10px] text-muted-foreground pt-0.5">
-                    Notice version {consent.policy_version}
-                  </p>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </Row>
-
-        <Row
-          icon={Download}
-          label="Download my data"
-          hint="Everything we hold about you, as a JSON file"
-          action={
-            <TextButton onClick={handleExport} disabled={exporting}>
-              {exporting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
-              {exporting ? "Building" : "Download"}
-            </TextButton>
-          }
-        />
-
-        <Row
-          icon={MessageSquareWarning}
-          label="Raise a complaint"
-          hint="About how your data is handled"
-          action={
-            <TextButton onClick={() => setGrievanceOpen((o) => !o)}>
-              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${grievanceOpen ? "rotate-180" : ""}`} />
-              {grievanceOpen ? "Close" : "Open"}
-            </TextButton>
-          }
-        >
-          <AnimatePresence>
-            {grievanceOpen && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.18 }}
-                className="overflow-hidden"
-              >
-                <div className="space-y-2 pt-1">
-                  <div className="flex flex-wrap gap-1.5">
-                    {(["access", "correction", "erasure", "consent", "general"] as GrievanceCategory[]).map((c) => (
-                      <button
-                        key={c}
-                        onClick={() => setGrievance((g) => ({ ...g, category: c }))}
-                        className={`rounded-full px-2.5 py-1 text-[11px] font-medium border capitalize transition-all ${
-                          grievance.category === c
-                            ? "bg-accent text-accent-foreground border-accent"
-                            : "bg-card text-muted-foreground border-border hover:border-accent/40"
-                        }`}
-                      >
-                        {c}
-                      </button>
-                    ))}
-                  </div>
-                  <textarea
-                    rows={3}
-                    value={grievance.message}
-                    onChange={(e) => setGrievance((g) => ({ ...g, message: e.target.value }))}
-                    placeholder="What's the problem?"
-                    className="w-full rounded-lg border border-border bg-background px-2.5 py-2 text-[13px] text-foreground outline-none focus:border-primary transition-colors resize-none"
-                  />
-                  <PrimaryButton onClick={sendGrievance} busy={sendingGrievance}>
-                    {sendingGrievance ? "Sending" : "Submit complaint"}
-                  </PrimaryButton>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </Row>
       </Section>
 
       {/* ── close account ──

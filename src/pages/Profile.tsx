@@ -250,7 +250,7 @@ const Profile = () => {
 
       {/* Navigation rows */}
       {([
-        { icon: ShieldCheck, title: "Account Centre", sub: "Your details, sign-in PIN and privacy controls", route: "/account", showDot: false },
+        { icon: ShieldCheck, title: "Account Centre", sub: "Your details and sign-in PIN", route: "/account", showDot: false },
         { icon: User, title: "Tell Us More About You", sub: "Goals, risk tolerance & mandates", route: "/profile/complete", showDot: !aboutYouConfirmed },
         { icon: UploadCloud, title: "Update Holdings", sub: "Upload your latest CAMS / KFintech statement", route: "/cams-upload?from=profile", showDot: false },
         { icon: FileText, title: "My CAS Statements", sub: "Download statements you've imported", route: "/cas-statements", showDot: false },
