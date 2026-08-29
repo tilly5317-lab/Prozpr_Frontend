@@ -1,10 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Mic, MicOff, AlertCircle, Loader2, Sparkles, Check, Square, ChevronDown, ChevronUp, Globe, Pencil, ArrowRight, Plus, Trash2, MessageSquare, Menu, Star, UploadCloud, X } from "lucide-react";
+import { Send, Mic, MicOff, AlertCircle, Loader2, Sparkles, Check, Bookmark, Square, ChevronDown, ChevronUp, Globe, Pencil, ArrowRight, Plus, Trash2, MessageSquare, Menu, Star, UploadCloud, X } from "lucide-react";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { formatInrCompact } from "@/lib/utils";
+import { toast } from "sonner";
 import {
   createChatSession,
   sendChatMessageStreaming,
@@ -21,6 +22,7 @@ import {
   inferOnboardingComplete,
   inferAccountLinkingComplete,
   shouldSkipPostSetupChatPrompts,
+  saveRebalancingRun,
   type ChatSessionInfo,
   type PortfolioDetail,
   type UserInfo,
@@ -72,6 +74,11 @@ interface Message {
   widgetKind?: "emergency-fund";
   /** Backend saved an ideal rebalancing plan — show CTA to open `/invest/rebalance-explanation`. */
   showViewExecutePlan?: boolean;
+  /** The persisted rebalancing run this AI turn produced (backend
+   *  `ideal_allocation_rebalancing_id`). Enables the "Save this plan" pill,
+   *  which POSTs it to /rebalancing/{id}/save. Absent on tilt / redirect turns
+   *  and on asset-allocation-only turns (backend sends no rebalancing id). */
+  rebalancingRunId?: string;
   /**
    * The question needed the user's holdings and none are imported yet (CAMS was
    * skipped or never added). Pi's reply says so; this renders the upload CTA
@@ -1016,6 +1023,21 @@ const AIChatPanel = ({
   const [marketSheetOpen, setMarketSheetOpen] = useState(false);
   const composerRef = useRef<HTMLInputElement>(null);
   const [isTyping, setIsTyping] = useState(false);
+  const [savingRunId, setSavingRunId] = useState<string | null>(null);
+  const [savedRunIds, setSavedRunIds] = useState<Set<string>>(new Set());
+
+  const handleSavePlan = useCallback(async (runId: string) => {
+    setSavingRunId(runId);
+    try {
+      await saveRebalancingRun(runId);
+      setSavedRunIds((prev) => new Set(prev).add(runId));
+      toast.success("Plan saved to your portfolio");
+    } catch {
+      toast.error("Couldn't save the plan. Please try again.");
+    } finally {
+      setSavingRunId(null);
+    }
+  }, []);
   // Session whose live "thinking aloud" feed we poll while a reply is pending.
   const [thinkingSessionId, setThinkingSessionId] = useState<string | null>(null);
   const [micState, setMicState] = useState<MicState>("idle");
@@ -1588,11 +1610,13 @@ const AIChatPanel = ({
       const hasSavedPlan = Boolean(
         resp.ideal_allocation_rebalancing_id ?? resp.ideal_allocation_snapshot_id
       );
+      const rebalancingRunId = resp.ideal_allocation_rebalancing_id ?? undefined;
       // done is authoritative — replace the streamed text, never append to it.
       const finalMessage: Message = {
         role: "ai",
         content: resp.assistant_message.content,
         ...(hasSavedPlan ? { showViewExecutePlan: true } : {}),
+        ...(rebalancingRunId ? { rebalancingRunId } : {}),
         ...(resp.portfolio_data_missing ? { showAddCams: true } : {}),
         chartPayloads: resp.assistant_message.chart_payloads || null,
       };
@@ -1923,6 +1947,39 @@ const AIChatPanel = ({
                   </div>
                   <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/15">
                     <ArrowRight className="h-4 w-4 text-primary" />
+                  </div>
+                </button>
+              ) : null}
+              {msg.rebalancingRunId ? (
+                <button
+                  type="button"
+                  disabled={
+                    savedRunIds.has(msg.rebalancingRunId) ||
+                    savingRunId === msg.rebalancingRunId
+                  }
+                  onClick={() => void handleSavePlan(msg.rebalancingRunId)}
+                  className="ml-7 mt-2 self-start flex items-center gap-3 rounded-xl px-4 py-3 transition-opacity hover:opacity-90 border border-primary/25 bg-primary/5 disabled:cursor-default disabled:opacity-60 disabled:hover:opacity-60"
+                >
+                  <div className="flex flex-col text-left">
+                    <span className="text-[11px] font-medium text-muted-foreground">
+                      {savedRunIds.has(msg.rebalancingRunId)
+                        ? "Saved to your portfolio"
+                        : "Make this your plan"}
+                    </span>
+                    <span className="text-[13px] font-semibold text-foreground">
+                      {savedRunIds.has(msg.rebalancingRunId)
+                        ? "Plan saved"
+                        : savingRunId === msg.rebalancingRunId
+                          ? "Saving…"
+                          : "Save this plan"}
+                    </span>
+                  </div>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/15">
+                    {savedRunIds.has(msg.rebalancingRunId) ? (
+                      <Check className="h-4 w-4 text-primary" />
+                    ) : (
+                      <Bookmark className="h-4 w-4 text-primary" />
+                    )}
                   </div>
                 </button>
               ) : null}

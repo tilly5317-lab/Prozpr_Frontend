@@ -1,7 +1,7 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowRight, Loader2, Lock, RefreshCw, Sparkles } from "lucide-react";
+import { ArrowRight, Bookmark, Loader2, Lock, RefreshCw, Sparkles } from "lucide-react";
 import BottomNav from "@/components/BottomNav";
 import { CurrentVsTargetChart } from "@/components/invest/CurrentVsTargetChart";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -10,6 +10,7 @@ import { ComputeProgressSteps } from "@/components/invest/ComputeProgressSteps";
 import TradeFundDetailView from "@/components/fund/TradeFundDetailView";
 import { useComputeProgress } from "@/hooks/useComputeProgress";
 import {
+  getCurrentRebalancingRun,
   getMyPortfolio,
   getRebalanceComputeProgress,
   getRebalancingRunDetail,
@@ -529,14 +530,22 @@ const RebalanceExplanation = () => {
     setDataLoading(true);
     setDataError(null);
     try {
-      const runs = await listRebalancingRuns().catch(() => []);
-      const run = runs[0];
-      if (!run) {
-        setDataLoading(false);
-        await compute();
-        return;
+      // Prefer the saved-else-latest endpoint. If it's unavailable (older backend
+      // without /current, or a transient error), fall back to the latest run —
+      // NEVER recompute just because a READ failed, or the engine fires on every
+      // visit. Only a genuinely empty run list computes a first plan.
+      let detail = await getCurrentRebalancingRun().catch(() => null);
+      if (!detail) {
+        const runs = await listRebalancingRuns().catch(() => []);
+        const run = runs[0];
+        if (!run) {
+          setDataLoading(false);
+          await compute();
+          return;
+        }
+        detail = await getRebalancingRunDetail(run.id);
       }
-      setDetail(await getRebalancingRunDetail(run.id));
+      setDetail(detail);
       // Best-effort: load holdings so we can show the funds we're keeping.
       getMyPortfolio().then(setPortfolio).catch(() => { /* section just hides */ });
     } catch {
@@ -770,6 +779,12 @@ const RebalanceExplanation = () => {
           <>
             <div className="-mb-1 flex items-center gap-2">
               <span className="text-lg font-semibold text-foreground">Rebalancing</span>
+              {detail.origin === "saved" ? (
+                <span className="flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-semibold text-primary">
+                  <Bookmark className="h-3 w-3" />
+                  Saved plan
+                </span>
+              ) : null}
               <button
                 type="button"
                 onClick={() => void compute()}
