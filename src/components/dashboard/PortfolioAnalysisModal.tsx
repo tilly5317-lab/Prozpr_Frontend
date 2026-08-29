@@ -311,6 +311,7 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
             className="fixed inset-0 flex items-center justify-center z-[60] px-4"
           >
             <div
+              data-tour="analysis-panel"
               className="mx-auto w-full max-w-md rounded-2xl bg-card shadow-2xl flex flex-col overflow-hidden"
               style={{
                 maxHeight: "min(92dvh, 720px)",
@@ -336,6 +337,7 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
                 </button>
                 <button
                   type="button"
+                  data-tour="analysis-close"
                   onClick={onClose}
                   className="p-1.5 -m-1.5 text-muted-foreground hover:text-foreground"
                   aria-label="Close"
@@ -345,7 +347,7 @@ const PortfolioAnalysisModal = ({ open, onClose }: Props) => {
               </div>
 
               {/* Tabs */}
-              <div className="px-4 pt-3">
+              <div className="px-4 pt-3" data-tour="analysis-tabs">
                 <div className="flex rounded-full bg-muted/60 p-0.5">
                   {TABS.map((t) => {
                     const active = tab === t.id;

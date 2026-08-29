@@ -3,8 +3,10 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Info, Loader2, MoreHorizontal, Search, TrendingUp } from "lucide-react";
 
 import BottomNav from "@/components/BottomNav";
+import { CategoryTile, ThemeCircle } from "@/components/discover/FundCategories";
+import { groupHref, useFundGroups } from "@/lib/fundGroups";
 import { useMfFundsPaged } from "@/hooks/use-mf-funds-paged";
-import type { MfFundMetadataListItem } from "@/lib/api";
+import { listDiscoverySectors, type DiscoverySector, type MfFundMetadataListItem } from "@/lib/api";
 
 function FundRow({ fund, onOpen }: { fund: MfFundMetadataListItem; onOpen: () => void }) {
   return (
@@ -49,6 +51,12 @@ const MfAllFunds = () => {
   const sortMode = searchParams.get("sort"); // "perf" | null
   const collection = searchParams.get("collection"); // "most-bought" | null
   const presetTitle = searchParams.get("title")?.trim() || null;
+  // Taxonomy filters set by the browse tiles. They scope the feed server-side
+  // and are combined with any search text rather than replacing it.
+  const subCategory = searchParams.get("sub_category")?.trim() || null;
+  const assetClass = searchParams.get("asset_class")?.trim() || null;
+  const categoryParam = searchParams.get("category")?.trim() || null;
+  const hasTaxonomyFilter = !!(subCategory || assetClass || categoryParam);
 
   const [searchInput, setSearchInput] = useState(initialQuery);
   const [debouncedQuery, setDebouncedQuery] = useState(initialQuery);
@@ -71,7 +79,7 @@ const MfAllFunds = () => {
       ? "Most bought"
       : sortMode === "perf"
         ? "Highest performing"
-        : "All mutual funds");
+        : subCategory || assetClass || categoryParam || "All mutual funds");
 
   const approxNote =
     collection === "most-bought"
@@ -86,13 +94,14 @@ const MfAllFunds = () => {
   }, [searchInput]);
 
   useEffect(() => {
-    if (debouncedQuery.length === 0) {
-      feed.reset({});
-      return;
-    }
-    feed.reset({ q: debouncedQuery });
+    const base = {
+      ...(subCategory ? { sub_category: subCategory } : {}),
+      ...(assetClass ? { asset_class: assetClass } : {}),
+      ...(categoryParam ? { category: categoryParam } : {}),
+    };
+    feed.reset(debouncedQuery.length === 0 ? base : { ...base, q: debouncedQuery });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedQuery]);
+  }, [debouncedQuery, subCategory, assetClass, categoryParam]);
 
   useEffect(() => {
     const node = sentinelRef.current;
@@ -106,6 +115,24 @@ const MfAllFunds = () => {
     observer.observe(node);
     return () => observer.disconnect();
   }, [feed.hasMore, feed.loadMore, feed.items.length]);
+
+  // Sectors come from the backend with their own counts, so unlike the
+  // category tiles they need no probing.
+  const [sectors, setSectors] = useState<DiscoverySector[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    listDiscoverySectors()
+      .then((rows) => !cancelled && setSectors(rows.filter((r) => r.fund_count > 0)))
+      .catch(() => { /* the sector strip just hides */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  const { groups: themeGroups } = useFundGroups("theme");
+  const { groups: assetGroups } = useFundGroups("asset");
+
+  // Browsing is for when you don't know what you want. Once the user has typed
+  // a search or picked a filter, the results are the answer — get out of the way.
+  const showBrowse = !debouncedQuery && !hasTaxonomyFilter && !collection && sortMode !== "perf";
 
   const onSelect = (fund: MfFundMetadataListItem) => {
     navigate(`/discovery/mf/${encodeURIComponent(fund.scheme_code)}`);
@@ -171,6 +198,65 @@ const MfAllFunds = () => {
       {feed.loading && feed.items.length === 0 && !feed.error && (
         <div className="flex justify-center py-12">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      )}
+
+      {/* Browse by — the taxonomy, with real counts. Each tile scopes the same
+          list rather than opening a separate screen. */}
+      {showBrowse && (themeGroups.length > 0 || assetGroups.length > 0 || sectors.length > 0) && (
+        <div className="border-b border-border/40 px-4 py-4">
+          {assetGroups.length > 0 && (
+            <>
+              <p className="mb-2 text-[10.5px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+                By asset type
+              </p>
+              <div className="mb-4 grid grid-cols-3 gap-2">
+                {assetGroups.map((g) => (
+                  <CategoryTile key={g.key} group={g} compact onOpen={() => navigate(groupHref(g))} />
+                ))}
+              </div>
+            </>
+          )}
+
+          {themeGroups.length > 0 && (
+            <>
+              <p className="mb-2.5 text-[10.5px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+                By theme
+              </p>
+              <div className="mb-4 grid grid-cols-4 gap-x-2 gap-y-3">
+                {themeGroups.map((g, i) => (
+                  <ThemeCircle key={g.key} group={g} index={i} onOpen={() => navigate(groupHref(g))} />
+                ))}
+              </div>
+            </>
+          )}
+
+          {sectors.length > 0 && (
+            <>
+              <p className="mb-2 text-[10.5px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+                By sector
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {sectors.map((s) => (
+                  <button
+                    key={s.sector}
+                    type="button"
+                    onClick={() =>
+                      navigate(
+                        `/discovery/mf?q=${encodeURIComponent(s.sector)}&title=${encodeURIComponent(s.sector)}`,
+                      )
+                    }
+                    className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1.5 text-[11.5px] font-medium text-foreground transition-colors hover:bg-muted/50"
+                  >
+                    {s.sector}
+                    <span className="text-[10px] tabular-nums text-muted-foreground/70">
+                      {s.fund_count}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       )}
 

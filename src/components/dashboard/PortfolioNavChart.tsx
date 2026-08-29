@@ -15,10 +15,13 @@ import {
   type PortfolioNavHistoryPoint,
   type PortfolioNavHorizon,
 } from "@/lib/api";
+import { chartNotes, type ChartNotes } from "@/lib/portfolioChartNotes";
 import { formatInr0 } from "@/lib/utils";
 import { UploadCloud } from "lucide-react";
 
 const HORIZONS: PortfolioNavHorizon[] = ["1M", "3M", "1Y", "3Y", "MAX"];
+
+
 
 // X-axis label format depends on horizon: short windows (1M / 3M) read as
 // "dd-mmm" (e.g. 05-Jun); longer windows read as "mmm-yy" (e.g. Jun-26).
@@ -86,12 +89,21 @@ interface PortfolioNavChartProps {
   onUploadCams?: () => void;
   /** Reports the value change across the selected horizon (first → last point) —
    *  both ₹ amount and % — plus the active horizon, for the headline to show. */
-  onPeriodChange?: (info: { pct: number | null; amount: number | null; horizon: PortfolioNavHorizon }) => void;
+  onPeriodChange?: (info: {
+    pct: number | null;
+    amount: number | null;
+    horizon: PortfolioNavHorizon;
+    /** Commentary for the selected window — re-derived on every switch. */
+    notes: ChartNotes;
+  }) => void;
 }
 
 const PortfolioNavChart = ({ camsMissing, onUploadCams, onPeriodChange }: PortfolioNavChartProps) => {
   const [horizon, setHorizon] = useState<PortfolioNavHorizon>("3Y");
   const [points, setPoints] = useState<PortfolioNavHistoryPoint[] | null>(null);
+  // The moment whose span is highlighted, by id. Cleared on horizon change —
+  // moments are re-derived per range, so an id from the old range means nothing.
+  const [activeMoment, setActiveMoment] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [errored, setErrored] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
@@ -127,6 +139,7 @@ const PortfolioNavChart = ({ camsMissing, onUploadCams, onPeriodChange }: Portfo
     return () => {
       cancelled = true;
     };
+    setActiveMoment(null);
   }, [horizon, reloadKey]);
 
   const hasPoints = !!points && points.length > 0;
@@ -241,6 +254,33 @@ const PortfolioNavChart = ({ camsMissing, onUploadCams, onPeriodChange }: Portfo
     }));
   }, [points, horizon]);
 
+  const commentaryEarly = useMemo(
+    () => chartNotes(points ?? [], horizon),
+    [points, horizon],
+  );
+  const activeMomentObj =
+    commentaryEarly.moments.find((m) => m.id === activeMoment) ?? null;
+
+  /* The highlighted stretch is a SEPARATE series carrying the value only inside
+     the active span and null outside it, so recharts draws just that piece over
+     the dimmed line. Cheaper and more exact than clipping the main path. */
+  const highlighted = useMemo(() => {
+    if (!activeMomentObj) return chartData;
+    return chartData.map((d) => ({
+      ...d,
+      highlight:
+        d.idx >= activeMomentObj.startIdx && d.idx <= activeMomentObj.endIdx
+          ? d.total_value
+          : null,
+    }));
+  }, [chartData, activeMomentObj]);
+
+  // Moments on the line for this range — same derivation the headline uses, so
+  // the dots and the sentence can never disagree.
+  const commentary = commentaryEarly;
+  const moments = commentary.moments;
+  const active = activeMomentObj;
+
   // Value change (₹ and %) across the selected horizon window (first → last
   // point). Reported up so the headline can show the period gain/loss.
   const periodChange = useMemo(() => {
@@ -253,8 +293,15 @@ const PortfolioNavChart = ({ camsMissing, onUploadCams, onPeriodChange }: Portfo
   }, [chartData]);
 
   useEffect(() => {
-    onPeriodChange?.({ pct: periodChange.pct, amount: periodChange.amount, horizon });
-  }, [periodChange, horizon, onPeriodChange]);
+    onPeriodChange?.({
+      pct: periodChange.pct,
+      amount: periodChange.amount,
+      horizon,
+      // Derived from the points the chart is actually showing, so the sentence
+      // can never describe a window the user isn't looking at.
+      notes: commentary,
+    });
+  }, [periodChange, horizon, commentary, onPeriodChange]);
 
   const tickCount = 5;
 
@@ -409,7 +456,7 @@ const PortfolioNavChart = ({ camsMissing, onUploadCams, onPeriodChange }: Portfo
         {hasPoints && (
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart
-              data={chartData}
+              data={highlighted}
               margin={{ top: 6, right: 6, left: 0, bottom: 0 }}
             >
               <defs>
@@ -451,7 +498,11 @@ const PortfolioNavChart = ({ camsMissing, onUploadCams, onPeriodChange }: Portfo
                 dataKey="total_value"
                 stroke={strokeColor}
                 strokeWidth={2}
+                // Dimmed while a moment is selected so the highlighted stretch
+                // is the thing the eye lands on.
+                strokeOpacity={active ? 0.28 : 1}
                 fill="url(#navGrad)"
+                fillOpacity={active ? 0.3 : 1}
                 dot={false}
                 activeDot={{
                   r: 3.5,
@@ -478,9 +529,24 @@ const PortfolioNavChart = ({ camsMissing, onUploadCams, onPeriodChange }: Portfo
                 animationDuration={550}
                 animationEasing="ease-out"
               />
+              {/* The selected moment's stretch, drawn over the dimmed line. */}
+              {active && (
+                <Area
+                  type="linear"
+                  dataKey="highlight"
+                  stroke={strokeColor}
+                  strokeWidth={3}
+                  fill="none"
+                  dot={false}
+                  activeDot={false}
+                  connectNulls={false}
+                  isAnimationActive={false}
+                />
+              )}
             </AreaChart>
           </ResponsiveContainer>
         )}
+
           </>
         )}
       </div>
@@ -510,6 +576,54 @@ const PortfolioNavChart = ({ camsMissing, onUploadCams, onPeriodChange }: Portfo
           ))}
         </div>
       )}
+
+      {moments.length > 0 && (
+        <div className="mt-3">
+          <div className="mb-2 flex items-baseline justify-between gap-2">
+            <p className="text-[10.5px] font-bold uppercase tracking-[0.14em] text-[#D4A868]">
+              Moments
+            </p>
+            <p className="text-[10.5px] text-muted-foreground">
+              {moments.length} in this range
+            </p>
+          </div>
+          {/* A rail rather than dots on the line: it survives more entries,
+              works on a narrow screen, and leaves room for a real sentence. */}
+          <div className="-mx-1 flex snap-x snap-mandatory gap-2 overflow-x-auto px-1 pb-1">
+            {moments.map((m) => {
+              const on = m.id === activeMoment;
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => setActiveMoment(on ? null : m.id)}
+                  aria-pressed={on}
+                  className={`min-w-[190px] max-w-[220px] shrink-0 snap-start rounded-xl border p-2.5 text-left transition-colors ${
+                    on
+                      ? "border-[#D4A868] bg-[#D4A868]/8"
+                      : "border-border bg-card hover:bg-muted/40"
+                  }`}
+                >
+                  <p
+                    className={`text-[9.5px] font-bold uppercase tracking-[0.1em] ${
+                      on ? "text-[#D4A868]" : "text-muted-foreground/70"
+                    }`}
+                  >
+                    {m.when}
+                  </p>
+                  <p className="mt-1 text-[12px] font-semibold leading-tight text-foreground">
+                    {m.title}
+                  </p>
+                  <p className="mt-1 text-[10.5px] leading-snug text-muted-foreground">
+                    {m.body}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
 
     </div>
   );

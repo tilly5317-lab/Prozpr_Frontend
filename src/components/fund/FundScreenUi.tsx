@@ -4,9 +4,13 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Star } from "lucide-react";
 import type { MfHoldingNavPoint } from "@/lib/api";
 
-export type NavRange = "1M" | "3M" | "1Y" | "3Y" | "MAX";
+export type NavRange = "1M" | "3M" | "YTD" | "1Y" | "3Y" | "5Y" | "MAX";
 
+/** Default pills. YTD is opt-in via {@link NAV_RANGES_YTD} so adding it to one
+    screen doesn't silently change every other NAV chart. */
 export const NAV_RANGES: NavRange[] = ["1M", "3M", "1Y", "3Y", "MAX"];
+
+export const NAV_RANGES_YTD: NavRange[] = ["1M", "3M", "YTD", "1Y", "3Y", "5Y", "MAX"];
 
 export type FundNavPoint = { date: string; nav: number };
 
@@ -30,11 +34,18 @@ export function rangeStartDate(range: NavRange, endDate: Date = new Date()): Dat
     case "3M":
       start = subMonths(end, 3);
       break;
+    // Year to date — 1 January of the year the window ends in, not 12 months back.
+    case "YTD":
+      start = new Date(end.getFullYear(), 0, 1);
+      break;
     case "1Y":
       start = subYears(end, 1);
       break;
     case "3Y":
       start = subYears(end, 3);
+      break;
+    case "5Y":
+      start = subYears(end, 5);
       break;
     default:
       return null;
@@ -124,8 +135,10 @@ export function formatPct1(n: number | null): string {
   return `${sign}${n.toFixed(1)}%`;
 }
 
+/** NAV / per-unit price, to paisa. Prices are quoted in rupees and paise, so
+    four decimals implied a precision the figure doesn't carry. */
 export function formatNav(n: number): string {
-  return n.toFixed(4);
+  return n.toFixed(2);
 }
 
 /** NAV / per-unit value with a single decimal, e.g. 123.1. */
@@ -518,13 +531,16 @@ export function StatBlock({
 export function RangePills({
   range,
   onRange,
+  ranges = NAV_RANGES,
 }: {
   range: NavRange;
   onRange: (r: NavRange) => void;
+  /** Which pills to offer — pass {@link NAV_RANGES_YTD} to include YTD. */
+  ranges?: NavRange[];
 }) {
   return (
     <div className="mt-3 flex flex-wrap gap-1.5">
-      {NAV_RANGES.map((r) => {
+      {ranges.map((r) => {
         const active = r === range;
         return (
           <button

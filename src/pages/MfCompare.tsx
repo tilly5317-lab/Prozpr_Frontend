@@ -5,6 +5,9 @@ import { ArrowLeft, Check, Loader2, Plus, Search, Sparkles, Star, X } from "luci
 
 import BottomNav from "@/components/BottomNav";
 import { CompareChart, type CompareSeries } from "@/components/discover/CompareChart";
+import FundMetricCompare from "@/components/discover/FundMetricCompare";
+import FundDisclaimer from "@/components/fund/FundDisclaimer";
+import { InfoTip, Term } from "@/components/fund/InfoTip";
 import {
   filterNavByRange,
   navPointsFromApi,
@@ -59,6 +62,8 @@ type CriterionKey =
 interface Criterion {
   key: CriterionKey;
   label: string;
+  /** Glossary key for the (i) on the column header. */
+  term?: string;
   /** Which direction is "better" for ranking; null = not ranked. */
   better: "high" | "low" | null;
   /** Numeric value used for ranking (range-aware metrics get filtered points). */
@@ -71,13 +76,14 @@ const fmtPctVal = (n: number | null): string =>
   n == null ? "—" : `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
 
 const CRITERIA: Criterion[] = [
-  { key: "ret1y", label: "1Y return", better: "high", value: (f) => f.ret1y, render: (f) => fmtPctVal(f.ret1y) },
-  { key: "ret3y", label: "3Y return", better: "high", value: (f) => f.ret3y, render: (f) => fmtPctVal(f.ret3y) },
-  { key: "ret5y", label: "5Y return", better: "high", value: (f) => f.ret5y, render: (f) => fmtPctVal(f.ret5y) },
-  { key: "ret6m", label: "6M return", better: "high", value: (f) => f.ret6m, render: (f) => fmtPctVal(f.ret6m) },
-  { key: "retYtd", label: "YTD return", better: "high", value: (f) => f.retYtd, render: (f) => fmtPctVal(f.retYtd) },
+  { key: "ret1y", term: "cagr", label: "1Y return", better: "high", value: (f) => f.ret1y, render: (f) => fmtPctVal(f.ret1y) },
+  { key: "ret3y", term: "cagr", label: "3Y return", better: "high", value: (f) => f.ret3y, render: (f) => fmtPctVal(f.ret3y) },
+  { key: "ret5y", term: "cagr", label: "5Y return", better: "high", value: (f) => f.ret5y, render: (f) => fmtPctVal(f.ret5y) },
+  { key: "ret6m", term: "cagr", label: "6M return", better: "high", value: (f) => f.ret6m, render: (f) => fmtPctVal(f.ret6m) },
+  { key: "retYtd", term: "cagr", label: "YTD return", better: "high", value: (f) => f.retYtd, render: (f) => fmtPctVal(f.retYtd) },
   {
     key: "category",
+    term: "sebicat",
     label: "Fund type",
     better: null,
     value: () => null,
@@ -264,9 +270,13 @@ export default function MfCompare() {
             <ArrowLeft className="h-4 w-4" />
           </button>
           <div className="min-w-0 flex-1">
-            <h1 className="text-lg font-semibold leading-tight text-foreground">Compare &amp; rank funds</h1>
-            <p className="text-[11px] text-muted-foreground">
-              Overlay performance and rank up to {MAX_FUNDS} funds side by side
+            <h1 className="text-lg font-semibold leading-tight text-foreground">
+              Compare &amp; rank funds
+            </h1>
+            <p className="text-[11px] leading-snug text-muted-foreground">
+              Overlay performance and rank up to {MAX_FUNDS} funds side by side. Tap any{" "}
+              <span className="font-semibold text-[hsl(var(--wealth-blue))]">i</span> for what a term
+              means and what it does to you.
             </p>
           </div>
         </div>
@@ -335,7 +345,10 @@ export default function MfCompare() {
             <section className="rounded-2xl border border-border/70 bg-card p-4">
               <div className="mb-1 flex items-center justify-between">
                 <p className="text-[12px] font-semibold text-foreground">Growth of ₹100</p>
-                <p className="text-[11px] text-muted-foreground">Rebased · {range}</p>
+                <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  Rebased · {range}
+                  <InfoTip term="benchmark" size={12} />
+                </p>
               </div>
               <CompareChart series={series} />
               <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
@@ -391,7 +404,7 @@ export default function MfCompare() {
                           key={c.key}
                           className="whitespace-nowrap px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
                         >
-                          {c.label}
+                          <Term term={c.term}>{c.label}</Term>
                         </th>
                       ))}
                     </tr>
@@ -446,6 +459,21 @@ export default function MfCompare() {
                 performance isn&apos;t a forecast.
               </p>
             </section>
+
+            {/* Valuation & risk — NAV-derived metrics with each fund placed
+                against the others in this comparison. */}
+            <FundMetricCompare
+              funds={funds
+                .filter((f) => f.navHistory.length > 0)
+                .map((f) => ({
+                  key: f.schemeCode,
+                  short: f.amc ?? f.name,
+                  color: f.color,
+                  history: f.navHistory,
+                }))}
+            />
+
+            <FundDisclaimer />
           </>
         )}
       </main>

@@ -135,8 +135,14 @@ export function classifyAssetType(
   return { assetType: "NON_EQUITY", assetClass: known || "Others" };
 }
 
-/** Short vs long term for one matched lot, per the rules documented at the top. */
-function classifyTerm(
+/**
+ * Short vs long term for one matched lot, per the rules documented at the top.
+ *
+ * Exported so the unrealised-tax view can classify still-held lots by the same
+ * rules — duplicating them would let the two drift apart the next time the
+ * holding-period law changes.
+ */
+export function classifyTerm(
   assetType: GainAssetType,
   purchaseIso: string,
   saleIso: string,

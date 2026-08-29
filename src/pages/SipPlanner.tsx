@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, Repeat, Pencil, ChevronRight, Lock } from "lucide-react";
+import { Loader2, Repeat, Pencil, ChevronRight, HelpCircle, Lock } from "lucide-react";
 import BottomNav from "@/components/BottomNav";
 import {
   getMySipPlan,
@@ -15,6 +15,7 @@ import {
 import { useComputeProgress } from "@/hooks/useComputeProgress";
 import { ComputeProgressSteps } from "@/components/invest/ComputeProgressSteps";
 import { CurrentVsTargetChart } from "@/components/invest/CurrentVsTargetChart";
+import SipOrDipCard from "@/components/invest/SipOrDipCard";
 import { buildSipTargetRows, type DriftRow } from "@/lib/driftRows";
 import { formatInr0, formatMoneyInput } from "@/lib/utils";
 
@@ -332,6 +333,7 @@ function SipPlanCard({
  * switches to Rebalancing.
  */
 const SipPlanner = () => {
+  const navigate = useNavigate();
   const [sip, setSip] = useState<SipPlanResponse | null>(null);
   const [building, setBuilding] = useState(false);
   const [subgroupSummaries, setSubgroupSummaries] = useState<RebalancingSubgroupSummary[]>([]);
@@ -426,10 +428,26 @@ const SipPlanner = () => {
   return (
     <div className="mobile-container bg-background min-h-screen pb-24">
       <div className="px-5 pt-2">
+        <div className="mb-1.5 flex justify-end">
+          {/* Explainer for the buy-side engine behind this plan. */}
+          <button
+            type="button"
+            onClick={() => navigate("/invest/how-investing-works?from=sip")}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+            aria-label="How investing works"
+            title="How investing works"
+          >
+            <HelpCircle className="h-4 w-4" />
+          </button>
+        </div>
         <p className="mb-3 text-[11px] leading-snug text-muted-foreground">
           Deploy fresh money every month. Enter an amount and Pi&apos;s engine splits it
           across the right funds for your goals — the same plan you&apos;d get in chat.
         </p>
+
+        {/* Answers the question the amount field provokes: commit it monthly, or
+            keep it back for a dip? Collapsed to a verdict until tapped. */}
+        <SipOrDipCard variant="sip" />
         {building ? (
           <div
             className="flex justify-center pt-12"

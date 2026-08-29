@@ -1,10 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Mic, MicOff, AlertCircle, Loader2, Sparkles, Check, Square, ChevronDown, ChevronUp, Globe, Pencil, ArrowRight, Plus, Trash2, MessageSquare, Menu, Star, X } from "lucide-react";
+import { Send, Mic, MicOff, AlertCircle, Loader2, Sparkles, Check, Square, ChevronDown, ChevronRight, ChevronUp, Globe, Pencil, ArrowRight, Plus, Trash2, MessageSquare, Menu, Star, Target, X, type LucideIcon } from "lucide-react";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { formatInrCompact } from "@/lib/utils";
+import { formatInr0, formatInrCompact, formatMoneyInput } from "@/lib/utils";
 import {
   createChatSession,
   sendChatMessage,
@@ -21,6 +21,8 @@ import {
   inferOnboardingComplete,
   inferAccountLinkingComplete,
   shouldSkipPostSetupChatPrompts,
+  listGoals,
+  type GoalResponse,
   type ChatSessionInfo,
   type PortfolioDetail,
   type UserInfo,
@@ -42,6 +44,14 @@ interface AIChatPanelProps {
   onCompletionShown?: () => void;
   /** Local demo: scripted goal-alignment walkthrough — no chat API calls. */
   goalPlanningDemo?: boolean;
+  /**
+   * Seed the composer with a question, without sending it.
+   *
+   * Deliberately not auto-sent: the user opened this from a chart or a holding
+   * and should be able to edit before asking. A question they didn't write
+   * being sent on their behalf reads as the app talking to itself.
+   */
+  prefill?: string | null;
 }
 
 /** Call from other screens before navigating to /chat to send one user message after load. */
@@ -326,31 +336,9 @@ const ProzprAvatar = () => (
  */
 const COMPOSER_TEXT_CLASS = "text-[12px] leading-5 h-5";
 
-/**
- * Quick-action chips that pre-fill the composer instead of sending immediately.
- * `prefix` becomes the real input value; the optional `suggestion` is painted
- * after it in grey italics (see `ComposerSuggestion`) as an editable
- * placeholder — typing replaces it, sending as-is keeps it. Omit `suggestion`
- * when the whole question is fixed and there's nothing to fill in. Keyed by the
- * chip's visible label.
- */
-const COMPOSER_PREFILLS: Record<string, { prefix: string; suggestion?: string }> = {
-  "Where to invest?": {
-    prefix: "Where to invest lump sum of ",
-    suggestion: "INR 10 lakhs",
-  },
-  "Market outlook": {
-    prefix: "How is market outlook? Is ",
-    suggestion: "Nifty overvalued?",
-  },
-  "SIP investing": {
-    prefix: "Where should I invest SIP of ",
-    suggestion: "INR 50,000",
-  },
-  "Goals achievable?": {
-    prefix: "Are my goals achievable? Am I on track?",
-  },
-};
+/* Every chip now either sends its question outright, opens a picker
+   (`MarketOutlookSheet`, `GoalsSheet`), asks for an amount first (`AMOUNT_CHIPS`)
+   or leaves the chat (`ACTION_CHIPS`) — nothing pre-fills the composer any more. */
 
 /**
  * "Market outlook" opens a picker instead of pre-filling, because the two kinds
@@ -362,7 +350,89 @@ const COMPOSER_PREFILLS: Record<string, { prefix: string; suggestion?: string }>
  * question is asked, rather than surprising the user with a generic reply.
  */
 /** Label of the voice-onboarding chip — also its handler key, so it lives once. */
-const VOICE_PROFILE_CHIP = "Set up by voice";
+const VOICE_PROFILE_CHIP = "Voice onboarding";
+
+/**
+ * Chips that leave the conversation instead of asking Pi something — they
+ * navigate away or open a modal. Every other chip puts a question into the
+ * thread, so these two are styled apart (leading icon + trailing chevron) to
+ * signal "this takes you somewhere" before it's tapped. Behaviour is unchanged;
+ * this is purely the affordance. Keyed by the chip's visible label, and the
+ * presence of a key here is what marks a chip as an action.
+ */
+const ACTION_CHIPS: Record<string, LucideIcon> = {
+  "Complete profile": Pencil,
+  [VOICE_PROFILE_CHIP]: Mic,
+};
+
+/**
+ * One suggestion pill. Action chips (see `ACTION_CHIPS`) get the icon/chevron
+ * treatment and a tinted fill; question chips keep the plain pill. Both render
+ * sites — voice-mode and the standard composer — go through this, so the two
+ * stay in step.
+ */
+const SuggestionChip = ({
+  label,
+  onSelect,
+}: {
+  label: string;
+  onSelect: (label: string) => void;
+}) => {
+  const Icon = ACTION_CHIPS[label];
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(label)}
+      className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-[11px] font-medium shadow-sm transition-colors ${
+        Icon
+          ? "border border-border bg-muted/50 text-foreground/80 hover:bg-muted"
+          : "border border-border/50 bg-card text-muted-foreground hover:bg-muted/60"
+      }`}
+    >
+      {Icon && <Icon className="h-3 w-3 shrink-0" aria-hidden="true" />}
+      {label}
+      {Icon && <ChevronRight className="h-3 w-3 shrink-0 opacity-60" aria-hidden="true" />}
+    </button>
+  );
+};
+
+/**
+ * The suggestion rows. Question chips wrap freely across as many lines as they
+ * need; the leave-the-chat actions (see `ACTION_CHIPS`) are pulled out and given
+ * their own row underneath, so an action never wraps up into whatever gap is
+ * left on a question line. Modes with no action chips (the goal-planning demo,
+ * the single-chip fallback) just render the one row.
+ */
+const SuggestionChips = ({
+  labels,
+  onSelect,
+  className = "",
+}: {
+  labels: string[];
+  onSelect: (label: string) => void;
+  className?: string;
+}) => {
+  const questions = labels.filter((l) => !(l in ACTION_CHIPS));
+  const actions = labels.filter((l) => l in ACTION_CHIPS);
+  return (
+    <div className={`flex flex-col items-center gap-2 ${className}`}>
+      {questions.length > 0 && (
+        <div className="flex flex-wrap justify-center gap-2">
+          {questions.map((l) => (
+            <SuggestionChip key={l} label={l} onSelect={onSelect} />
+          ))}
+        </div>
+      )}
+      {actions.length > 0 && (
+        <div className="flex flex-wrap justify-center gap-2">
+          {actions.map((l) => (
+            <SuggestionChip key={l} label={l} onSelect={onSelect} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 type MarketQuestionKind = "web" | "pi";
 
@@ -412,8 +482,9 @@ const MARKET_KIND_STYLE: Record<
 /**
  * Suggested-question picker for the "Market outlook" chip.
  *
- * Choosing one pre-fills the composer rather than sending, matching every other
- * chip in this panel: a mis-tap costs nothing, and the question stays editable.
+ * Choosing one asks it immediately — the picker has already done the choosing,
+ * so dropping the text into the composer would just add a second confirmation
+ * step. Close the sheet and type instead if you want to word it yourself.
  */
 const MarketOutlookSheet = ({
   open,
@@ -464,7 +535,7 @@ const MarketOutlookSheet = ({
                 <div className="min-w-0 flex-1">
                   <h2 className="text-base font-semibold text-foreground">Market outlook</h2>
                   <p className="text-[11px] leading-snug text-muted-foreground">
-                    Pick a question to drop into the box — or close this and type your own.
+                    Pick a question to ask it now — or close this and type your own.
                   </p>
                 </div>
                 <button
@@ -521,6 +592,394 @@ const MarketOutlookSheet = ({
                   );
                 })}
               </div>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+};
+
+/** The whole-plan question — also the fallback when a user has no goals yet. */
+const ALL_GOALS_QUESTION = "Are my goals achievable? Am I on track?";
+
+/** Question for one named goal, quoted so the backend can match it by name. */
+const goalQuestion = (name: string) => `Is my "${name}" goal achievable? Am I on track?`;
+
+/**
+ * One goal's supporting line: progress against target, then the target date.
+ * Every field on GoalResponse is nullable, so each part is dropped when absent
+ * rather than rendering "₹0 of null".
+ */
+const goalSubtitle = (g: GoalResponse): string => {
+  const parts: string[] = [];
+  if (g.target_amount != null && g.target_amount > 0) {
+    parts.push(`${formatInrCompact(g.current_value)} of ${formatInrCompact(g.target_amount)}`);
+  } else if (g.current_value > 0) {
+    parts.push(formatInrCompact(g.current_value));
+  }
+  if (g.target_date) {
+    const d = new Date(g.target_date);
+    // Backend dates are ISO, but a malformed one would render "Invalid Date".
+    if (!Number.isNaN(d.getTime())) {
+      parts.push(`by ${d.toLocaleDateString("en-IN", { month: "short", year: "numeric" })}`);
+    }
+  }
+  return parts.join(" · ");
+};
+
+const GOAL_ACCENT = "hsl(38, 45%, 54%)";
+const GOAL_TINT_BG = "hsla(38, 45%, 54%, 0.10)";
+const GOAL_BORDER = "hsla(38, 45%, 54%, 0.45)";
+
+/**
+ * Suggested-question picker for the "Goal planning" chip — the goals
+ * counterpart to `MarketOutlookSheet`. Lists the user's real goals from
+ * `/goals/` so a question can name one specifically, with a whole-plan option
+ * on top for "am I on track overall".
+ *
+ * Goals are fetched each time the sheet opens rather than cached, so a goal
+ * added on the goals page shows up here without a reload. Choosing one asks it
+ * immediately — the picker has already done the choosing, so dropping the text
+ * into the composer would just add a second confirmation step.
+ */
+const GoalsSheet = ({
+  open,
+  onClose,
+  onPick,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onPick: (question: string) => void;
+}) => {
+  const [goals, setGoals] = useState<GoalResponse[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setLoading(true);
+    setFailed(false);
+    listGoals()
+      .then((g) => {
+        if (!cancelled) setGoals(g);
+      })
+      .catch(() => {
+        // The whole-plan question still works without the list, so a failure
+        // degrades to that rather than blocking the sheet.
+        if (!cancelled) setFailed(true);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[70] bg-black/45"
+            onClick={onClose}
+            aria-hidden="true"
+          />
+          <motion.div
+            initial={{ opacity: 0, y: 24, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 16, scale: 0.98 }}
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Ask about your goals"
+            className="fixed inset-0 z-[70] flex items-center justify-center px-4"
+          >
+            <div
+              className="mx-auto flex w-full max-w-md flex-col overflow-hidden rounded-2xl bg-card shadow-2xl"
+              style={{ maxHeight: "min(88dvh, 640px)" }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start gap-2 border-b border-border px-4 py-3">
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-base font-semibold text-foreground">Goal planning</h2>
+                  <p className="text-[11px] leading-snug text-muted-foreground">
+                    Ask about everything at once, or pick one goal — it's asked straight away.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="-m-1.5 p-1.5 text-muted-foreground hover:text-foreground"
+                  aria-label="Close"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="flex-1 space-y-4 overflow-y-auto px-4 py-3">
+                <section>
+                  <div className="mb-1 flex items-center gap-1.5">
+                    <Sparkles className="h-3.5 w-3.5 shrink-0" style={{ color: GOAL_ACCENT }} />
+                    <h3
+                      className="text-[11px] font-bold uppercase tracking-wide"
+                      style={{ color: GOAL_ACCENT }}
+                    >
+                      Whole plan
+                    </h3>
+                  </div>
+                  <p className="mb-2 text-[11px] leading-snug text-muted-foreground">
+                    Every goal together, against what you're investing today.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => onPick(ALL_GOALS_QUESTION)}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left transition-colors hover:brightness-95 active:scale-[0.99]"
+                    style={{ backgroundColor: GOAL_TINT_BG, border: `1px solid ${GOAL_BORDER}` }}
+                  >
+                    <span className="min-w-0 flex-1 text-[12.5px] leading-snug text-foreground">
+                      {ALL_GOALS_QUESTION}
+                    </span>
+                    <ArrowRight className="h-3.5 w-3.5 shrink-0" style={{ color: GOAL_ACCENT }} />
+                  </button>
+                </section>
+
+                <section>
+                  <div className="mb-1 flex items-center gap-1.5">
+                    <Target className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <h3 className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+                      One goal
+                    </h3>
+                  </div>
+
+                  {loading ? (
+                    <div className="flex items-center gap-2 py-3 text-muted-foreground">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <span className="text-[11.5px]">Loading your goals…</span>
+                    </div>
+                  ) : failed ? (
+                    <p className="py-2 text-[11.5px] leading-snug text-muted-foreground">
+                      Couldn't load your goals just now — the whole-plan question above still
+                      works.
+                    </p>
+                  ) : goals.length === 0 ? (
+                    <p className="py-2 text-[11.5px] leading-snug text-muted-foreground">
+                      You haven't added any goals yet. Add them on the Goals page and they'll show
+                      up here.
+                    </p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {goals.map((g) => {
+                        const sub = goalSubtitle(g);
+                        return (
+                          <button
+                            key={g.id}
+                            type="button"
+                            onClick={() => onPick(goalQuestion(g.name))}
+                            className="flex w-full items-center gap-2 rounded-xl border border-border bg-muted/40 px-3 py-2.5 text-left transition-colors hover:bg-muted/70 active:scale-[0.99]"
+                          >
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-[12.5px] leading-snug text-foreground">
+                                {g.name}
+                              </span>
+                              {sub && (
+                                <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                                  {sub}
+                                </span>
+                              )}
+                            </span>
+                            <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
+              </div>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+};
+
+/**
+ * Chips whose question is a fixed sentence with one number in it. Rather than
+ * dropping the sentence into the composer for the user to edit around, the chip
+ * asks for just the number and sends the finished question.
+ *
+ * `presets` are the amounts worth one tap; the field stays free-form for
+ * anything else. Keyed by the chip's visible label.
+ */
+const AMOUNT_CHIPS: Record<
+  string,
+  { blurb: string; prefix: string; defaultAmount: number; presets: number[] }
+> = {
+  "Lump sum investing": {
+    blurb: "How much are you looking to invest in one go?",
+    prefix: "Where to invest lump sum of ",
+    defaultAmount: 1_000_000,
+    presets: [100_000, 500_000, 1_000_000, 2_500_000],
+  },
+  "SIP investing": {
+    blurb: "How much do you want to invest each month?",
+    prefix: "Where should I invest SIP of ",
+    defaultAmount: 50_000,
+    presets: [10_000, 25_000, 50_000, 100_000],
+  },
+};
+
+/**
+ * Amount prompt for the chips in `AMOUNT_CHIPS`. Opens with a sensible default
+ * selected, so the fast path is one tap on Ask; presets cover the next-most
+ * likely figures and the field takes anything else.
+ *
+ * `label` doubles as the open flag — null is closed — so there's no way to be
+ * open without knowing which question is being asked.
+ */
+const AmountSheet = ({
+  label,
+  onClose,
+  onSubmit,
+}: {
+  label: string | null;
+  onClose: () => void;
+  onSubmit: (question: string) => void;
+}) => {
+  const config = label ? AMOUNT_CHIPS[label] : undefined;
+  const [raw, setRaw] = useState("");
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // Reset to this chip's default each time it opens, so a figure typed for the
+  // lump-sum question never leaks into the SIP one.
+  useEffect(() => {
+    if (!config) return;
+    setRaw(formatMoneyInput(String(config.defaultAmount)));
+    requestAnimationFrame(() => inputRef.current?.select());
+  }, [config]);
+
+  useEffect(() => {
+    if (!label) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [label, onClose]);
+
+  const amount = Number(raw.replace(/,/g, ""));
+  const valid = Number.isFinite(amount) && amount > 0;
+
+  const submit = () => {
+    if (!valid || !config) return;
+    onSubmit(`${config.prefix}${formatInr0(amount)}`);
+  };
+
+  return (
+    <AnimatePresence>
+      {label && config && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[70] bg-black/45"
+            onClick={onClose}
+            aria-hidden="true"
+          />
+          <motion.div
+            initial={{ opacity: 0, y: 24, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 16, scale: 0.98 }}
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            role="dialog"
+            aria-modal="true"
+            aria-label={label}
+            className="fixed inset-0 z-[70] flex items-center justify-center px-4"
+          >
+            <div
+              className="mx-auto w-full max-w-sm rounded-2xl bg-card p-4 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start gap-2">
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-base font-semibold text-foreground">{label}</h2>
+                  <p className="text-[11px] leading-snug text-muted-foreground">{config.blurb}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="-m-1.5 shrink-0 p-1.5 text-muted-foreground hover:text-foreground"
+                  aria-label="Close"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  submit();
+                }}
+              >
+                <div className="mt-3 flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2.5 focus-within:border-[#D4A868]">
+                  <span className="shrink-0 text-[16px] font-semibold text-muted-foreground">₹</span>
+                  <input
+                    ref={inputRef}
+                    value={raw}
+                    onChange={(e) => setRaw(formatMoneyInput(e.target.value))}
+                    inputMode="numeric"
+                    autoComplete="off"
+                    aria-label={`Amount for ${label}`}
+                    className="w-full bg-transparent text-[18px] font-semibold tabular-nums text-foreground outline-none"
+                  />
+                </div>
+
+                <div className="mt-2.5 flex flex-wrap gap-1.5">
+                  {config.presets.map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setRaw(formatMoneyInput(String(p)))}
+                      className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                        amount === p
+                          ? "border-[#D4A868] bg-[#D4A868]/12 text-[#9A7B2E]"
+                          : "border-border bg-card text-muted-foreground hover:bg-muted/60"
+                      }`}
+                    >
+                      {formatInrCompact(p)}
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={!valid}
+                  className="mt-3.5 flex w-full items-center justify-center gap-1.5 rounded-xl py-2.5 text-[13px] font-bold text-white transition-transform active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
+                  style={{
+                    backgroundColor: "#D4A868",
+                    boxShadow: "0 2px 8px rgba(212,168,104,0.45)",
+                  }}
+                >
+                  Ask
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </button>
+              </form>
             </div>
           </motion.div>
         </>
@@ -986,12 +1445,20 @@ const AIChatPanel = ({
   completionMessage,
   onCompletionShown,
   goalPlanningDemo = false,
+  prefill,
 }: AIChatPanelProps) => {
   const navigate = useNavigate();
   const [messages, setMessages] = useState<Message[]>(() =>
     goalPlanningDemo ? [{ role: "ai", content: GOAL_DEMO_INTRO }] : [],
   );
   const [input, setInput] = useState("");
+
+  // Seed the composer when a prefill arrives, and again whenever it changes —
+  // asking about a second holding should replace the first question, not be
+  // ignored because the panel was already open.
+  useEffect(() => {
+    if (prefill) setInput(prefill);
+  }, [prefill]);
   /**
    * Ghost text rendered in grey italics right after the composer's own text — a
    * suggested value a quick action pre-filled (e.g. the amount in "Where to
@@ -1001,7 +1468,10 @@ const AIChatPanel = ({
   const [inputSuggestion, setInputSuggestion] = useState<string | null>(null);
   /** Suggested-question picker behind the "Market outlook" chip. */
   const [marketSheetOpen, setMarketSheetOpen] = useState(false);
-  /** Spoken profile interview behind the "Set up by voice" chip. */
+  const [goalsSheetOpen, setGoalsSheetOpen] = useState(false);
+  /** Label of the amount chip being asked about — null when the prompt is shut. */
+  const [amountChip, setAmountChip] = useState<string | null>(null);
+  /** Spoken profile interview behind the "Voice onboarding" chip. */
   const [voiceProfileOpen, setVoiceProfileOpen] = useState(false);
   const composerRef = useRef<HTMLInputElement>(null);
   const [isTyping, setIsTyping] = useState(false);
@@ -1647,34 +2117,14 @@ const AIChatPanel = ({
     : chatFirst
       ? [
           "Review my portfolio",
-          "Where to invest?",
+          "Lump sum investing",
           "SIP investing",
           "Market outlook",
-          "Goals achievable?",
+          "Goal planning",
           "Complete profile",
           VOICE_PROFILE_CHIP,
         ]
       : ["Why is my portfolio up today?"];
-
-  /**
-   * Chips that don't send straight away: they pre-fill the composer with
-   * `prefix` and paint `suggestion` after it in grey italics, so the user can
-   * either send as-is or type over the suggested part. Add a chip here and to
-   * `embeddedSuggestions` — no other wiring needed.
-   */
-  /** Drop a ready-made question into the composer, caret at the end, no ghost. */
-  const prefillComposer = useCallback((text: string, suggestion: string | null = null) => {
-    setInput(text);
-    setInputSuggestion(suggestion);
-    // Focus after paint so the caret lands at the end of the pre-filled text —
-    // the next keystroke then replaces the suggestion instead of inserting into it.
-    requestAnimationFrame(() => {
-      const el = composerRef.current;
-      if (!el) return;
-      el.focus();
-      el.setSelectionRange(el.value.length, el.value.length);
-    });
-  }, []);
 
   const handleSuggestionChip = (label: string) => {
     if (label === "Complete profile") {
@@ -1683,9 +2133,15 @@ const AIChatPanel = ({
       return;
     }
     // Market questions split into web-researched vs portfolio-grounded, so this
-    // one asks which you meant before filling the box.
+    // one asks which you meant before sending.
     if (label === "Market outlook") {
       setMarketSheetOpen(true);
+      return;
+    }
+    // Goals split per-goal vs the whole plan, so this one lists the user's real
+    // goals before sending — same pattern as Market outlook above.
+    if (label === "Goal planning") {
+      setGoalsSheetOpen(true);
       return;
     }
     // Spoken alternative to the Complete profile form — same four sections.
@@ -1693,12 +2149,12 @@ const AIChatPanel = ({
       setVoiceProfileOpen(true);
       return;
     }
-    const prefill = COMPOSER_PREFILLS[label];
-    if (!prefill) {
-      void sendMessage(label);
+    // The question is fixed apart from one figure — ask for that, then send.
+    if (label in AMOUNT_CHIPS) {
+      setAmountChip(label);
       return;
     }
-    prefillComposer(prefill.prefix, prefill.suggestion ?? null);
+    void sendMessage(label);
   };
 
   /** Send the composer, folding in the ghost suggestion if it wasn't typed over. */
@@ -1933,13 +2389,33 @@ const AIChatPanel = ({
           activeSessionId={sessionIdRef.current}
         />
 
-        {/* Suggested market questions — fills the composer, never sends. */}
+        {/* Suggested market questions — picking one asks it straight away. */}
         <MarketOutlookSheet
           open={marketSheetOpen}
           onClose={() => setMarketSheetOpen(false)}
           onPick={(q) => {
             setMarketSheetOpen(false);
-            prefillComposer(q);
+            void sendMessage(q);
+          }}
+        />
+
+        {/* Your goals, one or all — picking one asks it straight away. */}
+        <GoalsSheet
+          open={goalsSheetOpen}
+          onClose={() => setGoalsSheetOpen(false)}
+          onPick={(q) => {
+            setGoalsSheetOpen(false);
+            void sendMessage(q);
+          }}
+        />
+
+        {/* Amount prompt for the lump-sum / SIP chips — asks, then sends. */}
+        <AmountSheet
+          label={amountChip}
+          onClose={() => setAmountChip(null)}
+          onSubmit={(q) => {
+            setAmountChip(null);
+            void sendMessage(q);
           }}
         />
 
@@ -2191,30 +2667,14 @@ const AIChatPanel = ({
                 >
                   {micState === "listening" ? <MicOff className="h-4.5 w-4.5" /> : <Mic className="h-4.5 w-4.5" />}
                 </button>
-                <div className="flex flex-wrap justify-center gap-2">
-                  {embeddedSuggestions.map((q) => (
-                    <button
-                      key={q}
-                      onClick={() => handleSuggestionChip(q)}
-                      className="shrink-0 whitespace-nowrap rounded-full border border-border/50 bg-card px-3 py-1.5 text-[11px] font-medium text-muted-foreground shadow-sm transition-colors hover:bg-muted/60"
-                    >
-                      {q}
-                    </button>
-                  ))}
-                </div>
+                <SuggestionChips labels={embeddedSuggestions} onSelect={handleSuggestionChip} />
               </div>
             ) : (
-              <div className="flex flex-wrap justify-center gap-2 px-4 pb-1.5">
-                {embeddedSuggestions.map((q) => (
-                  <button
-                    key={q}
-                    onClick={() => handleSuggestionChip(q)}
-                    className="shrink-0 whitespace-nowrap rounded-full border border-border/50 bg-card px-3 py-1.5 text-[11px] font-medium text-muted-foreground shadow-sm transition-colors hover:bg-muted/60"
-                  >
-                    {q}
-                  </button>
-                ))}
-              </div>
+              <SuggestionChips
+                labels={embeddedSuggestions}
+                onSelect={handleSuggestionChip}
+                className="px-4 pb-1.5"
+              />
             )
           )}
 
@@ -2278,7 +2738,27 @@ const AIChatPanel = ({
       onClose={() => setMarketSheetOpen(false)}
       onPick={(q) => {
         setMarketSheetOpen(false);
-        prefillComposer(q);
+        void sendMessage(q);
+      }}
+    />
+
+    {/* Your goals, one or all — picking one asks it straight away. */}
+    <GoalsSheet
+      open={goalsSheetOpen}
+      onClose={() => setGoalsSheetOpen(false)}
+      onPick={(q) => {
+        setGoalsSheetOpen(false);
+        void sendMessage(q);
+      }}
+    />
+
+    {/* Amount prompt for the lump-sum / SIP chips — asks, then sends. */}
+    <AmountSheet
+      label={amountChip}
+      onClose={() => setAmountChip(null)}
+      onSubmit={(q) => {
+        setAmountChip(null);
+        void sendMessage(q);
       }}
     />
     <VoiceProfileInterview

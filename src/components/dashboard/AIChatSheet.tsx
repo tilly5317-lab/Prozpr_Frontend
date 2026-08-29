@@ -7,11 +7,13 @@ interface Props {
   isOpen: boolean;
   onClose: () => void;
   onOpen?: () => void;
+  /** Question to seed the composer with — see AIChatPanel's `prefill`. */
+  prefill?: string | null;
 }
 
 type SheetMode = "minimized" | "partial" | "full";
 
-const AIChatSheet = ({ isOpen, onClose, onOpen }: Props) => {
+const AIChatSheet = ({ isOpen, onClose, onOpen, prefill }: Props) => {
   const dragControls = useDragControls();
   const sheetRef = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState<SheetMode>("partial");
@@ -100,7 +102,12 @@ const AIChatSheet = ({ isOpen, onClose, onOpen }: Props) => {
 
                 {/* Chat content */}
                 <div className="flex-1 overflow-hidden">
-                  <AIChatPanel isOpen={true} onClose={() => setMode("minimized")} embedded />
+                  <AIChatPanel
+                    isOpen={true}
+                    onClose={() => setMode("minimized")}
+                    embedded
+                    prefill={prefill}
+                  />
                 </div>
               </>
             )}

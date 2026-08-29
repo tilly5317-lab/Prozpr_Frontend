@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, GitCompare, Info } from "lucide-react";
+import { ArrowLeft, Download, GitCompare } from "lucide-react";
 
 import BottomNav from "@/components/BottomNav";
 import {
@@ -8,15 +8,26 @@ import {
   formatDate,
   formatNav,
   formatPct,
+  NAV_RANGES_YTD,
   NavChart,
   navPointsFromApi,
-  pctReturnForRange,
   ProzprRatingCard,
   RangePills,
   type NavRange,
 } from "@/components/fund/FundScreenUi";
 import { Button } from "@/components/ui/button";
-import { getMfHoldingDetail, type MfHoldingDetailResponse } from "@/lib/api";
+import FundAnalysis from "@/components/fund/FundAnalysis";
+import { computeUnrealisedTax } from "@/lib/unrealisedTax";
+import { demoLedger } from "@/lib/demoLedger";
+import { exportFundAnalysisXls } from "@/lib/fundExport";
+import { RATIOS } from "@/lib/fundRatios";
+import { useFundProfiles } from "@/hooks/use-fund-profiles";
+import {
+  getMfFundInvestorDetail,
+  getMfHoldingDetail,
+  type MfFundInvestorDetailResponse,
+  type MfHoldingDetailResponse,
+} from "@/lib/api";
 
 /** Discover scheme detail — upcoming UI, `/mf/funds/:schemeCode/holding-detail` data. */
 export default function MfFundDetail() {
@@ -26,6 +37,9 @@ export default function MfFundDetail() {
 
   const [range, setRange] = useState<NavRange>("1Y");
   const [data, setData] = useState<MfHoldingDetailResponse | null>(null);
+  // Fees and the equity/debt split live on the metadata record, not the holding
+  // detail. Best-effort: the sections that need it just hide when it's absent.
+  const [facts, setFacts] = useState<MfFundInvestorDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,9 +51,16 @@ export default function MfFundDetail() {
     }
     setLoading(true);
     setError(null);
+    setFacts(null);
     try {
       const res = await getMfHoldingDetail(schemeCode);
       setData(res);
+      // Chained, not parallel: the metadata id comes from the response above.
+      if (res.metadata_id) {
+        getMfFundInvestorDetail(res.metadata_id)
+          .then(setFacts)
+          .catch(() => { /* the fee / allocation cards just hide */ });
+      }
     } catch (e) {
       setData(null);
       setError(e instanceof Error ? e.message : "Could not load fund details.");
@@ -65,17 +86,100 @@ export default function MfFundDetail() {
   const rangeReturn = first > 0 ? ((last - first) / first) * 100 : 0;
   const latestNavDate = data?.latest_nav_date ?? history[history.length - 1]?.date ?? "";
 
-  const trailingItems = useMemo(
-    () => [
-      { label: "1M", value: pctReturnForRange(history, "1M") },
-      { label: "3M", value: pctReturnForRange(history, "3M") },
-      { label: "1Y", value: data?.nav_return_1y_pct ?? pctReturnForRange(history, "1Y") },
-      { label: "3Y", value: data?.nav_return_3y_pct ?? pctReturnForRange(history, "3Y") },
-    ],
-    [history, data?.nav_return_1y_pct, data?.nav_return_3y_pct],
+  const hasTransactions = (data?.transactions.length ?? 0) > 0;
+
+  // The ledger "Your investment" works off. Falls back to a FABRICATED holding
+  // when the user owns nothing here, so the section can be reviewed on any
+  // fund — see lib/demoLedger.ts. Drop the fallback once holdings are live.
+  const ledger = useMemo(
+    () =>
+      hasTransactions ? data!.transactions : demoLedger(schemeCode, history),
+    [hasTransactions, data, schemeCode, history],
   );
 
-  const hasTransactions = (data?.transactions.length ?? 0) > 0;
+  const categoryName = data?.sub_category || data?.category || "its category";
+
+  // Held here rather than inside FundAnalysis because the export button lives in
+  // the header — both must read exactly the same numbers.
+  const { cat, fund } = useFundProfiles({
+    schemeCode,
+    history,
+    categoryName,
+    assetClass: data?.asset_class ?? null,
+    facts,
+  });
+
+  // Computed once and shared by the tax section and the workbook, so the two
+  // can never disagree about what selling today would cost.
+  const unrealisedTax = useMemo(
+    () =>
+      data
+        ? computeUnrealisedTax(ledger, {
+            nav: data.latest_nav,
+            navDate: latestNavDate,
+            assetType:
+              (data.asset_class ?? "").trim().toLowerCase() === "equity"
+                ? "EQUITY"
+                : "NON_EQUITY",
+            exitLoadPct: facts?.exit_load_percent ?? null,
+            exitLoadMonths: facts?.exit_load_months ?? null,
+          })
+        : null,
+    [data, ledger, latestNavDate, facts],
+  );
+
+  // Where the money sits. Rendered only when the metadata actually carries a
+  // split — an all-zero bar would read as "100% cash" rather than "unknown".
+  const allocation = useMemo(() => {
+    if (!facts) return [];
+    const rows = [
+      { label: "Large cap", pct: facts.large_cap_equity_pct, color: "hsl(217 79% 51%)" },
+      { label: "Mid cap", pct: facts.mid_cap_equity_pct, color: "hsl(217 60% 64%)" },
+      { label: "Small cap", pct: facts.small_cap_equity_pct, color: "hsl(217 45% 76%)" },
+      { label: "Debt", pct: facts.debt_pct, color: "hsl(188 52% 41%)" },
+      { label: "Other / cash", pct: facts.others_pct, color: "hsl(38 64% 47%)" },
+    ].filter((r): r is { label: string; pct: number; color: string } => r.pct != null && r.pct > 0);
+    return rows.reduce((sum, r) => sum + r.pct, 0) > 0 ? rows : [];
+  }, [facts]);
+
+  const expenseRatio = facts?.direct_plan_fees ?? facts?.regular_plan_fees ?? null;
+  const exitLoad =
+    facts?.exit_load_percent != null && facts.exit_load_percent > 0
+      ? `${facts.exit_load_percent}%${
+          facts.exit_load_months ? ` if sold within ${facts.exit_load_months} months` : ""
+        }`
+      : facts
+        ? "Nil"
+        : null;
+
+  const downloadXls = useCallback(() => {
+    if (!data) return;
+    exportFundAnalysisXls({
+      schemeCode,
+      schemeName: data.scheme_name ?? schemeCode,
+      amc: data.amc_name,
+      isin: data.isin,
+      category: cat.name,
+      assetClass: data.asset_class,
+      planType: data.plan_type,
+      optionType: data.option_type,
+      riskLabel: facts?.risk_rating_sebi ?? null,
+      expenseRatio: facts?.direct_plan_fees ?? facts?.regular_plan_fees ?? null,
+      exitLoad:
+        facts?.exit_load_percent != null && facts.exit_load_percent > 0
+          ? `${facts.exit_load_percent}%${facts.exit_load_months ? ` within ${facts.exit_load_months} months` : ""}`
+          : facts
+            ? "Nil"
+            : null,
+      navLatest: data.latest_nav,
+      navDate: latestNavDate,
+      history,
+      fund,
+      cat,
+      ratioSpecs: RATIOS,
+      unrealisedTax,
+    });
+  }, [data, schemeCode, cat, fund, facts, latestNavDate, history, unrealisedTax]);
 
   return (
     <div className="mobile-container min-h-screen bg-background pb-24">
@@ -100,6 +204,18 @@ export default function MfFundDetail() {
             className="mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-card px-2.5 py-1 text-[11px] font-semibold text-foreground transition-colors hover:bg-secondary/40"
           >
             <GitCompare className="h-3.5 w-3.5" /> Compare
+          </button>
+          {/* The full analysis as a workbook — icon only, so it sits beside
+              Compare without crowding the scheme name. */}
+          <button
+            type="button"
+            onClick={downloadXls}
+            disabled={!data}
+            aria-label="Download this analysis as Excel"
+            title="Download this analysis (Excel)"
+            className="mt-0.5 inline-flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full border border-border bg-card text-foreground transition-colors hover:bg-secondary/40 disabled:opacity-50"
+          >
+            <Download className="h-3.5 w-3.5" />
           </button>
         </div>
       </header>
@@ -149,57 +265,34 @@ export default function MfFundDetail() {
               <div className="mt-3">
                 <NavChart points={rangedHistory} isUp={isUp} />
               </div>
-              <RangePills range={range} onRange={setRange} />
+              <RangePills range={range} onRange={setRange} ranges={NAV_RANGES_YTD} />
             </section>
 
-            <section className="rounded-2xl border border-border/70 bg-card p-4">
-              <p className="text-[12px] font-semibold text-foreground">Trailing NAV returns</p>
-              <p className="mt-0.5 text-[11px] text-muted-foreground">
-                Total return on the NAV through {latestNavDate ? formatDate(latestNavDate) : "—"}.
-              </p>
-              <div className="mt-3 grid grid-cols-4 gap-1.5">
-                {trailingItems.map(({ label, value }) => {
-                  const positive = value != null && value >= 0;
-                  return (
-                    <div key={label} className="rounded-lg bg-muted/30 px-1.5 py-2 text-center">
-                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
-                      <p
-                        className="mt-0.5 text-[11.5px] font-semibold tabular-nums"
-                        style={{
-                          color:
-                            value == null
-                              ? "hsl(var(--muted-foreground))"
-                              : positive
-                                ? "hsl(164 54% 40%)"
-                                : "hsl(0 84% 50%)",
-                        }}
-                      >
-                        {formatPct(value)}
-                      </p>
-                    </div>
-                  );
-                })}
-              </div>
-              <p className="mt-2 text-[11px] leading-snug text-muted-foreground/80">
-                Trailing returns reflect compounded NAV change over the trailing window — useful for
-                comparison but not a forecast of future performance.
-              </p>
-            </section>
-
-            {!hasTransactions && (
-              <section
-                className="flex items-start gap-2 rounded-2xl px-4 py-3"
-                style={{
-                  backgroundColor: "hsl(var(--muted) / 0.45)",
-                  border: "1px solid hsl(var(--border) / 0.6)",
-                }}
-              >
-                <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                <p className="text-[12px] text-muted-foreground">
-                  You have no recorded transactions in this scheme.
-                </p>
-              </section>
-            )}
+            {/* Full category-relative analysis — returns, basics, performance,
+                valuation & risk, holdings. NOTE: percentiles, ranks, quartiles,
+                category ranges, sectors, credit quality and the valuation
+                ratios are GENERATED (see lib/fundCategory.ts) — Prozpr has no
+                peer aggregates, holdings feed or per-fund benchmark yet. Must be
+                wired to real sources before this page ships. */}
+            <FundAnalysis
+              schemeCode={schemeCode}
+              schemeName={data.scheme_name ?? schemeCode}
+              isin={data.isin}
+              history={history}
+              navLatest={data.latest_nav}
+              navDate={latestNavDate}
+              transactions={ledger}
+              hasRealTransactions={hasTransactions}
+              unrealisedTax={unrealisedTax}
+              categoryName={categoryName}
+              cat={cat}
+              fund={fund}
+              assetClass={data.asset_class}
+              amc={data.amc_name}
+              planType={data.plan_type}
+              optionType={data.option_type}
+              facts={facts}
+            />
 
             <section className="rounded-2xl border border-border/70 bg-card p-4">
               <p className="text-[12px] font-semibold text-foreground">Fund profile</p>

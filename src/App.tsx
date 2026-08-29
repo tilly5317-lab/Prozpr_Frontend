@@ -91,6 +91,8 @@ import SipPlanner from "./pages/SipPlanner";
 import LumpSumPlanner from "./pages/LumpSumPlanner";
 import InvestLayout from "@/components/invest/InvestLayout";
 import RebalanceExplanation from "./pages/RebalanceExplanation";
+import RebalancingHowItWorks from "./pages/RebalancingHowItWorks";
+import InvestingHowItWorks from "./pages/InvestingHowItWorks";
 import Discovery from "./pages/Discovery";
 import MfAllFunds from "./pages/MfAllFunds";
 import MfCompare from "./pages/MfCompare";
@@ -152,6 +154,14 @@ const App = () => (
               <Route path="sip" element={<SipPlanner />} />
               <Route path="lumpsum" element={<LumpSumPlanner />} />
             </Route>
+            {/* Rebalancing explainer — sits OUTSIDE the layout above on purpose:
+                no InvestTabs entry matches it, so it carries its own back header
+                rather than rendering the toggle with nothing selected. */}
+            <Route path="/invest/how-it-works" element={<RebalancingHowItWorks />} />
+            {/* Buy-side explainer, shared by the SIP and Lump sum tabs (?from= picks
+                which one the back arrow returns to). Outside the layout for the
+                same reason as the rebalancing explainer above. */}
+            <Route path="/invest/how-investing-works" element={<InvestingHowItWorks />} />
             {/* Back-compat: old flat rebalancing/execute URLs redirect into the invest section */}
             <Route path="/execute" element={<Navigate to="/invest/rebalance-explanation" replace />} />
             <Route path="/rebalancing" element={<Navigate to="/invest/rebalance-explanation" replace />} />

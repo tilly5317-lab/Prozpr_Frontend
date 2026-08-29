@@ -4,11 +4,28 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useState } from "react";
 import { listNotifications } from "@/lib/api";
 
-const tabs = [
+/**
+ * `match` marks a tab active for a whole section, not just its landing path —
+ * without it, drilling into e.g. a fund detail would light no tab at all.
+ * Defaults to an exact path comparison.
+ */
+const tabs: {
+  icon: typeof Home;
+  label: string;
+  path: string;
+  match?: (p: string) => boolean;
+}[] = [
   { icon: MessageSquare, label: "Chat", path: "/chat" },
   { icon: Home, label: "Portfolio", path: "/portfolio" },
-  { icon: Compass, label: "Invest", path: "/invest/rebalance-explanation" },
-  { icon: Target, label: "Goals", path: "/goal-planner" },
+  {
+    icon: Compass,
+    label: "Invest",
+    path: "/invest/rebalance-explanation",
+    match: (p) => p.startsWith("/invest") || p.startsWith("/rebalance"),
+  },
+  { icon: Target, label: "Goals", path: "/goal-planner", match: (p) => p.startsWith("/goal-planner") },
+  // Discover has no nav slot: it's reached from the Discover hub on Portfolio,
+  // which carries the same destinations with room to describe them.
 ];
 
 // Options collapsed under the "More" tab.
@@ -115,18 +132,18 @@ const BottomNav = () => {
       </AnimatePresence>
 
       <nav className="fixed bottom-0 left-0 right-0 z-50 bg-card/80 backdrop-blur-xl border-t border-border/50">
-        <div className="max-w-md mx-auto flex items-center justify-around py-2 pb-[env(safe-area-inset-bottom,8px)]">
+        {/* Slots share the width equally (flex-1) rather than padding each item —
+            at 4 tabs `px-3` fitted, but beyond that it overflows on a 360px phone. */}
+        <div className="max-w-md mx-auto flex items-center py-2 pb-[env(safe-area-inset-bottom,8px)]">
           {tabs.map((tab) => {
-            const isActive =
-              location.pathname === tab.path ||
-              (tab.path === "/invest/rebalance-explanation" &&
-                (location.pathname.startsWith("/invest") ||
-                  location.pathname.startsWith("/rebalance")));
+            const isActive = tab.match
+              ? tab.match(location.pathname)
+              : location.pathname === tab.path;
             return (
               <button
                 key={tab.path}
                 onClick={() => navigate(tab.path)}
-                className="relative flex flex-col items-center gap-0.5 px-3 py-1.5 transition-colors"
+                className="relative flex min-w-0 flex-1 flex-col items-center gap-0.5 px-1 py-1.5 transition-colors"
               >
                 <div className="relative">
                   <tab.icon
@@ -137,7 +154,7 @@ const BottomNav = () => {
                   />
                 </div>
                 <span
-                  className={`text-[11px] font-medium transition-colors ${
+                  className={`max-w-full truncate text-[10px] font-medium transition-colors ${
                     isActive ? "text-primary" : "text-muted-foreground/50"
                   }`}
                 >
@@ -157,7 +174,7 @@ const BottomNav = () => {
           {/* More tab — toggles the menu with Alerts + Liquid funds */}
           <button
             onClick={() => setMoreOpen((o) => !o)}
-            className="relative flex flex-col items-center gap-0.5 px-3 py-1.5 transition-colors"
+            className="relative flex min-w-0 flex-1 flex-col items-center gap-0.5 px-1 py-1.5 transition-colors"
             aria-label="More"
           >
             <div className="relative">
@@ -175,7 +192,7 @@ const BottomNav = () => {
               )}
             </div>
             <span
-              className={`text-[11px] font-medium transition-colors ${
+              className={`max-w-full truncate text-[10px] font-medium transition-colors ${
                 moreActive || moreOpen ? "text-primary" : "text-muted-foreground/50"
               }`}
             >

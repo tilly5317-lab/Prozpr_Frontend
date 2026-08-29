@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, Coins, Pencil, ChevronRight, Check, ArrowRight } from "lucide-react";
+import { Loader2, Coins, Pencil, ChevronRight, Check, ArrowRight, HelpCircle } from "lucide-react";
 import BottomNav from "@/components/BottomNav";
 import {
   getMyLumpSumPlan,
@@ -9,6 +9,7 @@ import {
   type LumpSumPlanResponse,
 } from "@/lib/api";
 import { CurrentVsTargetChart } from "@/components/invest/CurrentVsTargetChart";
+import SipOrDipCard from "@/components/invest/SipOrDipCard";
 import { buildLumpSumTargetRows } from "@/lib/driftRows";
 import { formatInr0, formatMoneyInput } from "@/lib/utils";
 
@@ -230,6 +231,7 @@ function LumpSumCard({
  * not yet supported (the engine is BUY-only) — its toggle shows "Coming soon".
  */
 const LumpSumPlanner = () => {
+  const navigate = useNavigate();
   const [plan, setPlan] = useState<LumpSumPlanResponse | null>(null);
   const [accepting, setAccepting] = useState(false);
   const [accepted, setAccepted] = useState(false);
@@ -269,6 +271,18 @@ const LumpSumPlanner = () => {
   return (
     <div className="mobile-container bg-background min-h-screen pb-24">
       <div className="px-5 pt-2">
+        <div className="mb-1.5 flex justify-end">
+          {/* Explainer for the buy-side engine behind this plan. */}
+          <button
+            type="button"
+            onClick={() => navigate("/invest/how-investing-works?from=lumpsum")}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+            aria-label="How investing works"
+            title="How investing works"
+          >
+            <HelpCircle className="h-4 w-4" />
+          </button>
+        </div>
         {/* Add / Withdraw toggle — Withdraw is not yet supported (engine is BUY-only). */}
         <div className="mb-3 flex rounded-full border border-border bg-card p-0.5">
           <button
@@ -294,6 +308,10 @@ const LumpSumPlanner = () => {
           Deploy a one-time lump sum. Enter an amount and Pi's engine splits it across the right funds
           for your goals — the same plan you'd get in chat.
         </p>
+
+        {/* Cash in hand raises the same question in reverse: deploy it now, or
+            hold it for a better entry? Same guidance, framed for this tab. */}
+        <SipOrDipCard variant="lumpsum" />
 
         {plan ? (
           <LumpSumCard plan={shownPlan} onCreated={handleCreated} />

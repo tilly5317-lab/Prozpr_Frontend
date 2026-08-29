@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, type ReactNode } from "react";
+import { useCallback, useState, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { Compass, TrendingUp, TrendingDown, Wallet, Target, Activity, Landmark, Check, Sparkles, Banknote, Droplet, Coins, type LucideIcon } from "lucide-react";
+import { TrendingUp, TrendingDown, Wallet, Target, Activity, Landmark, Check, HelpCircle, Sparkles, Banknote, Droplet, Coins, GitCompare, Layers, Lightbulb, type LucideIcon } from "lucide-react";
 import { motion } from "framer-motion";
 import BottomNav from "@/components/BottomNav";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -13,6 +13,17 @@ import PortfolioAnalysisModal from "./PortfolioAnalysisModal";
 import PortfolioInsightsModal from "./PortfolioInsightsModal";
 import ProfileSwitcher from "./ProfileSwitcher";
 import CamsUploadModal from "@/components/onboarding/CamsUploadModal";
+import GuidedTour, { type TourStep } from "@/components/GuidedTour";
+import DiscoverFundSearch from "@/components/discover/DiscoverFundSearch";
+import AIChatSheet from "./AIChatSheet";
+import NextActionCard from "./NextActionCard";
+import PortfolioSinceLast from "./PortfolioSinceLast";
+import RiskProfileSheet from "./RiskProfileEditor";
+import { indexVerdicts, nextAction } from "@/lib/portfolioVerdicts";
+import { demoHistory, demoInsights } from "@/lib/portfolioDemoData";
+import type { ChartNotes } from "@/lib/portfolioChartNotes";
+import { ThemeCircle } from "@/components/discover/FundCategories";
+import { groupHref, useFundGroups } from "@/lib/fundGroups";
 import { useCamsMissing } from "@/hooks/useCamsMissing";
 import { useFamily } from "@/context/FamilyContext";
 import {
@@ -22,9 +33,12 @@ import {
   getFullProfile,
   getMyPortfolio,
   getPortfolioHistory,
+  getPortfolioInsights,
   type CumulativePortfolioResponse,
   type FullProfileResponse,
   type PortfolioDetail,
+  type PortfolioHistoryPoint,
+  type PortfolioInsightsResponse,
 } from "@/lib/api";
 import { formatInrCompact, formatInrPaisa } from "@/lib/utils";
 
@@ -36,6 +50,9 @@ const SECTION_LABEL = { fontSize: 11, fontWeight: 700, textTransform: "uppercase
 /** ₹ with Indian grouping, no decimals — used by the Total Portfolio headline. */
 const fmtInr0 = (n: number) =>
   `₹${Math.round(n).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+
+/** Marks the first-run portfolio walkthrough as seen, per browser. */
+const PORTFOLIO_TOUR_SEEN_KEY = "portfolioTourSeen";
 
 function cumulativeToPortfolioDetail(c: CumulativePortfolioResponse): PortfolioDetail {
   return {
@@ -63,6 +80,11 @@ function PortfolioMainPanel({
   timePeriod,
   setTimePeriod,
   sparkline,
+  verdicts,
+  history,
+  action,
+  onAskPi,
+  onEditProfile,
   riskCategory,
   horizonLabel,
   middleSlot,
@@ -75,6 +97,15 @@ function PortfolioMainPanel({
   timePeriod: "1M" | "6M" | "1Y" | "All";
   setTimePeriod: (p: "1M" | "6M" | "1Y" | "All") => void;
   sparkline?: number[];
+  /** Prozpr's per-fund read, for the verdict lines under each holding. */
+  verdicts?: Map<string, import("@/lib/api").InsightFundRow>;
+  /** Value snapshots, for the "since you last looked" strip. */
+  history?: PortfolioHistoryPoint[];
+  /** The one action worth surfacing; null when nothing is computed yet. */
+  action?: ReturnType<typeof nextAction>;
+  onAskPi?: (prompt: string) => void;
+  /** Opens the risk / horizon sheet from the allocation card's stats row. */
+  onEditProfile?: () => void;
   riskCategory: string | null;
   horizonLabel: string | null;
   middleSlot?: ReactNode;
@@ -101,6 +132,16 @@ function PortfolioMainPanel({
       : null;
 
   const stop = (e: React.MouseEvent) => e.stopPropagation();
+
+  /* Commentary for the range the chart is showing. Held here rather than in the
+     chart because it renders ABOVE the chart, under the gain chip — and it is
+     replaced wholesale on every range switch, never merged, so a sentence from
+     the 3Y view can't linger on a 1M chart. */
+  const [chartCommentary, setChartCommentary] = useState<ChartNotes>({
+    headline: null,
+    notes: [],
+    moments: [],
+  });
 
   return (
     <div className="space-y-[10.12px]">
@@ -139,8 +180,31 @@ function PortfolioMainPanel({
           </div>
         )}
 
+        {/* One sentence on the selected range — measured from the series, so it
+            says what a value line cannot: how much of the move was money added
+            versus market. The supporting detail lives in the Moments rail under
+            the chart rather than being repeated here. */}
+        {useNavChart && chartCommentary.headline && (
+          <div className="mb-3">
+            <p className="text-[12.5px] leading-snug text-foreground">
+              {chartCommentary.headline}
+            </p>
+          </div>
+        )}
+
+        {/* What changed since the last snapshot — a reason to open the app
+            that isn't "check the number". */}
+        {history && history.length > 1 && portfolio && (
+          <PortfolioSinceLast history={history} currentValue={portfolio.total_value} />
+        )}
+
+        <div data-tour="portfolio-chart">
         {useNavChart ? (
-          <PortfolioNavChart camsMissing={camsMissing} onUploadCams={onUploadCams} />
+          <PortfolioNavChart
+            camsMissing={camsMissing}
+            onUploadCams={onUploadCams}
+            onPeriodChange={(info) => setChartCommentary(info.notes)}
+          />
         ) : (
           <>
             <div className="flex gap-1.5 mb-3" onClick={stop}>
@@ -168,11 +232,13 @@ function PortfolioMainPanel({
             </div>
           </>
         )}
+        </div>
 
         {/* Portfolio analysis — subtly lifted surface (bg-card + soft shadow, no border). */}
-        <div className="mt-2 flex gap-2 pt-2" style={{ borderTop: "1px solid hsl(var(--hairline))" }}>
+        <div className="mt-3 flex gap-2 pt-3" style={{ borderTop: "1px solid hsl(var(--hairline))" }}>
           <button
             type="button"
+            data-tour="portfolio-analysis"
             onClick={() => setAnalysisOpen(true)}
             className="block flex-1 cursor-pointer rounded-xl bg-card px-3 py-2.5 text-center text-[13px] font-semibold text-foreground shadow-sm transition-all hover:shadow-md active:scale-[0.99]"
           >
@@ -192,11 +258,14 @@ function PortfolioMainPanel({
       </div>
 
       {/* Current allocation — borderless, blends into the page like the total. */}
-      <div className="rounded-[14px] p-[14px]">
+      <div className="rounded-[14px] p-[14px]" data-tour="allocation">
         <CurrentAllocationCard
           portfolio={portfolio}
           riskCategory={riskCategory}
           horizonLabel={horizonLabel}
+          verdicts={verdicts}
+          onAskPi={onAskPi}
+          onEditProfile={onEditProfile}
         />
       </div>
 
@@ -210,87 +279,216 @@ function PortfolioMainPanel({
   );
 }
 
-/** A gold, vertical Discover card — icon, title, subtitle and an Explore CTA. */
-function DiscoverCard({
+/** One of the two half-width tiles in Explore funds (All funds / Compare & rank). */
+function DiscoverTile({
   icon: Icon,
   title,
   subtitle,
+  iconClass,
+  delay,
   onClick,
 }: {
   icon: LucideIcon;
   title: string;
   subtitle: string;
+  /** Tailwind classes for the icon chip — each tile gets its own hue. */
+  iconClass: string;
+  delay: number;
   onClick: () => void;
 }) {
   return (
-    <button
+    <motion.button
       type="button"
+      initial={{ opacity: 0, y: 8 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, amount: 0.4 }}
+      transition={{ duration: 0.3, delay, ease: [0.16, 1, 0.3, 1] }}
       onClick={onClick}
-      className="flex w-full items-center gap-3 rounded-[14px] p-[14px] text-left transition-all hover:shadow-md active:scale-[0.99]"
-      style={{
-        background: "linear-gradient(135deg, #4A380F 0%, #2D1F05 100%)",
-        border: "1px solid rgba(212, 168, 104, 0.45)",
-        color: "#F5EEDC",
-      }}
+      className={`${CARD} flex flex-col items-start text-left transition-all hover:shadow-sm active:scale-[0.98]`}
+      style={CARD_BORDER}
     >
-      <div
-        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
-        style={{ backgroundColor: "rgba(245, 238, 220, 0.14)" }}
-      >
-        <Icon className="h-[1.125rem] w-[1.125rem]" strokeWidth={1.8} style={{ color: "#F5EEDC" }} />
+      <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${iconClass}`}>
+        <Icon className="h-4 w-4" strokeWidth={1.9} />
       </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-[13px] font-semibold leading-tight" style={{ color: "#F5EEDC" }}>
-          {title}
-        </p>
-        <p className="mt-0.5 text-[11px] leading-snug" style={{ color: "rgba(245, 238, 220, 0.7)" }}>
-          {subtitle}
-        </p>
-      </div>
-      <span className="shrink-0 text-[13px] font-bold" style={{ color: "#F5EEDC" }}>
-        Explore →
-      </span>
-    </button>
+      <p className="mt-2 text-[12.5px] font-semibold leading-tight text-foreground">{title}</p>
+      <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{subtitle}</p>
+    </motion.button>
   );
 }
 
-/** Discover section — upcoming/explorable money moves, below the allocation card. */
-function DiscoverSection() {
+/** Shared section heading — icon, title, one line of what the section is for. */
+function SectionHeading({
+  icon: Icon,
+  iconColor,
+  title,
+  subtitle,
+}: {
+  icon: LucideIcon;
+  iconColor: string;
+  title: string;
+  subtitle: string;
+}) {
+  return (
+    <div className="mb-2">
+      <div className="flex items-center gap-1.5">
+        <Icon className="h-4 w-4" strokeWidth={2} style={{ color: iconColor }} />
+        <p className="text-[16.2px] font-semibold text-foreground">{title}</p>
+      </div>
+      <p className="mt-0.5 text-[11px] text-muted-foreground">{subtitle}</p>
+    </div>
+  );
+}
+
+/**
+ * Explore funds — the research toolkit: search any scheme, browse the universe,
+ * or compare funds head to head. Everything here answers "tell me about a fund".
+ *
+ * This section IS the entry point: search resolves in place and the two tiles go
+ * straight to their destinations, so there is no `/discovery` landing step in
+ * between (that page only re-offered these same three things).
+ */
+function ExploreFundsSection() {
   const navigate = useNavigate();
+  // Sector / thematic funds, each probed for a real fund count — a theme no AMC
+  // offers here simply doesn't appear.
+  const { groups: themeGroups } = useFundGroups("theme");
   return (
     <div className="pt-1">
-      <div className="mb-2">
-        <div className="flex items-center gap-1.5">
-          <Sparkles className="h-4 w-4 text-[#D4A868]" strokeWidth={2} />
-          <p className="text-[16.2px] font-semibold text-foreground">Discover</p>
-        </div>
-        <p className="mt-0.5 text-[11px] text-muted-foreground">Curated ways to grow your wealth</p>
+      <SectionHeading
+        icon={Sparkles}
+        iconColor="#D4A868"
+        title="Explore funds"
+        subtitle="Search, browse and compare any mutual fund"
+      />
+
+      {/* Search resolves in place — matches render right under the field, so
+          finding a fund from the dashboard costs no navigation. */}
+      <DiscoverFundSearch cardBorder={CARD_BORDER} />
+
+      {/* The two ways into the wider universe — half-width so they read as a
+          pair of tools rather than two more things to scroll past. */}
+      <div className="grid grid-cols-2 gap-2">
+        <DiscoverTile
+          icon={Layers}
+          title="All funds"
+          subtitle="The full universe, with search and filters"
+          iconClass="bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+          delay={0}
+          onClick={() => navigate("/discovery/mf")}
+        />
+        <DiscoverTile
+          icon={GitCompare}
+          title="Compare & rank"
+          subtitle="Overlay performance against Prozpr picks"
+          iconClass="bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300"
+          delay={0.06}
+          onClick={() => navigate("/discovery/compare")}
+        />
       </div>
 
-      <div className="space-y-2">
-        <DiscoverCard
-          icon={Compass}
-          title="Prozpr rated funds"
-          subtitle="Top funds, handpicked and rated"
-          onClick={() => navigate("/discovery")}
-        />
-        {/* Income + Arbitrage — plain card (not the premium gold treatment). */}
-        <button
-          type="button"
-          onClick={() => navigate("/income-arbitrage")}
-          className={`${CARD} flex w-full items-center gap-3 text-left transition-all hover:shadow-sm active:scale-[0.99]`}
-          style={CARD_BORDER}
-        >
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-muted/60">
-            <Coins className="h-[1.125rem] w-[1.125rem] text-muted-foreground" strokeWidth={1.8} />
+      {/* Browse by theme — the entry point for "I don't know what I want", as
+          worlds rather than filters. Eight fit two clean rows of four; the rest
+          are one tap away on the funds list. */}
+      {themeGroups.length > 0 && (
+        <div className="mt-4">
+          {/* Heading and the escape hatch share a row — a full-width button below
+              the circles read as a ninth theme rather than a way out. */}
+          <div className="mb-2.5 flex items-baseline justify-between gap-2">
+            <p className="text-[10.5px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+              Browse by theme
+            </p>
+            {themeGroups.length > 8 && (
+              <button
+                type="button"
+                onClick={() => navigate("/discovery/mf")}
+                className="shrink-0 text-[11px] font-semibold text-foreground transition-colors hover:text-muted-foreground"
+              >
+                All themes →
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-4 gap-x-2 gap-y-3">
+            {themeGroups.slice(0, 8).map((g, i) => (
+              <ThemeCircle key={g.key} group={g} index={i} onOpen={() => navigate(groupHref(g))} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Ideas for you — strategies Prozpr suggests, as opposed to funds you look up.
+ * Kept apart from Explore funds because they answer a different question: not
+ * "tell me about a fund" but "here's a move worth considering". The green
+ * treatment matches the Income + Arbitrage page itself, so the two sections
+ * don't read as one undifferentiated list of cards.
+ */
+function IdeasSection() {
+  const navigate = useNavigate();
+  const GREEN = "#2E9C7E";
+  return (
+    <div className="pt-4">
+      <SectionHeading
+        icon={Lightbulb}
+        iconColor={GREEN}
+        title="Ideas for you"
+        subtitle="Strategies worth a look, beyond your current plan"
+      />
+
+      <button
+        type="button"
+        onClick={() => navigate("/income-arbitrage")}
+        className="w-full rounded-[14px] p-[14px] text-left transition-all hover:shadow-sm active:scale-[0.99]"
+        style={{ backgroundColor: `${GREEN}0f`, border: `1px solid ${GREEN}59` }}
+      >
+        <div className="flex items-center gap-3">
+          <div
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
+            style={{ backgroundColor: `${GREEN}24`, color: GREEN }}
+          >
+            <Coins className="h-[1.125rem] w-[1.125rem]" strokeWidth={1.8} />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-[13px] font-semibold leading-tight text-foreground">Income + Arbitrage</p>
-            <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">Steady, tax-efficient returns</p>
+            <p className="text-[13px] font-semibold leading-tight text-foreground">
+              Income + Arbitrage
+            </p>
+            {/* The actual proposition, not "steady, tax-efficient returns" —
+                which said nothing a user could act on. */}
+            <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+              Debt-style returns, taxed like equity
+            </p>
           </div>
-          <span className="shrink-0 text-[13px] font-bold text-foreground">Explore →</span>
-        </button>
-      </div>
+          <span className="shrink-0 text-[13px] font-bold" style={{ color: GREEN }}>
+            Explore →
+          </span>
+        </div>
+        <div
+          className="mt-2.5 flex items-center gap-1.5 border-t pt-2.5"
+          style={{ borderColor: `${GREEN}33` }}
+        >
+          <span
+            className="rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums"
+            style={{ backgroundColor: `${GREEN}24`, color: GREEN }}
+          >
+            12.5%
+          </span>
+          <span className="text-[11px] leading-snug text-muted-foreground">
+            long-term tax rate, instead of your slab rate of up to ~30%
+          </span>
+        </div>
+      </button>
+    </div>
+  );
+}
+
+/** Both Discover sections — fund research first, then the curated ideas. */
+function DiscoverSection() {
+  return (
+    <div data-tour="discover">
+      <ExploreFundsSection />
+      <IdeasSection />
     </div>
   );
 }
@@ -575,6 +773,138 @@ const PortfolioDashboard = () => {
 
   const [insightsOpen, setInsightsOpen] = useState(false);
 
+  /* ── v2 · Pi insights on the page ──────────────────────────────────────
+     The verdicts, the value history and the chat prefill. All three feed the
+     sections below; see docs/portfolio-page-v2.md. */
+  const [insights, setInsights] = useState<PortfolioInsightsResponse | null>(null);
+  const [history, setHistory] = useState<PortfolioHistoryPoint[]>([]);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatPrefill, setChatPrefill] = useState<string | null>(null);
+  const [profileSheetOpen, setProfileSheetOpen] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    // A successful response always wins, even an empty one. The demo fallback
+    // is ONLY for a failed call, so the v2 sections stay reviewable with the
+    // backend down — see lib/portfolioDemoData.ts. Drop both `.catch` bodies
+    // to restore the honest hide-on-failure behaviour.
+    getPortfolioInsights()
+      .then((r) => !cancelled && setInsights(r))
+      .catch(() => !cancelled && setInsights(demoInsights(selfPortfolio)));
+    getPortfolioHistory(30)
+      .then((r) => !cancelled && setHistory(r))
+      .catch(() => !cancelled && setHistory(demoHistory(selfPortfolio?.total_value ?? 0)));
+    return () => { cancelled = true; };
+    // Re-runs once the portfolio lands, so the demo verdicts can attach to the
+    // funds actually on screen rather than to placeholder names.
+  }, [selfPortfolio]);
+
+  const verdicts = useMemo(() => indexVerdicts(insights), [insights]);
+  const action = useMemo(() => nextAction(insights), [insights]);
+
+  /** Open the chat sheet with a question already written into the composer. */
+  const askPi = useCallback((prompt: string) => {
+    setChatPrefill(prompt);
+    setChatOpen(true);
+  }, []);
+
+  /* First-run walkthrough of the six things this page shows. Held until the
+     portfolio has actually rendered — the tour spotlights real elements, and
+     none of them exist while the skeletons are up. The header's "?" replays it. */
+  const [tourOpen, setTourOpen] = useState(false);
+
+  const closeTour = useCallback(() => {
+    setTourOpen(false);
+    try {
+      localStorage.setItem(PORTFOLIO_TOUR_SEEN_KEY, "1");
+    } catch {
+      /* private mode */
+    }
+  }, []);
+
+  /* Only fire once, and only on the self view — it's the landing view, so a
+     first-run tour belongs there rather than ambushing someone who has
+     deliberately switched to a family member's portfolio. */
+  const tourChecked = useRef(false);
+  useEffect(() => {
+    if (tourChecked.current) return;
+    if (activeView.type !== "self") return;
+    if (!selfPortfolio || selfPortfolio.total_value <= 0) return;
+    tourChecked.current = true;
+    try {
+      if (localStorage.getItem(PORTFOLIO_TOUR_SEEN_KEY) !== "1") setTourOpen(true);
+    } catch {
+      /* private mode — just skip the tour rather than breaking the page */
+    }
+  }, [activeView.type, selfPortfolio]);
+
+  const tourSteps = useMemo<TourStep[]>(() => {
+    /* Several steps sit inside things the user has to open — the analysis modal
+       and the holdings drawer. Rather than lifting their state up through three
+       components, the tour clicks the real trigger, which is the same path a
+       user takes. Each is guarded on whether the content is already mounted, so
+       stepping backwards doesn't toggle it shut again.
+
+       NOTE: `portfolio-analysis` and `view-holdings` are no longer any step's
+       anchor, but they are still the buttons clicked below — don't remove those
+       data-tour attributes as "unused". */
+    const has = (name: string) => !!document.querySelector(`[data-tour="${name}"]`);
+    const click = (name: string) =>
+      document.querySelector<HTMLElement>(`[data-tour="${name}"]`)?.click();
+
+    const closeAnalysis = () => {
+      if (has("analysis-close")) click("analysis-close");
+    };
+    const openAnalysis = () => {
+      if (!has("analysis-tabs")) click("portfolio-analysis");
+    };
+    const openHoldings = () => {
+      closeAnalysis();
+      if (!has("holdings-list")) click("view-holdings");
+    };
+
+    return [
+      {
+        anchor: "portfolio-chart",
+        title: "How it got there",
+        body: "Your value over time, rebuilt from your CAMS statement. If it looks short, upload a newer statement from the chart itself.",
+        before: closeAnalysis,
+      },
+      {
+        // Opens the modal rather than pointing at the button that opens it —
+        // the panel itself is what the step is describing.
+        anchor: "analysis-panel",
+        title: "Portfolio analysis",
+        body: "This is what opens: the breakdown behind your total, charted over a range you choose. Where the money sits, what's working, and what's quietly dragging.",
+        before: openAnalysis,
+      },
+      {
+        anchor: "analysis-tabs",
+        title: "Two ways to read it",
+        body: "Performance shows what your money earned over the range you pick. Value Build-Up splits the same period into what you paid in versus what the market added — so a rising total is never mistaken for a gain.",
+        before: openAnalysis,
+      },
+      {
+        anchor: "allocation",
+        title: "Your current mix",
+        body: "Equity, debt and the rest as they stand now, next to what your risk profile and horizon call for. Gaps here are what rebalancing closes.",
+        before: closeAnalysis,
+      },
+      {
+        anchor: "holdings-list",
+        title: "Every fund you own",
+        body: "Grouped into Equity, Debt and Others, and rankable by Value, Invested or Total return — the quickest way to spot what's carrying the portfolio and what's lagging. Tap any fund for its full detail.",
+        before: openHoldings,
+      },
+      {
+        anchor: "discover",
+        title: "Where to go next",
+        body: "Two different things: Explore funds is research — search any scheme right here, browse the universe, or compare funds head to head. Ideas for you is what we suggest, like holding income + arbitrage funds for their lower tax rate.",
+        before: closeAnalysis,
+      },
+    ];
+  }, []);
+
   // The insights popup is scoped to ONE person's funds — the backend answers for
   // whoever `X-Family-Member-Id` points at. The combined family view has no such
   // person, so it gets no popup rather than one member's numbers mislabelled as
@@ -703,6 +1033,17 @@ const PortfolioDashboard = () => {
           )}
         </div>
         <div className="flex items-center gap-2">
+          {/* Replays the first-run walkthrough — it's shown once, and this is
+              the only way back to it. */}
+          <button
+            type="button"
+            onClick={() => setTourOpen(true)}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-muted/60 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            aria-label="Show the portfolio guide"
+            title="How this page works"
+          >
+            <HelpCircle className="h-4 w-4" />
+          </button>
           <a
             href="https://wa.me/919007016819"
             target="_blank"
@@ -740,10 +1081,16 @@ const PortfolioDashboard = () => {
                 timePeriod={timePeriod}
                 setTimePeriod={setTimePeriod}
                 sparkline={[cumulativeData.total_value / 100000]}
+                verdicts={verdicts}
+                history={history}
+                action={action}
+                onAskPi={askPi}
+                onEditProfile={() => setProfileSheetOpen(true)}
                 riskCategory={null}
                 horizonLabel="Combined family"
                 middleSlot={<CumulativeMemberBreakdownCard data={cumulativeData} />}
               />
+              {action && <NextActionCard action={action} onAskPi={askPi} />}
               <DiscoverSection />
               <EverydaySpendingSection />
               {/* Zoom team-call feature disabled for now */}
@@ -773,10 +1120,16 @@ const PortfolioDashboard = () => {
                 timePeriod={timePeriod}
                 setTimePeriod={setTimePeriod}
                 sparkline={[memberPortfolio.total_value / 100000]}
+                verdicts={verdicts}
+                history={history}
+                action={action}
+                onAskPi={askPi}
+                onEditProfile={() => setProfileSheetOpen(true)}
                 riskCategory={null}
                 horizonLabel={null}
                 onOpenInsights={() => setInsightsOpen(true)}
               />
+              {action && <NextActionCard action={action} onAskPi={askPi} />}
               <DiscoverSection />
               <EverydaySpendingSection />
               {/* Zoom team-call feature disabled for now */}
@@ -829,6 +1182,11 @@ const PortfolioDashboard = () => {
                 timePeriod={timePeriod}
                 setTimePeriod={setTimePeriod}
                 sparkline={selfSparkline}
+                verdicts={verdicts}
+                history={history}
+                action={action}
+                onAskPi={askPi}
+                onEditProfile={() => setProfileSheetOpen(true)}
                 riskCategory={selfProfile?.risk_profile?.risk_category ?? null}
                 horizonLabel={
                   selfProfile?.investment_profile?.total_horizon ??
@@ -840,6 +1198,7 @@ const PortfolioDashboard = () => {
                 onUploadCams={() => setCamsOpen(true)}
                 onOpenInsights={() => setInsightsOpen(true)}
               />
+              {action && <NextActionCard action={action} onAskPi={askPi} />}
               <DiscoverSection />
               <EverydaySpendingSection />
               <ProfileUnlockCircles />
@@ -877,6 +1236,28 @@ const PortfolioDashboard = () => {
         onClose={() => setInsightsOpen(false)}
         portfolio={insightsPortfolio}
       />
+
+      {/* First-run walkthrough — value, chart, analysis, insights, mix, discover. */}
+      {/* Chat, opened from an "Ask Pi" with the question pre-written. Mounted
+          here rather than navigating to /chat so the user keeps their place on
+          the page they were asking about. */}
+      {/* Risk and horizon — opened from the allocation card's stats row, so the
+          values stay where they have always been. */}
+      <RiskProfileSheet
+        open={profileSheetOpen}
+        onClose={() => setProfileSheetOpen(false)}
+        riskCategory={selfProfile?.risk_profile?.risk_category ?? null}
+        horizonLabel={selfProfile?.risk_profile?.investment_horizon ?? null}
+        onSaved={() => setSelfReloadKey((k) => k + 1)}
+      />
+
+      <AIChatSheet
+        isOpen={chatOpen}
+        onClose={() => setChatOpen(false)}
+        prefill={chatPrefill}
+      />
+
+      <GuidedTour steps={tourSteps} open={tourOpen} onClose={closeTour} />
 
       <BottomNav />
     </div>

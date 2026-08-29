@@ -22,6 +22,7 @@ import {
   GraduationCap,
   Heart,
   Home,
+  HelpCircle,
   Landmark,
   Loader2,
   PanelRightOpen,
@@ -72,6 +73,10 @@ import {
 } from "@/lib/projectionScenario";
 import CashflowGate from "@/components/goals/CashflowGate";
 import CashflowInputsForm from "@/components/goals/CashflowInputsForm";
+import GuidedTour, { type TourStep } from "@/components/GuidedTour";
+
+/** Marks the first-run goal-planning walkthrough as seen, per browser. */
+const GOAL_TOUR_SEEN_KEY = "goalPlanningTourSeen";
 
 type Priority = "Low" | "Medium" | "High";
 
@@ -141,15 +146,17 @@ interface Milestone {
   label: string;
 }
 
+/* A deliberately sparse ladder: 1Cr, then 5 / 10 / 20 / 50 / 100Cr. Each rung is
+   a real step up rather than an incremental one, so a gold badge stays rare
+   enough to feel earned — the previous ladder (3 / 5 / 7.5 / 10 / 15 / 20 / 25)
+   could light several rows on a single screen, which made the flash routine. */
 const MILESTONES: Milestone[] = [
-  { value: 3_00_00_000, label: "First ₹3Cr 🎯" },
-  { value: 5_00_00_000, label: "First ₹5Cr 🎯" },
-  { value: 7_50_00_000, label: "₹7.5Cr 🌟" },
+  { value: 1_00_00_000, label: "First ₹1Cr 🎯" },
+  { value: 5_00_00_000, label: "₹5Cr 🌟" },
   { value: 10_00_00_000, label: "₹10Cr club 🏆" },
-  { value: 15_00_00_000, label: "₹15Cr breakthrough 🌟" },
   { value: 20_00_00_000, label: "₹20Cr legend 👑" },
-  { value: 25_00_00_000, label: "₹25Cr royalty 👑" },
   { value: 50_00_00_000, label: "₹50Cr ✨" },
+  { value: 100_00_00_000, label: "₹100Cr 👑" },
 ];
 
 function mapApiPriority(p: string): Priority {
@@ -1076,7 +1083,7 @@ function ProjectionContent({
       </p>
       <div className="space-y-4">
                 {/* Assumed return — everything below recalculates as this moves. */}
-                <div>
+                <div data-tour="assumed-return">
                   <div className="mb-2 flex items-end justify-between gap-2">
                     <div className="min-w-0">
                       <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
@@ -1377,6 +1384,77 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   // Bumped after a save from the panel's inputs form so CashflowGate refetches
   // readiness (its prompt would otherwise keep claiming inputs are missing).
   const [gateRefresh, setGateRefresh] = useState(0);
+
+  /* First-run walkthrough of the four things that actually drive a plan. Shown
+     once per browser; the header's "?" replays it on demand. */
+  const [tourOpen, setTourOpen] = useState(false);
+
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(GOAL_TOUR_SEEN_KEY) !== "1") setTourOpen(true);
+    } catch {
+      /* private mode — just skip the tour rather than breaking the page */
+    }
+  }, []);
+
+  const closeTour = useCallback(() => {
+    setTourOpen(false);
+    try {
+      localStorage.setItem(GOAL_TOUR_SEEN_KEY, "1");
+    } catch {
+      /* private mode */
+    }
+  }, []);
+
+  /* Steps 3 and 4 live inside the plan panel, so each opens the panel on the
+     right tab before the tour measures its target. */
+  const tourSteps = useMemo<TourStep[]>(
+    () => [
+      {
+        anchor: "add-goal",
+        title: "Add a goal",
+        body: "Tap + to add one — name it, set the year, and enter the amount. You'll pick whether that amount is today's value (what it costs now, which Prozpr inflates to the target year) or future value (what you'll actually need by then, used as-is). Drag the goal later to move its year.",
+        before: () => setPanelOpen(false),
+      },
+      {
+        anchor: "plan-button",
+        title: "Open your plan",
+        body: "Plan holds the two halves of the projection: Inputs (income, expenses, savings) and the Projection those produce.",
+        before: () => setPanelOpen(false),
+      },
+      {
+        anchor: "plan-inputs",
+        title: "Your inputs",
+        body: "What you earn, spend and save each month. Nothing projects until these are filled in — every figure on the page is built from them.",
+        before: () => {
+          setPanelTab("inputs");
+          setPanelOpen(true);
+        },
+      },
+      {
+        anchor: "assumed-return",
+        title: "Assumed return",
+        body: "Drag to test a different post-tax return. Every figure below it recalculates as a preview — it only changes your plan once you apply it.",
+        before: () => {
+          setPanelTab("projection");
+          setPanelOpen(true);
+        },
+      },
+      {
+        anchor: "monthly-sip",
+        title: "Edit your monthly SIP",
+        body: "Type a different monthly amount to see it play out on the timeline straight away. Apply to plan makes it real; the reset arrow puts it back to your plan's SIP.",
+        before: () => setPanelOpen(false),
+      },
+      {
+        anchor: "priority-filter",
+        title: "Goal priority",
+        body: "Toggle High, Medium and Low to drop goals in and out of the projection — a quick way to see what's affordable if the lower-priority ones wait.",
+        before: () => setPanelOpen(false),
+      },
+    ],
+    [],
+  );
 
   // Birth year (from DOB) + retirement age drive where the timeline ends.
   const [birthYear, setBirthYear] = useState<number | null>(null);
@@ -2028,8 +2106,20 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
               <Download className="h-3.5 w-3.5" />
             </button>
             {/* Open the right-side panel holding the cashflow inputs + projection. */}
+            {/* Replays the first-run walkthrough — it's shown once, and this is
+                the only way back to it. */}
             <button
               type="button"
+              onClick={() => setTourOpen(true)}
+              className="shrink-0 inline-flex h-8 w-8 items-center justify-center rounded-full border border-border bg-card text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+              aria-label="Show the goal planning guide"
+              title="How this page works"
+            >
+              <HelpCircle className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              data-tour="plan-button"
               onClick={() => {
                 setPanelTab("inputs");
                 setPanelOpen(true);
@@ -2079,7 +2169,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
           className="sticky z-30 -mx-5 bg-background px-5 pb-1 pt-1"
           style={{ top: "64px" }}
         >
-          <div className="rounded-xl border border-border bg-card px-3 py-2">
+          <div className="rounded-xl border border-border bg-card px-3 py-2" data-tour="monthly-sip">
           <div className="flex items-center gap-2">
           <p className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
             Monthly SIP
@@ -2172,9 +2262,9 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
         </div>
 
         {/* Priority filter — toggle which goals feed the projection */}
-        <div className="flex items-center gap-2 px-1">
+        <div className="flex items-center gap-2 px-1" data-tour="priority-filter">
           <span className="text-[11px] uppercase tracking-wide text-muted-foreground shrink-0">
-            Show
+            Goal priority
           </span>
           <div className="flex flex-wrap gap-1.5">
             {PRIORITIES.map((p) => {
@@ -2913,6 +3003,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                     onApplyRate={applyRate}
                   />
                 ) : (
+                  <div data-tour="plan-inputs">
                   <CashflowInputsForm
                     retirementGoalYear={retirementGoalYear}
                     onSaved={(ready) => {
@@ -2935,6 +3026,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                       if (ready) setPanelOpen(false);
                     }}
                   />
+                  </div>
                 )}
               </div>
             </motion.div>
@@ -2950,6 +3042,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
         <div className="flex justify-end px-5">
           <button
             type="button"
+            data-tour="add-goal"
             onClick={() => setAddYear(currentYear + 5)}
             className="pointer-events-auto inline-flex h-12 w-12 items-center justify-center rounded-full transition-transform hover:scale-105 active:scale-95"
             style={{
@@ -2971,6 +3064,10 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
           present it loads the real projection. Every "open the inputs" request
           (prompt CTA, ?inputs=1 auto-open) lands on the side panel's Inputs tab.
           Remounts via gateRefresh after a save so its readiness stays fresh. */}
+      {/* First-run walkthrough — spotlights the timeline, +, Plan and the
+          assumed-return slider, opening the panel where a step needs it. */}
+      <GuidedTour steps={tourSteps} open={tourOpen} onClose={closeTour} />
+
       <CashflowGate
         key={gateRefresh}
         onReady={fetchCashflow}

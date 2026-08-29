@@ -2,8 +2,15 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronDown, ChevronRight } from "lucide-react";
-import type { PortfolioDetail } from "@/lib/api";
+import { ChevronDown, ChevronRight, Pencil, Sparkles } from "lucide-react";
+import type { InsightFundRow, PortfolioDetail } from "@/lib/api";
+import {
+  VERDICT_COLOR,
+  VERDICT_LABEL,
+  reasonFor,
+  verdictFor,
+  type Verdict,
+} from "@/lib/portfolioVerdicts";
 
 // Holdings group by the backend's asset_class (Equity / Debt / Others) — produced by
 // scheme_classification.py and returned per holding by GET /portfolio/. The frontend
@@ -186,9 +193,22 @@ interface CurrentAllocationCardProps {
   portfolio: PortfolioDetail | null;
   riskCategory: string | null;
   horizonLabel: string | null;
+  /** Prozpr's read per fund, keyed by every id a holding might carry. */
+  verdicts?: Map<string, InsightFundRow>;
+  /** Opens the chat sheet with a question about this holding pre-written. */
+  onAskPi?: (prompt: string) => void;
+  /** Opens the risk / horizon editor. Those two stats become tappable when set. */
+  onEditProfile?: () => void;
 }
 
-const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: CurrentAllocationCardProps) => {
+const CurrentAllocationCard = ({
+  portfolio,
+  riskCategory,
+  horizonLabel,
+  verdicts,
+  onAskPi,
+  onEditProfile,
+}: CurrentAllocationCardProps) => {
   const [holdingsOpen, setHoldingsOpen] = useState(false);
   const [expandedHolding, setExpandedHolding] = useState<string | null>(null);
   // Donut slice the user tapped — swaps the right-hand legend for that bucket's
@@ -324,10 +344,12 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
           ? String(portfolio.allocations.length)
           : String(holdingsRows.length);
 
+  // The last two are the user's own answers, so they are editable; Holdings is
+  // derived and is not.
   const stats = [
-    { label: "Holdings", value: holdingsCountLabel },
-    { label: "Risk Profile", value: riskCategory ?? "—" },
-    { label: "Horizon", value: horizonLabel ?? "—" },
+    { label: "Holdings", value: holdingsCountLabel, editable: false },
+    { label: "Risk Profile", value: riskCategory ?? "—", editable: true },
+    { label: "Horizon", value: horizonLabel ?? "—", editable: true },
   ];
 
   // Rank value per holding for the selected metric.
@@ -495,21 +517,42 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
 
       {/* Meta strip */}
       <div className="flex items-center mt-3 pt-2.5">
-        {stats.map((stat, i) => (
-          <div
-            key={stat.label}
-            className={`flex-1 text-center ${i < stats.length - 1 ? "border-r border-border/30" : ""}`}
-          >
-            <p className="text-[11px] text-muted-foreground uppercase tracking-wide">{stat.label}</p>
-            <p className="text-sm font-bold text-foreground truncate px-0.5">{stat.value}</p>
-          </div>
-        ))}
+        {stats.map((stat, i) => {
+          const clickable = stat.editable && !!onEditProfile;
+          const Cell = clickable ? "button" : "div";
+          return (
+            <Cell
+              key={stat.label}
+              {...(clickable
+                ? {
+                    type: "button" as const,
+                    onClick: onEditProfile,
+                    "aria-label": `Change ${stat.label}`,
+                  }
+                : {})}
+              className={`flex-1 text-center ${
+                i < stats.length - 1 ? "border-r border-border/30" : ""
+              } ${clickable ? "cursor-pointer rounded-lg transition-colors hover:bg-muted/40" : ""}`}
+            >
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                {stat.label}
+              </p>
+              <p className="flex items-center justify-center gap-1 truncate px-0.5 text-sm font-bold text-foreground">
+                {stat.value}
+                {clickable && (
+                  <Pencil className="h-2.5 w-2.5 shrink-0 text-muted-foreground/60" />
+                )}
+              </p>
+            </Cell>
+          );
+        })}
       </div>
 
       {/* View holdings toggle — subtly lifted surface (bg-card + soft shadow, no border). */}
       <div className="mt-2 pt-2" style={{ borderTop: "1px solid hsl(var(--hairline))" }}>
         <button
           type="button"
+          data-tour="view-holdings"
           onClick={() => setHoldingsOpen((o) => !o)}
           className="block w-full cursor-pointer rounded-xl bg-card px-4 py-2.5 text-center text-[13px] font-semibold text-foreground shadow-sm transition-all hover:shadow-md active:scale-[0.99]"
         >
@@ -527,7 +570,7 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
             transition={{ duration: 0.25, ease: "easeInOut" }}
             className="overflow-hidden"
           >
-            <div className="pt-3 space-y-2">
+            <div className="pt-3 space-y-2" data-tour="holdings-list">
               {/* Rank holdings within each bucket by the chosen metric. */}
               <div className="flex items-center gap-1.5 px-1">
                 <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -656,6 +699,30 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                       />
                       <div className="flex-1 min-w-0">
                         <p className="text-[13.2px] font-medium text-foreground">{plainFundDisplayName(row.name)}</p>
+                        {/* Prozpr's own read on this fund — computed already, and
+                            until now only reachable by opening a modal. */}
+                        {(() => {
+                          const v = verdicts
+                            ? verdictFor(verdicts, {
+                                id: row.id,
+                                ticker_symbol: row.schemeCode,
+                                instrument_name: row.name,
+                              })
+                            : null;
+                          const reason = v ? reasonFor(v) : null;
+                          if (!v || !reason) return null;
+                          const tone = VERDICT_COLOR[v.verdict as Verdict];
+                          return (
+                            <p className="mt-1 flex items-start gap-1.5 text-[11px] leading-snug text-muted-foreground">
+                              <span
+                                className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full"
+                                style={{ backgroundColor: tone }}
+                                title={VERDICT_LABEL[v.verdict as Verdict]}
+                              />
+                              <span className="min-w-0">{reason}</span>
+                            </p>
+                          );
+                        })()}
                         {row.schemeCode ? (
                           <Link
                             to={`/portfolio/fund/${encodeURIComponent(row.schemeCode)}`}
@@ -699,6 +766,22 @@ const CurrentAllocationCard = ({ portfolio, riskCategory, horizonLabel }: Curren
                             className="ml-3 pt-2 pb-2.5 pr-1"
                             style={{ borderTop: `1px solid ${HAIRLINE}` }}
                           >
+                            {onAskPi && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onAskPi(
+                                    `Tell me about ${plainFundDisplayName(row.name)} in my portfolio — is it worth holding?`,
+                                  );
+                                }}
+                                className="mb-2.5 inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-[11px] font-semibold text-primary transition-colors hover:bg-muted/50"
+                              >
+                                <Sparkles className="h-3 w-3" />
+                                Ask Pi about this fund
+                              </button>
+                            )}
+
                             {/* Holdings detail (2-col) */}
                             <div
                               className="grid grid-cols-2"

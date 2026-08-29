@@ -1,7 +1,7 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, Check, CheckCircle2, Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { ArrowRight, Check, CheckCircle2, HelpCircle, Info, Loader2, RefreshCw, Sparkles, X } from "lucide-react";
 import BottomNav from "@/components/BottomNav";
 import { CurrentVsTargetChart } from "@/components/invest/CurrentVsTargetChart";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -90,17 +90,139 @@ type UITrade = {
 const BUY_GREEN = "#2E9C7E";
 const TRADE_ORANGE = "#E0772F";
 
-const REASON_GROUPS: { codes: string[]; label: string; color?: string }[] = [
-  { codes: ["exit_low_rated"], label: "Underperformance", color: TRADE_ORANGE },
+/* `blurb` explains the rule behind the whole group, so the per-trade rationale
+   underneath doesn't have to restate it on every row; `detail` is the long-form
+   version behind the heading's info button — why that's a BUY / SELL / HOLD and
+   how the number was chosen. Both are kept in step with the engine rules on
+   /invest/how-it-works — if one changes, change both. */
+type ReasonDetail = {
+  /** The action every row in the group carries. */
+  action: "BUY" | "SELL" | "HOLD";
+  /** What puts a fund in this group in the first place. */
+  trigger: string;
+  /** Why that condition is worth acting on. */
+  why: string;
+  /** How the rupee figure on each row is arrived at. */
+  sizing: string;
+  /** The guard-rail — what the engine deliberately won't do here. */
+  guardrail: string;
+};
+
+const REASON_GROUPS: {
+  codes: string[];
+  label: string;
+  color?: string;
+  blurb: string;
+  detail: ReasonDetail;
+}[] = [
+  {
+    codes: ["exit_low_rated"],
+    label: "Underperformance",
+    color: TRADE_ORANGE,
+    blurb:
+      "These have slipped below our quality bar. A fund that no longer meets the standard is exited in full rather than trimmed — size isn't the issue, quality is.",
+    detail: {
+      action: "SELL",
+      trigger:
+        "The fund has dropped below the quality bar every holding is measured against — long-run risk-adjusted returns, consistency against its own category, and the fund house behind it. It takes a sustained slide to land here, not one weak quarter.",
+      why:
+        "Holding a fund we would no longer recommend costs you either way: you pay tax to leave, or you pay in returns to stay. Once quality is the problem, leaving is the cheaper of the two.",
+      sizing:
+        "The entire position, whatever it is worth. Size isn't what put it here, so trimming wouldn't fix anything.",
+      guardrail:
+        "This is the one rule that overrides leaving small drifts alone and waiting for long-term units, so a sale here can carry short-term tax. Tax-locked holdings such as ELSS still in lock-in are shown but never sold.",
+    },
+  },
   {
     codes: ["exit_bad_fund", "migrate_neutral_to_recommended"],
     label: "Not on recommended list",
     color: TRADE_ORANGE,
+    blurb:
+      "These aren't funds we'd choose today. Where the gap is real we move the money to a current pick; anything only a shade behind is left alone rather than switched for the sake of it.",
+    detail: {
+      action: "SELL",
+      trigger:
+        "The fund isn't one we would pick for you today — either it falls short on its own, or a fund we do recommend in the same category is meaningfully ahead of it.",
+      why:
+        "You're carrying a fund's fees and its manager's decisions without a current case for holding it. Moving the money buys the same market exposure from a manager we would back today.",
+      sizing:
+        "An outright exit sells the whole position; a migration moves it across to the recommended fund, so you'll usually see a matching BUY in the same asset class on this plan.",
+      guardrail:
+        "A fund only a shade behind our top pick is left alone. We don't churn a decent fund you already hold for a marginally better one and hand you the tax bill for it.",
+    },
   },
-  { codes: ["sell_excess_direct_stocks"], label: "Reduce single-stock risk", color: TRADE_ORANGE },
-  { codes: ["trim_over_target"], label: "Trim back to target", color: TRADE_ORANGE },
-  { codes: ["cap_spill_buy"], label: "Diversifying allocation", color: BUY_GREEN },
-  { codes: ["add_to_target"], label: "Top up to target", color: BUY_GREEN },
+  {
+    codes: ["sell_excess_direct_stocks"],
+    label: "Reduce single-stock risk",
+    color: TRADE_ORANGE,
+    blurb:
+      "Direct equity here is a large enough slice that one company's bad year would move your whole portfolio. We trim it back to a weight where no single stock can do that.",
+    detail: {
+      action: "SELL",
+      trigger:
+        "Shares held directly add up to a larger share of your portfolio than any single company's fortunes should be allowed to decide.",
+      why:
+        "Inside a fund, one company going wrong is diluted across dozens of holdings. Held directly, it lands on your portfolio at full weight — and a goal with a date on it can't wait out that kind of hit.",
+      sizing:
+        "Only the amount above the limit. The rest of the position stays exactly where it is.",
+      guardrail:
+        "We trim to the limit, not to zero — this is about concentration, not a view on the company. Routine trims like this only touch units held long enough to qualify for the lower long-term tax rate.",
+    },
+  },
+  {
+    codes: ["trim_over_target"],
+    label: "Trim back to target",
+    color: TRADE_ORANGE,
+    blurb:
+      "These have grown past the weight your plan calls for — usually because they did well. Only the excess is sold, and only units held long enough to qualify for the lower long-term tax rate.",
+    detail: {
+      action: "SELL",
+      trigger:
+        "The fund has grown past the weight your plan calls for, by enough to matter. Usually that's a good problem — it ran ahead of everything else you hold.",
+      why:
+        "A winner left unchecked quietly turns into your biggest risk: the mix you signed up for drifts into a more aggressive one without you choosing it. Selling the excess locks in part of that run and funds the buys above.",
+      sizing:
+        "Only the amount above target — never the whole holding. We sell no more than the purchases actually need, taking whichever units cost the least tax first.",
+      guardrail:
+        "Routine trims only touch units held long enough to qualify for the lower long-term rate; short-term tax is never triggered just to tidy up. And if the plan would sell one fund only to buy a near-identical one, both sides are cancelled — that swap changes nothing you own but the tax is real.",
+    },
+  },
+  {
+    codes: ["cap_spill_buy"],
+    label: "Diversifying allocation",
+    color: BUY_GREEN,
+    blurb:
+      "Buying the full amount in one fund would have pushed it past its concentration limit, so the remainder spreads across others in the same asset class — same exposure, more than one manager.",
+    detail: {
+      action: "BUY",
+      trigger:
+        "This asset class needs more money than any one fund should hold, so the top-ranked pick filled up to its cap and the remainder spilled to the next fund down the list.",
+      why:
+        "The exposure you end up with is the same either way. What changes is that no single fund manager is responsible for all of it — which is why one category sometimes shows up as two buys.",
+      sizing:
+        "Whatever was left over once the higher-ranked fund reached its concentration cap.",
+      guardrail:
+        "The cap applies to money going in. If you're already above it in a good fund, we don't force a sale to correct it — future purchases simply go elsewhere until the balance evens out.",
+    },
+  },
+  {
+    codes: ["add_to_target"],
+    label: "Top up to target",
+    color: BUY_GREEN,
+    blurb:
+      "These sit below the weight your plan calls for. New money goes here first, so the gap closes without selling anything you already hold.",
+    detail: {
+      action: "BUY",
+      trigger:
+        "The asset class sits below the weight your goals and their time horizons call for, by more than a rounding-level drift.",
+      why:
+        "Buying closes the gap without touching anything you already own, so nothing is realised and no tax is triggered. It's the cheapest way back to plan, which is why money is aimed here first.",
+      sizing:
+        "The distance between where the class is today and where the plan wants it, spread across the recommended funds in that class and rounded to a clean amount.",
+      guardrail:
+        "Purchases never exceed the cash the sales actually raise — if they'd fall short, the buys are scaled down to match. Gaps too small to matter are left alone rather than traded.",
+    },
+  },
 ];
 
 const fmtINR = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
@@ -221,23 +343,33 @@ function mapTrade(t: RebalancingTrade): UITrade {
   };
 }
 
+/** A rendered heading plus its trades. `blurb` / `detail` are absent for
+    unmapped reason codes — there's no vetted explanation for a code we don't
+    know about, and a guessed one would be worse than none. A group without a
+    `detail` simply shows no info button. */
+type TradeGroup = {
+  label: string;
+  color?: string;
+  blurb?: string;
+  detail?: ReasonDetail;
+  trades: UITrade[];
+};
+
 /** Group trades by reason heading, in REASON_GROUPS order; any unmapped
     reason_code becomes its own group keyed by the trade's reason_title. */
-function groupTradesByReason(
-  trades: UITrade[],
-): { label: string; color?: string; trades: UITrade[] }[] {
+function groupTradesByReason(trades: UITrade[]): TradeGroup[] {
   const byCode = new Map<string, UITrade[]>();
   for (const t of trades) {
     const arr = byCode.get(t.reasonCode);
     if (arr) arr.push(t);
     else byCode.set(t.reasonCode, [t]);
   }
-  const out: { label: string; color?: string; trades: UITrade[] }[] = [];
+  const out: TradeGroup[] = [];
   const seen = new Set<string>();
-  for (const { codes, label, color } of REASON_GROUPS) {
+  for (const { codes, label, color, blurb, detail } of REASON_GROUPS) {
     const groupTrades = codes.flatMap((c) => byCode.get(c) ?? []);
     codes.forEach((c) => seen.add(c));
-    if (groupTrades.length) out.push({ label, color, trades: groupTrades });
+    if (groupTrades.length) out.push({ label, color, blurb, detail, trades: groupTrades });
   }
   // Unknown codes — keep them visible under their reason_title.
   for (const [code, arr] of byCode) {
@@ -250,6 +382,28 @@ function groupTradesByReason(
   out.sort((a, b) => Number(isBuyGroup(b)) - Number(isBuyGroup(a)));
   return out;
 }
+
+/** The real group's copy for a label, so the example plan explains its sample
+    rows with exactly the same words the real plan uses. */
+function reasonCopy(label: string): Pick<TradeGroup, "blurb" | "detail"> {
+  const g = REASON_GROUPS.find((r) => r.label === label);
+  return { blurb: g?.blurb, detail: g?.detail };
+}
+
+/** Why a holding is left alone — the HOLD case, behind the info button on the
+    "Funds you're keeping" heading. Not a reason_code: nothing is traded, so the
+    engine emits no row for it, but it's the third answer users look for. */
+const KEEP_DETAIL: ReasonDetail = {
+  action: "HOLD",
+  trigger:
+    "You already hold it, it clears our quality bar, and its weight is close enough to target that trading it would cost more than the drift does.",
+  why:
+    "A fund you already own that we'd still recommend is left where it is. Selling it to buy something marginally better realises tax today for a difference that may not survive the year — so doing nothing is the decision, not the absence of one.",
+  sizing:
+    "No trade at all, so no tax, no exit load and no time out of the market. Future SIPs and top-ups adjust the weight instead.",
+  guardrail:
+    "The Ahead / Neutral tag is return since you bought — it explains how the holding has done, not why it's kept. A fund that fails on quality moves to the sell list above however well it has performed, and tax-locked holdings such as ELSS in lock-in stay here because they can't be sold yet.",
+};
 
 /** Total invested (cost basis): per-unit avg × qty, else avg treated as aggregate. */
 function costBasisOf(quantity: number | null, averageCost: number | null): number | null {
@@ -358,10 +512,11 @@ const EXAMPLE_DRIFT_ROWS: DriftRow[] = [
   },
 ];
 
-const EXAMPLE_TRADE_GROUPS: { label: string; color?: string; trades: UITrade[] }[] = [
+const EXAMPLE_TRADE_GROUPS: TradeGroup[] = [
   {
     label: "Top up to target",
     color: BUY_GREEN,
+    ...reasonCopy("Top up to target"),
     trades: [
       {
         id: "example-buy-1",
@@ -380,6 +535,7 @@ const EXAMPLE_TRADE_GROUPS: { label: string; color?: string; trades: UITrade[] }
   {
     label: "Trim back to target",
     color: TRADE_ORANGE,
+    ...reasonCopy("Trim back to target"),
     trades: [
       {
         id: "example-sell-1",
@@ -438,6 +594,110 @@ const EXAMPLE_SUMMARY: HeadlineCopy = {
     "Reducing your equity weightage by 7% — Prozpr picked the lowest-tax units (₹12,400 est.).",
 };
 
+/** The info button beside a section heading — opens that section's long-form
+    reasoning. Sized to sit on a heading row without stretching it. */
+const InfoButton = ({ label, onClick }: { label: string; onClick: () => void }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    aria-label={`Why these are recommended — ${label}`}
+    title="Why these are recommended"
+    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+  >
+    <Info className="h-3.5 w-3.5" />
+  </button>
+);
+
+/** What one info button opens: the heading it belongs to, its accent, and the
+    reasoning to render. */
+type ReasonInfo = { label: string; color?: string; detail: ReasonDetail };
+
+/** Bottom sheet behind an info button — the full "why this action" for a
+    section: what puts a fund there, why that's the right call, how the amount
+    was set, and the guard-rail. */
+const ReasonInfoSheet = ({ info, onClose }: { info: ReasonInfo | null; onClose: () => void }) => {
+  // Escape closes it, matching the tap-outside affordance.
+  useEffect(() => {
+    if (!info) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [info, onClose]);
+
+  const tone = info?.color ?? "hsl(var(--muted-foreground))";
+  const sections = info
+    ? [
+        { label: "What puts a fund here", text: info.detail.trigger },
+        { label: `Why that's a ${info.detail.action}`, text: info.detail.why },
+        { label: "How the amount is set", text: info.detail.sizing },
+        { label: "What we won't do", text: info.detail.guardrail },
+      ]
+    : [];
+
+  return (
+    <AnimatePresence>
+      {info && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[70] bg-black/45 backdrop-blur-sm"
+            onClick={onClose}
+          />
+          <motion.div
+            initial={{ y: "100%" }}
+            animate={{ y: 0 }}
+            exit={{ y: "100%" }}
+            transition={{ type: "spring", damping: 28, stiffness: 300 }}
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Why these are recommended — ${info.label}`}
+            className="fixed bottom-0 left-0 right-0 z-[70] max-h-[85vh] overflow-auto rounded-t-2xl border-t border-border bg-card shadow-2xl pb-safe"
+          >
+            <div className="flex justify-center pt-3 pb-1">
+              <div className="h-1 w-10 rounded-full bg-muted-foreground/20" />
+            </div>
+            <div className="flex items-start gap-2 px-5 pt-2 pb-3">
+              <div className="min-w-0 flex-1">
+                <span
+                  className="inline-block rounded-md px-1.5 py-0.5 text-[10px] font-bold tracking-wide"
+                  style={{ backgroundColor: `${tone}1f`, color: tone }}
+                >
+                  {info.detail.action}
+                </span>
+                <h2 className="mt-1.5 text-[15px] font-semibold leading-tight text-foreground">
+                  {info.label}
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close"
+                className="-mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-3.5 px-5 pb-6">
+              {sections.map((sec) => (
+                <div key={sec.label}>
+                  <p className="text-[10.5px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+                    {sec.label}
+                  </p>
+                  <p className="mt-1 text-[12.5px] leading-relaxed text-foreground/90">{sec.text}</p>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+};
+
 const RebalanceExplanation = () => {
   const navigate = useNavigate();
   const [detail, setDetail] = useState<RebalancingRunDetail | null>(null);
@@ -455,6 +715,9 @@ const RebalanceExplanation = () => {
   // Bumped to open the gate's inputs form on demand (e.g. from the example plan's
   // CTA) — so the user can add their details even after dismissing the prompt.
   const [gateEditSignal, setGateEditSignal] = useState(0);
+  // The section whose info button was tapped; null = sheet closed.
+  const [reasonInfo, setReasonInfo] = useState<ReasonInfo | null>(null);
+  const closeReasonInfo = useCallback(() => setReasonInfo(null), []);
 
   // Open the full fund-detail page (same screen as a portfolio holding), passing
   // the trade's rationale so it can render a "Why this trade" card on top. The
@@ -701,11 +964,22 @@ const RebalanceExplanation = () => {
                   Example
                 </span>
               )}
+              {/* Explainer for the eight engine rules behind this plan. Always
+                  available — the example plan raises the same questions. */}
+              <button
+                type="button"
+                onClick={() => navigate("/invest/how-it-works")}
+                className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+                aria-label="How rebalancing works"
+                title="How rebalancing works"
+              >
+                <HelpCircle className="h-4 w-4" />
+              </button>
               {!isExample && detail && (
                 <button
                   type="button"
                   onClick={() => void compute()}
-                  className="ml-auto flex items-center gap-1 rounded-full border border-border px-3 py-1.5 text-[11.5px] font-semibold text-foreground transition-colors hover:bg-muted/50"
+                  className="flex shrink-0 items-center gap-1 rounded-full border border-border px-2.5 py-1.5 text-[11.5px] font-semibold text-foreground transition-colors hover:bg-muted/50"
                 >
                   <RefreshCw className="h-3.5 w-3.5" />
                   Recalculate
@@ -787,7 +1061,7 @@ const RebalanceExplanation = () => {
                 </p>
               ) : (
                 <div className="mt-3 space-y-5">
-                  {tradeGroupsToShow.map(({ label, color, trades }) => (
+                  {tradeGroupsToShow.map(({ label, color, blurb, detail, trades }) => (
                       <div key={label}>
                         {/* Headings are neutral by default; a flagged group (e.g.
                             "Not on recommended list") gets a crisp accent so it
@@ -810,7 +1084,22 @@ const RebalanceExplanation = () => {
                             {trades.length}
                           </span>
                           <div className="h-px flex-1" style={{ backgroundColor: color ? `${color}55` : "hsl(var(--border))" }} />
+                          {/* Long-form reasoning for this heading. Groups from an
+                              unmapped reason_code have none, so no button. */}
+                          {detail && (
+                            <InfoButton
+                              label={label}
+                              onClick={() => setReasonInfo({ label, color, detail })}
+                            />
+                          )}
                         </div>
+                        {/* Why this whole group exists — saves every row below
+                            from repeating the same rule. */}
+                        {blurb && (
+                          <p className="-mt-0.5 pb-2.5 text-[11.5px] leading-snug text-muted-foreground">
+                            {blurb}
+                          </p>
+                        )}
                         <div className="space-y-1.5">
                           {trades.map((trade) => {
                             const isSell = trade.type === "SELL";
@@ -848,9 +1137,17 @@ const RebalanceExplanation = () => {
                 tagged performing-well / neutral, with the same fund details. */}
             {keptFundsToShow.length > 0 && (
               <section className="px-4 py-4" style={cardStyle}>
-                <p className="text-[11px] tracking-[0.16em] uppercase" style={{ color: "hsl(var(--muted-foreground))" }}>
-                  Funds you're keeping
-                </p>
+                <div className="flex items-center gap-1.5">
+                  <p className="text-[11px] tracking-[0.16em] uppercase" style={{ color: "hsl(var(--muted-foreground))" }}>
+                    Funds you're keeping
+                  </p>
+                  <InfoButton
+                    label="Funds you're keeping"
+                    onClick={() =>
+                      setReasonInfo({ label: "Funds you're keeping", detail: KEEP_DETAIL })
+                    }
+                  />
+                </div>
                 <p className="mt-1 text-[11.5px] leading-snug text-muted-foreground">
                   Ahead or neutral — staying in your portfolio, not part of these trades.
                 </p>
@@ -993,6 +1290,9 @@ const RebalanceExplanation = () => {
           </>
         )}
       </AnimatePresence>
+
+      {/* Why a section recommends what it does — opened by its info button. */}
+      <ReasonInfoSheet info={reasonInfo} onClose={closeReasonInfo} />
 
       <BottomNav />
     </div>

@@ -480,7 +480,7 @@ const VoiceProfileInterview = ({
                 <Mic className="h-4 w-4" strokeWidth={2} style={{ color: GOLD }} />
               </div>
               <div className="min-w-0 flex-1">
-                <h2 className="text-base font-semibold text-foreground">Set up by voice</h2>
+                <h2 className="text-base font-semibold text-foreground">Voice onboarding</h2>
                 <p className="text-[11px] text-muted-foreground">
                   {totalAnswered === 0
                     ? "Answer in any order — every answer saves on its own"
