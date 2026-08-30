@@ -23,7 +23,9 @@ import {
   inferAccountLinkingComplete,
   shouldSkipPostSetupChatPrompts,
   saveRebalancingRun,
+  getCurrentRebalancingRun,
   type ChatSessionInfo,
+  type ChatMessageInfo,
   type PortfolioDetail,
   type UserInfo,
   type FullProfileResponse,
@@ -1038,6 +1040,33 @@ const AIChatPanel = ({
       setSavingRunId(null);
     }
   }, []);
+
+  // On returning to chat, history rehydrates without the pill flags. Re-derive
+  // them from the backend's current run so "View plan" / "Save plan" persist —
+  // attached to the last rebalancing turn (fallback: last assistant message),
+  // and reflecting whether that run is already saved.
+  const rehydrateRebalancingPill = useCallback(async (history: ChatMessageInfo[]) => {
+    const current = await getCurrentRebalancingRun().catch(() => null);
+    if (!current) return;
+    let idx = -1;
+    for (let i = history.length - 1; i >= 0; i--) {
+      if (history[i].role === "assistant" && history[i].intent === "rebalancing") { idx = i; break; }
+    }
+    if (idx === -1) {
+      for (let i = history.length - 1; i >= 0; i--) {
+        if (history[i].role === "assistant") { idx = i; break; }
+      }
+    }
+    if (idx === -1) return;
+    setMessages((prev) =>
+      prev.map((m, i) =>
+        i === idx ? { ...m, showViewExecutePlan: true, rebalancingRunId: current.id } : m,
+      ),
+    );
+    if (current.origin === "saved") {
+      setSavedRunIds((prev) => new Set(prev).add(current.id));
+    }
+  }, []);
   // Session whose live "thinking aloud" feed we poll while a reply is pending.
   const [thinkingSessionId, setThinkingSessionId] = useState<string | null>(null);
   const [micState, setMicState] = useState<MicState>("idle");
@@ -1198,6 +1227,7 @@ const AIChatPanel = ({
           chartPayloads: m.chart_payloads || null,
         })),
       );
+      void rehydrateRebalancingPill(session.messages);
       setChatStartTime(formatTimestamp(new Date(session.created_at)));
       setShowFirstUseHint(false);
       setOnboardingActive(false);
@@ -1327,6 +1357,7 @@ const AIChatPanel = ({
               chartPayloads: m.chart_payloads || null,
             })),
           );
+          void rehydrateRebalancingPill(session.messages);
           // Stamp the header with when this session actually started, not "now"
           // (mirrors handleSelectSession). An empty session keeps the current time.
           setChatStartTime(formatTimestamp(new Date(session.created_at)));
@@ -1935,53 +1966,59 @@ const AIChatPanel = ({
                   </div>
                 </button>
               ) : null}
-              {msg.showViewExecutePlan ? (
-                <button
-                  type="button"
-                  onClick={() => navigate("/invest/rebalance-explanation")}
-                  className="ml-7 mt-2 self-start flex items-center gap-3 rounded-xl px-4 py-3 transition-opacity hover:opacity-90 border border-primary/25 bg-primary/5"
-                >
-                  <div className="flex flex-col text-left">
-                    <span className="text-[11px] font-medium text-muted-foreground">Rebalancing plan ready</span>
-                    <span className="text-[13px] font-semibold text-foreground">View recommended plan</span>
-                  </div>
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/15">
-                    <ArrowRight className="h-4 w-4 text-primary" />
-                  </div>
-                </button>
-              ) : null}
-              {msg.rebalancingRunId ? (
-                <button
-                  type="button"
-                  disabled={
-                    savedRunIds.has(msg.rebalancingRunId) ||
-                    savingRunId === msg.rebalancingRunId
-                  }
-                  onClick={() => void handleSavePlan(msg.rebalancingRunId)}
-                  className="ml-7 mt-2 self-start flex items-center gap-3 rounded-xl px-4 py-3 transition-opacity hover:opacity-90 border border-primary/25 bg-primary/5 disabled:cursor-default disabled:opacity-60 disabled:hover:opacity-60"
-                >
-                  <div className="flex flex-col text-left">
-                    <span className="text-[11px] font-medium text-muted-foreground">
+              {(msg.showViewExecutePlan || msg.rebalancingRunId) ? (
+                <div className="ml-7 mt-2 flex flex-wrap items-center gap-2">
+                  {msg.showViewExecutePlan ? (
+                    /* View — exploratory, quiet ink ghost */
+                    <button
+                      type="button"
+                      onClick={() => navigate("/invest/rebalance-explanation")}
+                      className="group inline-flex items-center gap-1.5 rounded-full border border-foreground/15 bg-transparent px-4 py-1.5 text-[12.5px] font-semibold text-foreground/80 transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
+                    >
+                      View plan
+                      <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" />
+                    </button>
+                  ) : null}
+                  {msg.rebalancingRunId ? (
+                    /* Save — the commit; earns the brand's premium gold */
+                    <button
+                      type="button"
+                      disabled={
+                        savedRunIds.has(msg.rebalancingRunId) ||
+                        savingRunId === msg.rebalancingRunId
+                      }
+                      onClick={() => void handleSavePlan(msg.rebalancingRunId)}
+                      className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[12.5px] font-semibold transition-all hover:brightness-[1.04] active:scale-[0.98] disabled:cursor-default disabled:active:scale-100 motion-reduce:transition-none motion-reduce:active:scale-100"
+                      style={
+                        savedRunIds.has(msg.rebalancingRunId)
+                          ? {
+                              backgroundColor: "rgba(212,168,104,0.15)",
+                              color: "#9A7B2E",
+                              border: "1px solid rgba(212,168,104,0.4)",
+                            }
+                          : {
+                              background:
+                                "linear-gradient(135deg, #E5C079 0%, #D4A868 100%)",
+                              color: "#3a2c0e",
+                              boxShadow: "0 2px 8px -3px rgba(212,168,104,0.7)",
+                            }
+                      }
+                    >
+                      {savedRunIds.has(msg.rebalancingRunId) ? (
+                        <Check className="h-3.5 w-3.5" />
+                      ) : savingRunId === msg.rebalancingRunId ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Bookmark className="h-3.5 w-3.5" />
+                      )}
                       {savedRunIds.has(msg.rebalancingRunId)
-                        ? "Saved to your portfolio"
-                        : "Make this your plan"}
-                    </span>
-                    <span className="text-[13px] font-semibold text-foreground">
-                      {savedRunIds.has(msg.rebalancingRunId)
-                        ? "Plan saved"
+                        ? "Saved"
                         : savingRunId === msg.rebalancingRunId
                           ? "Saving…"
-                          : "Save this plan"}
-                    </span>
-                  </div>
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/15">
-                    {savedRunIds.has(msg.rebalancingRunId) ? (
-                      <Check className="h-4 w-4 text-primary" />
-                    ) : (
-                      <Bookmark className="h-4 w-4 text-primary" />
-                    )}
-                  </div>
-                </button>
+                          : "Save plan"}
+                    </button>
+                  ) : null}
+                </div>
               ) : null}
             </div>
           )}
