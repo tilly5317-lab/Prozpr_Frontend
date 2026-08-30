@@ -11,18 +11,16 @@ import { useOnboardingStep } from "@/hooks/useOnboardingStep";
 
 const POLL_MS = 1500;
 
-/** Checklist labels shown before the first status arrives (mirrors the backend list). */
-const PLACEHOLDER_STEPS: OnboardingGenerationStatus["steps"] = [
-  { key: "risk", label: "Analysing your risk profile", state: "pending" },
-  { key: "networth", label: "Building your day-by-day net worth history", state: "pending" },
-];
-
 /**
  * Post-signup loading page — polls the REAL personalisation job the "Generate
- * my portfolio" button started (`POST /onboarding/generate`): effective risk +
- * the daily net-worth NAV history build. Shows the backend's actual % and
- * per-task checklist, then lands on /chat. If no job exists yet (e.g. the
- * button's kickoff failed) it starts one itself.
+ * my portfolio" button started (`POST /onboarding/generate`). Shows the
+ * backend's actual % and per-task checklist, then lands on /chat. If no job
+ * exists yet (e.g. the button's kickoff failed) it starts one itself.
+ *
+ * The checklist is whatever the backend says it is — nothing is hard-coded
+ * here. A user who skipped CAMS has no transactions, so the net-worth history
+ * step isn't in their job at all and must not appear on this screen; until the
+ * first status lands we show no rows rather than guessing at them.
  */
 const OnboardingLoading = () => {
   const navigate = useNavigate();
@@ -102,7 +100,7 @@ const OnboardingLoading = () => {
   };
 
   const progress = Math.min(100, Math.round(job?.progress_pct ?? 0));
-  const steps = job?.steps?.length ? job.steps : PLACEHOLDER_STEPS;
+  const steps = job?.steps ?? [];
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center px-6">
@@ -158,7 +156,9 @@ const OnboardingLoading = () => {
             </div>
             <p className="mt-2 text-[11px] tabular-nums text-muted-foreground">{progress}%</p>
 
-            {/* Real per-task checklist from the backend job */}
+            {/* Real per-task checklist from the backend job — empty until the
+                first status arrives, so no step is ever shown that this user's
+                job won't actually run. */}
             <div className="mt-5 w-full space-y-2.5 text-left">
               {steps.map((s) => (
                 <div key={s.key} className="flex items-center gap-2.5">

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Loader2, ShieldCheck, AlertCircle, Upload, CheckCircle2, Sparkles, X } from "lucide-react";
+import { Loader2, ShieldCheck, AlertCircle, Upload, CheckCircle2 } from "lucide-react";
 import {
   getRebalanceComputeProgress,
   getRebalancingReadiness,
@@ -15,11 +15,12 @@ import { toast } from "@/hooks/use-toast";
 import { useComputeProgress } from "@/hooks/useComputeProgress";
 
 /**
- * Helps the user complete what the rebalancing engine needs — modelled on the
- * goal-planning CashflowGate. It NEVER blocks the page: when something is missing
- * it shows a dismissible prompt listing the missing inputs (today: date of birth
- * and, when there are no mutual-fund holdings, a CAMS upload — holdings can't be
- * typed in). The page behind stays usable and renders an example plan.
+ * Collects what the rebalancing engine needs. It NEVER blocks the page and, as
+ * of the CAMS-optional work, it renders NO prompt of its own: the page owns the
+ * single "not ready yet" panel, so a card here as well said the same thing twice
+ * on one screen. What's left is the machinery — the readiness check, the
+ * non-blocking status pill, and the inputs form / CAMS import it opens on
+ * demand (`editSignal`, or the page's own CTA).
  *
  * Once every input is present it saves to the canonical profile table, RUNS the
  * rebalancing engine, then calls `onReady` so the page can load the fresh plan.
@@ -33,11 +34,22 @@ interface RebalanceGateProps {
   onReady?: () => void;
   /**
    * Fired every time readiness resolves, with whether the plan is ready. Lets the
-   * page drop its initial spinner and show the example plan when not ready.
+   * page drop its initial spinner and show its not-ready panel.
    */
   onResolved?: (ready: boolean) => void;
+  /**
+   * Fired with the full readiness payload, so the page's not-ready panel can
+   * name exactly what is missing instead of guessing.
+   */
+  onReadiness?: (readiness: RebalancingReadiness) => void;
   /** Bump (e.g. from a "Re-run" button) to open the inputs form on demand. */
   editSignal?: number;
+  /**
+   * Bump to open the CAMS import directly. Holdings are the one input that
+   * can't be typed, so when they're what's missing the page's CTA should land
+   * on the upload itself rather than a form the user has to read past.
+   */
+  camsSignal?: number;
 }
 
 const inputClass =
@@ -56,7 +68,13 @@ function groupFields(fields: RebalancingReadinessField[]): [string, RebalancingR
   return order.map((g) => [g, map.get(g)!]);
 }
 
-const RebalanceGate = ({ onReady, onResolved, editSignal }: RebalanceGateProps) => {
+const RebalanceGate = ({
+  onReady,
+  onResolved,
+  onReadiness,
+  editSignal,
+  camsSignal,
+}: RebalanceGateProps) => {
   const [readiness, setReadiness] = useState<RebalancingReadiness | null>(null);
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
@@ -65,9 +83,6 @@ const RebalanceGate = ({ onReady, onResolved, editSignal }: RebalanceGateProps) 
   const [generating, setGenerating] = useState(false);
   const [values, setValues] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
-  // The missing-inputs prompt is a dismissible hint, never a blocker. Once
-  // dismissed it stays hidden for this visit (re-surfaces on the next mount).
-  const [promptDismissed, setPromptDismissed] = useState(false);
   // Live pipeline stage + % while the engine runs — makes the pill feel alive
   // instead of a stuck spinner.
   const computeProgress = useComputeProgress(generating, getRebalanceComputeProgress);
@@ -77,17 +92,25 @@ const RebalanceGate = ({ onReady, onResolved, editSignal }: RebalanceGateProps) 
     try {
       const res = await getRebalancingReadiness();
       setReadiness(res);
+      onReadiness?.(res);
       onResolved?.(res.ready);
       if (res.ready) onReady?.();
     } catch {
-      // On error, treat as not-ready: the page shows an example plan and the
-      // prompt offers to add the missing inputs — but it's never blocked.
-      setReadiness({ ready: false, missing: [], fields: [], has_holdings: false });
+      // On error, treat as not-ready: the page shows its not-ready panel and
+      // offers to add the missing inputs — but it's never blocked.
+      const fallback: RebalancingReadiness = {
+        ready: false,
+        missing: [],
+        fields: [],
+        has_holdings: false,
+      };
+      setReadiness(fallback);
+      onReadiness?.(fallback);
       onResolved?.(false);
     } finally {
       setLoading(false);
     }
-  }, [onReady, onResolved]);
+  }, [onReady, onResolved, onReadiness]);
 
   useEffect(() => {
     load();
@@ -109,6 +132,14 @@ const RebalanceGate = ({ onReady, onResolved, editSignal }: RebalanceGateProps) 
     if (editSignal && readiness) openForm();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editSignal]);
+
+  // Open the CAMS import when the parent bumps camsSignal. Skip the initial mount.
+  useEffect(() => {
+    if (camsSignal) {
+      setFormOpen(false);
+      setCamsOpen(true);
+    }
+  }, [camsSignal]);
 
   const grouped = useMemo(
     () => (readiness ? groupFields(readiness.fields) : []),
@@ -249,29 +280,6 @@ const RebalanceGate = ({ onReady, onResolved, editSignal }: RebalanceGateProps) 
 
   const ready = !!readiness?.ready;
   const needsHoldings = !!readiness && !readiness.has_holdings;
-  // Required inputs still missing — required fields, plus a CAMS upload when
-  // there are no holdings to plan against (holdings can't be typed in). Drives the
-  // dismissible prompt; it never blocks the page.
-  const missingItems = readiness
-    ? [
-        ...readiness.fields
-          .filter((f) => !f.optional && !f.present)
-          .map((f) => ({ key: f.key, label: f.label })),
-        ...(readiness.has_holdings
-          ? []
-          : [{ key: "cams", label: "CAMS statement (your holdings)" }]),
-      ]
-    : [];
-  // Show the prompt only when readiness has resolved to not-ready, something is
-  // actually missing, the user hasn't dismissed it, and no panel is open.
-  const showPrompt =
-    !loading &&
-    !generating &&
-    !formOpen &&
-    !camsOpen &&
-    !promptDismissed &&
-    !ready &&
-    missingItems.length > 0;
 
   return (
     <>
@@ -292,80 +300,10 @@ const RebalanceGate = ({ onReady, onResolved, editSignal }: RebalanceGateProps) 
         </div>
       )}
 
-      {/* Dismissible "complete your inputs" prompt — lists what's missing (e.g.
-          date of birth, CAMS) so the engine can run on real numbers. Centred over
-          a dimmed, blurred backdrop so it stands out from the example plan behind
-          it; clicking the backdrop (or "Maybe later") dismisses it to keep
-          exploring. */}
-      <AnimatePresence>
-        {showPrompt && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            onClick={() => setPromptDismissed(true)}
-            className="fixed inset-0 z-[55] flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm"
-          >
-            <motion.div
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 16 }}
-              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-              onClick={(e) => e.stopPropagation()}
-              className="relative w-full max-w-md overflow-hidden rounded-2xl border border-[#D4A868]/35 bg-card/95 p-4 shadow-2xl backdrop-blur-xl"
-            >
-              <button
-                type="button"
-                onClick={() => setPromptDismissed(true)}
-                aria-label="Dismiss"
-                className="absolute right-2.5 top-2.5 flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-              >
-                <X className="h-4 w-4" />
-              </button>
-              <div className="flex items-center gap-2 pr-7">
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#D4A868]/12 text-[#D4A868]">
-                  <Sparkles className="h-3.5 w-3.5" />
-                </span>
-                <h3 className="text-sm font-semibold text-foreground">
-                  See your real rebalancing plan
-                </h3>
-              </div>
-              <p className="mt-1.5 text-xs leading-snug text-muted-foreground">
-                You&apos;re viewing an example. Add a few details and we&apos;ll plan trades
-                on your real holdings:
-              </p>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {missingItems.map((m) => (
-                  <span
-                    key={m.key}
-                    className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/5 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400"
-                  >
-                    <AlertCircle className="h-3 w-3" /> {m.label}
-                  </span>
-                ))}
-              </div>
-              <div className="mt-3 flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={openForm}
-                  className="flex min-h-[40px] flex-1 items-center justify-center gap-1.5 rounded-xl border border-[#D4A868]/60 bg-[#D4A868] text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
-                >
-                  <ShieldCheck className="h-4 w-4" />
-                  Add details
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPromptDismissed(true)}
-                  className="min-h-[40px] rounded-xl px-3 text-[13px] font-medium text-muted-foreground hover:text-foreground"
-                >
-                  Maybe later
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* NO prompt card here. The page itself renders one honest "not ready
+          yet" panel (RebalanceExplanation), so a second card above it repeated
+          the same ask twice on one screen. This gate now only does the work:
+          readiness check, the compute pill, and the forms it opens on demand. */}
 
       {/* Inputs form — used both to unlock (locked) and to edit / re-run. */}
       <AnimatePresence>

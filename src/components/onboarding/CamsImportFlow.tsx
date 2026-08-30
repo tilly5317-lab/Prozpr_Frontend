@@ -1,24 +1,28 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  ArrowLeft,
   ArrowRight,
   Check,
   CheckCircle2,
+  Clock,
   Eye,
   EyeOff,
   ExternalLink,
   FileText,
   Inbox,
+  LineChart,
   Loader2,
   Mail,
+  PieChart,
   RefreshCw,
+  Scale,
   Send,
   ShieldCheck,
   UploadCloud,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useEnterSubmit } from "@/hooks/useEnterSubmit";
+import OnboardingNav from "./OnboardingNav";
 import {
   getCamsCapabilities,
   getMe,
@@ -37,9 +41,11 @@ const CAMS_MANUAL_URL =
   "https://www.camsonline.com/Investors/Statements/Consolidated-Account-Statement";
 
 export type CamsImportStep = "choose" | "request" | "sent" | "upload" | "done";
+
+// Shared Back / Next pair — see OnboardingNav for why it lives in one place.
 type Step = CamsImportStep;
 
-/** Which of the two entry paths the user picked on the choice screen. */
+/** Which of the guided entry paths the user picked on the choice screen. */
 type ImportPath = "have" | "get" | null;
 
 /** Ordered rail shown at the top; "done" renders as upload-complete. */
@@ -64,6 +70,25 @@ const PASSWORD_RULES: PasswordRule[] = [
 const passwordValid = (v: string) =>
   PASSWORD_RULES.every((r) => r.ok(v)) && !/\s/.test(v);
 
+/** What stays empty without a statement — shown on the defer confirmation. */
+const BLOCKED_WITHOUT_CAS: { icon: typeof PieChart; label: string; detail: string }[] = [
+  {
+    icon: PieChart,
+    label: "Your portfolio",
+    detail: "No holdings, no fund-wise returns, no asset mix.",
+  },
+  {
+    icon: Scale,
+    label: "Rebalancing",
+    detail: "We can't tell you what to buy or switch without knowing what you hold.",
+  },
+  {
+    icon: LineChart,
+    label: "Net-worth history",
+    detail: "Your growth chart starts empty until a statement is imported.",
+  },
+];
+
 interface CamsImportFlowProps {
   /** Fired when the user taps Continue on the success screen. */
   onImported: (result: CamsPdfImportResponse) => void;
@@ -81,6 +106,18 @@ interface CamsImportFlowProps {
    * pattern the rest of onboarding uses). Modals keep the natural flow.
    */
   fillHeight?: boolean;
+  /**
+   * Supply to allow deferring the import — the host decides what that means
+   * (onboarding records it and moves on; a modal just closes). Omit and the
+   * flow shows only the two import paths.
+   *
+   * Deferring is deliberately NOT a peer of the two import paths: it is a
+   * quiet link that opens a confirmation explaining what stays empty, so it
+   * can't be taken by reflex before the real options are read.
+   */
+  onSkip?: () => void;
+  /** Disables the skip option while the host is persisting the choice. */
+  skipping?: boolean;
 }
 
 /**
@@ -94,7 +131,10 @@ interface CamsImportFlowProps {
  *     pre-filled from step 1. The backend parses it remotely and rebuilds the
  *     portfolio (holdings + full transaction ledger).
  *
- * Users who already hold a CAS PDF can jump straight to Upload.
+ * Users who already hold a CAS PDF can jump straight to Upload. Hosts that pass
+ * `onSkip` also allow deferring, but only behind a quiet link and a
+ * confirmation screen — never as a third card competing with the two real
+ * paths, which is what made people skip without reading them.
  */
 const CamsImportFlow = ({
   onImported,
@@ -103,12 +143,17 @@ const CamsImportFlow = ({
   onStepChange,
   compact = false,
   fillHeight = false,
+  onSkip,
+  skipping = false,
 }: CamsImportFlowProps) => {
-  // Entry is a two-way choice: "I have an updated CAS" (straight to upload)
-  // vs "I don't have one" (guided email request). Upload-first because most
-  // returning users already hold the PDF — one tap, zero forms.
+  // Entry is a two-way choice: "Upload CAS" (straight to upload) and "Mail me
+  // my CAS" (guided email request). Upload-first because most returning users
+  // already hold the PDF — one tap, zero forms.
   const [step, setStep] = useState<Step>("choose");
   const [path, setPath] = useState<ImportPath>(null);
+  // Deferring opens a confirmation panel first (what stays empty + both import
+  // paths again) instead of firing onSkip on the first tap.
+  const [confirmSkip, setConfirmSkip] = useState(false);
   // Whether the backend's CAS Parser plan includes statement-by-email. When it
   // doesn't, the flow starts straight at Upload with manual-generation
   // guidance; when the plan is upgraded this lights back up automatically.
@@ -292,17 +337,22 @@ const CamsImportFlow = ({
   };
 
   const chooseHave = () => {
+    setConfirmSkip(false);
     setPath("have");
     setStep("upload");
   };
   const chooseGet = () => {
+    setConfirmSkip(false);
     setPath("get");
     setStep("request");
   };
 
   // Enter anywhere = the step's primary (highlighted) button.
   useEnterSubmit(() => {
-    if (step === "choose") chooseHave();
+    // The defer confirmation overlays whichever step opened it; its primary
+    // action is Upload CAS.
+    if (confirmSkip) chooseHave();
+    else if (step === "choose") chooseHave();
     else if (step === "request") void handleRequest();
     else if (step === "sent") setStep("upload");
     else if (step === "upload") void handleUpload();
@@ -328,6 +378,26 @@ const CamsImportFlow = ({
   // the screen; modal hosts keep the natural document flow.
   const stepShell = fillHeight ? "flex flex-1 flex-col" : "";
   const ctaBlock = fillHeight ? "mt-auto pt-6" : "mt-4";
+
+  // Quiet defer link. It opens the confirmation panel rather than skipping
+  // outright, and it only appears where a user could otherwise be stuck: the
+  // choice screen, and the Upload step on plans without mailback (there the
+  // flow starts at Upload, so the choice screen never renders). Inside the
+  // guided steps, "Back" already leads to the choice screen — an extra escape
+  // hatch on every screen is exactly what turned deferring into the default.
+  const showDeferLink =
+    !!onSkip && (step === "choose" || (step === "upload" && mailbackAvailable === false));
+  const deferLink = showDeferLink ? (
+    <button
+      type="button"
+      onClick={() => setConfirmSkip(true)}
+      disabled={skipping || busy}
+      className="mt-3 flex w-full items-center justify-center gap-1.5 text-[12px] text-muted-foreground/80 underline-offset-2 transition-colors hover:text-foreground hover:underline disabled:opacity-50"
+    >
+      {skipping ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Clock className="h-3.5 w-3.5" />}
+      I&apos;ll do this later
+    </button>
+  ) : null;
 
   return (
     <div className={fillHeight ? "flex flex-1 flex-col" : undefined}>
@@ -378,11 +448,13 @@ const CamsImportFlow = ({
 
       <AnimatePresence mode="wait">
         {/* ─────────────────────────── STEP 0 · CHOOSE PATH ─────────────────────────── */}
-        {step === "choose" && (
+        {step === "choose" && !confirmSkip && (
           <motion.div key="choose" {...stepMotion} className={stepShell}>
             <p className={`${sub} leading-relaxed text-muted-foreground`}>
               Your Consolidated Account Statement (CAS) lists every mutual fund
-              you own. We read it once and build your entire portfolio from it.
+              you own. We read it once and build your entire portfolio from it —
+              either upload the PDF you have, or we&apos;ll get CAMS to mail you a
+              fresh one.
             </p>
 
             <div className="mt-4 space-y-3">
@@ -395,11 +467,10 @@ const CamsImportFlow = ({
                   <UploadCloud className="h-5 w-5 text-primary-foreground" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-[14px] font-semibold text-foreground">
-                    I have an updated CAS
-                  </p>
+                  <p className="text-[14px] font-semibold text-foreground">Upload CAS</p>
                   <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
-                    Upload the PDF you already have — done in under a minute.
+                    Already have the CAS PDF in your email? Import it now — under a
+                    minute, and your portfolio is ready.
                   </p>
                 </div>
                 <ArrowRight className="h-4 w-4 shrink-0 text-primary transition-transform group-hover:translate-x-0.5" />
@@ -415,10 +486,11 @@ const CamsImportFlow = ({
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-[14px] font-semibold text-foreground">
-                    I don&apos;t have an updated CAS
+                    Mail me my CAS
                   </p>
                   <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
-                    We&apos;ll have CAMS email you a fresh statement in 5–10 minutes.
+                    Don&apos;t have one, or it&apos;s out of date? CAMS/KFintech emails
+                    you a fresh statement in 5–10 minutes — we&apos;ll guide you.
                   </p>
                 </div>
                 <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
@@ -427,9 +499,81 @@ const CamsImportFlow = ({
 
             <div className={ctaBlock}>
               <p className="text-center text-[11px] leading-relaxed text-muted-foreground/80">
-                Not sure? If your last statement is older than a month, request a
-                fresh one so nothing is missing.
+                Both paths take a couple of minutes and everything after this —
+                portfolio, rebalancing, net-worth history — is built from it.
               </p>
+              {deferLink}
+            </div>
+          </motion.div>
+        )}
+
+        {/* ────────────────── STEP 0b · CONFIRM DEFER ──────────────────
+            Reached only from the quiet "I'll do this later" link (choice screen,
+            or the Upload step on plans without mailback). It states plainly what
+            stays empty and puts the import paths back in front of the user;
+            skipping stays available, just no longer the reflex. */}
+        {confirmSkip && onSkip && (
+          <motion.div key="confirm-skip" {...stepMotion} className={stepShell}>
+            <h3 className={`${h} font-semibold text-foreground`}>
+              Skip for now?
+            </h3>
+            <p className={`${sub} mt-1.5 leading-relaxed text-muted-foreground`}>
+              We can still set up your plan, but everything that depends on what
+              you actually hold stays empty until a statement is imported:
+            </p>
+
+            <div className="mt-3 space-y-2.5">
+              {BLOCKED_WITHOUT_CAS.map((item) => (
+                <div
+                  key={item.label}
+                  className="flex items-start gap-3 rounded-xl border border-border bg-muted/30 px-3.5 py-3"
+                >
+                  <item.icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-medium text-foreground">{item.label}</p>
+                    <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                      {item.detail}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className={ctaBlock}>
+              <OnboardingNav
+                nextLabel="Upload CAS"
+                nextIcon={<UploadCloud className="h-4 w-4" />}
+                onNext={chooseHave}
+                nextDisabled={skipping}
+                // Back returns to whichever step opened this panel, so changing
+                // your mind about deferring never costs the step you were on.
+                onBack={() => setConfirmSkip(false)}
+                backDisabled={skipping}
+                secondary={
+                  <button
+                    type="button"
+                    onClick={onSkip}
+                    disabled={skipping}
+                    className="flex items-center gap-1.5 text-[12px] text-muted-foreground/80 underline-offset-2 transition-colors hover:text-foreground hover:underline disabled:opacity-50"
+                  >
+                    {skipping && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    Skip anyway
+                  </button>
+                }
+              >
+                {/* Only offer the mailback path where the plan supports it. */}
+                {mailbackAvailable !== false && (
+                  <button
+                    type="button"
+                    onClick={chooseGet}
+                    disabled={skipping}
+                    className="mt-2.5 flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-background py-3 text-[14px] font-medium text-foreground transition-colors hover:bg-accent/40 disabled:opacity-50"
+                  >
+                    <Mail className="h-4 w-4" />
+                    Mail me my CAS
+                  </button>
+                )}
+              </OnboardingNav>
             </div>
           </motion.div>
         )}
@@ -533,47 +677,27 @@ const CamsImportFlow = ({
 
             {requestError && <p className="mt-3 text-xs text-destructive">{requestError}</p>}
 
-            <div className={ctaBlock}>
-              <button
-                type="button"
-                onClick={() => void handleRequest()}
-                disabled={!canRequest}
-                className="flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold tracking-wide text-primary-foreground transition-all active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
-              >
-                {requesting ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Requesting…
-                  </>
-                ) : (
-                  <>
-                    <Send className="h-4 w-4" />
-                    Email me my statement
-                  </>
-                )}
-              </button>
-
-              <div className="mt-3 flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={() => setStep("choose")}
-                  disabled={requesting}
-                  className="flex items-center gap-1 text-[12px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
-                >
-                  <ArrowLeft className="h-3.5 w-3.5" />
-                  Back
-                </button>
+            <OnboardingNav
+              className={ctaBlock}
+              nextLabel="Mail me my CAS"
+              nextIcon={<Send className="h-4 w-4" />}
+              onNext={() => void handleRequest()}
+              nextDisabled={!canRequest}
+              nextLoading={requesting}
+              loadingLabel="Requesting…"
+              onBack={() => setStep("choose")}
+              secondary={
                 <button
                   type="button"
                   onClick={chooseHave}
                   disabled={requesting}
                   className="flex items-center gap-1 text-[12px] font-medium text-primary transition-colors hover:text-primary/80 disabled:opacity-50"
                 >
-                  I already have a CAS PDF
+                  Upload CAS instead
                   <ArrowRight className="h-3.5 w-3.5" />
                 </button>
-              </div>
-            </div>
+              }
+            />
           </motion.div>
         )}
 
@@ -604,25 +728,13 @@ const CamsImportFlow = ({
               <li>• The PDF opens with the password you just set.</li>
             </ul>
 
-            <div className={ctaBlock}>
-              <button
-                type="button"
-                onClick={() => setStep("upload")}
-                className="flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold tracking-wide text-primary-foreground transition-all active:scale-[0.98]"
-              >
-                I&apos;ve received the PDF — upload it
-                <ArrowRight className="h-4 w-4" />
-              </button>
-
-              <div className="mt-3 flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={() => setStep("request")}
-                  className="flex items-center gap-1 text-[12px] text-muted-foreground transition-colors hover:text-foreground"
-                >
-                  <ArrowLeft className="h-3.5 w-3.5" />
-                  Edit details
-                </button>
+            <OnboardingNav
+              className={ctaBlock}
+              nextLabel="I've received the PDF — upload it"
+              onNext={() => setStep("upload")}
+              onBack={() => setStep("request")}
+              backLabel="Edit details"
+              secondary={
                 <button
                   type="button"
                   onClick={() => void handleRequest()}
@@ -632,13 +744,13 @@ const CamsImportFlow = ({
                   <RefreshCw className={`h-3.5 w-3.5 ${requesting ? "animate-spin" : ""}`} />
                   {resendIn > 0 ? `Resend in ${resendIn}s` : "Resend email"}
                 </button>
-              </div>
-            </div>
+              }
+            />
           </motion.div>
         )}
 
         {/* ─────────────────────────── STEP 3 · UPLOAD ─────────────────────────── */}
-        {step === "upload" && (
+        {step === "upload" && !confirmSkip && (
           <motion.div key="upload" {...stepMotion} className={stepShell}>
             {mailbackAvailable === false ? (
               <div className="rounded-xl border border-primary/20 bg-primary/5 px-3.5 py-3">
@@ -751,51 +863,32 @@ const CamsImportFlow = ({
             {uploadError && <p className="mt-3 text-xs text-destructive">{uploadError}</p>}
 
             <div className={ctaBlock}>
-            <button
-              type="button"
-              onClick={() => void handleUpload()}
-              disabled={uploading || !file}
-              className="flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold tracking-wide text-primary-foreground transition-all active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
-            >
-              {uploading ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Reading your statement…
-                </>
-              ) : (
-                <>
-                  Import my portfolio
-                  <ArrowRight className="h-4 w-4" />
-                </>
-              )}
-            </button>
-
-            <div
-              className={`mt-3 flex items-center ${
-                mailbackAvailable === false ? "justify-center" : "justify-between"
-              }`}
-            >
-              {mailbackAvailable !== false && (
-                <button
-                  type="button"
-                  onClick={() => setStep(path === "get" ? "sent" : "choose")}
-                  disabled={uploading}
-                  className="flex items-center gap-1 text-[12px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
-                >
-                  <ArrowLeft className="h-3.5 w-3.5" />
-                  Back
-                </button>
-              )}
-              <a
-                href={CAMS_MANUAL_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1 text-[12px] text-muted-foreground transition-colors hover:text-foreground"
-              >
-                Generate on CAMS site
-                <ExternalLink className="h-3 w-3" />
-              </a>
-            </div>
+              {/* Without mailback this IS the first step, so there is nothing to
+                  go back to — the CAMS-site link then centres on its own row. */}
+              <OnboardingNav
+                nextLabel="Import my portfolio"
+                onNext={() => void handleUpload()}
+                nextDisabled={!file}
+                nextLoading={uploading}
+                loadingLabel="Reading your statement…"
+                onBack={
+                  mailbackAvailable === false
+                    ? undefined
+                    : () => setStep(path === "get" ? "sent" : "choose")
+                }
+                secondary={
+                  <a
+                    href={CAMS_MANUAL_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 text-[12px] text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    Generate on CAMS site
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                }
+              />
+              {deferLink}
             </div>
           </motion.div>
         )}
@@ -842,16 +935,13 @@ const CamsImportFlow = ({
               reference.
             </p>
 
-            <div className={ctaBlock}>
-              <button
-                type="button"
-                onClick={() => onImported(result)}
-                className="flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold tracking-wide text-primary-foreground transition-all active:scale-[0.98]"
-              >
-                Continue
-                <ArrowRight className="h-4 w-4" />
-              </button>
-            </div>
+            {/* Terminal step — the import is already applied, so there is no
+                meaningful way back; only forward. */}
+            <OnboardingNav
+              className={ctaBlock}
+              nextLabel="Continue"
+              onNext={() => onImported(result)}
+            />
           </motion.div>
         )}
       </AnimatePresence>
