@@ -1,32 +1,35 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { AnimatePresence, motion } from "framer-motion";
+import { Navigate, useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
 import { Loader2 } from "lucide-react";
 import WelcomeScreen from "@/components/onboarding/WelcomeScreen";
-import PortfolioDashboard from "@/components/dashboard/PortfolioDashboard";
 import { useAuth } from "@/context/AuthContext";
 import { markOnboardingComplete } from "@/lib/api";
 import { resolveOnboardingResumeRoute } from "@/lib/onboardingResume";
 import { trackOnboardingCompleted } from "@/lib/onboardingAnalytics";
 
-type Screen = "onboarding" | "dashboard";
+/** Session fallback set when the backend "onboarding complete" write fails. */
+function sessionOnboardingDone(): boolean {
+  try {
+    return sessionStorage.getItem("onboardingComplete") === "true";
+  } catch {
+    return false; // private mode
+  }
+}
 
 const Index = () => {
   const navigate = useNavigate();
   const { authenticated, loading, user, refresh } = useAuth();
-  const [screen, setScreen] = useState<Screen>("onboarding");
   // True while we're deciding where a returning, unfinished user should resume.
   const [resolvingResume, setResolvingResume] = useState(false);
 
+  // Mirrors RequireOnboarded in App.tsx — a finished user belongs on /portfolio.
+  const onboarded =
+    authenticated && (user?.is_onboarding_complete === true || sessionOnboardingDone());
+
   useEffect(() => {
-    if (loading) return;
-    const sessionDone = sessionStorage.getItem("onboardingComplete") === "true";
-    const backendDone = user?.is_onboarding_complete === true;
-    if (authenticated && (sessionDone || backendDone)) {
-      setScreen("dashboard");
-      return;
-    }
-    if (authenticated && user && !backendDone && !sessionDone) {
+    if (loading || onboarded) return;
+    if (authenticated && user) {
       // Resume an unfinished onboarding exactly where the user left off —
       // resolved from backend state, so it survives any time away:
       //   holdings imported / CAMS deferred → /about-you · otherwise the CAMS
@@ -45,7 +48,7 @@ const Index = () => {
         cancelled = true;
       };
     }
-  }, [authenticated, loading, user, navigate]);
+  }, [authenticated, loading, onboarded, user, navigate]);
 
   const handleOnboardingComplete = async () => {
     try {
@@ -55,7 +58,7 @@ const Index = () => {
       sessionStorage.setItem("onboardingComplete", "true");
     }
     trackOnboardingCompleted();
-    setScreen("dashboard");
+    navigate("/portfolio", { replace: true });
   };
 
   if (loading || resolvingResume) {
@@ -66,26 +69,23 @@ const Index = () => {
     );
   }
 
+  // The dashboard has its own route. Landing on it by URL (instead of rendering
+  // it inline here) keeps location.pathname honest, which is what BottomNav
+  // reads to decide which tab is active — otherwise the very first view of the
+  // portfolio sits on "/" with no tab highlighted until the user navigates.
+  if (onboarded) return <Navigate to="/portfolio" replace />;
+
   return (
     <div className="min-h-screen bg-background">
-      <AnimatePresence mode="wait">
-        {screen === "onboarding" && (
-          <motion.div key="onboarding" exit={{ opacity: 0 }} transition={{ duration: 0.3 }}>
-            {/* Account setup (phone → PIN → name/email). It hands off to the
-                first onboarding step itself; `onNext` is only its fallback when
-                resume resolution fails. */}
-            <WelcomeScreen
-              onNext={() => navigate("/cams-upload")}
-              onExistingUserLogin={handleOnboardingComplete}
-            />
-          </motion.div>
-        )}
-        {screen === "dashboard" && (
-          <motion.div key="dashboard" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5 }}>
-            <PortfolioDashboard />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
+        {/* Account setup (phone → PIN → name/email). It hands off to the
+            first onboarding step itself; `onNext` is only its fallback when
+            resume resolution fails. */}
+        <WelcomeScreen
+          onNext={() => navigate("/cams-upload")}
+          onExistingUserLogin={handleOnboardingComplete}
+        />
+      </motion.div>
     </div>
   );
 };
