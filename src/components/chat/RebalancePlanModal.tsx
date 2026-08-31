@@ -142,6 +142,14 @@ function PlanBody({ detail }: { detail: RebalancingRunDetail }) {
     arr.push(t);
     groups.set(key, arr);
   }
+  // Buys first, then sells/exits. Reason groups are homogeneous (a reason is
+  // either a buy or a sell), so the first trade classifies the group; the
+  // stable sort preserves each side's original ordering.
+  const isBuyGroup = (trades: RebalancingRunDetail["trades"]) =>
+    trades[0].action.toUpperCase() === "BUY";
+  const orderedGroups = [...groups.entries()].sort(
+    ([, a], [, b]) => Number(isBuyGroup(b)) - Number(isBuyGroup(a)),
+  );
   const totals = detail.totals;
 
   return (
@@ -156,7 +164,7 @@ function PlanBody({ detail }: { detail: RebalancingRunDetail }) {
       ) : null}
 
       <div className="space-y-4">
-        {[...groups.entries()].map(([reason, trades]) => (
+        {orderedGroups.map(([reason, trades]) => (
           <div key={reason}>
             <p className="pb-1.5 text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
               {reason}

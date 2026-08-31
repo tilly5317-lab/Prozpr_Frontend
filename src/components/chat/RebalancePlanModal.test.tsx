@@ -58,4 +58,20 @@ describe("RebalancePlanModal", () => {
     expect(await screen.findByText("Acme Bluechip")).toBeInTheDocument();
     expect(screen.getByText("Saved plan")).toBeInTheDocument();
   });
+
+  it("orders buy groups before sell groups regardless of source order", async () => {
+    (getRebalancingRunDetail as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "run-3",
+      origin: null,
+      totals: null,
+      trades: [
+        { id: "s1", recommended_fund: "Sell Fund", action: "SELL", amount_inr: 1000, reason_title: "Trim back to target" },
+        { id: "b1", recommended_fund: "Buy Fund", action: "BUY", amount_inr: 2000, reason_title: "Top up to target" },
+      ],
+    });
+    render(<RebalancePlanModal runId="run-3" onClose={noop} isSaved={false} isSaving={false} onSave={noop} />);
+    await screen.findByText("Buy Fund");
+    const text = document.body.textContent ?? "";
+    expect(text.indexOf("Buy Fund")).toBeLessThan(text.indexOf("Sell Fund"));
+  });
 });
