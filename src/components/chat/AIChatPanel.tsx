@@ -31,6 +31,7 @@ import {
   type FullProfileResponse,
   type LinkAccountInfo,
 } from "@/lib/api";
+import { deriveRebalancingPills } from "@/lib/rebalancing-pills";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useChatThinking } from "@/hooks/useChatThinking";
@@ -1042,29 +1043,30 @@ const AIChatPanel = ({
   }, []);
 
   // On returning to chat, history rehydrates without the pill flags. Re-derive
-  // them from the backend's current run so "View plan" / "Save plan" persist —
-  // attached to the last rebalancing turn (fallback: last assistant message),
-  // and reflecting whether that run is already saved.
+  // them from each message's OWN persisted run (deriveRebalancingPills), so a
+  // newer unsaved plan never inherits an older plan's "Saved". `perMessage` is
+  // index-aligned to `history`, and `messages` was just set 1:1 from the same
+  // `session.messages` at both call sites (1230, 1360), so mapping by index is safe.
   const rehydrateRebalancingPill = useCallback(async (history: ChatMessageInfo[]) => {
     const current = await getCurrentRebalancingRun().catch(() => null);
-    if (!current) return;
-    let idx = -1;
-    for (let i = history.length - 1; i >= 0; i--) {
-      if (history[i].role === "assistant" && history[i].intent === "rebalancing") { idx = i; break; }
-    }
-    if (idx === -1) {
-      for (let i = history.length - 1; i >= 0; i--) {
-        if (history[i].role === "assistant") { idx = i; break; }
-      }
-    }
-    if (idx === -1) return;
+    const { perMessage, savedRunIds } = deriveRebalancingPills(history, current);
     setMessages((prev) =>
-      prev.map((m, i) =>
-        i === idx ? { ...m, showViewExecutePlan: true, rebalancingRunId: current.id } : m,
-      ),
+      prev.map((m, i) => {
+        const pill = perMessage[i];
+        if (!pill || !pill.showViewExecutePlan) return m;
+        return {
+          ...m,
+          showViewExecutePlan: true,
+          ...(pill.rebalancingRunId ? { rebalancingRunId: pill.rebalancingRunId } : {}),
+        };
+      }),
     );
-    if (current.origin === "saved") {
-      setSavedRunIds((prev) => new Set(prev).add(current.id));
+    if (savedRunIds.length > 0) {
+      setSavedRunIds((prev) => {
+        const next = new Set(prev);
+        savedRunIds.forEach((id) => next.add(id));
+        return next;
+      });
     }
   }, []);
   // Session whose live "thinking aloud" feed we poll while a reply is pending.

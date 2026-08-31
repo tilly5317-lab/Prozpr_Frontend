@@ -935,6 +935,11 @@ export interface ChatMessageInfo {
   intent_reasoning: string | null;
   chart_payloads: ChatChartPayload[] | null;
   created_at: string;
+  /** The rebalancing run this turn produced. Backend adds this to chat history;
+   *  absent until that ships (frontend degrades gracefully). */
+  ideal_allocation_rebalancing_id?: string | null;
+  /** The ideal-allocation snapshot this turn produced, if any. */
+  ideal_allocation_snapshot_id?: string | null;
 }
 
 export interface ChatSendResponse {
