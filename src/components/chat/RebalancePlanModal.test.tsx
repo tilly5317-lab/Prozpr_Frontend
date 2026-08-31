@@ -3,11 +3,9 @@ import { render, screen, waitFor, cleanup } from "@testing-library/react";
 
 // Radix Dialog touches a couple of DOM APIs jsdom lacks.
 if (!Element.prototype.hasPointerCapture) {
-  // eslint-disable-next-line @typescript-eslint/no-empty-function
   Element.prototype.hasPointerCapture = () => false;
 }
 if (!Element.prototype.scrollIntoView) {
-  // eslint-disable-next-line @typescript-eslint/no-empty-function
   Element.prototype.scrollIntoView = () => {};
 }
 
