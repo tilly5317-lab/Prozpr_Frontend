@@ -82,4 +82,12 @@ describe("RebalancePlanModal", () => {
     const saveButton = screen.getByRole("button", { name: "Saved" });
     expect(saveButton).toBeDisabled();
   });
+
+  it("shows an enabled 'Save this plan' footer when the run is not saved", async () => {
+    (getRebalancingRunDetail as ReturnType<typeof vi.fn>).mockResolvedValue(detail); // origin: null
+    render(<RebalancePlanModal runId="run-1" onClose={noop} isSaved={false} isSaving={false} onSave={noop} />);
+    await screen.findByText("Acme Bluechip");
+    const saveButton = screen.getByRole("button", { name: "Save this plan" });
+    expect(saveButton).toBeEnabled();
+  });
 });
