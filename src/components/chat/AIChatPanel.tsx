@@ -1943,6 +1943,64 @@ const AIChatPanel = ({
                   }}
                 >
                   <MarkdownMessage text={msg.content} />
+                  {(msg.showViewExecutePlan || msg.rebalancingRunId) ? (
+                    <div className="mt-3 flex flex-wrap items-center justify-center gap-2 border-t border-foreground/10 pt-3">
+                      {msg.showViewExecutePlan ? (
+                        /* View — exploratory, quiet ink ghost */
+                        <button
+                          type="button"
+                          onClick={() =>
+                            msg.rebalancingRunId
+                              ? setPlanModalRunId(msg.rebalancingRunId)
+                              : navigate("/invest/rebalance-explanation")
+                          }
+                          className="group inline-flex items-center gap-1.5 rounded-full border border-foreground/15 bg-transparent px-4 py-1.5 text-[12.5px] font-semibold text-foreground/80 transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
+                        >
+                          View plan
+                          <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" />
+                        </button>
+                      ) : null}
+                      {msg.rebalancingRunId ? (
+                        /* Save — the commit; earns the brand's premium gold */
+                        <button
+                          type="button"
+                          disabled={
+                            savedRunIds.has(msg.rebalancingRunId) ||
+                            savingRunId === msg.rebalancingRunId
+                          }
+                          onClick={() => void handleSavePlan(msg.rebalancingRunId)}
+                          className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[12.5px] font-semibold transition-all hover:brightness-[1.04] active:scale-[0.98] disabled:cursor-default disabled:active:scale-100 motion-reduce:transition-none motion-reduce:active:scale-100"
+                          style={
+                            savedRunIds.has(msg.rebalancingRunId)
+                              ? {
+                                  backgroundColor: "rgba(212,168,104,0.15)",
+                                  color: "#9A7B2E",
+                                  border: "1px solid rgba(212,168,104,0.4)",
+                                }
+                              : {
+                                  background:
+                                    "linear-gradient(135deg, #E5C079 0%, #D4A868 100%)",
+                                  color: "#3a2c0e",
+                                  boxShadow: "0 2px 8px -3px rgba(212,168,104,0.7)",
+                                }
+                          }
+                        >
+                          {savedRunIds.has(msg.rebalancingRunId) ? (
+                            <Check className="h-3.5 w-3.5" />
+                          ) : savingRunId === msg.rebalancingRunId ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Bookmark className="h-3.5 w-3.5" />
+                          )}
+                          {savedRunIds.has(msg.rebalancingRunId)
+                            ? "Saved"
+                            : savingRunId === msg.rebalancingRunId
+                              ? "Saving…"
+                              : "Save plan"}
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
               </div>
               {msg.showAddCams ? (
@@ -1970,64 +2028,6 @@ const AIChatPanel = ({
                     <UploadCloud className="h-4 w-4" style={{ color: "#D4A868" }} />
                   </div>
                 </button>
-              ) : null}
-              {(msg.showViewExecutePlan || msg.rebalancingRunId) ? (
-                <div className="ml-7 mt-2 flex flex-wrap items-center gap-2">
-                  {msg.showViewExecutePlan ? (
-                    /* View — exploratory, quiet ink ghost */
-                    <button
-                      type="button"
-                      onClick={() =>
-                        msg.rebalancingRunId
-                          ? setPlanModalRunId(msg.rebalancingRunId)
-                          : navigate("/invest/rebalance-explanation")
-                      }
-                      className="group inline-flex items-center gap-1.5 rounded-full border border-foreground/15 bg-transparent px-4 py-1.5 text-[12.5px] font-semibold text-foreground/80 transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
-                    >
-                      View plan
-                      <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" />
-                    </button>
-                  ) : null}
-                  {msg.rebalancingRunId ? (
-                    /* Save — the commit; earns the brand's premium gold */
-                    <button
-                      type="button"
-                      disabled={
-                        savedRunIds.has(msg.rebalancingRunId) ||
-                        savingRunId === msg.rebalancingRunId
-                      }
-                      onClick={() => void handleSavePlan(msg.rebalancingRunId)}
-                      className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[12.5px] font-semibold transition-all hover:brightness-[1.04] active:scale-[0.98] disabled:cursor-default disabled:active:scale-100 motion-reduce:transition-none motion-reduce:active:scale-100"
-                      style={
-                        savedRunIds.has(msg.rebalancingRunId)
-                          ? {
-                              backgroundColor: "rgba(212,168,104,0.15)",
-                              color: "#9A7B2E",
-                              border: "1px solid rgba(212,168,104,0.4)",
-                            }
-                          : {
-                              background:
-                                "linear-gradient(135deg, #E5C079 0%, #D4A868 100%)",
-                              color: "#3a2c0e",
-                              boxShadow: "0 2px 8px -3px rgba(212,168,104,0.7)",
-                            }
-                      }
-                    >
-                      {savedRunIds.has(msg.rebalancingRunId) ? (
-                        <Check className="h-3.5 w-3.5" />
-                      ) : savingRunId === msg.rebalancingRunId ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Bookmark className="h-3.5 w-3.5" />
-                      )}
-                      {savedRunIds.has(msg.rebalancingRunId)
-                        ? "Saved"
-                        : savingRunId === msg.rebalancingRunId
-                          ? "Saving…"
-                          : "Save plan"}
-                    </button>
-                  ) : null}
-                </div>
               ) : null}
             </div>
           )}
