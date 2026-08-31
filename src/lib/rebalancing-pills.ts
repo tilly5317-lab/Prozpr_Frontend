@@ -49,6 +49,10 @@ export function deriveRebalancingPills(
   history: ChatMessageLike[],
   current: CurrentRunLike | null,
 ): DerivedPills {
+  // All-or-nothing: as soon as ANY message carries an id, the whole history uses
+  // the preferred path. During mixed deployment, a turn persisted before the
+  // backend change (no ids) then shows no pills rather than being pointed at the
+  // wrong (global-current) plan.
   const hasPerMessageIds = history.some(
     (m) => m.ideal_allocation_rebalancing_id || m.ideal_allocation_snapshot_id,
   );

@@ -51,4 +51,11 @@ describe("RebalancePlanModal", () => {
     expect(await screen.findByText("Acme Bluechip")).toBeInTheDocument();
     expect(screen.queryByText("Total buy")).not.toBeInTheDocument();
   });
+
+  it("shows the header Saved plan badge when isSaved is true, even if origin is not saved", async () => {
+    (getRebalancingRunDetail as ReturnType<typeof vi.fn>).mockResolvedValue(detail);
+    render(<RebalancePlanModal runId="run-1" onClose={noop} isSaved={true} isSaving={false} onSave={noop} />);
+    expect(await screen.findByText("Acme Bluechip")).toBeInTheDocument();
+    expect(screen.getByText("Saved plan")).toBeInTheDocument();
+  });
 });

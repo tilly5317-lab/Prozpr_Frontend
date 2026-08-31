@@ -73,7 +73,7 @@ export function RebalancePlanModal({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             Your rebalancing plan
-            {saved ? (
+            {saved || isSaved ? (
               <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={SAVED_STYLE}>
                 Saved plan
               </span>
@@ -106,7 +106,7 @@ export function RebalancePlanModal({
         <DialogFooter>
           <button
             type="button"
-            disabled={isSaved || isSaving}
+            disabled={isSaved || isSaving || state.status !== "loaded"}
             onClick={onSave}
             className="inline-flex items-center justify-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold transition-all disabled:cursor-default"
             style={isSaved ? SAVED_STYLE : GOLD_STYLE}
@@ -163,7 +163,7 @@ function PlanBody({ detail }: { detail: RebalancingRunDetail }) {
             </p>
             <div className="space-y-1.5">
               {trades.map((t) => {
-                const isSell = t.action !== "BUY"; // SELL or EXIT
+                const isSell = t.action.toUpperCase() !== "BUY"; // SELL or EXIT
                 const tone = isSell ? SELL_ORANGE : BUY_GREEN;
                 return (
                   <div
