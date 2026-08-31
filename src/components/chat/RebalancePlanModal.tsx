@@ -64,6 +64,10 @@ export function RebalancePlanModal({
   }, [runId, reloadKey]);
 
   const saved = state.status === "loaded" && state.detail.origin === "saved";
+  // Saved if this session committed it (isSaved) or the fetched run is already
+  // committed (origin === "saved") — so the header badge and footer button agree
+  // even before the backend persists the run id on each chat message.
+  const alreadySaved = isSaved || saved;
 
   // Mounted only while a plan is being viewed, so the Dialog is always open;
   // Escape / overlay-click / the X trigger onOpenChange(false) → onClose().
@@ -73,7 +77,7 @@ export function RebalancePlanModal({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             Your rebalancing plan
-            {saved || isSaved ? (
+            {alreadySaved ? (
               <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={SAVED_STYLE}>
                 Saved plan
               </span>
@@ -106,19 +110,19 @@ export function RebalancePlanModal({
         <DialogFooter>
           <button
             type="button"
-            disabled={isSaved || isSaving || state.status !== "loaded"}
+            disabled={alreadySaved || isSaving || state.status !== "loaded"}
             onClick={onSave}
             className="inline-flex items-center justify-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold transition-all disabled:cursor-default"
-            style={isSaved ? SAVED_STYLE : GOLD_STYLE}
+            style={alreadySaved ? SAVED_STYLE : GOLD_STYLE}
           >
-            {isSaved ? (
+            {alreadySaved ? (
               <Check className="h-4 w-4" />
             ) : isSaving ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <Bookmark className="h-4 w-4" />
             )}
-            {isSaved ? "Saved" : isSaving ? "Saving…" : "Save this plan"}
+            {alreadySaved ? "Saved" : isSaving ? "Saving…" : "Save this plan"}
           </button>
         </DialogFooter>
       </DialogContent>

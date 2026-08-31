@@ -74,4 +74,12 @@ describe("RebalancePlanModal", () => {
     const text = document.body.textContent ?? "";
     expect(text.indexOf("Buy Fund")).toBeLessThan(text.indexOf("Sell Fund"));
   });
+
+  it("shows the footer as Saved when the fetched run is already committed, even if isSaved is false", async () => {
+    (getRebalancingRunDetail as ReturnType<typeof vi.fn>).mockResolvedValue({ ...detail, origin: "saved" });
+    render(<RebalancePlanModal runId="run-1" onClose={noop} isSaved={false} isSaving={false} onSave={noop} />);
+    await screen.findByText("Acme Bluechip");
+    const saveButton = screen.getByRole("button", { name: "Saved" });
+    expect(saveButton).toBeDisabled();
+  });
 });
