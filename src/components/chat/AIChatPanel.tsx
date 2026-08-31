@@ -2485,6 +2485,15 @@ const AIChatPanel = ({
           </form>
         </div>
 
+        {planModalRunId ? (
+          <RebalancePlanModal
+            runId={planModalRunId}
+            onClose={() => setPlanModalRunId(null)}
+            isSaved={savedRunIds.has(planModalRunId)}
+            isSaving={savingRunId === planModalRunId}
+            onSave={() => void handleSavePlan(planModalRunId)}
+          />
+        ) : null}
         {camsImportModal}
       </div>
     );
