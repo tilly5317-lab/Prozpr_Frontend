@@ -36,6 +36,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useChatThinking } from "@/hooks/useChatThinking";
 import CamsUploadModal from "@/components/onboarding/CamsUploadModal";
+import { RebalancePlanModal } from "@/components/chat/RebalancePlanModal";
 
 const PENDING_CHAT_BOOTSTRAP_KEY = "askProzpr.pendingChatBootstrap.v1";
 
@@ -1028,6 +1029,8 @@ const AIChatPanel = ({
   const [isTyping, setIsTyping] = useState(false);
   const [savingRunId, setSavingRunId] = useState<string | null>(null);
   const [savedRunIds, setSavedRunIds] = useState<Set<string>>(new Set());
+  // The rebalancing run whose plan the View-plan modal is showing (null = closed).
+  const [planModalRunId, setPlanModalRunId] = useState<string | null>(null);
 
   const handleSavePlan = useCallback(async (runId: string) => {
     setSavingRunId(runId);
@@ -1974,7 +1977,11 @@ const AIChatPanel = ({
                     /* View — exploratory, quiet ink ghost */
                     <button
                       type="button"
-                      onClick={() => navigate("/invest/rebalance-explanation")}
+                      onClick={() =>
+                        msg.rebalancingRunId
+                          ? setPlanModalRunId(msg.rebalancingRunId)
+                          : navigate("/invest/rebalance-explanation")
+                      }
                       className="group inline-flex items-center gap-1.5 rounded-full border border-foreground/15 bg-transparent px-4 py-1.5 text-[12.5px] font-semibold text-foreground/80 transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
                     >
                       View plan
@@ -2645,6 +2652,15 @@ const AIChatPanel = ({
         </motion.div>
       )}
     </AnimatePresence>
+    {planModalRunId ? (
+      <RebalancePlanModal
+        runId={planModalRunId}
+        onClose={() => setPlanModalRunId(null)}
+        isSaved={savedRunIds.has(planModalRunId)}
+        isSaving={savingRunId === planModalRunId}
+        onSave={() => void handleSavePlan(planModalRunId)}
+      />
+    ) : null}
     </>
   );
 };
