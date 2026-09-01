@@ -1,10 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Mic, MicOff, AlertCircle, Loader2, Sparkles, Check, Square, ChevronDown, ChevronUp, Globe, Pencil, ArrowRight, Plus, Trash2, MessageSquare, Menu, Star, UploadCloud, X } from "lucide-react";
+import { Send, Mic, MicOff, AlertCircle, Loader2, Sparkles, Check, Bookmark, Square, ChevronDown, ChevronUp, Globe, Pencil, ArrowRight, Plus, Trash2, MessageSquare, Menu, Star, UploadCloud, X } from "lucide-react";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { formatInrCompact } from "@/lib/utils";
+import { toast } from "sonner";
 import {
   createChatSession,
   sendChatMessageStreaming,
@@ -21,16 +22,21 @@ import {
   inferOnboardingComplete,
   inferAccountLinkingComplete,
   shouldSkipPostSetupChatPrompts,
+  saveRebalancingRun,
+  getCurrentRebalancingRun,
   type ChatSessionInfo,
+  type ChatMessageInfo,
   type PortfolioDetail,
   type UserInfo,
   type FullProfileResponse,
   type LinkAccountInfo,
 } from "@/lib/api";
+import { deriveRebalancingPills } from "@/lib/rebalancing-pills";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useChatThinking } from "@/hooks/useChatThinking";
 import CamsUploadModal from "@/components/onboarding/CamsUploadModal";
+import { RebalancePlanModal } from "@/components/chat/RebalancePlanModal";
 
 const PENDING_CHAT_BOOTSTRAP_KEY = "askProzpr.pendingChatBootstrap.v1";
 
@@ -72,6 +78,11 @@ interface Message {
   widgetKind?: "emergency-fund";
   /** Backend saved an ideal rebalancing plan — show CTA to open `/invest/rebalance-explanation`. */
   showViewExecutePlan?: boolean;
+  /** The persisted rebalancing run this AI turn produced (backend
+   *  `ideal_allocation_rebalancing_id`). Enables the "Save this plan" pill,
+   *  which POSTs it to /rebalancing/{id}/save. Absent on tilt / redirect turns
+   *  and on asset-allocation-only turns (backend sends no rebalancing id). */
+  rebalancingRunId?: string;
   /**
    * The question needed the user's holdings and none are imported yet (CAMS was
    * skipped or never added). Pi's reply says so; this renders the upload CTA
@@ -1016,6 +1027,51 @@ const AIChatPanel = ({
   const [marketSheetOpen, setMarketSheetOpen] = useState(false);
   const composerRef = useRef<HTMLInputElement>(null);
   const [isTyping, setIsTyping] = useState(false);
+  const [savingRunId, setSavingRunId] = useState<string | null>(null);
+  const [savedRunIds, setSavedRunIds] = useState<Set<string>>(new Set());
+  // The rebalancing run whose plan the View-plan modal is showing (null = closed).
+  const [planModalRunId, setPlanModalRunId] = useState<string | null>(null);
+
+  const handleSavePlan = useCallback(async (runId: string) => {
+    setSavingRunId(runId);
+    try {
+      await saveRebalancingRun(runId);
+      setSavedRunIds((prev) => new Set(prev).add(runId));
+      toast.success("Plan saved to your portfolio");
+    } catch {
+      toast.error("Couldn't save the plan. Please try again.");
+    } finally {
+      setSavingRunId(null);
+    }
+  }, []);
+
+  // On returning to chat, history rehydrates without the pill flags. Re-derive
+  // them from each message's OWN persisted run (deriveRebalancingPills), so a
+  // newer unsaved plan never inherits an older plan's "Saved". `perMessage` is
+  // index-aligned to `history`, and `messages` was just set 1:1 from the same
+  // `session.messages` at both call sites (1230, 1360), so mapping by index is safe.
+  const rehydrateRebalancingPill = useCallback(async (history: ChatMessageInfo[]) => {
+    const current = await getCurrentRebalancingRun().catch(() => null);
+    const { perMessage, savedRunIds } = deriveRebalancingPills(history, current);
+    setMessages((prev) =>
+      prev.map((m, i) => {
+        const pill = perMessage[i];
+        if (!pill || !pill.showViewExecutePlan) return m;
+        return {
+          ...m,
+          showViewExecutePlan: true,
+          ...(pill.rebalancingRunId ? { rebalancingRunId: pill.rebalancingRunId } : {}),
+        };
+      }),
+    );
+    if (savedRunIds.length > 0) {
+      setSavedRunIds((prev) => {
+        const next = new Set(prev);
+        savedRunIds.forEach((id) => next.add(id));
+        return next;
+      });
+    }
+  }, []);
   // Session whose live "thinking aloud" feed we poll while a reply is pending.
   const [thinkingSessionId, setThinkingSessionId] = useState<string | null>(null);
   const [micState, setMicState] = useState<MicState>("idle");
@@ -1176,6 +1232,7 @@ const AIChatPanel = ({
           chartPayloads: m.chart_payloads || null,
         })),
       );
+      void rehydrateRebalancingPill(session.messages);
       setChatStartTime(formatTimestamp(new Date(session.created_at)));
       setShowFirstUseHint(false);
       setOnboardingActive(false);
@@ -1305,6 +1362,7 @@ const AIChatPanel = ({
               chartPayloads: m.chart_payloads || null,
             })),
           );
+          void rehydrateRebalancingPill(session.messages);
           // Stamp the header with when this session actually started, not "now"
           // (mirrors handleSelectSession). An empty session keeps the current time.
           setChatStartTime(formatTimestamp(new Date(session.created_at)));
@@ -1588,11 +1646,13 @@ const AIChatPanel = ({
       const hasSavedPlan = Boolean(
         resp.ideal_allocation_rebalancing_id ?? resp.ideal_allocation_snapshot_id
       );
+      const rebalancingRunId = resp.ideal_allocation_rebalancing_id ?? undefined;
       // done is authoritative — replace the streamed text, never append to it.
       const finalMessage: Message = {
         role: "ai",
         content: resp.assistant_message.content,
         ...(hasSavedPlan ? { showViewExecutePlan: true } : {}),
+        ...(rebalancingRunId ? { rebalancingRunId } : {}),
         ...(resp.portfolio_data_missing ? { showAddCams: true } : {}),
         chartPayloads: resp.assistant_message.chart_payloads || null,
       };
@@ -1883,6 +1943,64 @@ const AIChatPanel = ({
                   }}
                 >
                   <MarkdownMessage text={msg.content} />
+                  {(msg.showViewExecutePlan || msg.rebalancingRunId) ? (
+                    <div className="mt-3 flex flex-wrap items-center justify-center gap-2 border-t border-foreground/10 pt-3">
+                      {msg.showViewExecutePlan ? (
+                        /* View — exploratory, quiet ink ghost */
+                        <button
+                          type="button"
+                          onClick={() =>
+                            msg.rebalancingRunId
+                              ? setPlanModalRunId(msg.rebalancingRunId)
+                              : navigate("/invest/rebalance-explanation")
+                          }
+                          className="group inline-flex items-center gap-1.5 rounded-full border border-foreground/15 bg-transparent px-4 py-1.5 text-[12.5px] font-semibold text-foreground/80 transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
+                        >
+                          View plan
+                          <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" />
+                        </button>
+                      ) : null}
+                      {msg.rebalancingRunId ? (
+                        /* Save — the commit; earns the brand's premium gold */
+                        <button
+                          type="button"
+                          disabled={
+                            savedRunIds.has(msg.rebalancingRunId) ||
+                            savingRunId === msg.rebalancingRunId
+                          }
+                          onClick={() => void handleSavePlan(msg.rebalancingRunId)}
+                          className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[12.5px] font-semibold transition-all hover:brightness-[1.04] active:scale-[0.98] disabled:cursor-default disabled:active:scale-100 motion-reduce:transition-none motion-reduce:active:scale-100"
+                          style={
+                            savedRunIds.has(msg.rebalancingRunId)
+                              ? {
+                                  backgroundColor: "rgba(212,168,104,0.15)",
+                                  color: "#9A7B2E",
+                                  border: "1px solid rgba(212,168,104,0.4)",
+                                }
+                              : {
+                                  background:
+                                    "linear-gradient(135deg, #E5C079 0%, #D4A868 100%)",
+                                  color: "#3a2c0e",
+                                  boxShadow: "0 2px 8px -3px rgba(212,168,104,0.7)",
+                                }
+                          }
+                        >
+                          {savedRunIds.has(msg.rebalancingRunId) ? (
+                            <Check className="h-3.5 w-3.5" />
+                          ) : savingRunId === msg.rebalancingRunId ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Bookmark className="h-3.5 w-3.5" />
+                          )}
+                          {savedRunIds.has(msg.rebalancingRunId)
+                            ? "Saved"
+                            : savingRunId === msg.rebalancingRunId
+                              ? "Saving…"
+                              : "Save plan"}
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
               </div>
               {msg.showAddCams ? (
@@ -1908,21 +2026,6 @@ const AIChatPanel = ({
                     style={{ backgroundColor: "rgba(212, 168, 104, 0.18)" }}
                   >
                     <UploadCloud className="h-4 w-4" style={{ color: "#D4A868" }} />
-                  </div>
-                </button>
-              ) : null}
-              {msg.showViewExecutePlan ? (
-                <button
-                  type="button"
-                  onClick={() => navigate("/invest/rebalance-explanation")}
-                  className="ml-7 mt-2 self-start flex items-center gap-3 rounded-xl px-4 py-3 transition-opacity hover:opacity-90 border border-primary/25 bg-primary/5"
-                >
-                  <div className="flex flex-col text-left">
-                    <span className="text-[11px] font-medium text-muted-foreground">Rebalancing plan ready</span>
-                    <span className="text-[13px] font-semibold text-foreground">View recommended plan</span>
-                  </div>
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/15">
-                    <ArrowRight className="h-4 w-4 text-primary" />
                   </div>
                 </button>
               ) : null}
@@ -2382,6 +2485,15 @@ const AIChatPanel = ({
           </form>
         </div>
 
+        {planModalRunId ? (
+          <RebalancePlanModal
+            runId={planModalRunId}
+            onClose={() => setPlanModalRunId(null)}
+            isSaved={savedRunIds.has(planModalRunId)}
+            isSaving={savingRunId === planModalRunId}
+            onSave={() => void handleSavePlan(planModalRunId)}
+          />
+        ) : null}
         {camsImportModal}
       </div>
     );
@@ -2549,6 +2661,15 @@ const AIChatPanel = ({
         </motion.div>
       )}
     </AnimatePresence>
+    {planModalRunId ? (
+      <RebalancePlanModal
+        runId={planModalRunId}
+        onClose={() => setPlanModalRunId(null)}
+        isSaved={savedRunIds.has(planModalRunId)}
+        isSaving={savingRunId === planModalRunId}
+        onSave={() => void handleSavePlan(planModalRunId)}
+      />
+    ) : null}
     </>
   );
 };

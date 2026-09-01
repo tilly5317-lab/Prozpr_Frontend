@@ -935,6 +935,11 @@ export interface ChatMessageInfo {
   intent_reasoning: string | null;
   chart_payloads: ChatChartPayload[] | null;
   created_at: string;
+  /** The rebalancing run this turn produced. Backend adds this to chat history;
+   *  absent until that ships (frontend degrades gracefully). */
+  ideal_allocation_rebalancing_id?: string | null;
+  /** The ideal-allocation snapshot this turn produced, if any. */
+  ideal_allocation_snapshot_id?: string | null;
 }
 
 export interface ChatSendResponse {
@@ -2701,6 +2706,8 @@ export interface RebalancingRunListItem {
   engine_version: string;
   created_at: string;
   updated_at: string;
+  /** "saved" once the customer commits this run via POST /rebalancing/{id}/save; null otherwise. */
+  origin?: string | null;
 }
 
 /** One Equity/Debt/Others row of the backend-computed Current-vs-Target bars. */
@@ -2739,6 +2746,19 @@ export async function listRebalancingRuns(): Promise<RebalancingRunListItem[]> {
 /** Full run detail — totals + trades + subgroup roll-ups + warnings. */
 export async function getRebalancingRunDetail(runId: string): Promise<RebalancingRunDetail> {
   return request<RebalancingRunDetail>(`/rebalancing/${runId}`);
+}
+
+/** Mark a rebalancing run as the customer's committed plan. Idempotent: saving
+ *  the same run twice is a no-op on the backend. Returns the updated run. */
+export async function saveRebalancingRun(runId: string): Promise<RebalancingRunListItem> {
+  return request<RebalancingRunListItem>(`/rebalancing/${runId}/save`, { method: "POST" });
+}
+
+/** The customer's committed run (origin="saved") if any, else the latest run.
+ *  Rejects with a 404-bearing Error when the customer has no runs at all —
+ *  callers treat that as "no plan yet" (see RebalanceExplanation.loadData). */
+export async function getCurrentRebalancingRun(): Promise<RebalancingRunDetail> {
+  return request<RebalancingRunDetail>("/rebalancing/current");
 }
 
 // ── Rebalancing readiness / unlock gate ─────────────────
