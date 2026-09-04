@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowLeft, History, Loader2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, History, Loader2 } from "lucide-react";
 import MfcCasFlow, { type MfcStep } from "@/components/mfc/MfcCasFlow";
+import { useOnboardingStep } from "@/hooks/useOnboardingStep";
 import {
   listMfcRequests,
   type MfcImportResponse,
@@ -14,9 +15,17 @@ import { formatInrCompact } from "@/lib/utils";
  * Import holdings straight from MF Central.
  *
  * The destination for the consent flow, reachable from the CAMS import screen
- * and directly at /mfc-cas. A successful import returns the user wherever they
- * came from (`?from=profile`, `?from=onboarding`), but not immediately: the
- * statement view is the point of the screen, so they leave on their own.
+ * and directly at /mfc-cas.
+ *
+ * Back and forward are deliberately different places. "Back" returns where the
+ * user came from; the CTA after a successful import goes ONWARD — during
+ * onboarding that is About You, the same step the CAS PDF path completes. They
+ * were the same route until it became clear that finishing the import and then
+ * being returned to the import screen reads as though nothing happened.
+ *
+ * The move is not automatic. The statement view is the point of this screen —
+ * it shows fields nothing else in the app does — so the user leaves when they
+ * have looked at it.
  *
  * The history section below is a deliberate part of the product, not debug
  * output. MFC's flow has a gap no UI can close — we cannot tell an abandoned
@@ -27,15 +36,41 @@ const MfcCasImport = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const from = searchParams.get("from");
+  const fromProfile = from === "profile";
+  const inOnboarding = from === "onboarding";
+
+  // The same onboarding step /cams-upload owns: this is that step, reached by
+  // the other route. Inert outside first-run onboarding, exactly as there.
+  const { completeStep } = useOnboardingStep("cams_upload", {
+    enabled: !fromProfile,
+  });
 
   const [step, setStep] = useState<MfcStep>("intro");
   const [imported, setImported] = useState(false);
 
-  const backTo =
-    from === "profile" ? "/profile" : from === "onboarding" ? "/cams-upload" : "/portfolio";
+  /** Where "Back" goes — where they came from. */
+  const backTo = fromProfile
+    ? "/profile"
+    : inOnboarding
+      ? "/cams-upload"
+      : "/portfolio";
 
-  const handleImported = (_res: MfcImportResponse) => {
+  /** Where the post-import CTA goes — the NEXT thing, never the screen they
+   * just completed. Onboarding continues to About You. */
+  const forwardTo = fromProfile ? "/profile" : inOnboarding ? "/about-you" : "/portfolio";
+  const forwardLabel = fromProfile
+    ? "Done"
+    : inOnboarding
+      ? "Continue"
+      : "Go to my portfolio";
+
+  const handleImported = (res: MfcImportResponse) => {
     setImported(true);
+    completeStep({
+      source: "mfc",
+      schemes: res.ingest?.schemes,
+      folios: res.ingest?.folios,
+    });
   };
 
   return (
@@ -76,13 +111,17 @@ const MfcCasImport = () => {
 
         {step === "intro" && <RequestHistory />}
 
+        {/* `replace` so browser-back from the next step does not return to a
+            consumed consent: the QR is single-use, and this screen would show a
+            done-state the user can no longer act on. */}
         {step === "done" && imported && (
           <button
             type="button"
-            onClick={() => navigate(backTo)}
-            className="mt-6 w-full rounded-xl bg-foreground py-3.5 text-[13px] font-semibold text-background transition-all active:scale-[0.98]"
+            onClick={() => navigate(forwardTo, { replace: true })}
+            className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-foreground py-3.5 text-[13px] font-semibold text-background transition-all active:scale-[0.98]"
           >
-            Done
+            {forwardLabel}
+            <ArrowRight className="h-4 w-4" />
           </button>
         )}
       </motion.div>
