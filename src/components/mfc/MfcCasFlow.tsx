@@ -5,6 +5,7 @@ import {
   ArrowRight,
   CheckCircle2,
   ExternalLink,
+  FlaskConical,
   Loader2,
   QrCode,
   RefreshCw,
@@ -264,6 +265,17 @@ const MfcCasFlow = ({
   return (
     <div className="flex flex-col">
       <StepRail step={step} />
+
+      {config.environment === "mock" && (
+        <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/5 px-3.5 py-2.5">
+          <FlaskConical className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            <span className="font-medium text-foreground">Local mock.</span> No
+            MF Central credentials are configured, so this server is serving
+            sample holdings. The flow is real; the portfolio it builds is not.
+          </p>
+        </div>
+      )}
 
       <AnimatePresence mode="wait">
         {step === "intro" && (
