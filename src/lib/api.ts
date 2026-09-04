@@ -860,6 +860,9 @@ export interface MfcStartResponse {
   pan_masked: string;
   from_date: string;
   to_date: string;
+  /** Masked contact MFC sends the consent OTP to — frequently NOT the account's,
+   * since the fund houses hold their own. */
+  otp_destination: string;
   message: string;
 }
 

@@ -15,12 +15,14 @@ import {
 } from "lucide-react";
 import {
   BackendOfflineError,
+  getMe,
   getMfcConfig,
   startMfcCasRequest,
   validateMfcQr,
   type MfcConfig,
   type MfcImportResponse,
   type MfcStartResponse,
+  type UserInfo,
 } from "@/lib/api";
 import { toast } from "@/hooks/use-toast";
 import MfcStatementView from "./MfcStatementView";
@@ -56,6 +58,8 @@ interface Props {
 }
 
 const MAX_QR_BYTES = 5 * 1024 * 1024;
+const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/;
 
 const MfcCasFlow = ({
   onImported,
@@ -65,6 +69,19 @@ const MfcCasFlow = ({
 }: Props) => {
   const [config, setConfig] = useState<MfcConfig | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
+  const [me, setMe] = useState<UserInfo | null>(null);
+
+  // MFC keys the statement on the PAN, so the backend only accepts a
+  // body-supplied one when the account has none — asking for it here is the
+  // difference between starting the flow and a 400 that reads like a bug.
+  const [pan, setPan] = useState("");
+  // The contact registered with the FUND HOUSES, which routinely differs from
+  // the Prozpr login. Left collapsed: the account's own is right often enough
+  // that surfacing two more fields by default would cost every user a decision
+  // most of them do not need to make.
+  const [useOtherContact, setUseOtherContact] = useState(false);
+  const [contactMobile, setContactMobile] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
 
   const [step, setStep] = useState<MfcStep>("intro");
   const [starting, setStarting] = useState(false);
@@ -96,6 +113,24 @@ const MfcCasFlow = ({
             ? "Backend is unreachable."
             : "Could not check whether MF Central import is available.",
         );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Whether a PAN is on file decides if this flow can start at all, so it is
+  // read up front rather than discovered by a failed /start.
+  useEffect(() => {
+    let cancelled = false;
+    getMe()
+      .then((u) => {
+        if (!cancelled) setMe(u);
+      })
+      .catch(() => {
+        // Non-fatal: without this we simply ask for the PAN, and the backend
+        // still refuses one that contradicts the account's.
+        if (!cancelled) setMe(null);
       });
     return () => {
       cancelled = true;
@@ -138,12 +173,31 @@ const MfcCasFlow = ({
     return () => window.removeEventListener("message", onMessage);
   }, [step, config?.mfc_origin]);
 
+  // The account's PAN wins when there is one; ours is only accepted when there
+  // is not (the backend enforces the same rule, and rejects a contradiction).
+  const panOnFile = me?.pan_set === true;
+  const panValue = pan.trim().toUpperCase();
+  const panReady = panOnFile || PAN_RE.test(panValue);
+  const contactReady =
+    !useOtherContact ||
+    /\d{10}/.test(contactMobile.replace(/\D/g, "")) ||
+    EMAIL_RE.test(contactEmail.trim());
+  const canStart = panReady && contactReady && !starting;
+
   const handleStart = useCallback(async () => {
     if (starting) return;
     setStarting(true);
     setStartError(null);
     try {
-      const res = await startMfcCasRequest({});
+      const mobile = useOtherContact ? contactMobile.trim() : "";
+      const email = useOtherContact ? contactEmail.trim() : "";
+      const res = await startMfcCasRequest({
+        pan_no: panOnFile ? null : panValue,
+        // Exactly one, never both — MFC documents passing both as a rejection,
+        // and mobile is preferred because the OTP is an SMS.
+        mobile: mobile || null,
+        email: mobile ? null : email || null,
+      });
       setRequest(res);
       setStep("consent");
       // Opened from inside the click handler's async continuation, which some
@@ -171,7 +225,7 @@ const MfcCasFlow = ({
     } finally {
       setStarting(false);
     }
-  }, [starting]);
+  }, [starting, panOnFile, panValue, useOtherContact, contactMobile, contactEmail]);
 
   const handleQrFile = useCallback(
     async (file: File) => {
@@ -304,6 +358,90 @@ const MfcCasFlow = ({
               </IntroPoint>
             </div>
 
+            <div className="mt-5 space-y-3 rounded-2xl border border-border bg-card p-4">
+              {panOnFile ? (
+                <div>
+                  <p className="text-[11px] text-muted-foreground">
+                    Statement will be requested for
+                  </p>
+                  <p className="mt-0.5 font-mono text-[13px] text-foreground">
+                    {me?.pan_masked ?? "your PAN"}
+                  </p>
+                  <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                    MF Central keys the statement on your PAN, so it can only be
+                    the one on your account.
+                  </p>
+                </div>
+              ) : (
+                <label className="block">
+                  <span className="text-[12px] font-medium text-foreground">
+                    Your PAN
+                  </span>
+                  <input
+                    type="text"
+                    inputMode="text"
+                    autoCapitalize="characters"
+                    maxLength={10}
+                    value={pan}
+                    onChange={(e) => setPan(e.target.value.toUpperCase())}
+                    placeholder="ABCDE1234F"
+                    className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2.5 font-mono text-[13px] uppercase tracking-wide text-foreground outline-none transition-colors focus:border-primary"
+                  />
+                  <span className="mt-1 block text-[11px] leading-relaxed text-muted-foreground">
+                    {pan && !PAN_RE.test(panValue)
+                      ? "That doesn't look like a PAN — five letters, four digits, one letter."
+                      : "MF Central assembles the statement from your PAN. It's saved to your profile once the statement imports."}
+                  </span>
+                </label>
+              )}
+
+              {!useOtherContact ? (
+                <button
+                  type="button"
+                  onClick={() => setUseOtherContact(true)}
+                  className="text-left text-[11px] leading-relaxed text-muted-foreground underline decoration-dotted underline-offset-2 transition-colors hover:text-foreground"
+                >
+                  The OTP goes to {me?.mobile ? `+${me.country_code} ${me.mobile}` : "your registered contact"}.
+                  Use a different mobile or email?
+                </button>
+              ) : (
+                <div className="space-y-2.5 border-t border-border pt-3">
+                  <p className="text-[11px] leading-relaxed text-muted-foreground">
+                    Enter the mobile or email registered with your{" "}
+                    <strong className="text-foreground">fund houses</strong> — MF
+                    Central sends the OTP there. Fill one, not both.
+                  </p>
+                  <input
+                    type="tel"
+                    inputMode="numeric"
+                    value={contactMobile}
+                    onChange={(e) => setContactMobile(e.target.value)}
+                    placeholder="Mobile (10 digits)"
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-[13px] text-foreground outline-none transition-colors focus:border-primary"
+                  />
+                  <input
+                    type="email"
+                    value={contactEmail}
+                    onChange={(e) => setContactEmail(e.target.value)}
+                    disabled={contactMobile.trim().length > 0}
+                    placeholder="…or email"
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-[13px] text-foreground outline-none transition-colors focus:border-primary disabled:opacity-50"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUseOtherContact(false);
+                      setContactMobile("");
+                      setContactEmail("");
+                    }}
+                    className="text-[11px] text-muted-foreground underline decoration-dotted underline-offset-2 transition-colors hover:text-foreground"
+                  >
+                    Use my account contact instead
+                  </button>
+                </div>
+              )}
+            </div>
+
             {startError && (
               <div className="mt-4">
                 <Notice tone="error" title="Couldn't start" body={startError} />
@@ -313,8 +451,8 @@ const MfcCasFlow = ({
             <button
               type="button"
               onClick={() => void handleStart()}
-              disabled={starting}
-              className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-foreground py-3.5 text-[13px] font-semibold text-background transition-all active:scale-[0.98] disabled:opacity-60"
+              disabled={!canStart}
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-foreground py-3.5 text-[13px] font-semibold text-background transition-all active:scale-[0.98] disabled:opacity-40"
             >
               {starting ? (
                 <>
@@ -349,7 +487,11 @@ const MfcCasFlow = ({
 
             <ol className="mt-4 space-y-2.5">
               <Instruction n={1}>
-                Enter the OTP MF Central just sent you.
+                Enter the OTP MF Central just sent to{" "}
+                <strong className="text-foreground">
+                  {request.otp_destination}
+                </strong>
+                .
               </Instruction>
               <Instruction n={2}>
                 Choose <strong className="text-foreground">Detailed</strong> when
