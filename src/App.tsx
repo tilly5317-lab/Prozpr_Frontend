@@ -101,6 +101,8 @@ import MfFundDetail from "./pages/MfFundDetail";
 // Zoom team-call feature disabled for now — keep the code, don't delete.
 // import AdvisorMeetings from "./pages/AdvisorMeetings";
 import CamsUpload from "./pages/CamsUpload";
+import MfcCasImport from "./pages/MfcCasImport";
+import MfcCasCallback from "./pages/MfcCasCallback";
 import AboutYou from "./pages/AboutYou";
 import Portfolio from "./pages/Portfolio";
 import PortfolioFundDetail from "./pages/PortfolioFundDetail";
@@ -133,6 +135,13 @@ const App = () => (
             {/* Onboarding steps — need a valid session, but must stay reachable
                 BEFORE onboarding is complete. */}
             <Route path="/cams-upload" element={<CamsUpload />} />
+            {/* MF Central consent import — the replacement for the CAS PDF
+                round-trip. Sits beside /cams-upload (not behind RequireOnboarded)
+                because it is an onboarding step in its own right. The callback is
+                the redirectUrl baked into MFC's encrypted consent payload, so its
+                path must match MFC_REDIRECT_URL on the backend. */}
+            <Route path="/mfc-cas" element={<MfcCasImport />} />
+            <Route path="/mfc-cas/callback" element={<MfcCasCallback />} />
             <Route path="/onboarding-loading" element={<OnboardingLoading />} />
             <Route path="/about-you" element={<AboutYou />} />
             {/* App pages — valid session AND completed onboarding. */}

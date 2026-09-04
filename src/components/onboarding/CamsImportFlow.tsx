@@ -25,6 +25,7 @@ import { useEnterSubmit } from "@/hooks/useEnterSubmit";
 import OnboardingNav from "./OnboardingNav";
 import {
   getCamsCapabilities,
+  getMfcConfig,
   getMe,
   requestCamsStatement,
   uploadCamsStatement,
@@ -118,6 +119,15 @@ interface CamsImportFlowProps {
   onSkip?: () => void;
   /** Disables the skip option while the host is persisting the choice. */
   skipping?: boolean;
+  /**
+   * Supply to offer the MF Central consent import as the first path. Shown only
+   * when the backend reports MFC configured, so an unconfigured server never
+   * advertises a route that would 503.
+   *
+   * The host decides what taking it means — the onboarding page navigates to
+   * /mfc-cas, a modal closes and navigates. This component does not route.
+   */
+  onUseMfCentral?: () => void;
 }
 
 /**
@@ -145,6 +155,7 @@ const CamsImportFlow = ({
   fillHeight = false,
   onSkip,
   skipping = false,
+  onUseMfCentral,
 }: CamsImportFlowProps) => {
   // Entry is a two-way choice: "Upload CAS" (straight to upload) and "Mail me
   // my CAS" (guided email request). Upload-first because most returning users
@@ -158,6 +169,10 @@ const CamsImportFlow = ({
   // doesn't, the flow starts straight at Upload with manual-generation
   // guidance; when the plan is upgraded this lights back up automatically.
   const [mailbackAvailable, setMailbackAvailable] = useState<boolean | null>(null);
+  // Whether the backend is wired to MF Central. Null until the probe answers;
+  // the MFC card only appears once it is definitely true, so an unconfigured
+  // server never advertises a path that would 503 on the first tap.
+  const [mfcAvailable, setMfcAvailable] = useState<boolean | null>(null);
 
   // ── step 1 state ──
   const [email, setEmail] = useState("");
@@ -211,6 +226,24 @@ const CamsImportFlow = ({
       cancelled = true;
     };
   }, []);
+
+  // Is MF Central available? Deliberately separate from the CAS Parser probe:
+  // the two import routes have different vendors and either can be configured
+  // without the other, so one failing must not hide the other.
+  useEffect(() => {
+    if (!onUseMfCentral) return;
+    let cancelled = false;
+    void getMfcConfig()
+      .then((c) => {
+        if (!cancelled) setMfcAvailable(c.enabled);
+      })
+      .catch(() => {
+        if (!cancelled) setMfcAvailable(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [onUseMfCentral]);
 
   // Prefill the email from the signed-in profile (best-effort).
   useEffect(() => {
@@ -453,18 +486,60 @@ const CamsImportFlow = ({
             <p className={`${sub} leading-relaxed text-muted-foreground`}>
               Your Consolidated Account Statement (CAS) lists every mutual fund
               you own. We read it once and build your entire portfolio from it —
-              either upload the PDF you have, or we&apos;ll get CAMS to mail you a
-              fresh one.
+              {mfcAvailable
+                ? " fastest is to let MF Central hand it over directly, but you can still work from a PDF."
+                : " either upload the PDF you have, or we'll get CAMS to mail you a fresh one."}
             </p>
 
             <div className="mt-4 space-y-3">
+              {/* MF Central goes first when it is available: it is the only path
+                  with no PDF, no password and no waiting on an email. The two
+                  PDF routes stay as-is beneath it — MFC needs the investor to
+                  pass an OTP on someone else's site, and that is not always
+                  possible in the moment. */}
+              {mfcAvailable && onUseMfCentral && (
+                <button
+                  type="button"
+                  onClick={onUseMfCentral}
+                  className="group flex w-full items-center gap-3 rounded-2xl border-2 border-primary/60 bg-primary/5 px-4 py-4 text-left transition-all hover:border-primary hover:bg-primary/10 active:scale-[0.98]"
+                >
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl wealth-gradient">
+                    <ShieldCheck className="h-5 w-5 text-primary-foreground" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[14px] font-semibold text-foreground">
+                      Fetch from MF Central
+                    </p>
+                    <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                      Verify with one OTP and CAMS + KFintech hand us your
+                      holdings and transactions directly. No PDF, no password.
+                    </p>
+                  </div>
+                  <ArrowRight className="h-4 w-4 shrink-0 text-primary transition-transform group-hover:translate-x-0.5" />
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={chooseHave}
-                className="group flex w-full items-center gap-3 rounded-2xl border-2 border-primary/60 bg-primary/5 px-4 py-4 text-left transition-all hover:border-primary hover:bg-primary/10 active:scale-[0.98]"
+                className={`group flex w-full items-center gap-3 rounded-2xl px-4 py-4 text-left transition-all active:scale-[0.98] ${
+                  mfcAvailable && onUseMfCentral
+                    ? "border border-border bg-background hover:bg-accent/40"
+                    : "border-2 border-primary/60 bg-primary/5 hover:border-primary hover:bg-primary/10"
+                }`}
               >
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl wealth-gradient">
-                  <UploadCloud className="h-5 w-5 text-primary-foreground" />
+                <div
+                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
+                    mfcAvailable && onUseMfCentral ? "bg-secondary" : "wealth-gradient"
+                  }`}
+                >
+                  <UploadCloud
+                    className={`h-5 w-5 ${
+                      mfcAvailable && onUseMfCentral
+                        ? "text-muted-foreground"
+                        : "text-primary-foreground"
+                    }`}
+                  />
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-[14px] font-semibold text-foreground">Upload CAS</p>

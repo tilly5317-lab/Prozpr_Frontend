@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { X } from "lucide-react";
 import { type CamsPdfImportResponse } from "@/lib/api";
@@ -28,6 +29,7 @@ const CamsUploadModal = ({
   onUploaded,
   replaceExisting = false,
 }: CamsUploadModalProps) => {
+  const navigate = useNavigate();
   // Remount the flow (fresh state) each time the modal opens.
   const [flowKey, setFlowKey] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -100,6 +102,13 @@ const CamsUploadModal = ({
               onImported={(result) => {
                 onUploaded?.(result);
                 onClose();
+              }}
+              // MF Central's consent flow needs a full page (it opens MFC's own
+              // site and comes back), so taking it closes the modal rather than
+              // trying to run inside it.
+              onUseMfCentral={() => {
+                onClose();
+                navigate("/mfc-cas");
               }}
             />
           </motion.div>

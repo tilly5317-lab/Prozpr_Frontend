@@ -123,6 +123,11 @@ const CamsUpload = () => {
           onImported={handleImported}
           onStepChange={setFlowStep}
           fillHeight
+          // MF Central is a whole flow of its own (consent, OTP, QR), so it gets
+          // its own page rather than another branch inside this one.
+          onUseMfCentral={() =>
+            navigate(`/mfc-cas?from=${fromProfile ? "profile" : "onboarding"}`)
+          }
           // Onboarding offers the third option; the profile entry point already
           // has its own Cancel below, so deferring there would be a duplicate.
           onSkip={fromProfile ? undefined : () => void handleSkip()}

@@ -824,6 +824,249 @@ export async function uploadCamsStatement(
   return JSON.parse(text) as CamsPdfImportResponse;
 }
 
+// ── MF Central (MFC) — consent-based CAS, straight from the RTAs ──
+// Replaces the generate → email → download → upload PDF round-trip above. Two
+// calls with the investor off-site in between:
+//   1. startMfcCasRequest() — returns a single-use redirect URL into MFC's own
+//      OTP + consent UI, where they choose Detailed and download a QR image;
+//   2. validateMfcQr() — that QR is exchanged for the full transaction ledger,
+//      which lands through the same pipeline a PDF upload uses.
+// Nothing can observe the middle: MFC exposes no "did they consent yet" call,
+// so the QR coming back is the only completion signal.
+
+export interface MfcConfig {
+  enabled: boolean;
+  environment: string;
+  redirect_url: string | null;
+  /** Origin of MFC's consent UI — validate postMessage events against this. */
+  mfc_origin: string | null;
+  integration_mode: "popup" | "iframe" | "redirect";
+}
+
+/** Whether this backend is wired to MF Central. Called on mount so the import
+ * screen can offer the MFC path, or fall back to the PDF upload, without a
+ * failed request in between. */
+export async function getMfcConfig(): Promise<MfcConfig> {
+  return request<MfcConfig>("/mfc-cas/config");
+}
+
+export interface MfcStartResponse {
+  request_id: string;
+  client_ref_no: string;
+  req_id: string;
+  otp_ref: string;
+  /** Single-use, tied to one reqId — never cache or share it. */
+  redirect_url: string;
+  pan_masked: string;
+  from_date: string;
+  to_date: string;
+  message: string;
+}
+
+/**
+ * Register a CAS request with MF Central and get the investor's redirect URL.
+ * PAN comes from the account when we hold one; `pan_no` is only honoured for
+ * users who have none on file yet.
+ */
+export async function startMfcCasRequest(p: {
+  pan_no?: string | null;
+  mobile?: string | null;
+  email?: string | null;
+}): Promise<MfcStartResponse> {
+  return request<MfcStartResponse>("/mfc-cas/start", {
+    method: "POST",
+    body: JSON.stringify(p),
+  });
+}
+
+/** One position, as MFC reports it. Far richer than what our schema stores —
+ * `allows` and `bank` in particular have no home in the DB yet. */
+export interface MfcPosition {
+  amc_name: string | null;
+  folio: string | null;
+  scheme_name: string | null;
+  scheme_option?: string | null;
+  isin: string | null;
+  asset_type: string | null;
+  scheme_type?: string | null;
+  plan_mode?: string | null;
+  nav: number | null;
+  nav_date: string | null;
+  units: number;
+  opening_units?: number | null;
+  lien_eligible_units?: number | null;
+  market_value: number;
+  cost_value: number | null;
+  gain_loss?: number | null;
+  gain_loss_pct?: number | null;
+  is_demat: string | null;
+  rta_name: string | null;
+  broker_code: string | null;
+  broker_name: string | null;
+  kyc_status: string | null;
+  nominee_status: string | null;
+  tax_status: string | null;
+  mode_of_holding?: string | null;
+  last_txn_date?: string | null;
+  /** Which order types this exact folio+scheme accepts. Null on detailed
+   * statements — MFC only sends the flags on the summary variant. */
+  allows: {
+    purchase: boolean;
+    redeem: boolean;
+    switch: boolean;
+    sip: boolean;
+    stp: boolean;
+    swp: boolean;
+  } | null;
+  bank: {
+    name: string | null;
+    account_no: string | null;
+    account_type: string | null;
+    ifsc: string | null;
+    city: string | null;
+  } | null;
+}
+
+export interface MfcTransaction {
+  date: string | null;
+  posted_date: string | null;
+  amc_name: string | null;
+  folio: string | null;
+  scheme_name: string | null;
+  isin: string | null;
+  description: string | null;
+  amount: number;
+  units: number;
+  nav: number | null;
+  stamp_duty: number | null;
+  stt: number | null;
+  total_tax: number | null;
+  /** Our classification of MFC's free-text description. "UNKNOWN" rows move no
+   * units (address updates, KYC flags) and are not ingested. */
+  kind: string;
+}
+
+export interface MfcStatementData {
+  variant: "summary" | "detailed" | string;
+  investor: {
+    name: string | null;
+    email: string | null;
+    mobile: string | null;
+    address: string | null;
+    pan: string | null;
+  };
+  statement_from: string | null;
+  statement_to: string | null;
+  amc_summary: {
+    amc: string | null;
+    amc_name: string | null;
+    market_value: number;
+    cost_value: number;
+    gain_loss: number;
+    gain_loss_pct: number;
+    is_demat: string | null;
+  }[];
+  portfolio: {
+    market_value: number;
+    cost_value: number;
+    gain_loss: number;
+    gain_loss_pct: number;
+    is_demat: string | null;
+  }[];
+  positions: MfcPosition[];
+  transactions: MfcTransaction[];
+  counts: {
+    positions: number;
+    transactions: number;
+    folios: number;
+    amcs: number;
+  };
+  error_message: string | null;
+}
+
+export interface MfcIngestSummary {
+  import_id: string;
+  cas_upload_id: string | null;
+  status: string;
+  cas_type: string | null;
+  statement_period_from: string | null;
+  statement_period_to: string | null;
+  folios: number;
+  schemes: number;
+  aa_transactions_parsed: number;
+  mf_transactions_inserted: number;
+  mf_transactions_skipped_duplicate: number;
+  portfolio_allocation_rows: number;
+  total_value_inr: number;
+  normalize_error: string | null;
+  profile_fields_filled: string[];
+  reused_existing: boolean;
+}
+
+export interface MfcImportResponse {
+  request_id: string;
+  req_id: string;
+  variant: string;
+  /** Null when the statement was readable but not ingestible — see `rejection`.
+   * `data` is still populated in that case. */
+  ingest: MfcIngestSummary | null;
+  rejection: string | null;
+  data: MfcStatementData;
+  message: string;
+}
+
+/**
+ * Exchange the QR the investor downloaded from MF Central for their statement.
+ *
+ * The QR is SINGLE-USE — MFC invalidates it on the first successful exchange —
+ * so this must never be auto-retried. A failure here means starting over with
+ * a fresh consent.
+ */
+export async function validateMfcQr(p: {
+  qr_code: string;
+  request_id?: string | null;
+  req_id?: string | null;
+}): Promise<MfcImportResponse> {
+  const res = await request<MfcImportResponse>(
+    "/mfc-cas/validate-qr",
+    { method: "POST", body: JSON.stringify(p) },
+    true,
+    // MFC assembles a multi-decade statement synchronously behind this call.
+    150_000,
+  );
+  if (res.ingest) invalidateUserContextCache();
+  return res;
+}
+
+export interface MfcRequestItem {
+  id: string;
+  client_ref_no: string;
+  req_id: string | null;
+  status: "initiated" | "imported" | "failed" | string;
+  cas_variant: string | null;
+  pan: string | null;
+  mobile: string | null;
+  email: string | null;
+  from_date: string | null;
+  to_date: string | null;
+  folios: number | null;
+  schemes: number | null;
+  transactions: number | null;
+  total_value_inr: number | null;
+  error: string | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+/** Consent attempts, newest first. Most rows rest at "initiated": we cannot see
+ * whether an investor finished on MFC's site, so abandoned and in-progress look
+ * identical. */
+export async function listMfcRequests(
+  limit = 20,
+): Promise<{ requests: MfcRequestItem[] }> {
+  return request<{ requests: MfcRequestItem[] }>(`/mfc-cas/requests?limit=${limit}`);
+}
+
 // ── Archived CAS statements ("My CAS statements" on the profile) ──
 export interface CasDocumentItem {
   id: string;
