@@ -1070,6 +1070,238 @@ export async function listMfcRequests(
   return request<{ requests: MfcRequestItem[] }>(`/mfc-cas/requests?limit=${limit}`);
 }
 
+// ── MF Central FT — placing orders, the OUTBOUND half ──
+// /mfc-cas above READS the portfolio out of the registrars; these WRITE orders
+// back to them: purchases, redemptions, switches, SIP/STP/SWP and SIP
+// pause/cancel.
+//
+// Every order is a four-call chain with the investor in the middle:
+//
+//   placeMfcFtOrder()      -> MFC accepts it, returns a reqId. Nothing executes.
+//   requestMfcFtOtp()      -> MFC texts or emails the investor a code
+//   confirmMfcFtOtp()      -> the code goes back; the order reaches the RTA
+//   getMfcFtOrderStatus()  -> poll; only this reports what actually happened
+//
+// Purchases add confirmMfcFtPayment() once the money has moved — without it
+// the registrar holds the order unfunded.
+//
+// `next_step` on each response names the call to make next, so a caller does
+// not have to encode that order itself.
+
+export type MfcFtKind =
+  | "purchase"
+  | "additional"
+  | "redeem"
+  | "switch"
+  | "stp"
+  | "swp"
+  | "sip_pause"
+  | "sip_cancel";
+
+export interface MfcFtMasters {
+  amcs: { code: string; name: string; short_name: string }[];
+  frequencies: { code: string; label: string }[];
+  account_types: { code: string; label: string }[];
+  transaction_kinds: { code: string; label: string }[];
+}
+
+/** MFC's own code tables (43 fund houses, 17 cadences). Fetched rather than
+ * hardcoded here: MFC extends them when a house onboards, and a stale copy in
+ * the bundle would reject a real AMC. */
+export async function getMfcFtMasters(): Promise<MfcFtMasters> {
+  return request<MfcFtMasters>("/mfc-ft/masters");
+}
+
+export interface MfcFtBankInput {
+  account_no: string;
+  account_type?: string;
+  name?: string | null;
+  branch?: string | null;
+  city?: string | null;
+  pincode?: string | null;
+  ifsc?: string | null;
+  neft_ifsc?: string | null;
+  micr?: string | null;
+}
+
+export interface MfcFtOrderInput {
+  kind: MfcFtKind;
+  isin?: string | null;
+  /** Scheme to switch or transfer INTO (switch, STP). */
+  to_isin?: string | null;
+  folio?: string | null;
+  /** Used to infer the AMC when `amc` is not given. */
+  scheme_name?: string | null;
+  amc?: string | null;
+  amount?: number | null;
+  units?: number | null;
+  all_units?: boolean;
+  /** MFC code (OM, Q, W…) or a word the backend resolves ("Monthly"). */
+  frequency?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  installments?: number | null;
+  /** The registrar's number for a running SIP — required to pause or cancel. */
+  user_trxn_no?: string | null;
+  pause_installments?: number | null;
+  reason?: string | null;
+  reason_code?: string | null;
+  dist_id?: string | null;
+  sub_broker_arn?: string | null;
+  euin?: string | null;
+  ria_code?: string | null;
+  reinvest?: string | null;
+  bank?: MfcFtBankInput | null;
+  pan_no?: string | null;
+  mobile?: string | null;
+  email?: string | null;
+}
+
+export interface MfcFtOrder {
+  id: string;
+  kind: string;
+  /** Ours — what UI branches on. */
+  status:
+    | "draft"
+    | "submitted"
+    | "otp_sent"
+    | "consented"
+    | "processing"
+    | "success"
+    | "rejected"
+    | "failed"
+    | string;
+  /** The registrar's own words. Kept alongside `status` because neither CAMS
+   * nor KFintech publishes a closed list, so the mapping is lossy — and this
+   * is the string their support desk recognises. */
+  rta_status: string | null;
+  client_ref_no: string;
+  req_id: string | null;
+  user_trxn_no: string | null;
+  amc: string | null;
+  amc_name: string | null;
+  folio: string | null;
+  isin: string | null;
+  to_isin: string | null;
+  scheme_name: string | null;
+  amount: number | null;
+  units: number | null;
+  all_units: boolean | null;
+  frequency: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  installments: number | null;
+  otp_destination: string | null;
+  error: string | null;
+  created_at: string;
+  consented_at: string | null;
+  completed_at: string | null;
+}
+
+export interface MfcFtOrderResponse {
+  order: MfcFtOrder;
+  message: string;
+  /** otp | consent | payment | status | none */
+  next_step: string | null;
+}
+
+/**
+ * Place one transaction. Nothing executes yet — MFC records the order and
+ * returns a reqId; the investor still has to confirm an OTP.
+ *
+ * A 400 here is a business rejection (bad folio, scheme not transactable, wrong
+ * AMC) and must NOT be retried: MFC may already hold the order, and a second
+ * submission is a second order.
+ */
+export async function placeMfcFtOrder(
+  input: MfcFtOrderInput,
+): Promise<MfcFtOrderResponse> {
+  return request<MfcFtOrderResponse>("/mfc-ft/orders", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Ask MF Central to send the investor the transaction OTP. */
+export async function requestMfcFtOtp(orderId: string): Promise<MfcFtOrderResponse> {
+  return request<MfcFtOrderResponse>(`/mfc-ft/orders/${orderId}/otp`, {
+    method: "POST",
+  });
+}
+
+/**
+ * Relay the investor's OTP — the point at which the order goes to the registrar.
+ *
+ * A wrong code is a 400 and leaves the order confirmable: MFC accepts a retry
+ * against the same OTP reference, so this can be called again.
+ */
+export async function confirmMfcFtOtp(
+  orderId: string,
+  otp: string,
+): Promise<MfcFtOrderResponse> {
+  return request<MfcFtOrderResponse>(`/mfc-ft/orders/${orderId}/consent`, {
+    method: "POST",
+    body: JSON.stringify({ otp }),
+  });
+}
+
+export interface MfcFtStatusResponse {
+  order: MfcFtOrder;
+  /** MFC's own body, so an unmapped registrar phrasing is diagnosable. */
+  raw: Record<string, unknown>;
+}
+
+/** Poll the registrar's verdict. MFC documents no limit on this call, and it is
+ * the only step that reports what actually happened — everything before it
+ * reports only that MFC accepted a request. */
+export async function getMfcFtOrderStatus(
+  orderId: string,
+): Promise<MfcFtStatusResponse> {
+  return request<MfcFtStatusResponse>(`/mfc-ft/orders/${orderId}/status`);
+}
+
+/** Tell MF Central the money moved. Purchases and SIP registrations only —
+ * without it the registrar holds the order unfunded. */
+export async function confirmMfcFtPayment(
+  orderId: string,
+  p: {
+    status?: string;
+    bank_code?: string | null;
+    umrn?: string | null;
+    mandate_ref_id?: string | null;
+    error_description?: string | null;
+  } = {},
+): Promise<MfcFtOrderResponse> {
+  return request<MfcFtOrderResponse>(`/mfc-ft/orders/${orderId}/payment`, {
+    method: "POST",
+    body: JSON.stringify({ status: "SUCCESS", ...p }),
+  });
+}
+
+export interface MfcFtValidateResponse {
+  ok: boolean;
+  raw: Record<string, unknown>;
+  message: string;
+}
+
+/** Dry-run a SIP pause or cancel. Writes nothing, and is worth doing first: a
+ * wrong `user_trxn_no` would otherwise be discovered only after the investor
+ * had already been sent an OTP. */
+export async function validateMfcSipChange(
+  input: MfcFtOrderInput,
+): Promise<MfcFtValidateResponse> {
+  return request<MfcFtValidateResponse>("/mfc-ft/pause-cancel/validate", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function listMfcFtOrders(
+  limit = 50,
+): Promise<{ orders: MfcFtOrder[] }> {
+  return request<{ orders: MfcFtOrder[] }>(`/mfc-ft/orders?limit=${limit}`);
+}
+
 // ── Archived CAS statements ("My CAS statements" on the profile) ──
 export interface CasDocumentItem {
   id: string;

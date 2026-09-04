@@ -103,6 +103,7 @@ import MfFundDetail from "./pages/MfFundDetail";
 import CamsUpload from "./pages/CamsUpload";
 import MfcCasImport from "./pages/MfcCasImport";
 import MfcCasCallback from "./pages/MfcCasCallback";
+import MfcFtOrders from "./pages/MfcFtOrders";
 import AboutYou from "./pages/AboutYou";
 import Portfolio from "./pages/Portfolio";
 import PortfolioFundDetail from "./pages/PortfolioFundDetail";
@@ -142,6 +143,9 @@ const App = () => (
                 path must match MFC_REDIRECT_URL on the backend. */}
             <Route path="/mfc-cas" element={<MfcCasImport />} />
             <Route path="/mfc-cas/callback" element={<MfcCasCallback />} />
+            {/* MF Central order placement — the outbound half. Needs holdings
+                to act on, so unlike /mfc-cas it sits behind RequireOnboarded
+                with the rest of the app (declared below). */}
             <Route path="/onboarding-loading" element={<OnboardingLoading />} />
             <Route path="/about-you" element={<AboutYou />} />
             {/* App pages — valid session AND completed onboarding. */}
@@ -155,6 +159,7 @@ const App = () => (
                 after /account/pin so that literal path wins over :field. */}
             <Route path="/account/:field" element={<SensitiveChange />} />
             <Route path="/cas-statements" element={<CasStatements />} />
+            <Route path="/mfc-ft" element={<MfcFtOrders />} />
             <Route path="/chat" element={<Chat />} />
             <Route path="/notifications" element={<Notifications />} />
             {/* Invest section — layout route so the top toggle (InvestTabs)
