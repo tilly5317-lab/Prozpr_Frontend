@@ -20,10 +20,24 @@ import CamsMissingNotice from "@/components/onboarding/CamsMissingNotice";
 
 const HORIZONS: PortfolioNavHorizon[] = ["1M", "3M", "1Y", "3Y", "MAX"];
 
+// How long the progress bar may sit on the same percentage before we stop believing
+// it. Comfortably longer than the slowest real step (fetching NAV history for a
+// large portfolio), short enough that nobody watches a dead bar for minutes.
+const PROGRESS_STALL_MS = 90_000;
+
+// `new Date("2026-09-09")` is parsed as UTC midnight, but every formatter below
+// renders in the *browser's* timezone — so west of UTC the whole chart, tooltip
+// included, showed the day before the one the backend recorded. Build the date from
+// its parts instead, so a recorded_date always renders as itself.
+function parseSeriesDate(iso: string): Date {
+  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
+  return new Date(y, (m ?? 1) - 1, d ?? 1);
+}
+
 // X-axis label format depends on horizon: short windows (1M / 3M) read as
 // "dd-mmm" (e.g. 05-Jun); longer windows read as "mmm-yy" (e.g. Jun-26).
 function formatXLabel(iso: string, horizon: PortfolioNavHorizon): string {
-  const d = new Date(iso);
+  const d = parseSeriesDate(iso);
   const mon = d.toLocaleDateString("en-IN", { month: "short" });
   if (horizon === "1M" || horizon === "3M") {
     const dd = String(d.getDate()).padStart(2, "0");
@@ -34,7 +48,7 @@ function formatXLabel(iso: string, horizon: PortfolioNavHorizon): string {
 }
 
 function formatTooltipDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-IN", {
+  return parseSeriesDate(iso).toLocaleDateString("en-IN", {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -54,7 +68,14 @@ function ChartTooltip({
 }) {
   if (!active || !payload || !payload.length) return null;
   const p = payload[0].payload;
-  const gain = p.gain_percentage;
+  // Guard every field before formatting. `gain.toFixed` throws on a missing value
+  // and takes the whole chart down with it, and a `null` invested renders as the
+  // literal "₹0" — a number the backend never sent. Show what we have.
+  const value = Number(p.total_value);
+  const invested = Number(p.total_invested);
+  const gain = Number(p.gain_percentage);
+  const hasInvested = Number.isFinite(invested) && invested > 0;
+  const hasGain = Number.isFinite(gain) && hasInvested;
   return (
     <div
       className="rounded-md bg-popover text-popover-foreground shadow-md px-2.5 py-1.5"
@@ -63,18 +84,24 @@ function ChartTooltip({
       <p className="text-[11px] text-muted-foreground">
         {formatTooltipDate(p.recorded_date)}
       </p>
-      <p className="text-[12px] font-semibold">{formatInr0(p.total_value)}</p>
-      <p className="text-[11px] text-muted-foreground">
-        Invested {formatInr0(p.total_invested)}
+      <p className="text-[12px] font-semibold">
+        {Number.isFinite(value) ? formatInr0(value) : "—"}
       </p>
-      <p
-        className={`text-[11px] font-medium ${
-          gain >= 0 ? "text-wealth-green" : "text-destructive"
-        }`}
-      >
-        {gain >= 0 ? "+" : ""}
-        {gain.toFixed(1)}% vs invested
-      </p>
+      {hasInvested && (
+        <p className="text-[11px] text-muted-foreground">
+          Invested {formatInr0(invested)}
+        </p>
+      )}
+      {hasGain && (
+        <p
+          className={`text-[11px] font-medium ${
+            gain >= 0 ? "text-wealth-green" : "text-destructive"
+          }`}
+        >
+          {gain >= 0 ? "+" : ""}
+          {gain.toFixed(1)}% vs invested
+        </p>
+      )}
     </div>
   );
 }
@@ -106,6 +133,15 @@ const PortfolioNavChart = ({ camsMissing, onUploadCams, onPeriodChange }: Portfo
   // horizon the user has explicitly tapped).
   const autoHorizonRef = useRef(false);
   const userPickedHorizonRef = useRef(false);
+  // Wall-clock of the last time the job's progress actually moved. The backend now
+  // reaps abandoned builds, but the client must not depend on that being timely:
+  // this is what turns "stuck at 98%" into an actionable "Try again" no matter why
+  // the build stopped talking.
+  const progressStallRef = useRef<{ pct: number; since: number }>({
+    pct: -1,
+    since: Date.now(),
+  });
+  const [stalled, setStalled] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -139,8 +175,8 @@ const PortfolioNavChart = ({ camsMissing, onUploadCams, onPeriodChange }: Portfo
     if (autoHorizonRef.current || userPickedHorizonRef.current) return;
     if (!points || points.length < 2) return;
     autoHorizonRef.current = true;
-    const first = new Date(points[0].recorded_date).getTime();
-    const last = new Date(points[points.length - 1].recorded_date).getTime();
+    const first = parseSeriesDate(points[0].recorded_date).getTime();
+    const last = parseSeriesDate(points[points.length - 1].recorded_date).getTime();
     const spanDays = (last - first) / 86_400_000;
     // Slightly under each window so an account that just clears a period isn't
     // bumped down a notch by a few edge days.
@@ -169,7 +205,7 @@ const PortfolioNavChart = ({ camsMissing, onUploadCams, onPeriodChange }: Portfo
 
   // Poll while a build is pending/running; reload the chart once it succeeds.
   useEffect(() => {
-    if (!jobActive) return;
+    if (!jobActive || stalled) return;
     let cancelled = false;
     const id = window.setTimeout(() => {
       getNetworthHistoryStatus()
@@ -178,6 +214,17 @@ const PortfolioNavChart = ({ camsMissing, onUploadCams, onPeriodChange }: Portfo
           setJob(s);
           if (s.status === "success" || s.has_history) {
             setReloadKey((k) => k + 1);
+            return;
+          }
+          // Watch the percentage, not the clock: a long build is fine as long as it
+          // is still moving. One that holds the same number past the threshold has
+          // stopped, and polling it forever just shows the user a frozen bar.
+          const pct = s.progress_pct ?? 0;
+          const seen = progressStallRef.current;
+          if (pct !== seen.pct) {
+            progressStallRef.current = { pct, since: Date.now() };
+          } else if (Date.now() - seen.since > PROGRESS_STALL_MS) {
+            setStalled(true);
           }
         })
         .catch(() => {
@@ -188,10 +235,12 @@ const PortfolioNavChart = ({ camsMissing, onUploadCams, onPeriodChange }: Portfo
       cancelled = true;
       window.clearTimeout(id);
     };
-  }, [jobActive, job]);
+  }, [jobActive, job, stalled]);
 
   const startBuild = useCallback(async () => {
     setStarting(true);
+    setStalled(false);
+    progressStallRef.current = { pct: -1, since: Date.now() };
     try {
       const s = await buildNetworthHistory();
       setJob(s);
@@ -334,10 +383,12 @@ const PortfolioNavChart = ({ camsMissing, onUploadCams, onPeriodChange }: Portfo
         )}
         {!loading && !hasPoints && (
           <div className="h-full w-full flex flex-col items-center justify-center gap-2 px-3 text-center">
-            {job?.status === "failed" ? (
+            {job?.status === "failed" || stalled ? (
               <>
                 <p className="text-[11px] text-destructive">
-                  {job.message ?? "Couldn't build your net-worth history."}
+                  {stalled
+                    ? "This is taking longer than expected."
+                    : (job?.message ?? "Couldn't build your net-worth history.")}
                 </p>
                 <button
                   type="button"
