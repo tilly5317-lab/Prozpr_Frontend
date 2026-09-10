@@ -90,7 +90,7 @@ const CamsUploadModal = ({
             <p className="text-muted-foreground" style={{ fontSize: 12, marginTop: 4, marginBottom: 16 }}>
               {imported
                 ? "We've read your folios, holdings and transactions and updated your portfolio."
-                : "Get your CAMS/KFintech statement by email and import your folios, holdings and transactions in minutes."}
+                : "Connect MF Central to import your folios, holdings and transactions in minutes."}
             </p>
 
             <CamsImportFlow

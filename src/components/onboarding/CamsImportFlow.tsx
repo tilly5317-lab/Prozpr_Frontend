@@ -169,10 +169,18 @@ const CamsImportFlow = ({
   // doesn't, the flow starts straight at Upload with manual-generation
   // guidance; when the plan is upgraded this lights back up automatically.
   const [mailbackAvailable, setMailbackAvailable] = useState<boolean | null>(null);
-  // Whether the backend is wired to MF Central. Null until the probe answers;
-  // the MFC card only appears once it is definitely true, so an unconfigured
-  // server never advertises a path that would 503 on the first tap.
+  // Whether the backend is wired to MF Central. MFC is now the ONLY import path
+  // offered, so the card renders optimistically while null — waiting for the
+  // probe left the choice screen visibly empty for a beat. A definite `false`
+  // (unconfigured server) is what brings the PDF routes back.
   const [mfcAvailable, setMfcAvailable] = useState<boolean | null>(null);
+  /**
+   * MF Central is the only import path we offer. Optimistic on purpose: the
+   * card is up before the probe answers, and the PDF routes surface only when
+   * the host asks for them (no `onUseMfCentral`) or the server says MFC is not
+   * configured — never as a second choice competing with it.
+   */
+  const showMfcOnly = Boolean(onUseMfCentral) && mfcAvailable !== false;
 
   // ── step 1 state ──
   const [email, setEmail] = useState("");
@@ -484,20 +492,18 @@ const CamsImportFlow = ({
         {step === "choose" && !confirmSkip && (
           <motion.div key="choose" {...stepMotion} className={stepShell}>
             <p className={`${sub} leading-relaxed text-muted-foreground`}>
-              Your Consolidated Account Statement (CAS) lists every mutual fund
-              you own. We read it once and build your entire portfolio from it —
-              {mfcAvailable
-                ? " fastest is to let MF Central hand it over directly, but you can still work from a PDF."
-                : " either upload the PDF you have, or we'll get CAMS to mail you a fresh one."}
+              {showMfcOnly
+                ? "We read your mutual fund holdings once and build your entire portfolio from them."
+                : "Your Consolidated Account Statement (CAS) lists every mutual fund you own. Upload the PDF you have, or we'll get CAMS to mail you a fresh one."}
             </p>
 
             <div className="mt-4 space-y-3">
-              {/* MF Central goes first when it is available: it is the only path
-                  with no PDF, no password and no waiting on an email. The two
-                  PDF routes stay as-is beneath it — MFC needs the investor to
-                  pass an OTP on someone else's site, and that is not always
-                  possible in the moment. */}
-              {mfcAvailable && onUseMfCentral && (
+              {/* MF Central is the whole entry point now: no PDF, no password,
+                  no waiting on an email. The two PDF routes below are the
+                  fallback for a server with no MFC credentials (and for the
+                  host that asks for them explicitly by omitting
+                  `onUseMfCentral`), not a peer choice. */}
+              {showMfcOnly && (
                 <button
                   type="button"
                   onClick={onUseMfCentral}
@@ -511,35 +517,22 @@ const CamsImportFlow = ({
                       Fetch from MF Central
                     </p>
                     <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
-                      Verify with one OTP and CAMS + KFintech hand us your
-                      holdings and transactions directly. No PDF, no password.
+                      One OTP and CAMS + KFintech hand over your holdings and
+                      transactions. No PDF, no password.
                     </p>
                   </div>
                   <ArrowRight className="h-4 w-4 shrink-0 text-primary transition-transform group-hover:translate-x-0.5" />
                 </button>
               )}
 
+              {!showMfcOnly && (
               <button
                 type="button"
                 onClick={chooseHave}
-                className={`group flex w-full items-center gap-3 rounded-2xl px-4 py-4 text-left transition-all active:scale-[0.98] ${
-                  mfcAvailable && onUseMfCentral
-                    ? "border border-border bg-background hover:bg-accent/40"
-                    : "border-2 border-primary/60 bg-primary/5 hover:border-primary hover:bg-primary/10"
-                }`}
+                className="group flex w-full items-center gap-3 rounded-2xl border-2 border-primary/60 bg-primary/5 px-4 py-4 text-left transition-all hover:border-primary hover:bg-primary/10 active:scale-[0.98]"
               >
-                <div
-                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
-                    mfcAvailable && onUseMfCentral ? "bg-secondary" : "wealth-gradient"
-                  }`}
-                >
-                  <UploadCloud
-                    className={`h-5 w-5 ${
-                      mfcAvailable && onUseMfCentral
-                        ? "text-muted-foreground"
-                        : "text-primary-foreground"
-                    }`}
-                  />
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl wealth-gradient">
+                  <UploadCloud className="h-5 w-5 text-primary-foreground" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-[14px] font-semibold text-foreground">Upload CAS</p>
@@ -550,7 +543,9 @@ const CamsImportFlow = ({
                 </div>
                 <ArrowRight className="h-4 w-4 shrink-0 text-primary transition-transform group-hover:translate-x-0.5" />
               </button>
+              )}
 
+              {!showMfcOnly && (
               <button
                 type="button"
                 onClick={chooseGet}
@@ -570,12 +565,13 @@ const CamsImportFlow = ({
                 </div>
                 <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
               </button>
+              )}
             </div>
 
             <div className={ctaBlock}>
               <p className="text-center text-[11px] leading-relaxed text-muted-foreground/80">
-                Both paths take a couple of minutes and everything after this —
-                portfolio, rebalancing, net-worth history — is built from it.
+                Your portfolio, rebalancing and net-worth history are all built
+                from this.
               </p>
               {deferLink}
             </div>

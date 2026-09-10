@@ -841,6 +841,13 @@ export interface MfcConfig {
   /** Origin of MFC's consent UI — validate postMessage events against this. */
   mfc_origin: string | null;
   integration_mode: "popup" | "iframe" | "redirect";
+  /**
+   * Who collects the consent OTP. "app" — this server can check a code, so we
+   * show our own OTP screen. "mfc" — only their hosted page can, because the
+   * live client API has no OTP endpoint (their guide p.12), so we show none.
+   * Never render an OTP box on "mfc": it would accept a code and go nowhere.
+   */
+  otp_capture: "app" | "mfc";
 }
 
 /** Whether this backend is wired to MF Central. Called on mount so the import
@@ -863,6 +870,13 @@ export interface MfcStartResponse {
   /** Masked contact MFC sends the consent OTP to — frequently NOT the account's,
    * since the fund houses hold their own. */
   otp_destination: string;
+  /**
+   * The consent OTP itself, present ONLY when the in-app mock is serving MF
+   * Central. A local run sends no SMS, so without this the OTP screen asks for
+   * six digits nobody can obtain. Always null against real credentials — never
+   * render it without checking.
+   */
+  mock_otp: string | null;
   message: string;
 }
 
@@ -884,6 +898,22 @@ export async function startMfcCasRequest(p: {
 
 /** One position, as MFC reports it. Far richer than what our schema stores —
  * `allows` and `bank` in particular have no home in the DB yet. */
+/**
+ * Submit the consent OTP through our own screen. Only callable while
+ * `getMfcConfig().otp_capture === "app"`; the backend 503s otherwise rather
+ * than pretending. A wrong code comes back as a 200 with `verified: false`.
+ */
+export async function verifyMfcOtp(p: {
+  otp: string;
+  request_id?: string | null;
+  req_id?: string | null;
+}): Promise<{ verified: boolean; message: string; attempts_left: number | null }> {
+  return request("/mfc-cas/verify-otp", {
+    method: "POST",
+    body: JSON.stringify(p),
+  });
+}
+
 export interface MfcPosition {
   amc_name: string | null;
   folio: string | null;

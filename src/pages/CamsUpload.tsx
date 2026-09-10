@@ -92,7 +92,7 @@ const CamsUpload = () => {
         <p className="mb-6 text-xs leading-relaxed text-muted-foreground">
           {imported
             ? "We've read your folios, holdings and transactions and built your portfolio. You're all set to continue."
-            : "Upload your CAMS/KFintech Consolidated Account Statement, or have a fresh one mailed to you — we read your folios, holdings and transactions and build your portfolio from it."}
+            : "Connect MF Central and we'll read your folios, holdings and transactions straight from CAMS and KFintech."}
         </p>
 
         {/* Resuming users with a statement already imported can continue without
