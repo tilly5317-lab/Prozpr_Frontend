@@ -68,6 +68,7 @@ function PortfolioMainPanel({
   useNavChart = false,
   camsMissing = false,
   onUploadCams,
+  navRefreshToken = 0,
 }: {
   portfolio: PortfolioDetail;
   timePeriod: "1M" | "6M" | "1Y" | "All";
@@ -82,6 +83,8 @@ function PortfolioMainPanel({
   camsMissing?: boolean;
   /** Open the CAMS upload popup from the chart. */
   onUploadCams?: () => void;
+  /** Bumped after a CAMS import so the NAV chart drops the superseded series. */
+  navRefreshToken?: number;
 }) {
   const [analysisOpen, setAnalysisOpen] = useState(false);
   // Overall gain/loss vs what the user has put in (today's value − invested),
@@ -138,7 +141,11 @@ function PortfolioMainPanel({
         )}
 
         {useNavChart ? (
-          <PortfolioNavChart camsMissing={camsMissing} onUploadCams={onUploadCams} />
+          <PortfolioNavChart
+            camsMissing={camsMissing}
+            onUploadCams={onUploadCams}
+            refreshToken={navRefreshToken}
+          />
         ) : (
           <>
             <div className="flex gap-1.5 mb-3" onClick={stop}>
@@ -497,6 +504,10 @@ const PortfolioDashboard = () => {
   const handleCamsUploaded = () => {
     setCamsOpen(false);
     cams.refresh();
+    // Also the NAV chart's invalidation signal (`navRefreshToken`): the stored
+    // net-worth series still describes the statement this import just replaced,
+    // so the chart has to drop it rather than keep drawing it until the backend
+    // rebuild lands.
     setSelfReloadKey((k) => k + 1);
   };
 
@@ -745,6 +756,7 @@ const PortfolioDashboard = () => {
                 useNavChart
                 camsMissing={cams.missing}
                 onUploadCams={() => setCamsOpen(true)}
+                navRefreshToken={selfReloadKey}
               />
               <DiscoverSection />
               <ProfileUnlockCircles />

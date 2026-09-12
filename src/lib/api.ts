@@ -2044,6 +2044,12 @@ export interface NetworthJobStatus {
   has_history: boolean;
   started_at: string | null;
   finished_at: string | null;
+  /**
+   * What asked for this build: "cas_upload" | "onboarding" | "daily" | "manual".
+   * Only a statement import invalidates a series that is already on screen — a
+   * daily refresh recomputes the same statement, so the chart stays up.
+   */
+  trigger: string | null;
   /** Degraded-data counters from the last build (stale prices, failed NAV fetches). */
   warnings: Record<string, unknown> | null;
 }

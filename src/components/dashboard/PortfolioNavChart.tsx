@@ -110,8 +110,19 @@ const FAILED_TO_START: NetworthJobStatus = {
   has_history: false,
   started_at: null,
   finished_at: null,
+  trigger: null,
   warnings: null,
 };
+
+// Only a statement import invalidates a series that is already drawn: until that
+// build lands, every stored point still describes the statement the user just
+// replaced. A "daily" or "manual" rebuild recomputes the SAME statement, so the
+// chart must stay up while it runs rather than blink out three times a day.
+function isStatementRebuild(s: NetworthJobStatus | null): boolean {
+  if (!s) return false;
+  const running = s.status === "pending" || s.status === "running";
+  return running && s.trigger === "cas_upload";
+}
 
 interface PortfolioNavChartProps {
   /** True when the user has no mutual-fund holdings (no CAMS imported yet). */
@@ -121,9 +132,22 @@ interface PortfolioNavChartProps {
   /** Reports the value change across the selected horizon (first → last point) —
    *  both ₹ amount and % — plus the active horizon, for the headline to show. */
   onPeriodChange?: (info: { pct: number | null; amount: number | null; horizon: PortfolioNavHorizon }) => void;
+  /**
+   * Bumped by the parent the moment a CAMS statement finishes importing. The
+   * stored series still holds the PREVIOUS statement's numbers at that point —
+   * the backend queues the rebuild but cannot have finished it — so this drops
+   * what is on screen and hands over to the progress state instead of leaving
+   * the old net worth up as if it were current.
+   */
+  refreshToken?: number;
 }
 
-const PortfolioNavChart = ({ camsMissing, onUploadCams, onPeriodChange }: PortfolioNavChartProps) => {
+const PortfolioNavChart = ({
+  camsMissing,
+  onUploadCams,
+  onPeriodChange,
+  refreshToken = 0,
+}: PortfolioNavChartProps) => {
   const [horizon, setHorizon] = useState<PortfolioNavHorizon>("3Y");
   const [points, setPoints] = useState<PortfolioNavHistoryPoint[] | null>(null);
   const [meta, setMeta] = useState<SeriesMeta | null>(null);
@@ -151,6 +175,11 @@ const PortfolioNavChart = ({ camsMissing, onUploadCams, onPeriodChange }: Portfo
     since: Date.now(),
   });
   const [stalled, setStalled] = useState(false);
+  // True from the moment a statement lands until its rebuild reports a terminal
+  // status. While set, the series fetch is held off entirely — asking for it now
+  // would just return the superseded statement's points and put them back on the
+  // screen we cleared them from.
+  const [rebuilding, setRebuilding] = useState(false);
 
   // Nothing is fetched while holdings are missing: the series cannot exist yet,
   // and asking for it would auto-start a build of nothing. The moment a statement
@@ -159,6 +188,12 @@ const PortfolioNavChart = ({ camsMissing, onUploadCams, onPeriodChange }: Portfo
     if (camsMissing) {
       setPoints(null);
       setMeta(null);
+      setLoading(false);
+      return;
+    }
+    // Held off during a post-import rebuild — see `rebuilding`. Points stay null,
+    // loading stays false, so the empty state renders the job's progress bar.
+    if (rebuilding) {
       setLoading(false);
       return;
     }
@@ -189,10 +224,30 @@ const PortfolioNavChart = ({ camsMissing, onUploadCams, onPeriodChange }: Portfo
     return () => {
       cancelled = true;
     };
-  }, [horizon, reloadKey, camsMissing]);
+  }, [horizon, reloadKey, camsMissing, rebuilding]);
 
   const hasPoints = !!points && points.length > 0;
   const jobActive = job?.status === "pending" || job?.status === "running";
+
+  // A statement just imported. Drop the old series immediately — not after the
+  // next fetch resolves — so there is no window where last week's net worth is
+  // presented as this week's. The backend has already queued the rebuild
+  // (`schedule_rebuild_after_cas`), so the status effect below picks it up and
+  // the progress bar takes this space over.
+  useEffect(() => {
+    if (!refreshToken) return; // 0 = first mount, nothing on screen to invalidate
+    setRebuilding(true);
+    setPoints(null);
+    setMeta(null);
+    setJob(null);
+    setStalled(false);
+    setErrored(false);
+    setStatusErrored(false);
+    progressStallRef.current = { pct: -1, since: Date.now() };
+    // A rebuild is expected now, so let the auto-build guard arm again in case
+    // the import produced no job at all (queueing is best-effort by design).
+    autoStartedRef.current = false;
+  }, [refreshToken]);
 
   // On first load, if the data spans less than the default 3Y, drop to the
   // closest shorter standard period (1Y → 3M → 1M).
@@ -205,6 +260,43 @@ const PortfolioNavChart = ({ camsMissing, onUploadCams, onPeriodChange }: Portfo
     const best = pickHorizonForSpan((last - first) / 86_400_000);
     if (best !== "3Y") setHorizon(best);
   }, [points]);
+
+  // Ask once per mount — and once per import — whether a statement rebuild is in
+  // flight, EVEN WHEN POINTS ARE ALREADY DRAWN. Without this, arriving here while
+  // one runs (uploaded from the invest gate, then navigated over) shows the
+  // superseded statement's chart with nothing to say it is about to change.
+  const probedRef = useRef(-1);
+  useEffect(() => {
+    if (camsMissing) return;
+    if (probedRef.current === refreshToken) return;
+    probedRef.current = refreshToken;
+    let cancelled = false;
+    getNetworthHistoryStatus()
+      .then((s) => {
+        if (cancelled || !isStatementRebuild(s)) return;
+        setJob(s);
+        setRebuilding(true);
+        setPoints(null);
+        setMeta(null);
+      })
+      .catch(() => {
+        /* Best-effort: a chart already on screen stays, and the no-points path
+           below surfaces its own retry. */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [camsMissing, refreshToken]);
+
+  // Release the post-import hold as soon as the rebuild reaches a terminal state,
+  // whichever effect happened to observe it. On success we refetch — that is the
+  // new series finally arriving.
+  useEffect(() => {
+    if (!rebuilding || !job) return;
+    if (job.status === "pending" || job.status === "running") return;
+    setRebuilding(false);
+    if (job.status === "success") setReloadKey((k) => k + 1);
+  }, [rebuilding, job]);
 
   // When there's no series yet, fetch the build-job status (e.g. the user
   // reloaded mid-build) so we can resume showing progress. The actual auto-build
@@ -238,7 +330,10 @@ const PortfolioNavChart = ({ camsMissing, onUploadCams, onPeriodChange }: Portfo
           // Refetch on completion, or the moment a first series appears mid-build.
           // Not on every tick of a rebuild that already has points — that only
           // repaints the same line while the worker is busy.
-          if (s.status === "success" || (s.has_history && !hasPoints)) {
+          // `has_history` is true of the OLD series too, so during a post-import
+          // rebuild that clause would restore exactly what we just cleared. Only
+          // a completed build may repopulate the chart then.
+          if (s.status === "success" || (!rebuilding && s.has_history && !hasPoints)) {
             setReloadKey((k) => k + 1);
             return;
           }
@@ -261,7 +356,7 @@ const PortfolioNavChart = ({ camsMissing, onUploadCams, onPeriodChange }: Portfo
       cancelled = true;
       window.clearTimeout(id);
     };
-  }, [jobActive, job, stalled, hasPoints]);
+  }, [jobActive, job, stalled, hasPoints, rebuilding]);
 
   const startBuild = useCallback(async () => {
     setStarting(true);
@@ -411,7 +506,12 @@ const PortfolioNavChart = ({ camsMissing, onUploadCams, onPeriodChange }: Portfo
             />
           </div>
           <p className="text-[11px] font-medium text-foreground">
-            Calculating your net worth history… {Math.round(job?.progress_pct ?? 0)}%
+            {/* Say which one this is. After an import the chart vanishing is
+                otherwise indistinguishable from it breaking. */}
+            {rebuilding
+              ? "Updating for your new statement…"
+              : "Calculating your net worth history…"}{" "}
+            {Math.round(job?.progress_pct ?? 0)}%
           </p>
           {job?.message && (
             <p className="text-[11px] text-muted-foreground">{job.message}</p>
