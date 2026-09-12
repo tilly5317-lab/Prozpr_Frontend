@@ -85,13 +85,15 @@ function PortfolioMainPanel({
 }) {
   const [analysisOpen, setAnalysisOpen] = useState(false);
   // Overall gain/loss vs what the user has put in (today's value − invested),
-  // independent of the chart horizon.
+  // independent of the chart horizon. The % is derived from the very amount shown
+  // beside it, never from the server's stored total_gain_percentage: that column is
+  // written by a different pass and a stale one made this line read "Up ₹130 (+21%)"
+  // on ₹60,997 invested — two numbers that cannot both be true.
   const investedGain =
     portfolio.total_invested != null && portfolio.total_invested > 0
       ? {
           amount: portfolio.total_value - portfolio.total_invested,
           pct:
-            portfolio.total_gain_percentage ??
             ((portfolio.total_value - portfolio.total_invested) / portfolio.total_invested) * 100,
         }
       : null;
