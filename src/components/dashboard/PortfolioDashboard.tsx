@@ -68,6 +68,7 @@ function PortfolioMainPanel({
   useNavChart = false,
   camsMissing = false,
   onUploadCams,
+  navRefreshToken = 0,
 }: {
   portfolio: PortfolioDetail;
   timePeriod: "1M" | "6M" | "1Y" | "All";
@@ -82,16 +83,20 @@ function PortfolioMainPanel({
   camsMissing?: boolean;
   /** Open the CAMS upload popup from the chart. */
   onUploadCams?: () => void;
+  /** Bumped after a CAMS import so the NAV chart drops the superseded series. */
+  navRefreshToken?: number;
 }) {
   const [analysisOpen, setAnalysisOpen] = useState(false);
   // Overall gain/loss vs what the user has put in (today's value − invested),
-  // independent of the chart horizon.
+  // independent of the chart horizon. The % is derived from the very amount shown
+  // beside it, never from the server's stored total_gain_percentage: that column is
+  // written by a different pass and a stale one made this line read "Up ₹130 (+21%)"
+  // on ₹60,997 invested — two numbers that cannot both be true.
   const investedGain =
     portfolio.total_invested != null && portfolio.total_invested > 0
       ? {
           amount: portfolio.total_value - portfolio.total_invested,
           pct:
-            portfolio.total_gain_percentage ??
             ((portfolio.total_value - portfolio.total_invested) / portfolio.total_invested) * 100,
         }
       : null;
@@ -136,7 +141,11 @@ function PortfolioMainPanel({
         )}
 
         {useNavChart ? (
-          <PortfolioNavChart camsMissing={camsMissing} onUploadCams={onUploadCams} />
+          <PortfolioNavChart
+            camsMissing={camsMissing}
+            onUploadCams={onUploadCams}
+            refreshToken={navRefreshToken}
+          />
         ) : (
           <>
             <div className="flex gap-1.5 mb-3" onClick={stop}>
@@ -495,6 +504,10 @@ const PortfolioDashboard = () => {
   const handleCamsUploaded = () => {
     setCamsOpen(false);
     cams.refresh();
+    // Also the NAV chart's invalidation signal (`navRefreshToken`): the stored
+    // net-worth series still describes the statement this import just replaced,
+    // so the chart has to drop it rather than keep drawing it until the backend
+    // rebuild lands.
     setSelfReloadKey((k) => k + 1);
   };
 
@@ -743,6 +756,7 @@ const PortfolioDashboard = () => {
                 useNavChart
                 camsMissing={cams.missing}
                 onUploadCams={() => setCamsOpen(true)}
+                navRefreshToken={selfReloadKey}
               />
               <DiscoverSection />
               <ProfileUnlockCircles />
