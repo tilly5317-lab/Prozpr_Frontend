@@ -2006,6 +2006,16 @@ export interface PortfolioNavHistoryResponse {
   total_invested: number;
   current_value: number;
   gain_percentage: number;
+  /** ISO date of the newest stored point; null when the series is empty. */
+  as_of: string | null;
+  /** True when the newest point is old enough that the chart should say so. */
+  is_stale: boolean;
+  /** Funds valued off a stated or stale NAV — real but provisional numbers. */
+  degraded_schemes: number;
+  /** False when some transactions could not be valued at all. */
+  ledger_complete: boolean;
+  /** True when a long horizon was thinned server-side (every point is still a real day). */
+  downsampled: boolean;
 }
 
 export async function getPortfolioNavHistory(
@@ -2014,12 +2024,6 @@ export async function getPortfolioNavHistory(
   return request<PortfolioNavHistoryResponse>(
     `/portfolio/nav-history?horizon=${horizon}`
   );
-}
-
-export async function refreshPortfolioNavHistory(): Promise<PortfolioNavHistoryResponse> {
-  return request<PortfolioNavHistoryResponse>("/portfolio/nav-history/refresh", {
-    method: "POST",
-  });
 }
 
 export type NetworthJobState =
@@ -2040,6 +2044,8 @@ export interface NetworthJobStatus {
   has_history: boolean;
   started_at: string | null;
   finished_at: string | null;
+  /** Degraded-data counters from the last build (stale prices, failed NAV fetches). */
+  warnings: Record<string, unknown> | null;
 }
 
 /** Poll the one-time net-worth-history backfill job (status + % completion). */
