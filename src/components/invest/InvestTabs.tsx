@@ -15,9 +15,12 @@ const InvestTabs = () => {
     ? "sip"
     : pathname.startsWith("/invest/lumpsum")
       ? "lumpsum"
-      : "rebalance-explanation";
+      : pathname.startsWith("/invest/preferences")
+        ? "preferences"
+        : "rebalance-explanation";
 
   const tabs = [
+    { key: "preferences", label: "Preferences" },
     { key: "rebalance-explanation", label: "Rebalancing" },
     { key: "sip", label: "SIP" },
     { key: "lumpsum", label: "Lump sum" },
@@ -33,7 +36,7 @@ const InvestTabs = () => {
               key={t.key}
               type="button"
               onClick={() => navigate(`/invest/${t.key}`)}
-              className="relative z-10 flex-1 rounded-full py-1.5 text-[12.5px] font-semibold"
+              className="relative z-10 flex-1 whitespace-nowrap rounded-full py-1.5 text-[11.5px] font-semibold"
             >
               {active && (
                 <motion.span

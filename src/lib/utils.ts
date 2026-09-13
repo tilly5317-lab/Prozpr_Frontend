@@ -31,6 +31,22 @@ export function formatInr0(n: number): string {
   return `₹${Math.round(n).toLocaleString("en-IN")}`;
 }
 
+/**
+ * Fund/scheme name tidy-up for display: drops the folio suffix, the plan-type
+ * tail ("- Direct/Regular Plan …") and a trailing option marker ("Growth",
+ * "Growth Option", "- Growth Plan"). Leaves a "Growth" that sits mid-name alone.
+ * Falls back to the raw name if stripping would leave nothing.
+ */
+export function plainName(raw: string): string {
+  return (
+    raw
+      .replace(/\s*·\s*Folio.*$/i, "")
+      .replace(/\s*[-–]\s*(Direct|Regular)\s+Plan\b.*$/i, "")
+      .replace(/\s*[-–]?\s*Growth(?:\s+(?:Option|Plan))?\s*$/i, "")
+      .trim() || raw
+  );
+}
+
 /** Compact INR format for tight spaces (e.g. ₹13.00L, ₹78.89k). */
 export function formatInrCompact(n: number): string {
   if (n >= 10000000) return `₹${(n / 10000000).toFixed(2)}Cr`;
