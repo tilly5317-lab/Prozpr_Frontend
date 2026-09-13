@@ -1050,7 +1050,7 @@ const AIChatPanel = ({
   const [planModalRunId, setPlanModalRunId] = useState<string | null>(null);
   // The cadence of the additional-investment plan the View-plan popup is showing
   // ("sip_monthly" | "lumpsum"; null = closed).
-  const [ainvModalCadence, setAinvModalCadence] = useState<string | null>(null);
+  const [ainvModal, setAinvModal] = useState<{ cadence: string; runId?: string } | null>(null);
 
   const handleSavePlan = useCallback(async (runId: string) => {
     setSavingRunId(runId);
@@ -2017,7 +2017,7 @@ const AIChatPanel = ({
                             if (target.kind === "rebalancing-modal")
                               setPlanModalRunId(target.runId);
                             else if (target.kind === "ainv-modal")
-                              setAinvModalCadence(target.cadence);
+                              setAinvModal({ cadence: target.cadence, runId: target.runId });
                             else navigate(target.path);
                           }}
                           className="group inline-flex items-center gap-1.5 rounded-full border border-foreground/15 bg-transparent px-4 py-1.5 text-[12.5px] font-semibold text-foreground/80 transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
@@ -2602,10 +2602,11 @@ const AIChatPanel = ({
             onSave={() => void handleSavePlan(planModalRunId)}
           />
         ) : null}
-        {ainvModalCadence ? (
+        {ainvModal ? (
           <AdditionalInvestmentPlanModal
-            cadence={ainvModalCadence}
-            onClose={() => setAinvModalCadence(null)}
+            cadence={ainvModal.cadence}
+            runId={ainvModal.runId}
+            onClose={() => setAinvModal(null)}
           />
         ) : null}
         {camsImportModal}
@@ -2784,10 +2785,11 @@ const AIChatPanel = ({
         onSave={() => void handleSavePlan(planModalRunId)}
       />
     ) : null}
-    {ainvModalCadence ? (
+    {ainvModal ? (
       <AdditionalInvestmentPlanModal
-        cadence={ainvModalCadence}
-        onClose={() => setAinvModalCadence(null)}
+        cadence={ainvModal.cadence}
+        runId={ainvModal.runId}
+        onClose={() => setAinvModal(null)}
       />
     ) : null}
     </>

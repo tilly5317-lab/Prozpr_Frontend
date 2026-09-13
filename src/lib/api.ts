@@ -1619,6 +1619,20 @@ export async function getMySipPlan(): Promise<SipPlanResponse> {
 }
 
 /**
+ * One specific additional-investment run's plan, by id. Used by the chat "View
+ * plan" popup to open a what-if draft that the latest-plan reads (getMySipPlan /
+ * getMyLumpSumPlan) firewall out. Returns the SIP or lump-sum shape by the run's
+ * cadence; the caller picks the matching view by the cadence it already holds.
+ */
+export async function getAdditionalInvestmentPlan(
+  runId: string,
+): Promise<SipPlanResponse | LumpSumPlanResponse> {
+  return request<SipPlanResponse | LumpSumPlanResponse>(
+    `/additional-investment/run/${encodeURIComponent(runId)}`,
+  );
+}
+
+/**
  * Set up (or refresh) the monthly SIP from the Invest page: runs the
  * additional-investment engine for `monthlyAmountInr` and returns the fresh
  * plan. Throws with a customer-facing message (e.g. complete your profile) when

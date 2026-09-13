@@ -22,6 +22,21 @@ describe("resolveViewPlanTarget", () => {
     ).toEqual({ kind: "ainv-modal", cadence: "lumpsum" });
   });
 
+  it("carries the what-if run id so the popup opens that specific draft by id", () => {
+    expect(
+      resolveViewPlanTarget({
+        additionalInvestmentCadence: "sip_monthly",
+        additionalInvestmentRunId: "run-9",
+      }),
+    ).toEqual({ kind: "ainv-modal", cadence: "sip_monthly", runId: "run-9" });
+  });
+
+  it("omits the run id for an ordinary deploy (popup falls back to latest)", () => {
+    const target = resolveViewPlanTarget({ additionalInvestmentCadence: "lumpsum" });
+    expect(target).toEqual({ kind: "ainv-modal", cadence: "lumpsum" });
+    expect((target as { runId?: string }).runId).toBeUndefined();
+  });
+
   it("falls back to the rebalancing tab when there is no plan to open", () => {
     expect(resolveViewPlanTarget({})).toEqual({
       kind: "navigate",

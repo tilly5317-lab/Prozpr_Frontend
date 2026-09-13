@@ -8,6 +8,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  getAdditionalInvestmentPlan,
   getMyLumpSumPlan,
   getMySipPlan,
   type LumpSumPlanResponse,
@@ -71,15 +72,22 @@ type LoadState =
 /**
  * In-chat popup for an additional-investment plan — the SIP / lump-sum
  * counterpart to `RebalancePlanModal`. Read-only: additional investment is
- * BUY-only / write-once, so there is no "Save plan" footer. It reuses the same
- * latest-plan reads the Invest tabs render (`getMySipPlan` / `getMyLumpSumPlan`),
- * picked by `cadence`.
+ * BUY-only / write-once, so there is no "Save plan" footer.
+ *
+ * On a what-if turn a `runId` is passed and the popup fetches THAT specific run
+ * (`getAdditionalInvestmentPlan`) — a what-if is an unsaved draft firewalled out
+ * of the latest-plan reads, so it can only be opened by id. An ordinary deploy
+ * carries `cadence` only, so the popup falls back to the same latest-plan reads
+ * the Invest tabs render (`getMySipPlan` / `getMyLumpSumPlan`). `cadence` always
+ * picks the SIP-vs-lump-sum view.
  */
 export function AdditionalInvestmentPlanModal({
   cadence,
+  runId,
   onClose,
 }: {
   cadence: string;
+  runId?: string;
   onClose: () => void;
 }) {
   const isSip = cadence === "sip_monthly";
@@ -89,7 +97,13 @@ export function AdditionalInvestmentPlanModal({
   useEffect(() => {
     let cancelled = false;
     setState({ status: "loading" });
-    const load = isSip ? getMySipPlan().then(sipView) : getMyLumpSumPlan().then(lumpView);
+    const load = runId
+      ? getAdditionalInvestmentPlan(runId).then((p) =>
+          isSip ? sipView(p as SipPlanResponse) : lumpView(p as LumpSumPlanResponse),
+        )
+      : isSip
+        ? getMySipPlan().then(sipView)
+        : getMyLumpSumPlan().then(lumpView);
     load
       .then((view) => {
         if (!cancelled) setState({ status: "loaded", view });
@@ -100,7 +114,7 @@ export function AdditionalInvestmentPlanModal({
     return () => {
       cancelled = true;
     };
-  }, [isSip, reloadKey]);
+  }, [isSip, runId, reloadKey]);
 
   return (
     <Dialog open onOpenChange={(next) => { if (!next) onClose(); }}>
