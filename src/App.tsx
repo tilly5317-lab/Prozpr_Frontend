@@ -109,6 +109,7 @@ import OnboardingLoading from "./pages/OnboardingLoading";
 // the tree; restore this import and the route below to turn it back on.
 // import FamilyMembers from "./pages/FamilyMembers";
 import LiquidFunds from "./pages/LiquidFunds";
+import EarlyAccess from "./pages/EarlyAccess";
 
 const queryClient = new QueryClient();
 
@@ -129,6 +130,12 @@ const App = () => (
             {/* Public entry — hosts sign-in/sign-up; everything else requires a
                 valid, backend-verified session (see RequireAuth). */}
             <Route path="/" element={<Index />} />
+            {/* Private-beta recruitment page. Public, no session, no app account
+                created — sign-ups land in a Google Sheet via the backend. The
+                aliases exist so a mistyped or older link still resolves. */}
+            <Route path="/earlyaccess" element={<EarlyAccess />} />
+            <Route path="/early-access" element={<Navigate to="/earlyaccess" replace />} />
+            <Route path="/beta" element={<Navigate to="/earlyaccess" replace />} />
             <Route element={<RequireAuth />}>
             {/* Onboarding steps — need a valid session, but must stay reachable
                 BEFORE onboarding is complete. */}

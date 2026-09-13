@@ -55,7 +55,17 @@ const countryCodes = [
  * which this screen hands off to once the account exists. "reset" is the
  * forgot-PIN detour off the PIN step; it returns there when done.
  */
-type Step = "phone" | "setup" | "pin" | "reset";
+type Step = "phone" | "setup" | "pin" | "reset" | "closed";
+
+/**
+ * Sign-ups are CLOSED while the MVP 2.0 private beta runs. A number the
+ * backend does not know is shown the early-access page instead of the account
+ * setup form — no new account is created from this screen. Existing numbers
+ * still sign in with their PIN as before. Flip back to `true` to reopen public
+ * sign-up; the backend keeps its own gate on POST /auth/signup either way.
+ */
+const PUBLIC_SIGNUP_OPEN = false;
+const EARLY_ACCESS_PATH = "/earlyaccess";
 
 /** Accounts are keyed on a 10-digit national number; the country code is
     picked separately and is never part of this count. Mirrors the backend
@@ -200,9 +210,11 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
     trackOnboardingStepCompleted("phone_entry", {
       user_type: exists ? "returning" : "new",
     });
-    // Returning users go straight to the PIN prompt; new users set up their
-    // account (name + PIN + confirm + email) on one page before onboarding.
-    setStep(exists ? "pin" : "setup");
+    // Returning users go straight to the PIN prompt. New users set up their
+    // account (name + PIN + confirm + email) on one page before onboarding —
+    // unless public sign-up is closed, in which case they are pointed at the
+    // early-access list instead.
+    setStep(exists ? "pin" : PUBLIC_SIGNUP_OPEN ? "setup" : "closed");
   };
 
   const finishOnboardedSession = () => {
@@ -436,6 +448,67 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
     // First onboarding step after account setup: upload the CAMS statement.
     navigate("/cams-upload");
   };
+
+  /* ─── Sign-ups closed: unknown number → early-access list ─── */
+  if (step === "closed") {
+    return (
+      <div className="mobile-container flex flex-col bg-background px-6 pb-6 pt-12">
+        <motion.div
+          initial={{ opacity: 0, x: 40 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.35 }}
+          className="flex-1 flex flex-col"
+        >
+          <h1 className="text-xl font-semibold text-foreground mb-2">
+            Sign-ups are closed for now
+          </h1>
+          <p className="text-xs text-muted-foreground mb-1">
+            We couldn&apos;t find an account for
+          </p>
+          <p className="text-xs font-semibold text-foreground mb-6">
+            {countryCode.code} {phone}
+          </p>
+
+          <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+            <div className="flex items-start gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg wealth-gradient">
+                <Sparkles className="h-4 w-4 text-primary-foreground" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-foreground tracking-tight">
+                  Prozpr MVP 2.0 is in a private beta
+                </p>
+                <p className="text-xs text-muted-foreground leading-relaxed mt-1">
+                  We are onboarding 100 early-access testers before opening to
+                  everyone. Claim a seat and we&apos;ll send your invite and
+                  login details.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <p className="text-[11px] text-muted-foreground/80 leading-relaxed mt-4">
+            Already have an account? Check the number above — accounts are
+            keyed on the {MOBILE_DIGITS}-digit mobile number you registered with.
+          </p>
+          <div className="mb-auto" />
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2, duration: 0.4 }}
+        >
+          <OnboardingNav
+            nextLabel="Join the early-access list"
+            onNext={() => navigate(EARLY_ACCESS_PATH)}
+            onBack={backToPhone}
+            backLabel="Try another number"
+          />
+        </motion.div>
+      </div>
+    );
+  }
 
   /* ─── New user: account setup (name + PIN + confirm + email on one page) ─── */
   if (step === "setup") {
@@ -864,9 +937,22 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
         <p className="text-xs text-muted-foreground leading-relaxed">
           Existing users sign in with a 4-digit PIN and go straight to the app.
         </p>
-        <p className="text-xs text-muted-foreground leading-relaxed">
-          New users set a PIN, then can import holdings from a CAMS CAS PDF.
-        </p>
+        {PUBLIC_SIGNUP_OPEN ? (
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            New users set a PIN, then can import holdings from a CAMS CAS PDF.
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            New sign-ups are paused during the private beta.{" "}
+            <button
+              type="button"
+              onClick={() => navigate(EARLY_ACCESS_PATH)}
+              className="font-medium text-primary underline-offset-2 hover:underline"
+            >
+              Join the early-access list
+            </button>
+          </p>
+        )}
         <p className="text-[11px] text-muted-foreground/80 leading-relaxed mt-1">
           Enter your {MOBILE_DIGITS}-digit number without the country code.
         </p>

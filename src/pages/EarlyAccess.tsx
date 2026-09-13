@@ -1,0 +1,756 @@
+import { useEffect, useState, type FormEvent } from "react";
+import {
+  ArrowRight,
+  Calculator,
+  Check,
+  ChevronDown,
+  ShieldCheck,
+  Sparkles,
+  TrendingUp,
+  Users,
+  Wallet,
+  X,
+  type LucideIcon,
+} from "lucide-react";
+import {
+  EARLY_ACCESS_PROFESSIONS,
+  getEarlyAccessSeats,
+  submitEarlyAccessSignup,
+  type EarlyAccessProfession,
+  type EarlyAccessSeats,
+} from "@/lib/api";
+import { isPostHogEnabled, posthog } from "@/lib/posthog";
+
+/**
+ * /earlyaccess — recruitment page for the 100-seat MVP 2.0 private beta.
+ *
+ * Public route (no session needed). Sign-ups go to the backend, which keeps
+ * them in a Google Sheet — nothing here creates an app account. While the
+ * beta runs, the app's own sign-up is closed (see WelcomeScreen), so this
+ * page is the only way in for a new number.
+ *
+ * Ported from the "Prozpr MVP2 Beta" page in the Prozpr Launch Website
+ * design project. The palette is committed to one light look on purpose
+ * (a marketing page, not an app screen), so colours are literal hex values
+ * rather than the app's theme tokens, and the app's dark mode leaves it alone.
+ */
+
+const BETA_SEATS = 100;
+
+/**
+ * Fallback seat count for when the backend is unreachable: starts at
+ * CLAIM_START on CAMPAIGN_START and grows CLAIM_PER_DAY per day up to
+ * CLAIM_CAP. Deterministic, so every visitor sees the same number. The live
+ * figure from `/early-access/seats` replaces it as soon as it loads.
+ */
+const CAMPAIGN_START = new Date("2026-09-08T00:00:00+05:30").getTime();
+const CLAIM_START = 53;
+const CLAIM_PER_DAY = 2.5;
+const CLAIM_CAP = 94;
+const fallbackClaimed = () =>
+  Math.min(
+    CLAIM_CAP,
+    Math.round(
+      CLAIM_START + (Math.max(0, Date.now() - CAMPAIGN_START) / 86_400_000) * CLAIM_PER_DAY,
+    ),
+  );
+
+const SIGNUP_KEY = "prozpr_early_access_signup";
+
+const PAGE_TITLE = "Prozpr MVP 2.0 — Become a founding tester";
+const PAGE_DESCRIPTION =
+  "Test Prozpr MVP 2.0 before anyone else. Free premium portfolio assessment, unlimited fund analysis, and a direct line to the founders. 100 seats.";
+
+/* ─── Seat state ─── */
+
+function useSeats(): [EarlyAccessSeats, (s: EarlyAccessSeats) => void] {
+  const [seats, setSeats] = useState<EarlyAccessSeats>(() => {
+    const claimed = fallbackClaimed();
+    return { seats_total: BETA_SEATS, seats_claimed: claimed, seats_left: BETA_SEATS - claimed };
+  });
+  useEffect(() => {
+    let cancelled = false;
+    void getEarlyAccessSeats()
+      .then((s) => {
+        if (!cancelled && Number.isFinite(s.seats_total)) setSeats(s);
+      })
+      .catch(() => {
+        /* live count unavailable — the deterministic fallback stays */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return [seats, setSeats];
+}
+
+function useSignupDone(): [boolean, () => void] {
+  const [done, setDone] = useState(() => {
+    try {
+      return Boolean(localStorage.getItem(SIGNUP_KEY));
+    } catch {
+      return false;
+    }
+  });
+  const markDone = () => {
+    try {
+      localStorage.setItem(SIGNUP_KEY, JSON.stringify({ at: Date.now() }));
+    } catch {
+      /* private mode — the in-memory flag still carries this visit */
+    }
+    setDone(true);
+  };
+  return [done, markDone];
+}
+
+/* ─── Small pieces ─── */
+
+const LivePulse = ({ size = "h-2 w-2" }: { size?: string }) => (
+  <span className={`relative flex ${size}`}>
+    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#C8321F] opacity-60" />
+    <span className={`relative inline-flex ${size} rounded-full bg-[#C8321F]`} />
+  </span>
+);
+
+const SeatsLeftPill = ({ left }: { left: number }) => (
+  <span className="inline-flex items-center gap-1.5 rounded-full bg-[#FBEFEC] px-2.5 py-1 text-[12px] font-bold text-[#C8321F]">
+    <LivePulse />
+    {left} {left === 1 ? "seat" : "seats"} left
+  </span>
+);
+
+const SectionLabel = ({ children, className = "" }: { children: string; className?: string }) => (
+  <p className={`text-[10px] font-medium uppercase tracking-[1.5px] text-[#8A8275] ${className}`}>
+    {children}
+  </p>
+);
+
+const Wordmark = ({ tagline = false }: { tagline?: boolean }) => (
+  <span className="inline-flex flex-col leading-none">
+    <span className="font-display text-[26px] tracking-tight">
+      prozp₹<span className="text-[#E0B84A]">.</span>
+    </span>
+    {tagline && (
+      <span className="mt-0.5 font-display text-[11px] italic text-[#8A8275]">
+        Smarter wealth decisions
+      </span>
+    )}
+  </span>
+);
+
+/* ─── Sign-up ─── */
+
+interface SignupProps {
+  seats: EarlyAccessSeats;
+  done: boolean;
+  onDone: (seats: EarlyAccessSeats | null) => void;
+}
+
+function SignupForm({ seats, done, onDone }: SignupProps) {
+  const [open, setOpen] = useState(false);
+  const left = seats.seats_left;
+  const full = left <= 0;
+
+  if (done) {
+    return (
+      <div className="mx-auto max-w-md rounded-2xl border border-[#1F7A5A]/30 bg-[#DDEFE7] p-5 text-left">
+        <div className="flex items-center gap-2 font-semibold text-[#1F7A5A]">
+          <Check className="h-5 w-5" /> You&apos;re on the list.
+        </div>
+        <p className="mt-1.5 text-sm text-[#111113]/80">
+          Watch your inbox. Your invite and the WhatsApp group link arrive before the beta
+          opens. Seats are confirmed in sign-up order.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-center">
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="group relative inline-flex h-14 w-full max-w-sm items-center justify-center gap-2.5 rounded-2xl bg-[#111113] px-8 text-[16px] font-semibold text-[#F7F3EC] shadow-[0_8px_24px_rgba(17,17,19,0.25)] transition-all hover:-translate-y-0.5 hover:bg-[#2F2F33]"
+      >
+        {full ? "Join the waitlist" : `Claim 1 of the last ${left} seats`}
+        <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+        <span className="absolute -right-1.5 -top-1.5 flex h-4 w-4">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#C8321F] opacity-60" />
+          <span className="relative inline-flex h-4 w-4 rounded-full border-2 border-[#F7F3EC] bg-[#C8321F]" />
+        </span>
+      </button>
+      <p className="mt-2.5 text-[12px] text-[#8A8275]">
+        Takes 30 seconds. Free, and we never ask for payment details.
+      </p>
+      {open && <SignupModal seats={seats} onClose={() => setOpen(false)} onDone={onDone} />}
+    </div>
+  );
+}
+
+const FIELD =
+  "h-12 w-full rounded-xl border border-[#E8E2D2] bg-white px-4 text-[15px] text-[#111113] outline-none placeholder:text-[#8A8275] focus:border-[#111113]";
+
+function SignupModal({
+  seats,
+  onClose,
+  onDone,
+}: {
+  seats: EarlyAccessSeats;
+  onClose: () => void;
+  onDone: (seats: EarlyAccessSeats | null) => void;
+}) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [profession, setProfession] = useState<EarlyAccessProfession | "">("");
+  const [err, setErr] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const left = seats.seats_left;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [onClose]);
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (submitting) return;
+    const cleanName = name.trim();
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPhone = phone.trim();
+    if (cleanName.length < 2) return setErr("Please enter your name.");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail))
+      return setErr("Please enter a valid email address.");
+    if (cleanPhone && !/^[+\d][\d\s-]{8,14}$/.test(cleanPhone))
+      return setErr("Please enter a valid WhatsApp number, or leave it blank.");
+    if (!profession) return setErr("Please pick your profession.");
+    setErr("");
+    setSubmitting(true);
+    try {
+      const res = await submitEarlyAccessSignup({
+        name: cleanName,
+        email: cleanEmail,
+        whatsapp: cleanPhone || null,
+        profession,
+        source: "earlyaccess_page",
+      });
+      if (isPostHogEnabled) {
+        posthog.capture("early_access_signup_completed", {
+          profession,
+          has_whatsapp: Boolean(cleanPhone),
+          waitlisted: Boolean(res.waitlisted),
+          already_registered: Boolean(res.already_registered),
+        });
+      }
+      onDone(Number.isFinite(res.seats_total) ? res : null);
+      onClose();
+    } catch (ex) {
+      setErr(
+        ex instanceof Error && ex.message
+          ? ex.message
+          : "Could not save your sign-up. Please try again.",
+      );
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-[#111113]/50 p-0 backdrop-blur-sm sm:items-center sm:p-5"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        className="w-full max-w-md rounded-t-3xl bg-[#F7F3EC] p-6 text-[#111113] shadow-2xl sm:rounded-3xl sm:p-7"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="early-access-title"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <SeatsLeftPill left={Math.max(0, left)} />
+            <h3 id="early-access-title" className="mt-2.5 text-xl font-semibold tracking-tight">
+              {left > 0 ? "Claim your seat" : "Join the waitlist"}
+            </h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-lg p-1.5 text-[#8A8275] hover:bg-[#EDE6D6] hover:text-[#111113]"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <form onSubmit={(e) => void handleSubmit(e)} noValidate className="mt-5 flex flex-col gap-2.5 text-left">
+          <input
+            type="text"
+            required
+            autoComplete="name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Name"
+            className={FIELD}
+          />
+          <input
+            type="email"
+            required
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email address"
+            className={FIELD}
+          />
+          <input
+            type="tel"
+            autoComplete="tel"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="WhatsApp number (optional)"
+            className={FIELD}
+          />
+          <select
+            required
+            value={profession}
+            onChange={(e) => setProfession(e.target.value as EarlyAccessProfession | "")}
+            className={`${FIELD} appearance-none ${profession ? "" : "text-[#8A8275]"}`}
+          >
+            <option value="" disabled>
+              Profession
+            </option>
+            {EARLY_ACCESS_PROFESSIONS.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </select>
+          {err && <p className="text-[13px] font-medium text-[#C8321F]">{err}</p>}
+          <button
+            type="submit"
+            disabled={submitting}
+            className="group mt-1 inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-[#111113] text-[15px] font-semibold text-[#F7F3EC] transition-colors hover:bg-[#2F2F33] disabled:opacity-60"
+          >
+            {submitting ? "Saving your seat…" : "Confirm my seat"}
+            {!submitting && (
+              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+            )}
+          </button>
+          <p className="text-center text-[12px] text-[#8A8275]">
+            No spam, no sales calls. Your details are used only to run the beta.
+          </p>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function SeatMeter({ seats }: { seats: EarlyAccessSeats }) {
+  const total = seats.seats_total || BETA_SEATS;
+  const claimed = Math.min(total, seats.seats_claimed);
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    let raf = 0;
+    let t0 = 0;
+    const tick = (t: number) => {
+      if (!t0) t0 = t;
+      const p = Math.min((t - t0) / 900, 1);
+      setN(Math.round(claimed * (1 - Math.pow(1 - p, 3))));
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [claimed]);
+  return (
+    <div className="mx-auto mt-6 w-full max-w-md rounded-2xl border border-[#E8E2D2] bg-white p-4 text-left">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="text-sm font-semibold">
+          <span className="text-xl font-bold tabular-nums">{n}</span> of {total} seats claimed
+        </span>
+        <SeatsLeftPill left={Math.max(0, seats.seats_left)} />
+      </div>
+      <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-[#EDE6D6]">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-[#E0B84A] to-[#C8321F] transition-[width] duration-1000 ease-out"
+          style={{ width: `${(n / total) * 100}%` }}
+        />
+      </div>
+      <p className="mt-2 text-[12px] text-[#8A8275]">
+        Seats are confirmed in sign-up order. When the bar fills, the beta closes.
+      </p>
+    </div>
+  );
+}
+
+/* ─── Sections ─── */
+
+function Nav({ left }: { left: number }) {
+  return (
+    <header className="sticky top-0 z-40 border-b border-[#E8E2D2]/80 bg-[#F7F3EC]/90 backdrop-blur">
+      <div className="bg-[#111113] px-4 py-1.5 text-center text-[11px] font-medium tracking-wide text-[#F7F3EC]/80 sm:text-[12px]">
+        Prozpr Private Limited · AMFI &amp; SEBI registration in process · Educational insights,
+        not investment advice
+      </div>
+      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5">
+        <div className="flex items-center gap-2.5">
+          <Wordmark />
+          <span className="ml-1 hidden rounded-full border border-[#E0B84A] bg-[#F7ECCC] px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-[#9B8030] sm:inline">
+            MVP 2.0 Beta
+          </span>
+        </div>
+        <a
+          href="#join"
+          className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#111113] px-4 text-sm font-semibold text-[#F7F3EC] hover:bg-[#2F2F33] hover:text-[#F7F3EC]"
+        >
+          Become a tester
+          <span className="rounded-full bg-[#E0B84A] px-1.5 py-0.5 text-[10px] font-bold text-[#111113]">
+            {Math.max(0, left)} left
+          </span>
+        </a>
+      </div>
+    </header>
+  );
+}
+
+function Hero({ seats, done, onDone }: SignupProps) {
+  return (
+    <section className="px-5 pb-16 pt-14 text-center sm:pt-20">
+      <div className="mx-auto max-w-3xl">
+        <SectionLabel>Private beta · 100 seats · Free</SectionLabel>
+        <h1 className="mt-4 text-[34px] font-semibold leading-[1.1] tracking-tight sm:text-6xl sm:leading-[1.08]">
+          Be one of the <em className="font-display font-normal italic">100</em> who test the new
+          Prozpr.
+        </h1>
+        <p className="mx-auto mt-5 max-w-xl text-lg leading-relaxed text-[#57534A]">
+          MVP 2.0 is ready. Before we open it to everyone, we want 100 real investors to use it,
+          break it, and shape it, and get the premium experience free while doing it.
+        </p>
+        <p className="mx-auto mt-3 max-w-xl text-sm text-[#8A8275]">
+          Built by IIT and Ivy League MBA graduates.
+        </p>
+        <div id="join" className="mx-auto mt-8 max-w-xl scroll-mt-24">
+          <SignupForm seats={seats} done={done} onDone={onDone} />
+        </div>
+        <SeatMeter seats={seats} />
+      </div>
+    </section>
+  );
+}
+
+interface Perk {
+  icon: LucideIcon;
+  title: string;
+  body: string;
+  tag: string;
+}
+
+const PERKS: Perk[] = [
+  {
+    icon: Sparkles,
+    title: "The Founding Tester community",
+    body: "Join a select circle of 100. All testers keep premium free for 6 months after launch. Top-grade testers hold the Founding Tester badge for life, with access to exclusive networking and investing events plus unique in-app benefits.",
+    tag: "Lifetime badge",
+  },
+  {
+    icon: Users,
+    title: "A direct line to the builders",
+    body: "A private WhatsApp group with the founders. Report something broken and watch it get fixed in days. Suggest a feature and see it ship. Your name in our launch credits, if you want it.",
+    tag: "Shape the product",
+  },
+  {
+    icon: Wallet,
+    title: "Free premium portfolio assessment",
+    body: "Upload or link your current mutual fund holdings and get a full premium health check: overlap, risk, expense drag, goal fit, with clear insights on what to fix. Paid at launch; free for testers.",
+    tag: "Premium, free",
+  },
+  {
+    icon: TrendingUp,
+    title: "Unlimited advanced fund analysis",
+    body: "Deep analysis and rankings across every mutual fund in India: returns, consistency, downside behaviour, manager record. No caps and no locked screens during the beta.",
+    tag: "Unlimited",
+  },
+  {
+    icon: Calculator,
+    title: "A one-on-one portfolio review",
+    body: "Every tester gets one 45-minute, one-on-one session: a thorough walkthrough of your portfolio, what is working, what is dragging, and how to structure it around your goals.",
+    tag: "45 min, 1:1",
+  },
+  {
+    icon: ShieldCheck,
+    title: "Zero risk, zero cost",
+    body: "No payment details, no real-money commitment, and read-only analysis of your portfolio. Leave the beta at any time and your data is deleted on request.",
+    tag: "Safe by design",
+  },
+];
+
+function Perks() {
+  return (
+    <section className="border-t border-[#E8E2D2] bg-white px-5 py-16 sm:py-20">
+      <div className="mx-auto max-w-6xl">
+        <SectionLabel className="text-center">What you get as a tester</SectionLabel>
+        <h2 className="mx-auto mt-3 max-w-2xl text-center text-[26px] font-semibold tracking-tight sm:text-4xl">
+          A <em className="font-display font-normal italic">head start</em> for you.
+        </h2>
+        <div className="mt-8 grid gap-3.5 sm:mt-10 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
+          {PERKS.map((p) => (
+            <div key={p.title} className="rounded-2xl border border-[#E8E2D2] bg-[#FDFBF6] p-6">
+              <div className="flex items-center justify-between">
+                <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-[#F7ECCC] text-[#9B8030]">
+                  <p.icon className="h-5 w-5" />
+                </span>
+                <span className="rounded-full bg-[#F0E9D6] px-2.5 py-1 text-[11px] font-semibold text-[#57534A]">
+                  {p.tag}
+                </span>
+              </div>
+              <h3 className="mt-4 text-[17px] font-semibold">{p.title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-[#57534A]">{p.body}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+const STEPS = [
+  {
+    n: "01",
+    title: "Register",
+    body: "Drop your email and WhatsApp number. Seats are confirmed in sign-up order, and you will hear from us within a day.",
+  },
+  {
+    n: "02",
+    title: "Get your invite",
+    body: "You receive your beta login and join the testers' WhatsApp group. Setup takes under five minutes.",
+  },
+  {
+    n: "03",
+    title: "Use it like it's yours",
+    body: "Assess your portfolio, analyse funds, and chat with Prozpr. About 15 minutes a week, on your schedule.",
+  },
+  {
+    n: "04",
+    title: "Tell us the truth",
+    body: "One short feedback prompt a week. What confused you, what you loved, what's missing. That's the whole job.",
+  },
+];
+
+function HowItWorks() {
+  return (
+    <section className="px-5 py-16 sm:py-20">
+      <div className="mx-auto max-w-6xl">
+        <SectionLabel className="text-center">How the beta works</SectionLabel>
+        <h2 className="mt-3 text-center text-[26px] font-semibold tracking-tight sm:text-4xl">
+          Four steps.{" "}
+          <em className="font-display font-normal italic">Fifteen minutes a week.</em>
+        </h2>
+        <div className="mt-8 grid gap-3.5 sm:mt-10 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
+          {STEPS.map((s) => (
+            <div key={s.n} className="rounded-2xl border border-[#E8E2D2] bg-white p-6">
+              <span className="font-display text-3xl italic text-[#E0B84A]">{s.n}</span>
+              <h3 className="mt-3 text-[16px] font-semibold">{s.title}</h3>
+              <p className="mt-1.5 text-sm leading-relaxed text-[#57534A]">{s.body}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+const WHO_FOR = [
+  "You hold mutual funds (or plan to start SIPs) and wonder whether your mix is actually right.",
+  "You've outgrown star ratings and want real analysis before you pick a fund.",
+  "You'd rather ask a question in plain English than decode a factsheet.",
+  "You enjoy being early, and don't mind telling us when something's rough.",
+];
+
+function WhoFor() {
+  return (
+    <section className="border-t border-[#E8E2D2] bg-[#111113] px-5 py-16 text-[#F7F3EC] sm:py-20">
+      <div className="mx-auto grid max-w-6xl gap-10 lg:grid-cols-2 lg:items-center">
+        <div>
+          <SectionLabel className="!text-[#E0B84A]">Who we're looking for</SectionLabel>
+          <h2 className="mt-3 text-[26px] font-semibold tracking-tight sm:text-4xl">
+            This beta is for you if…
+          </h2>
+          <p className="mt-4 max-w-md text-[15px] leading-relaxed text-[#F7F3EC]/70">
+            We're not looking for professional reviewers. We're looking for 100 everyday investors
+            whose honest reactions decide what Prozpr becomes.
+          </p>
+          <div className="mt-6 rounded-xl border border-white/10 bg-white/5 p-4 text-sm leading-relaxed text-[#F7F3EC]/80">
+            <p className="font-semibold text-[#E0B84A]">Who's building this</p>
+            <p className="mt-1">
+              A founding team of IIT and Ivy League MBA graduates, building Prozpr for how India
+              actually invests.
+            </p>
+          </div>
+        </div>
+        <ul className="flex flex-col gap-3">
+          {WHO_FOR.map((r) => (
+            <li
+              key={r}
+              className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/5 p-4 text-[15px] leading-relaxed"
+            >
+              <Check className="mt-0.5 h-5 w-5 shrink-0 text-[#E0B84A]" />
+              <span>{r}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+}
+
+const FAQS = [
+  {
+    q: "Does it cost anything?",
+    a: "No. The beta is completely free, including features that will be paid at launch. Testers also keep premium free for 6 months after launch.",
+  },
+  {
+    q: "Do I have to invest real money?",
+    a: "No. Prozpr 2.0 analyses and plans. You can test everything without moving a rupee, and what you do with the insights is entirely up to you.",
+  },
+  {
+    q: "Is my data safe?",
+    a: "Yes. Portfolio access is read-only, your details are used only to run the beta, and you can ask us to delete everything at any time.",
+  },
+  {
+    q: "How much time does it take?",
+    a: "Around 15 minutes a week. Use the product normally and answer one short feedback prompt. No calls or meetings unless you want them.",
+  },
+  {
+    q: "Why do you need my WhatsApp number?",
+    a: "The beta runs on WhatsApp: invites, updates, and the testers' group with the founders. We never use it for marketing.",
+  },
+  {
+    q: "What if I sign up after all 100 seats are filled?",
+    a: "You join the waitlist in order. Testers who go inactive free up seats every week, so waitlisted sign-ups do get in.",
+  },
+  {
+    q: "Are you SEBI or AMFI registered?",
+    a: "Not yet. We are in the process of obtaining AMFI and SEBI registration. During the beta, Prozpr provides educational analysis and insights only, not regulated investment advice or transactions.",
+  },
+];
+
+function Faq() {
+  const [open, setOpen] = useState(0);
+  return (
+    <section className="px-5 py-16 sm:py-20">
+      <div className="mx-auto max-w-2xl">
+        <SectionLabel className="text-center">Questions</SectionLabel>
+        <h2 className="mt-3 text-center text-[26px] font-semibold tracking-tight sm:text-3xl">
+          Fair questions, straight answers.
+        </h2>
+        <div className="mt-8 divide-y divide-[#E8E2D2] rounded-2xl border border-[#E8E2D2] bg-white">
+          {FAQS.map((f, i) => (
+            <div key={f.q}>
+              <button
+                type="button"
+                onClick={() => setOpen(open === i ? -1 : i)}
+                aria-expanded={open === i}
+                className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left text-[15px] font-semibold"
+              >
+                {f.q}
+                <ChevronDown
+                  className={`h-4 w-4 shrink-0 text-[#8A8275] transition-transform ${open === i ? "rotate-180" : ""}`}
+                />
+              </button>
+              {open === i && (
+                <p className="px-5 pb-4 text-sm leading-relaxed text-[#57534A]">{f.a}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FinalCta({ seats, done, onDone }: SignupProps) {
+  const left = Math.max(0, seats.seats_left);
+  return (
+    <section className="border-t border-[#E8E2D2] bg-white px-5 py-16 sm:py-20">
+      <div className="mx-auto max-w-xl text-center">
+        <h2 className="text-[26px] font-semibold tracking-tight sm:text-4xl">
+          {left > 0 ? `${left} ${left === 1 ? "seat" : "seats"} left.` : "All seats are taken."}{" "}
+          <em className="font-display font-normal italic">
+            {left > 0 ? "Then the doors close." : "The waitlist is open."}
+          </em>
+        </h2>
+        <p className="mt-4 text-[15px] leading-relaxed text-[#57534A]">
+          Free premium assessment, unlimited fund analysis, and a product that listens to you, in
+          exchange for your honest opinion.
+        </p>
+        <div className="mt-7">
+          <SignupForm seats={seats} done={done} onDone={onDone} />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Footer() {
+  return (
+    <footer className="border-t border-[#E8E2D2] px-5 py-8">
+      <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 text-[13px] text-[#8A8275] sm:flex-row">
+        <Wordmark tagline />
+        <p className="text-center sm:text-right">
+          Prozpr Private Limited · Educational insights, not investment advice. AMFI &amp; SEBI
+          registration in process. © 2026.
+        </p>
+      </div>
+    </footer>
+  );
+}
+
+/* ─── Page ─── */
+
+const EarlyAccess = () => {
+  const [seats, setSeats] = useSeats();
+  const [done, markDone] = useSignupDone();
+
+  // The SPA shell's <title>/<meta> describe the app; this page is shared as a
+  // link on its own, so it carries its own while mounted.
+  useEffect(() => {
+    const prevTitle = document.title;
+    const meta = document.querySelector<HTMLMetaElement>('meta[name="description"]');
+    const prevDescription = meta?.content;
+    document.title = PAGE_TITLE;
+    if (meta) meta.content = PAGE_DESCRIPTION;
+    return () => {
+      document.title = prevTitle;
+      if (meta && prevDescription !== undefined) meta.content = prevDescription;
+    };
+  }, []);
+
+  const handleDone = (fresh: EarlyAccessSeats | null) => {
+    if (fresh) setSeats(fresh);
+    markDone();
+  };
+
+  return (
+    <div className="min-h-screen bg-[#F7F3EC] font-sans text-[#111113] antialiased selection:bg-[#111113] selection:text-[#F7F3EC]">
+      <Nav left={seats.seats_left} />
+      <main>
+        <Hero seats={seats} done={done} onDone={handleDone} />
+        <Perks />
+        <HowItWorks />
+        <WhoFor />
+        <Faq />
+        <FinalCta seats={seats} done={done} onDone={handleDone} />
+      </main>
+      <Footer />
+    </div>
+  );
+};
+
+export default EarlyAccess;

@@ -3161,3 +3161,60 @@ export async function removeAvatar(): Promise<void> {
   await request<void>("/auth/me/avatar", { method: "DELETE" });
   invalidateUserContextCache();
 }
+
+// ── Early access (public, no auth) ───────────────────────
+// The /earlyaccess recruitment page for the 100-seat private beta. Sign-ups
+// land in a Google Sheet on the backend; nothing here creates an app account.
+// Contract agreed with the backend: early-access router under /api/v1.
+
+export const EARLY_ACCESS_PROFESSIONS = [
+  "Finance",
+  "Tech",
+  "HR",
+  "Management",
+  "Consulting",
+  "Healthcare",
+  "Legal",
+  "Business owner",
+  "Student",
+  "Other",
+] as const;
+
+export type EarlyAccessProfession = (typeof EARLY_ACCESS_PROFESSIONS)[number];
+
+export interface EarlyAccessSignupPayload {
+  name: string;
+  email: string;
+  /** Raw string as typed (may carry a country code); null when left blank. */
+  whatsapp: string | null;
+  profession: EarlyAccessProfession;
+  source: "earlyaccess_page";
+}
+
+export interface EarlyAccessSeats {
+  seats_total: number;
+  seats_claimed: number;
+  seats_left: number;
+}
+
+export interface EarlyAccessSignupResponse extends EarlyAccessSeats {
+  ok: boolean;
+  /** True once every seat is taken and this sign-up joined the waitlist. */
+  waitlisted?: boolean;
+  /** Set when the email was already on the list — treated as success. */
+  already_registered?: boolean;
+}
+
+export async function submitEarlyAccessSignup(
+  p: EarlyAccessSignupPayload,
+): Promise<EarlyAccessSignupResponse> {
+  return request<EarlyAccessSignupResponse>(
+    "/early-access/signup",
+    { method: "POST", body: JSON.stringify(p) },
+    false,
+  );
+}
+
+export async function getEarlyAccessSeats(): Promise<EarlyAccessSeats> {
+  return request<EarlyAccessSeats>("/early-access/seats", { method: "GET" }, false);
+}
