@@ -24,17 +24,16 @@ vi.mock("@/lib/onboardingAnalytics", () => ({
 vi.mock("@/context/AuthContext", () => ({
   useAuth: () => ({ refresh: vi.fn() }),
 }));
+// The PIN boxes are not under test here, and the real input-otp needs a
+// ResizeObserver and leaves a timer running past jsdom teardown.
+vi.mock("@/components/ui/input-otp", () => ({
+  InputOTP: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
+  InputOTPGroup: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
+  InputOTPSlot: () => <span />,
+}));
 
+import type React from "react";
 import WelcomeScreen from "./WelcomeScreen";
-
-// The PIN step's input-otp observes its own size; jsdom has no ResizeObserver.
-class ResizeObserverStub {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
-}
-(globalThis as unknown as { ResizeObserver: typeof ResizeObserverStub }).ResizeObserver =
-  ResizeObserverStub;
 
 const renderScreen = () =>
   render(
@@ -75,6 +74,19 @@ describe("WelcomeScreen — sign-ups closed during the private beta", () => {
 
     fireEvent.click(screen.getByText("Join the early-access list"));
     expect(await screen.findByText("early-access-page")).toBeInTheDocument();
+  });
+
+  it("opens account setup when the backend allow-lists the number", async () => {
+    checkMobileStatus.mockResolvedValue({
+      exists: false,
+      is_onboarding_complete: false,
+      email_hint: null,
+      can_sign_up: true,
+    });
+    renderScreen();
+    await enterNumber("9876543210");
+    expect(await screen.findByText("Set up your account")).toBeInTheDocument();
+    expect(screen.queryByText("Sign-ups are closed for now")).not.toBeInTheDocument();
   });
 
   it("still lets a known number sign in with its PIN", async () => {

@@ -203,6 +203,8 @@ function SignupModal({
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [profession, setProfession] = useState<EarlyAccessProfession | "">("");
+  /** Honeypot — hidden from people, so a value here means a bot filled it. */
+  const [company, setCompany] = useState("");
   const [err, setErr] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const left = seats.seats_left;
@@ -241,6 +243,7 @@ function SignupModal({
         whatsapp: cleanPhone || null,
         profession,
         source: "earlyaccess_page",
+        company,
       });
       if (isPostHogEnabled) {
         posthog.capture("early_access_signup_completed", {
@@ -333,6 +336,20 @@ function SignupModal({
               </option>
             ))}
           </select>
+          {/* Honeypot: off-screen and skipped by keyboard/screen readers.
+              Not display:none — some bots skip fields that are. */}
+          <div className="absolute -left-[9999px] top-auto h-px w-px overflow-hidden" aria-hidden="true">
+            <label htmlFor="early-access-company">Company</label>
+            <input
+              id="early-access-company"
+              type="text"
+              name="company"
+              tabIndex={-1}
+              autoComplete="off"
+              value={company}
+              onChange={(e) => setCompany(e.target.value)}
+            />
+          </div>
           {err && <p className="text-[13px] font-medium text-[#C8321F]">{err}</p>}
           <button
             type="submit"

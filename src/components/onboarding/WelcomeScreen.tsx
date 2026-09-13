@@ -193,12 +193,17 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
     const digits = phone.replace(/\s/g, "");
 
     let exists = false;
+    // The backend decides whether an unknown number may sign up (closed beta,
+    // allow-listed numbers); the local constant is only the answer when the
+    // backend predates the flag or the check itself failed.
+    let canSignUp = PUBLIC_SIGNUP_OPEN;
     try {
       const status = await checkMobileStatus({
         country_code: countryCode.code,
         mobile: digits,
       });
       exists = status.exists;
+      canSignUp = status.can_sign_up ?? PUBLIC_SIGNUP_OPEN;
       setReturningUserOnboardingDone(status.exists && status.is_onboarding_complete);
       setAccountEmailHint(status.email_hint ?? null);
     } catch {
@@ -214,7 +219,7 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
     // account (name + PIN + confirm + email) on one page before onboarding —
     // unless public sign-up is closed, in which case they are pointed at the
     // early-access list instead.
-    setStep(exists ? "pin" : PUBLIC_SIGNUP_OPEN ? "setup" : "closed");
+    setStep(exists ? "pin" : canSignUp ? "setup" : "closed");
   };
 
   const finishOnboardedSession = () => {

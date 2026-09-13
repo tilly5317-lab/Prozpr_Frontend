@@ -59,6 +59,7 @@ describe("/earlyaccess", () => {
       whatsapp: null,
       profession: "Tech",
       source: "earlyaccess_page",
+      company: "",
     });
     expect(await screen.findAllByText("You're on the list.")).not.toHaveLength(0);
     // The meter moves to the count the backend returned with the sign-up.

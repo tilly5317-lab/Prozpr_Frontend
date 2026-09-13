@@ -165,11 +165,22 @@ const CHAT_REQUEST_TIMEOUT_MS = 210_000;
 const ISSUE_REQUEST_TIMEOUT_MS = 20_000;
 // till this
 
+interface RequestOptions {
+  /**
+   * Leave the app-wide "backend offline" circuit alone: neither honour it nor
+   * trip it. For public endpoints whose 5xx is about THEIR dependency (the
+   * early-access Google Sheet webhook), not the backend being down — one such
+   * failure must not lock every other call out for OFFLINE_RETRY_MS.
+   */
+  skipOfflineGate?: boolean;
+}
+
 async function request<T>(
   path: string,
   init?: RequestInit,
   auth = true,
-  timeoutMs: number = REQUEST_TIMEOUT_MS
+  timeoutMs: number = REQUEST_TIMEOUT_MS,
+  opts: RequestOptions = {},
 ): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -182,7 +193,7 @@ async function request<T>(
     if (familyMemberId) headers["X-Family-Member-Id"] = familyMemberId;
   }
 
-  if (Date.now() < backendOfflineUntil) {
+  if (!opts.skipOfflineGate && Date.now() < backendOfflineUntil) {
     throw new BackendOfflineError();
   }
 
@@ -197,7 +208,7 @@ async function request<T>(
     if (err instanceof DOMException && err.name === "AbortError") {
       throw new Error("Request timed out. Please try again.");
     }
-    backendOfflineUntil = Date.now() + OFFLINE_RETRY_MS;
+    if (!opts.skipOfflineGate) backendOfflineUntil = Date.now() + OFFLINE_RETRY_MS;
     throw new BackendOfflineError("Backend is unreachable");
   } finally {
     window.clearTimeout(timeoutId);
@@ -216,6 +227,11 @@ async function request<T>(
       }
       if (typeof detail === "string") {
         msg = detail;
+      } else if (Array.isArray(detail) && typeof detail[0]?.msg === "string") {
+        // Pydantic validation error: [{loc, msg: "Value error, <text>", type}].
+        // The first message, minus pydantic's "Value error, " prefix, is the
+        // human-readable one.
+        msg = (detail[0].msg as string).replace(/^Value error,\s*/, "");
       } else if (detail != null) {
         // FastAPI sometimes returns structured objects inside `detail`.
         msg = JSON.stringify(detail);
@@ -227,7 +243,7 @@ async function request<T>(
     }
     // Treat common gateway/unavailable statuses as "offline" to avoid noisy errors.
     if ([502, 503, 504].includes(res.status)) {
-      backendOfflineUntil = Date.now() + OFFLINE_RETRY_MS;
+      if (!opts.skipOfflineGate) backendOfflineUntil = Date.now() + OFFLINE_RETRY_MS;
       throw new BackendOfflineError(msg || "Backend unavailable");
     }
     throw new Error(msg || `Request failed (${res.status})`);
@@ -344,6 +360,13 @@ export interface MobileStatus {
    * receives the address in full.
    */
   email_hint: string | null;
+  /**
+   * Whether POST /auth/signup would accept this number. False for an unknown
+   * number while sign-ups are closed (the early-access beta); true for an
+   * existing account (they are signing in, not up) and for numbers on the
+   * backend's allow-list. Older backends omit it — treat absent as unknown.
+   */
+  can_sign_up?: boolean;
 }
 
 export async function checkMobileStatus(p: {
@@ -3189,6 +3212,9 @@ export interface EarlyAccessSignupPayload {
   whatsapp: string | null;
   profession: EarlyAccessProfession;
   source: "earlyaccess_page";
+  /** Honeypot. Rendered hidden and left empty by people; bots that fill it
+      are dropped silently by the backend. */
+  company?: string;
 }
 
 export interface EarlyAccessSeats {
@@ -3208,13 +3234,25 @@ export interface EarlyAccessSignupResponse extends EarlyAccessSeats {
 export async function submitEarlyAccessSignup(
   p: EarlyAccessSignupPayload,
 ): Promise<EarlyAccessSignupResponse> {
+  // The Google Sheet is the only register, so a 503 here means NOTHING was
+  // written — the caller must show a retry, never a success state. It also
+  // must not trip the app-wide offline circuit (see RequestOptions).
   return request<EarlyAccessSignupResponse>(
     "/early-access/signup",
     { method: "POST", body: JSON.stringify(p) },
     false,
+    REQUEST_TIMEOUT_MS,
+    { skipOfflineGate: true },
   );
 }
 
+/** 503 until the Sheet webhook is configured on the box; callers fall back. */
 export async function getEarlyAccessSeats(): Promise<EarlyAccessSeats> {
-  return request<EarlyAccessSeats>("/early-access/seats", { method: "GET" }, false);
+  return request<EarlyAccessSeats>(
+    "/early-access/seats",
+    { method: "GET" },
+    false,
+    REQUEST_TIMEOUT_MS,
+    { skipOfflineGate: true },
+  );
 }
