@@ -9,8 +9,8 @@ import {
   type LumpSumPlanResponse,
 } from "@/lib/api";
 import { CurrentVsTargetChart } from "@/components/invest/CurrentVsTargetChart";
-import { buildLumpSumTargetRows } from "@/lib/driftRows";
-import { formatInr0, formatMoneyInput } from "@/lib/utils";
+import { driftRowsFromBreakdown } from "@/lib/driftRows";
+import { formatInr0, formatMoneyInput, plainName } from "@/lib/utils";
 
 /** Plain-English horizon the plan leans toward (never surface the raw label). */
 const BUCKET_LABEL: Record<NonNullable<LumpSumPlanResponse["target_bucket"]>, string> = {
@@ -18,17 +18,6 @@ const BUCKET_LABEL: Record<NonNullable<LumpSumPlanResponse["target_bucket"]>, st
   medium_term: "Weighted toward your medium-term goals",
   long_term: "Building your long-term growth",
 };
-
-/** Fund/scheme name tidy-up for display. */
-function plainName(raw: string): string {
-  return (
-    raw
-      .replace(/\s*·\s*Folio.*$/i, "")
-      .replace(/\s*[-–]\s*(Direct|Regular)\s+Plan\b.*$/i, "")
-      .replace(/\s+Growth(?:\s+Option)?$/i, "")
-      .trim() || raw
-  );
-}
 
 /** Rupee amount → the grouped string the amount input expects. */
 const toInput = (inr: number) => formatMoneyInput(String(Math.round(inr)));
@@ -52,8 +41,12 @@ function LumpSumCard({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Proposed Equity / Debt / Others split of the suggested funds.
-  const splitRows = useMemo(() => buildLumpSumTargetRows(plan.alignment_rows), [plan.alignment_rows]);
+  // Proposed Equity / Debt / Commodity split of the deployment — the backend's
+  // look-through breakdown (same rollup as rebalancing).
+  const splitRows = useMemo(
+    () => (plan.asset_class_breakdown ? driftRowsFromBreakdown(plan.asset_class_breakdown) : []),
+    [plan.asset_class_breakdown],
+  );
 
   const parsed = Number(amount.replace(/,/g, ""));
   const valid = Number.isFinite(parsed) && parsed > 0;
@@ -86,7 +79,7 @@ function LumpSumCard({
           </p>
         </div>
         <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
-          How much do you want to invest as a one-time lump sum? Pi splits it across the right funds
+          How much do you want to invest as a one-time lump sum? Prozpr splits it across the right funds
           for your goals.
         </p>
 
@@ -173,10 +166,10 @@ function LumpSumCard({
         {bucketLabel && <p className="mt-1 text-[11px] leading-snug text-muted-foreground">{bucketLabel}</p>}
       </div>
 
-      {/* Proposed Split — the Equity / Debt / Others split of the suggested funds. */}
+      {/* Proposed Target — the Equity / Debt / Commodity split of the deployment. */}
       {splitRows.length > 0 && (
         <div className="mb-3">
-          <CurrentVsTargetChart rows={splitRows} bars={["target"]} title="Proposed Split" />
+          <CurrentVsTargetChart rows={splitRows} bars={["target"]} title="Proposed Target" />
         </div>
       )}
 
@@ -270,8 +263,8 @@ const LumpSumPlanner = () => {
         </div>
 
         <p className="mb-3 text-[11px] leading-snug text-muted-foreground">
-          Deploy a one-time lump sum. Enter an amount and Pi's engine splits it across the right funds
-          for your goals — the same plan you'd get in chat.
+          Deploy a one-time lump sum. Enter an amount and Prozpr's engine splits it across the right funds
+          for your goals.
         </p>
 
         {plan ? (
