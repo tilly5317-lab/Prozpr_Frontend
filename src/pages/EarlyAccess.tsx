@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   ArrowRight,
   Calculator,
@@ -35,25 +35,28 @@ import { isPostHogEnabled, posthog } from "@/lib/posthog";
  * rather than the app's theme tokens, and the app's dark mode leaves it alone.
  */
 
+/** Denominator shown before the live figure lands; the backend owns the real
+    one (`EARLY_ACCESS_SEATS`) and its value replaces this as soon as it loads. */
 const BETA_SEATS = 100;
 
 /**
- * Fallback seat count for when the backend is unreachable: starts at
- * CLAIM_START on CAMPAIGN_START and grows CLAIM_PER_DAY per day up to
- * CLAIM_CAP. Deterministic, so every visitor sees the same number. The live
- * figure from `/early-access/seats` replaces it as soon as it loads.
+ * How often the live count is re-read while the page is open, matching the
+ * backend's own 30s cache — polling faster only returns the same cached
+ * number. The meter is the page's one live element, so during a launch push a
+ * visitor sees it move without reloading.
  */
-const CAMPAIGN_START = new Date("2026-09-08T00:00:00+05:30").getTime();
-const CLAIM_START = 53;
-const CLAIM_PER_DAY = 2.5;
-const CLAIM_CAP = 94;
-const fallbackClaimed = () =>
-  Math.min(
-    CLAIM_CAP,
-    Math.round(
-      CLAIM_START + (Math.max(0, Date.now() - CAMPAIGN_START) / 86_400_000) * CLAIM_PER_DAY,
-    ),
-  );
+const SEATS_POLL_MS = 30_000;
+
+/**
+ * Seat figures are shown ONLY when they are real.
+ *
+ * There is deliberately no invented fallback here. A count that ticks up on a
+ * timer is a claim about how many people signed up, made to visitors who have
+ * no way to check it, and it would be a lie the moment the real number
+ * diverged. When the live figure cannot be read the page simply says less —
+ * the meter hides and the buttons drop the number — rather than making one up.
+ */
+type SeatsStatus = "loading" | "live" | "unavailable";
 
 const SIGNUP_KEY = "prozpr_early_access_signup";
 
@@ -63,25 +66,61 @@ const PAGE_DESCRIPTION =
 
 /* ─── Seat state ─── */
 
-function useSeats(): [EarlyAccessSeats, (s: EarlyAccessSeats) => void] {
-  const [seats, setSeats] = useState<EarlyAccessSeats>(() => {
-    const claimed = fallbackClaimed();
-    return { seats_total: BETA_SEATS, seats_claimed: claimed, seats_left: BETA_SEATS - claimed };
-  });
+interface SeatsState {
+  seats: EarlyAccessSeats | null;
+  status: SeatsStatus;
+  /** Adopt the figures a successful sign-up came back with, so the meter
+      reflects the seat the visitor just took without waiting for the poll. */
+  apply: (s: EarlyAccessSeats | null) => void;
+}
+
+function useSeats(): SeatsState {
+  const [seats, setSeats] = useState<EarlyAccessSeats | null>(null);
+  const [status, setStatus] = useState<SeatsStatus>("loading");
+
   useEffect(() => {
     let cancelled = false;
-    void getEarlyAccessSeats()
-      .then((s) => {
-        if (!cancelled && Number.isFinite(s.seats_total)) setSeats(s);
-      })
-      .catch(() => {
-        /* live count unavailable — the deterministic fallback stays */
-      });
+
+    const load = () => {
+      void getEarlyAccessSeats()
+        .then((s) => {
+          if (cancelled || !Number.isFinite(s.seats_total)) return;
+          setSeats(s);
+          setStatus("live");
+        })
+        .catch(() => {
+          // A blip must not blank a meter that was reading correctly a moment
+          // ago: keep the last good figure and only fall back to the
+          // numberless state if we never had one.
+          if (!cancelled) setStatus((prev) => (prev === "live" ? "live" : "unavailable"));
+        });
+    };
+
+    load();
+    const poll = window.setInterval(load, SEATS_POLL_MS);
+    // A tab left open for an hour is the common case for a link someone was
+    // sent; re-read on return so they are not looking at an hour-old count.
+    const refresh = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("focus", refresh);
+
     return () => {
       cancelled = true;
+      window.clearInterval(poll);
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", refresh);
     };
   }, []);
-  return [seats, setSeats];
+
+  const apply = (s: EarlyAccessSeats | null) => {
+    if (!s || !Number.isFinite(s.seats_total)) return;
+    setSeats(s);
+    setStatus("live");
+  };
+
+  return { seats, status, apply };
 }
 
 function useSignupDone(): [boolean, () => void] {
@@ -141,15 +180,17 @@ const Wordmark = ({ tagline = false }: { tagline?: boolean }) => (
 /* ─── Sign-up ─── */
 
 interface SignupProps {
-  seats: EarlyAccessSeats;
+  /** Null until the live count lands, and if it never does. Every caller has
+      to render a sensible numberless version rather than guess a figure. */
+  seats: EarlyAccessSeats | null;
   done: boolean;
   onDone: (seats: EarlyAccessSeats | null) => void;
 }
 
 function SignupForm({ seats, done, onDone }: SignupProps) {
   const [open, setOpen] = useState(false);
-  const left = seats.seats_left;
-  const full = left <= 0;
+  const left = seats?.seats_left;
+  const full = left !== undefined && left <= 0;
 
   if (done) {
     return (
@@ -172,7 +213,11 @@ function SignupForm({ seats, done, onDone }: SignupProps) {
         onClick={() => setOpen(true)}
         className="group relative inline-flex h-14 w-full max-w-sm items-center justify-center gap-2.5 rounded-2xl bg-[#111113] px-8 text-[16px] font-semibold text-[#F7F3EC] shadow-[0_8px_24px_rgba(17,17,19,0.25)] transition-all hover:-translate-y-0.5 hover:bg-[#2F2F33]"
       >
-        {full ? "Join the waitlist" : `Claim 1 of the last ${left} seats`}
+        {full
+          ? "Join the waitlist"
+          : left !== undefined
+            ? `Claim 1 of the last ${left} seats`
+            : "Claim your seat"}
         <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
         <span className="absolute -right-1.5 -top-1.5 flex h-4 w-4">
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#C8321F] opacity-60" />
@@ -207,7 +252,7 @@ function SignupModal({
   const [company, setCompany] = useState("");
   const [err, setErr] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const left = seats.seats_left;
+  const left = seats?.seats_left;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -280,9 +325,12 @@ function SignupModal({
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <SeatsLeftPill left={Math.max(0, left)} />
-            <h3 id="early-access-title" className="mt-2.5 text-xl font-semibold tracking-tight">
-              {left > 0 ? "Claim your seat" : "Join the waitlist"}
+            {left !== undefined && <SeatsLeftPill left={Math.max(0, left)} />}
+            <h3
+              id="early-access-title"
+              className={`text-xl font-semibold tracking-tight${left !== undefined ? " mt-2.5" : ""}`}
+            >
+              {left !== undefined && left <= 0 ? "Join the waitlist" : "Claim your seat"}
             </h3>
           </div>
           <button
@@ -370,24 +418,59 @@ function SignupModal({
   );
 }
 
-function SeatMeter({ seats }: { seats: EarlyAccessSeats }) {
-  const total = seats.seats_total || BETA_SEATS;
-  const claimed = Math.min(total, seats.seats_claimed);
+const METER_SHELL =
+  "mx-auto mt-6 w-full max-w-md rounded-2xl border border-[#E8E2D2] bg-white p-4 text-left";
+
+function SeatMeter({ seats, status }: { seats: EarlyAccessSeats | null; status: SeatsStatus }) {
+  const total = seats?.seats_total || BETA_SEATS;
+  const claimed = seats ? Math.min(total, seats.seats_claimed) : 0;
   const [n, setN] = useState(0);
+  // What the counter is currently showing. The animation runs from here rather
+  // than from zero, so a poll that moves the figure by one ticks up by one
+  // instead of replaying the whole count every 30 seconds.
+  const shown = useRef(0);
+
   useEffect(() => {
+    if (!seats) return;
+    const from = shown.current;
+    const delta = claimed - from;
+    if (delta === 0) return;
     let raf = 0;
     let t0 = 0;
     const tick = (t: number) => {
       if (!t0) t0 = t;
       const p = Math.min((t - t0) / 900, 1);
-      setN(Math.round(claimed * (1 - Math.pow(1 - p, 3))));
+      const v = Math.round(from + delta * (1 - Math.pow(1 - p, 3)));
+      shown.current = v;
+      setN(v);
       if (p < 1) raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [claimed]);
+  }, [claimed, seats]);
+
+  if (status === "loading") {
+    return (
+      <div className={METER_SHELL} aria-hidden>
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="h-5 w-40 animate-pulse rounded bg-[#EDE6D6]" />
+          <span className="h-6 w-24 animate-pulse rounded-full bg-[#EDE6D6]" />
+        </div>
+        <div className="mt-2 h-2.5 animate-pulse rounded-full bg-[#EDE6D6]" />
+        <p className="mt-2 text-[12px] text-[#8A8275]">
+          Seats are confirmed in sign-up order. When the bar fills, the beta closes.
+        </p>
+      </div>
+    );
+  }
+
+  // Live count unreadable and never read. The page says less rather than
+  // showing a number it cannot stand behind — the copy below still carries the
+  // scarcity, and the button falls back to "Claim your seat".
+  if (!seats) return null;
+
   return (
-    <div className="mx-auto mt-6 w-full max-w-md rounded-2xl border border-[#E8E2D2] bg-white p-4 text-left">
+    <div className={METER_SHELL}>
       <div className="flex items-baseline justify-between gap-3">
         <span className="text-sm font-semibold">
           <span className="text-xl font-bold tabular-nums">{n}</span> of {total} seats claimed
@@ -397,7 +480,7 @@ function SeatMeter({ seats }: { seats: EarlyAccessSeats }) {
       <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-[#EDE6D6]">
         <div
           className="h-full rounded-full bg-gradient-to-r from-[#E0B84A] to-[#C8321F] transition-[width] duration-1000 ease-out"
-          style={{ width: `${(n / total) * 100}%` }}
+          style={{ width: `${total > 0 ? (n / total) * 100 : 0}%` }}
         />
       </div>
       <p className="mt-2 text-[12px] text-[#8A8275]">
@@ -409,7 +492,7 @@ function SeatMeter({ seats }: { seats: EarlyAccessSeats }) {
 
 /* ─── Sections ─── */
 
-function Nav({ left }: { left: number }) {
+function Nav({ left }: { left: number | undefined }) {
   return (
     <header className="sticky top-0 z-40 border-b border-[#E8E2D2]/80 bg-[#F7F3EC]/90 backdrop-blur">
       <div className="bg-[#111113] px-4 py-1.5 text-center text-[11px] font-medium tracking-wide text-[#F7F3EC]/80 sm:text-[12px]">
@@ -428,16 +511,18 @@ function Nav({ left }: { left: number }) {
           className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#111113] px-4 text-sm font-semibold text-[#F7F3EC] hover:bg-[#2F2F33] hover:text-[#F7F3EC]"
         >
           Become a tester
-          <span className="rounded-full bg-[#E0B84A] px-1.5 py-0.5 text-[10px] font-bold text-[#111113]">
-            {Math.max(0, left)} left
-          </span>
+          {left !== undefined && (
+            <span className="rounded-full bg-[#E0B84A] px-1.5 py-0.5 text-[10px] font-bold text-[#111113]">
+              {Math.max(0, left)} left
+            </span>
+          )}
         </a>
       </div>
     </header>
   );
 }
 
-function Hero({ seats, done, onDone }: SignupProps) {
+function Hero({ seats, status, done, onDone }: SignupProps & { status: SeatsStatus }) {
   return (
     <section className="px-5 pb-16 pt-14 text-center sm:pt-20">
       <div className="mx-auto max-w-3xl">
@@ -456,7 +541,7 @@ function Hero({ seats, done, onDone }: SignupProps) {
         <div id="join" className="mx-auto mt-8 max-w-xl scroll-mt-24">
           <SignupForm seats={seats} done={done} onDone={onDone} />
         </div>
-        <SeatMeter seats={seats} />
+        <SeatMeter seats={seats} status={status} />
       </div>
     </section>
   );
@@ -693,14 +778,18 @@ function Faq() {
 }
 
 function FinalCta({ seats, done, onDone }: SignupProps) {
-  const left = Math.max(0, seats.seats_left);
+  const left = seats ? Math.max(0, seats.seats_left) : undefined;
   return (
     <section className="border-t border-[#E8E2D2] bg-white px-5 py-16 sm:py-20">
       <div className="mx-auto max-w-xl text-center">
         <h2 className="text-[26px] font-semibold tracking-tight sm:text-4xl">
-          {left > 0 ? `${left} ${left === 1 ? "seat" : "seats"} left.` : "All seats are taken."}{" "}
+          {left === undefined
+            ? "The beta is filling up."
+            : left > 0
+              ? `${left} ${left === 1 ? "seat" : "seats"} left.`
+              : "All seats are taken."}{" "}
           <em className="font-display font-normal italic">
-            {left > 0 ? "Then the doors close." : "The waitlist is open."}
+            {left !== undefined && left <= 0 ? "The waitlist is open." : "Then the doors close."}
           </em>
         </h2>
         <p className="mt-4 text-[15px] leading-relaxed text-[#57534A]">
@@ -732,7 +821,7 @@ function Footer() {
 /* ─── Page ─── */
 
 const EarlyAccess = () => {
-  const [seats, setSeats] = useSeats();
+  const { seats, status, apply: applySeats } = useSeats();
   const [done, markDone] = useSignupDone();
 
   // The SPA shell's <title>/<meta> describe the app; this page is shared as a
@@ -750,15 +839,17 @@ const EarlyAccess = () => {
   }, []);
 
   const handleDone = (fresh: EarlyAccessSeats | null) => {
-    if (fresh) setSeats(fresh);
+    // The sign-up response carries the count including the seat just taken,
+    // so the meter moves immediately instead of waiting for the next poll.
+    applySeats(fresh);
     markDone();
   };
 
   return (
     <div className="min-h-screen bg-[#F7F3EC] font-sans text-[#111113] antialiased selection:bg-[#111113] selection:text-[#F7F3EC]">
-      <Nav left={seats.seats_left} />
+      <Nav left={seats?.seats_left} />
       <main>
-        <Hero seats={seats} done={done} onDone={handleDone} />
+        <Hero seats={seats} status={status} done={done} onDone={handleDone} />
         <Perks />
         <HowItWorks />
         <WhoFor />

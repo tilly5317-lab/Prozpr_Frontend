@@ -66,6 +66,44 @@ describe("/earlyaccess", () => {
     expect(screen.getAllByText("39 seats left").length).toBeGreaterThan(0);
   });
 
+  it("renders the claimed count the backend reported", async () => {
+    renderPage();
+    expect(await screen.findByText(/of 100 seats claimed/)).toBeInTheDocument();
+    // The counter animates up to the real figure rather than landing on it.
+    await waitFor(() => expect(screen.getByText("60")).toBeInTheDocument(), { timeout: 2500 });
+  });
+
+  it("never invents a seat count when the live figure is unreadable", async () => {
+    // A fabricated fallback would state a signup number to visitors that
+    // nothing backs. The page must say less instead.
+    getEarlyAccessSeats.mockReset().mockRejectedValue(new Error("503"));
+    renderPage();
+
+    expect(await screen.findAllByText("Claim your seat")).not.toHaveLength(0);
+    expect(screen.queryByText(/seats claimed/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/seats left/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Claim 1 of the last/)).not.toBeInTheDocument();
+  });
+
+  it("still lets someone sign up while the count is unavailable", async () => {
+    getEarlyAccessSeats.mockReset().mockRejectedValue(new Error("503"));
+    submitEarlyAccessSignup.mockResolvedValue({ ok: true, ...seats });
+    renderPage();
+
+    fireEvent.click((await screen.findAllByText("Claim your seat"))[0]);
+    fireEvent.change(screen.getByPlaceholderText("Name"), { target: { value: "Asha" } });
+    fireEvent.change(screen.getByPlaceholderText("Email address"), {
+      target: { value: "asha@example.com" },
+    });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "Tech" } });
+    fireEvent.click(screen.getByText("Confirm my seat"));
+
+    await waitFor(() => expect(submitEarlyAccessSignup).toHaveBeenCalledTimes(1));
+    expect(await screen.findAllByText("You're on the list.")).not.toHaveLength(0);
+    // The sign-up response carries real figures, so the meter appears now.
+    expect(screen.getAllByText("40 seats left").length).toBeGreaterThan(0);
+  });
+
   it("surfaces the backend's error and keeps the form open", async () => {
     submitEarlyAccessSignup.mockRejectedValue(new Error("Email already registered"));
     renderPage();
