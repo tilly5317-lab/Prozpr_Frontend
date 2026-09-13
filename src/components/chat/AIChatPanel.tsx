@@ -23,7 +23,9 @@ import {
   inferAccountLinkingComplete,
   shouldSkipPostSetupChatPrompts,
   saveRebalancingRun,
+  saveAdditionalInvestmentPreference,
   getCurrentRebalancingRun,
+  getSessionAdditionalInvestmentCurrent,
   type ChatSessionInfo,
   type ChatMessageInfo,
   type PortfolioDetail,
@@ -31,11 +33,13 @@ import {
   type FullProfileResponse,
   type LinkAccountInfo,
 } from "@/lib/api";
-import { deriveRebalancingPills } from "@/lib/rebalancing-pills";
+import { deriveChatPlanPills } from "@/lib/chat-plan-pills";
+import { resolveViewPlanTarget } from "@/lib/view-plan-target";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useChatThinking } from "@/hooks/useChatThinking";
 import CamsUploadModal from "@/components/onboarding/CamsUploadModal";
+import { AdditionalInvestmentPlanModal } from "@/components/chat/AdditionalInvestmentPlanModal";
 import { RebalancePlanModal } from "@/components/chat/RebalancePlanModal";
 
 const PENDING_CHAT_BOOTSTRAP_KEY = "askProzpr.pendingChatBootstrap.v1";
@@ -83,6 +87,17 @@ interface Message {
    *  which POSTs it to /rebalancing/{id}/save. Absent on tilt / redirect turns
    *  and on asset-allocation-only turns (backend sends no rebalancing id). */
   rebalancingRunId?: string;
+  /** The persisted additional-investment run this AINV turn produced (backend
+   *  `additional_investment_run_id`). Enables the "Save preference" pill →
+   *  POST /additional-investment/{id}/save-preference. Live-response only. */
+  additionalInvestmentRunId?: string;
+  /** Backend `Cadence` of the additional-investment run above ("sip_monthly" |
+   *  "lumpsum") — routes the "View plan" button to the SIP vs Lump sum tab. */
+  additionalInvestmentCadence?: string;
+  /** True when this rebalancing turn produced a savable candidate preference
+   *  (a "what-if"): the Save-plan pill notes the preference is kept and the
+   *  "View preferences" link shows. Backend `has_candidate_preference`. */
+  hasCandidatePreference?: boolean;
   /**
    * The question needed the user's holdings and none are imported yet (CAMS was
    * skipped or never added). Pi's reply says so; this renders the upload CTA
@@ -1029,8 +1044,13 @@ const AIChatPanel = ({
   const [isTyping, setIsTyping] = useState(false);
   const [savingRunId, setSavingRunId] = useState<string | null>(null);
   const [savedRunIds, setSavedRunIds] = useState<Set<string>>(new Set());
+  const [savingPreferenceRunId, setSavingPreferenceRunId] = useState<string | null>(null);
+  const [savedPreferenceRunIds, setSavedPreferenceRunIds] = useState<Set<string>>(new Set());
   // The rebalancing run whose plan the View-plan modal is showing (null = closed).
   const [planModalRunId, setPlanModalRunId] = useState<string | null>(null);
+  // The cadence of the additional-investment plan the View-plan popup is showing
+  // ("sip_monthly" | "lumpsum"; null = closed).
+  const [ainvModalCadence, setAinvModalCadence] = useState<string | null>(null);
 
   const handleSavePlan = useCallback(async (runId: string) => {
     setSavingRunId(runId);
@@ -1045,33 +1065,70 @@ const AIChatPanel = ({
     }
   }, []);
 
-  // On returning to chat, history rehydrates without the pill flags. Re-derive
-  // them from each message's OWN persisted run (deriveRebalancingPills), so a
-  // newer unsaved plan never inherits an older plan's "Saved". `perMessage` is
-  // index-aligned to `history`, and `messages` was just set 1:1 from the same
-  // `session.messages` at both call sites (1230, 1360), so mapping by index is safe.
-  const rehydrateRebalancingPill = useCallback(async (history: ChatMessageInfo[]) => {
-    const current = await getCurrentRebalancingRun().catch(() => null);
-    const { perMessage, savedRunIds } = deriveRebalancingPills(history, current);
-    setMessages((prev) =>
-      prev.map((m, i) => {
-        const pill = perMessage[i];
-        if (!pill || !pill.showViewExecutePlan) return m;
-        return {
-          ...m,
-          showViewExecutePlan: true,
-          ...(pill.rebalancingRunId ? { rebalancingRunId: pill.rebalancingRunId } : {}),
-        };
-      }),
-    );
-    if (savedRunIds.length > 0) {
-      setSavedRunIds((prev) => {
-        const next = new Set(prev);
-        savedRunIds.forEach((id) => next.add(id));
-        return next;
-      });
+  const handleSavePreference = useCallback(async (runId: string) => {
+    setSavingPreferenceRunId(runId);
+    try {
+      const { activated } = await saveAdditionalInvestmentPreference(runId);
+      if (activated) {
+        setSavedPreferenceRunIds((prev) => new Set(prev).add(runId));
+        toast.success("Preference saved to your profile");
+      } else {
+        toast("No preference to save from this plan");
+      }
+    } catch {
+      toast.error("Couldn't save the preference. Please try again.");
+    } finally {
+      setSavingPreferenceRunId(null);
     }
   }, []);
+
+  // On returning to chat, history rehydrates without the pill flags. Re-derive
+  // each message's "View plan" pill (deriveChatPlanPills) from the session's
+  // current run of each plan type. `perMessage` is index-aligned to `history`,
+  // and `messages` was just set 1:1 from the same `session.messages` at both
+  // call sites, so mapping by index is safe.
+  const rehydratePlanPills = useCallback(
+    async (history: ChatMessageInfo[], sessionId: string) => {
+      // Only fetch a plan-current the session can actually use — skip the call
+      // when the history has no assistant turn of that type.
+      const hasRebalTurn = history.some(
+        (m) => m.role === "assistant" && m.intent === "rebalancing",
+      );
+      const hasAinvTurn = history.some(
+        (m) => m.role === "assistant" && m.intent === "additional_investment",
+      );
+      const [current, ainvCurrent] = await Promise.all([
+        hasRebalTurn ? getCurrentRebalancingRun().catch(() => null) : Promise.resolve(null),
+        hasAinvTurn
+          ? getSessionAdditionalInvestmentCurrent(sessionId).catch(() => null)
+          : Promise.resolve(null),
+      ]);
+      const perMessage = deriveChatPlanPills(
+        history,
+        current?.id ?? null,
+        ainvCurrent?.cadence ?? null,
+        ainvCurrent?.savePreferenceRunId ?? null,
+      );
+      setMessages((prev) =>
+        prev.map((m, i) => {
+          const pill = perMessage[i];
+          if (!pill || !pill.showViewExecutePlan) return m;
+          return {
+            ...m,
+            showViewExecutePlan: true,
+            ...(pill.rebalancingRunId ? { rebalancingRunId: pill.rebalancingRunId } : {}),
+            ...(pill.additionalInvestmentCadence
+              ? { additionalInvestmentCadence: pill.additionalInvestmentCadence }
+              : {}),
+            ...(pill.additionalInvestmentRunId
+              ? { additionalInvestmentRunId: pill.additionalInvestmentRunId }
+              : {}),
+          };
+        }),
+      );
+    },
+    [],
+  );
   // Session whose live "thinking aloud" feed we poll while a reply is pending.
   const [thinkingSessionId, setThinkingSessionId] = useState<string | null>(null);
   const [micState, setMicState] = useState<MicState>("idle");
@@ -1232,7 +1289,7 @@ const AIChatPanel = ({
           chartPayloads: m.chart_payloads || null,
         })),
       );
-      void rehydrateRebalancingPill(session.messages);
+      void rehydratePlanPills(session.messages, session.id);
       setChatStartTime(formatTimestamp(new Date(session.created_at)));
       setShowFirstUseHint(false);
       setOnboardingActive(false);
@@ -1362,7 +1419,7 @@ const AIChatPanel = ({
               chartPayloads: m.chart_payloads || null,
             })),
           );
-          void rehydrateRebalancingPill(session.messages);
+          void rehydratePlanPills(session.messages, session.id);
           // Stamp the header with when this session actually started, not "now"
           // (mirrors handleSelectSession). An empty session keeps the current time.
           setChatStartTime(formatTimestamp(new Date(session.created_at)));
@@ -1647,12 +1704,18 @@ const AIChatPanel = ({
         resp.ideal_allocation_rebalancing_id ?? resp.ideal_allocation_snapshot_id
       );
       const rebalancingRunId = resp.ideal_allocation_rebalancing_id ?? undefined;
+      const additionalInvestmentRunId = resp.additional_investment_run_id ?? undefined;
+      const additionalInvestmentCadence = resp.additional_investment_cadence ?? undefined;
+      const hasCandidatePreference = resp.has_candidate_preference ?? false;
       // done is authoritative — replace the streamed text, never append to it.
       const finalMessage: Message = {
         role: "ai",
         content: resp.assistant_message.content,
         ...(hasSavedPlan ? { showViewExecutePlan: true } : {}),
         ...(rebalancingRunId ? { rebalancingRunId } : {}),
+        ...(additionalInvestmentRunId ? { additionalInvestmentRunId } : {}),
+        ...(additionalInvestmentCadence ? { additionalInvestmentCadence } : {}),
+        ...(hasCandidatePreference ? { hasCandidatePreference: true } : {}),
         ...(resp.portfolio_data_missing ? { showAddCams: true } : {}),
         chartPayloads: resp.assistant_message.chart_payloads || null,
       };
@@ -1943,17 +2006,20 @@ const AIChatPanel = ({
                   }}
                 >
                   <MarkdownMessage text={msg.content} />
-                  {(msg.showViewExecutePlan || msg.rebalancingRunId) ? (
+                  {(msg.showViewExecutePlan || msg.rebalancingRunId || msg.additionalInvestmentRunId || msg.additionalInvestmentCadence) ? (
                     <div className="mt-3 flex flex-wrap items-center justify-center gap-2 border-t border-foreground/10 pt-3">
-                      {msg.showViewExecutePlan ? (
+                      {msg.showViewExecutePlan || msg.additionalInvestmentCadence ? (
                         /* View — exploratory, quiet ink ghost */
                         <button
                           type="button"
-                          onClick={() =>
-                            msg.rebalancingRunId
-                              ? setPlanModalRunId(msg.rebalancingRunId)
-                              : navigate("/invest/rebalance-explanation")
-                          }
+                          onClick={() => {
+                            const target = resolveViewPlanTarget(msg);
+                            if (target.kind === "rebalancing-modal")
+                              setPlanModalRunId(target.runId);
+                            else if (target.kind === "ainv-modal")
+                              setAinvModalCadence(target.cadence);
+                            else navigate(target.path);
+                          }}
                           className="group inline-flex items-center gap-1.5 rounded-full border border-foreground/15 bg-transparent px-4 py-1.5 text-[12.5px] font-semibold text-foreground/80 transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
                         >
                           View plan
@@ -1996,7 +2062,49 @@ const AIChatPanel = ({
                             ? "Saved"
                             : savingRunId === msg.rebalancingRunId
                               ? "Saving…"
-                              : "Save plan"}
+                              : msg.hasCandidatePreference
+                                ? "Save plan & preference"
+                                : "Save plan"}
+                        </button>
+                      ) : null}
+                      {msg.rebalancingRunId && msg.hasCandidatePreference ? (
+                        /* What-if turn only: saving this plan also keeps the preference behind it. */
+                        <button
+                          type="button"
+                          onClick={() => navigate("/invest/preferences")}
+                          className="inline-flex items-center gap-1 rounded-full border border-foreground/10 bg-transparent px-3 py-1.5 text-[12px] font-medium text-foreground/60 transition-colors hover:text-foreground/90"
+                        >
+                          View preferences
+                        </button>
+                      ) : null}
+                      {msg.additionalInvestmentRunId ? (
+                        /* AINV "Save preference" — mirrors the rebalancing Save-plan pill. */
+                        <button
+                          type="button"
+                          disabled={
+                            savedPreferenceRunIds.has(msg.additionalInvestmentRunId) ||
+                            savingPreferenceRunId === msg.additionalInvestmentRunId
+                          }
+                          onClick={() => void handleSavePreference(msg.additionalInvestmentRunId)}
+                          className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[12.5px] font-semibold transition-all hover:brightness-[1.04] active:scale-[0.98] disabled:cursor-default disabled:active:scale-100 motion-reduce:transition-none motion-reduce:active:scale-100"
+                          style={
+                            savedPreferenceRunIds.has(msg.additionalInvestmentRunId)
+                              ? { backgroundColor: "rgba(212,168,104,0.15)", color: "#9A7B2E", border: "1px solid rgba(212,168,104,0.4)" }
+                              : { background: "linear-gradient(135deg, #E5C079 0%, #D4A868 100%)", color: "#3a2c0e", boxShadow: "0 2px 8px -3px rgba(212,168,104,0.7)" }
+                          }
+                        >
+                          {savedPreferenceRunIds.has(msg.additionalInvestmentRunId) ? (
+                            <Check className="h-3.5 w-3.5" />
+                          ) : savingPreferenceRunId === msg.additionalInvestmentRunId ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Bookmark className="h-3.5 w-3.5" />
+                          )}
+                          {savedPreferenceRunIds.has(msg.additionalInvestmentRunId)
+                            ? "Saved"
+                            : savingPreferenceRunId === msg.additionalInvestmentRunId
+                              ? "Saving…"
+                              : "Save preference"}
                         </button>
                       ) : null}
                     </div>
@@ -2494,6 +2602,12 @@ const AIChatPanel = ({
             onSave={() => void handleSavePlan(planModalRunId)}
           />
         ) : null}
+        {ainvModalCadence ? (
+          <AdditionalInvestmentPlanModal
+            cadence={ainvModalCadence}
+            onClose={() => setAinvModalCadence(null)}
+          />
+        ) : null}
         {camsImportModal}
       </div>
     );
@@ -2668,6 +2782,12 @@ const AIChatPanel = ({
         isSaved={savedRunIds.has(planModalRunId)}
         isSaving={savingRunId === planModalRunId}
         onSave={() => void handleSavePlan(planModalRunId)}
+      />
+    ) : null}
+    {ainvModalCadence ? (
+      <AdditionalInvestmentPlanModal
+        cadence={ainvModalCadence}
+        onClose={() => setAinvModalCadence(null)}
       />
     ) : null}
     </>
