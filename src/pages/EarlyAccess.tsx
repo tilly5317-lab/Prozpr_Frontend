@@ -233,7 +233,7 @@ function SignupForm({ seats, done, onDone }: SignupProps) {
 }
 
 const FIELD =
-  "h-12 w-full rounded-xl border border-[#E8E2D2] bg-white px-4 text-[15px] text-[#111113] outline-none placeholder:text-[#8A8275] focus:border-[#111113]";
+  "h-12 w-full rounded-xl border border-[#E8E2D2] bg-white px-4 text-[15px] text-[#111113] outline-none placeholder:text-[#6F6858] focus:border-[#111113]";
 
 function SignupModal({
   seats,
@@ -373,7 +373,7 @@ function SignupModal({
             required
             value={profession}
             onChange={(e) => setProfession(e.target.value as EarlyAccessProfession | "")}
-            className={`${FIELD} appearance-none ${profession ? "" : "text-[#8A8275]"}`}
+            className={`${FIELD} appearance-none ${profession ? "" : "text-[#6F6858]"}`}
           >
             <option value="" disabled>
               Profession
@@ -846,7 +846,7 @@ const EarlyAccess = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F7F3EC] font-sans text-[#111113] antialiased selection:bg-[#111113] selection:text-[#F7F3EC]">
+    <div className="early-access min-h-screen bg-[#F7F3EC] font-sans text-[#111113] antialiased selection:bg-[#111113] selection:text-[#F7F3EC]">
       <Nav left={seats?.seats_left} />
       <main>
         <Hero seats={seats} status={status} done={done} onDone={handleDone} />
