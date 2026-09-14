@@ -248,8 +248,9 @@ function SignupModal({
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [profession, setProfession] = useState<EarlyAccessProfession | "">("");
-  /** Honeypot — hidden from people, so a value here means a bot filled it. */
-  const [company, setCompany] = useState("");
+  /** Honeypot — hidden from people, so a value here means a bot filled it.
+      NOT named after anything a browser can autofill: see the field below. */
+  const [referrerNote, setReferrerNote] = useState("");
   const [err, setErr] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const left = seats?.seats_left;
@@ -288,7 +289,7 @@ function SignupModal({
         whatsapp: cleanPhone || null,
         profession,
         source: "earlyaccess_page",
-        company,
+        referrer_note: referrerNote,
       });
       if (isPostHogEnabled) {
         posthog.capture("early_access_signup_completed", {
@@ -386,16 +387,23 @@ function SignupModal({
           </select>
           {/* Honeypot: off-screen and skipped by keyboard/screen readers.
               Not display:none — some bots skip fields that are. */}
+          {/* Honeypot. It was once name="company" with a "Company" label, and
+              Chrome duly recognised it as the organization field and filled it
+              from the visitor's saved profile — so every applicant with
+              autofill on was discarded behind a success screen. tabIndex and
+              autoComplete="off" did not help: browsers ignore both for fields
+              they think they recognise. The fix is a name and id that match
+              nothing in that vocabulary, and no label text to re-introduce the
+              hint. Keep it that way. */}
           <div className="absolute -left-[9999px] top-auto h-px w-px overflow-hidden" aria-hidden="true">
-            <label htmlFor="early-access-company">Company</label>
             <input
-              id="early-access-company"
+              id="early-access-referrer-note"
               type="text"
-              name="company"
+              name="referrer_note"
               tabIndex={-1}
               autoComplete="off"
-              value={company}
-              onChange={(e) => setCompany(e.target.value)}
+              value={referrerNote}
+              onChange={(e) => setReferrerNote(e.target.value)}
             />
           </div>
           {err && <p className="text-[13px] font-medium text-[#C8321F]">{err}</p>}

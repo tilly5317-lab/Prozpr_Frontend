@@ -59,7 +59,7 @@ describe("/earlyaccess", () => {
       whatsapp: null,
       profession: "Tech",
       source: "earlyaccess_page",
-      company: "",
+      referrer_note: "",
     });
     expect(await screen.findAllByText("You're on the list.")).not.toHaveLength(0);
     // The meter moves to the count the backend returned with the sign-up.
@@ -102,6 +102,19 @@ describe("/earlyaccess", () => {
     expect(await screen.findAllByText("You're on the list.")).not.toHaveLength(0);
     // The sign-up response carries real figures, so the meter appears now.
     expect(screen.getAllByText("40 seats left").length).toBeGreaterThan(0);
+  });
+
+  it("has no honeypot field a browser would autofill", () => {
+    // The trap was name="company" with a "Company" label. Chrome recognised
+    // it as the organization field, filled it from the visitor's saved
+    // profile, and the backend discarded every such applicant behind a
+    // success screen. Nothing in the form may carry that hint again.
+    renderPage();
+    const inputs = Array.from(document.querySelectorAll("input"));
+    const names = inputs.map((i) => i.getAttribute("name") ?? "");
+    expect(names).not.toContain("company");
+    expect(names).not.toContain("organization");
+    expect(document.body.textContent).not.toContain("Company");
   });
 
   it("surfaces the backend's error and keeps the form open", async () => {

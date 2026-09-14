@@ -3213,8 +3213,10 @@ export interface EarlyAccessSignupPayload {
   profession: EarlyAccessProfession;
   source: "earlyaccess_page";
   /** Honeypot. Rendered hidden and left empty by people; bots that fill it
-      are dropped silently by the backend. */
-  company?: string;
+      are dropped silently by the backend. Deliberately NOT named after a
+      field a browser can autofill — it was `company` once, and Chrome filled
+      it from the visitor's profile, silently dropping real applicants. */
+  referrer_note?: string;
 }
 
 export interface EarlyAccessSeats {
