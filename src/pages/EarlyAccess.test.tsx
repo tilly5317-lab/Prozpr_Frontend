@@ -104,7 +104,7 @@ describe("/earlyaccess", () => {
     expect(screen.getAllByText("40 seats left").length).toBeGreaterThan(0);
   });
 
-  it("caps the WhatsApp number at 10 digits and sends it behind +91", async () => {
+  it("caps the WhatsApp number at 10 digits and sends the bare digits", async () => {
     submitEarlyAccessSignup.mockResolvedValue({ ok: true, ...seats });
     renderPage();
     fireEvent.click((await screen.findAllByText(/Claim 1 of the last/))[0]);
@@ -126,8 +126,10 @@ describe("/earlyaccess", () => {
 
     fireEvent.click(screen.getByText("Confirm my seat"));
     await waitFor(() => expect(submitEarlyAccessSignup).toHaveBeenCalledTimes(1));
+    // No "+" in the payload: Google Sheets would read a leading + as a
+    // formula and store the number as #ERROR!.
     expect(submitEarlyAccessSignup).toHaveBeenCalledWith(
-      expect.objectContaining({ whatsapp: "+918468882142" }),
+      expect.objectContaining({ whatsapp: "8468882142" }),
     );
   });
 

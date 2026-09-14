@@ -59,10 +59,13 @@ const SEATS_POLL_MS = 30_000;
 type SeatsStatus = "loading" | "live" | "unavailable";
 
 /** WhatsApp numbers are Indian national numbers, exactly like app accounts:
-    ten digits behind a fixed +91. Mirrors WHATSAPP_DIGITS on the backend —
-    it re-validates and stores `+91XXXXXXXXXX`, so keep the two in step. */
+    ten digits. Mirrors WHATSAPP_DIGITS on the backend, which re-validates.
+
+    +91 is shown beside the field but is NOT sent or stored: Google Sheets
+    parses a cell beginning with "+" as a formula, so a stored "+91..." lands
+    in the team's register as #ERROR! and the number is lost. The register is
+    all-Indian by construction, so the bare digits lose nothing. */
 const WHATSAPP_DIGITS = 10;
-const WHATSAPP_COUNTRY_CODE = "+91";
 
 const SIGNUP_KEY = "prozpr_early_access_signup";
 
@@ -298,7 +301,7 @@ function SignupModal({
       const res = await submitEarlyAccessSignup({
         name: cleanName,
         email: cleanEmail,
-        whatsapp: cleanPhone ? `${WHATSAPP_COUNTRY_CODE}${cleanPhone}` : null,
+        whatsapp: cleanPhone || null,
         profession,
         source: "earlyaccess_page",
         referrer_note: referrerNote,
@@ -380,6 +383,8 @@ function SignupModal({
               over-long or mis-pasted number cannot be entered at all rather
               than being caught later by a validation message. */}
           <div className={`${FIELD} flex items-center gap-2 px-0`}>
+            {/* A label, not part of the value — the payload is ten bare
+                digits. See WHATSAPP_DIGITS for why no +91 is stored. */}
             <span className="flex h-full select-none items-center border-r border-[#E8E2D2] px-4 text-[15px] text-[#57534A]">
               +91
             </span>
