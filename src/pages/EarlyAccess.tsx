@@ -58,6 +58,12 @@ const SEATS_POLL_MS = 30_000;
  */
 type SeatsStatus = "loading" | "live" | "unavailable";
 
+/** WhatsApp numbers are Indian national numbers, exactly like app accounts:
+    ten digits behind a fixed +91. Mirrors WHATSAPP_DIGITS on the backend —
+    it re-validates and stores `+91XXXXXXXXXX`, so keep the two in step. */
+const WHATSAPP_DIGITS = 10;
+const WHATSAPP_COUNTRY_CODE = "+91";
+
 const SIGNUP_KEY = "prozpr_early_access_signup";
 
 const PAGE_TITLE = "Prozpr MVP 2.0 — Become a founding tester";
@@ -277,8 +283,14 @@ function SignupModal({
     if (cleanName.length < 2) return setErr("Please enter your name.");
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail))
       return setErr("Please enter a valid email address.");
-    if (cleanPhone && !/^[+\d][\d\s-]{8,14}$/.test(cleanPhone))
-      return setErr("Please enter a valid WhatsApp number, or leave it blank.");
+    // Length is checked against the constant rather than built into a RegExp:
+    // inside a template literal `\d` is not an escape sequence and collapses to
+    // a plain "d", so the pattern would quietly match the letter instead of a
+    // digit. The literal below has no such trap.
+    if (cleanPhone && (cleanPhone.length !== WHATSAPP_DIGITS || !/^\d+$/.test(cleanPhone)))
+      return setErr(
+        `Please enter a ${WHATSAPP_DIGITS}-digit WhatsApp number, or leave it blank.`,
+      );
     if (!profession) return setErr("Please pick your profession.");
     setErr("");
     setSubmitting(true);
@@ -286,7 +298,7 @@ function SignupModal({
       const res = await submitEarlyAccessSignup({
         name: cleanName,
         email: cleanEmail,
-        whatsapp: cleanPhone || null,
+        whatsapp: cleanPhone ? `${WHATSAPP_COUNTRY_CODE}${cleanPhone}` : null,
         profession,
         source: "earlyaccess_page",
         referrer_note: referrerNote,
@@ -362,14 +374,28 @@ function SignupModal({
             placeholder="Email address"
             className={FIELD}
           />
-          <input
-            type="tel"
-            autoComplete="tel"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            placeholder="WhatsApp number (optional)"
-            className={FIELD}
-          />
+          {/* +91 is a fixed prefix, not something to type: the field takes the
+              ten national digits only (same rule as an app account). Non-digits
+              are stripped on the way in and the length is capped, so an
+              over-long or mis-pasted number cannot be entered at all rather
+              than being caught later by a validation message. */}
+          <div className={`${FIELD} flex items-center gap-2 px-0`}>
+            <span className="flex h-full select-none items-center border-r border-[#E8E2D2] px-4 text-[15px] text-[#57534A]">
+              +91
+            </span>
+            <input
+              type="tel"
+              inputMode="numeric"
+              autoComplete="tel-national"
+              maxLength={WHATSAPP_DIGITS}
+              value={phone}
+              onChange={(e) =>
+                setPhone(e.target.value.replace(/\D/g, "").slice(0, WHATSAPP_DIGITS))
+              }
+              placeholder="WhatsApp number (optional)"
+              className="h-full w-full bg-transparent pr-4 text-[15px] text-[#111113] outline-none placeholder:text-[#6F6858]"
+            />
+          </div>
           <select
             required
             value={profession}

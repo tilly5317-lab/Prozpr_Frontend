@@ -104,6 +104,58 @@ describe("/earlyaccess", () => {
     expect(screen.getAllByText("40 seats left").length).toBeGreaterThan(0);
   });
 
+  it("caps the WhatsApp number at 10 digits and sends it behind +91", async () => {
+    submitEarlyAccessSignup.mockResolvedValue({ ok: true, ...seats });
+    renderPage();
+    fireEvent.click((await screen.findAllByText(/Claim 1 of the last/))[0]);
+
+    fireEvent.change(screen.getByPlaceholderText("Name"), { target: { value: "Asha" } });
+    fireEvent.change(screen.getByPlaceholderText("Email address"), {
+      target: { value: "asha@example.com" },
+    });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "Tech" } });
+
+    // Someone pastes the full international form with spaces. The field keeps
+    // the first ten digits and nothing else — it cannot hold more.
+    const tel = screen.getByPlaceholderText("WhatsApp number (optional)");
+    fireEvent.change(tel, { target: { value: "+91 84688 82142 99" } });
+    expect((tel as HTMLInputElement).value).toBe("9184688821");
+
+    fireEvent.change(tel, { target: { value: "8468882142" } });
+    expect((tel as HTMLInputElement).value).toBe("8468882142");
+
+    fireEvent.click(screen.getByText("Confirm my seat"));
+    await waitFor(() => expect(submitEarlyAccessSignup).toHaveBeenCalledTimes(1));
+    expect(submitEarlyAccessSignup).toHaveBeenCalledWith(
+      expect.objectContaining({ whatsapp: "+918468882142" }),
+    );
+  });
+
+  it("rejects a short WhatsApp number but allows a blank one", async () => {
+    submitEarlyAccessSignup.mockResolvedValue({ ok: true, ...seats });
+    renderPage();
+    fireEvent.click((await screen.findAllByText(/Claim 1 of the last/))[0]);
+    fireEvent.change(screen.getByPlaceholderText("Name"), { target: { value: "Asha" } });
+    fireEvent.change(screen.getByPlaceholderText("Email address"), {
+      target: { value: "asha@example.com" },
+    });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "Tech" } });
+
+    const tel = screen.getByPlaceholderText("WhatsApp number (optional)");
+    fireEvent.change(tel, { target: { value: "84688" } });
+    fireEvent.click(screen.getByText("Confirm my seat"));
+    expect(screen.getByText(/10-digit WhatsApp number/)).toBeInTheDocument();
+    expect(submitEarlyAccessSignup).not.toHaveBeenCalled();
+
+    // Blank is fine — the field is optional.
+    fireEvent.change(tel, { target: { value: "" } });
+    fireEvent.click(screen.getByText("Confirm my seat"));
+    await waitFor(() => expect(submitEarlyAccessSignup).toHaveBeenCalledTimes(1));
+    expect(submitEarlyAccessSignup).toHaveBeenCalledWith(
+      expect.objectContaining({ whatsapp: null }),
+    );
+  });
+
   it("has no honeypot field a browser would autofill", () => {
     // The trap was name="company" with a "Company" label. Chrome recognised
     // it as the organization field, filled it from the visitor's saved
