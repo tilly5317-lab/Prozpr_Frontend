@@ -2831,6 +2831,10 @@ export interface ScreenPreferenceGetResponse {
   saved: ScreenSaved | null;
   recommendation: { class_mix: ClassMix };
   subcategories: ScreenSubcategory[];
+  /** Planning the engine currently does for this customer that a saved
+   *  distribution would switch off (backend spec 9.1). Optional: the backend
+   *  does not send it yet, and the screen shows nothing until it does. */
+  carve_outs_at_risk?: ("emergency_fund" | "near_term_goals" | "liability_offset")[];
 }
 
 export interface ScreenSaveResponse {

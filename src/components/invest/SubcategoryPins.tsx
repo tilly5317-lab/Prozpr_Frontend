@@ -1,199 +1,131 @@
-import { useState } from "react";
+import type { ClassMix, ScreenSubcategory } from "@/lib/api";
+import ClassDistributionBars from "@/components/invest/ClassDistributionBars";
+import MultiAssetRow from "@/components/invest/MultiAssetRow";
+import PctInput from "@/components/invest/PctInput";
+import {
+  CLASS_COLOR,
+  CLASS_LABEL,
+  CLASSES,
+  classStatus,
+  isEngaged,
+  MULTI_ASSET_ID,
+  type RowValues,
+} from "@/lib/investment-preferences";
 
-import type { ClassMix, ScreenSubcategory, SubcategoryPin } from "@/lib/api";
-import { CLASS_COLOR, CLASS_LABEL, CLASSES, classRoom, pinnedInClass, type Cls } from "@/lib/investment-preferences";
+/** The state word and its colour. `delta` is printed as an absolute figure —
+ *  "-6.0% left" would be wrong twice over. */
+const STATE_CLASS = {
+  under: "text-[hsl(var(--wealth-amber))]",
+  over: "text-destructive",
+  balanced: "text-[hsl(var(--wealth-green))]",
+} as const;
 
 /**
- * Fine-tune section: pin specific categories to an exact share of total. Rows
- * show your % vs Prozpr's; a per-class guardrail tracks the room left; the
- * add-flow offers only settable categories with room, grouped by class. All
- * ids/labels/classes come from the backend catalog (`subcategories`).
+ * The complete distribution the customer owns: every settable category gets a
+ * row, grouped under its class, with a live budget header showing what that
+ * class's rows have taken of what the bar gives them.
+ *
+ * The multi-asset fund sits ABOVE the groups because it draws on all three
+ * budgets at once — its breakdown and any overdraw message live on that row
+ * (spec §6). A class whose budget multi-asset has overdrawn goes fully neutral
+ * here: a negative budget is not the group's problem to state.
+ *
+ * Holds no state. The only state anywhere is the in-flight keystroke string
+ * inside each `PctInput`; the value itself lives with the parent.
  */
 export default function SubcategoryPins({
-  mix,
-  pins,
+  values,
   subcategories,
+  mix,
   onChange,
 }: {
-  mix: ClassMix;
-  pins: SubcategoryPin[];
+  values: RowValues;
   subcategories: ScreenSubcategory[];
-  onChange: (pins: SubcategoryPin[]) => void;
+  mix: ClassMix;
+  onChange: (next: RowValues) => void;
 }) {
-  const subById: Record<string, ScreenSubcategory> = Object.fromEntries(
-    subcategories.map((s) => [s.id, s]),
-  );
-  const [adding, setAdding] = useState(false);
-  const [sel, setSel] = useState("");
-  const [pctStr, setPctStr] = useState("");
-  const [err, setErr] = useState<string | null>(null);
-
-  const pinnedIds = new Set(pins.map((p) => p.subgroup));
-  const available = subcategories.filter(
-    (s) => !pinnedIds.has(s.id) && classRoom(mix, pins, subById, s.class) > 0,
-  );
-
-  const seed = (s: ScreenSubcategory | undefined) => {
-    if (!s) return;
-    const room = classRoom(mix, pins, subById, s.class);
-    setPctStr(String(Math.max(1, Math.min(s.recommended_pct_of_total || 10, room))));
-  };
-  const openAdd = () => {
-    const first = available[0];
-    setSel(first?.id ?? "");
-    seed(first);
-    setErr(null);
-    setAdding(true);
-  };
-  const onSelChange = (id: string) => {
-    setSel(id);
-    setErr(null);
-    seed(subById[id]);
-  };
-  const confirmAdd = () => {
-    const s = subById[sel];
-    if (!s) return;
-    const v = Math.round(Number(pctStr) || 0);
-    const room = classRoom(mix, pins, subById, s.class);
-    if (v <= 0) return setErr("Enter a share above 0%.");
-    if (v > room) return setErr(`That's more than ${CLASS_LABEL[s.class]} holds right now (${room}% left).`);
-    onChange([...pins, { subgroup: sel, pct_of_total: v }]);
-    setAdding(false);
-  };
+  const engaged = isEngaged(values);
+  const multiAsset = subcategories.find((c) => c.id === MULTI_ASSET_ID);
+  const set = (id: string, v: number | null) => onChange({ ...values, [id]: v });
 
   return (
     <section className="mt-2">
-      {pins.map((p) => {
-        const s = subById[p.subgroup];
+      {multiAsset ? (
+        <MultiAssetRow
+          value={values[multiAsset.id] ?? null}
+          label={multiAsset.label}
+          recommended={multiAsset.recommended_pct_of_total}
+          mix={mix}
+          onChange={(v) => set(multiAsset.id, v)}
+        />
+      ) : null}
+
+      {CLASSES.map((cls) => {
+        const rows = subcategories.filter((c) => c.class === cls && c.id !== MULTI_ASSET_ID);
+        const { allocated, budget, delta, state } = classStatus(mix, values, subcategories, cls);
+        // A class multi-asset has overdrawn shows its name only: the budget is
+        // negative and the actionable message is already on the row above.
+        // Test this class's OWN budget — a large multi-asset entry can overdraw
+        // two classes at once, and multiAssetOverdraw only ever names the first.
+        const showBudget = engaged && budget >= 0;
+
         return (
-          <div key={p.subgroup} className="flex items-center gap-3 border-t border-border py-3.5">
-            <div className="min-w-0">
-              <div className="text-[13.5px] font-medium text-foreground">{s?.label ?? p.subgroup}</div>
-              <div className="mt-0.5 text-[10.5px] tracking-wide text-muted-foreground">
-                inside {CLASS_LABEL[(s?.class ?? "others") as Cls]}
-              </div>
-            </div>
-            <div className="ml-auto text-right">
-              <div className="font-display text-[20px] leading-none text-foreground">
-                {p.pct_of_total}
-                <span className="text-[12px] text-muted-foreground">%</span>
-              </div>
-              {s ? (
-                <div className="mt-1 text-[10px] tabular-nums text-muted-foreground">
-                  Prozpr {s.recommended_pct_of_total}%
-                </div>
+          <div key={cls} data-testid={`group-${cls}`} className="mt-4">
+            <div className="flex items-center gap-2 border-b border-border pb-2">
+              {showBudget ? (
+                <span
+                  className="h-2 w-2 shrink-0 rounded-full"
+                  style={{ background: CLASS_COLOR[cls] }}
+                />
               ) : null}
-            </div>
-            <button
-              type="button"
-              aria-label={`Remove ${s?.label ?? p.subgroup}`}
-              onClick={() => onChange(pins.filter((x) => x.subgroup !== p.subgroup))}
-              className="pl-1 text-[16px] leading-none text-muted-foreground hover:text-foreground"
-            >
-              &times;
-            </button>
-          </div>
-        );
-      })}
-
-      {CLASSES.map((c) => {
-        const pinned = pinnedInClass(pins, subById, c);
-        if (pinned <= 0) return null;
-        const left = mix[c] - pinned;
-        return (
-          <div key={c} className="flex items-start gap-2 border-t border-border py-3 text-[11.5px] text-muted-foreground">
-            <span className="mt-1 h-2 w-2 shrink-0 rounded-full" style={{ background: CLASS_COLOR[c] }} />
-            <span>
-              Pinned inside {CLASS_LABEL[c]}: {pinned}% of {mix[c]}% &mdash;{" "}
-              {left >= 0 ? (
-                <span className="text-[hsl(var(--wealth-green))]">{left}% left for our picks</span>
-              ) : (
-                <span className="text-destructive">over by {-left}% &mdash; trim a pin or raise {CLASS_LABEL[c]}</span>
-              )}
-            </span>
-          </div>
-        );
-      })}
-
-      {!adding ? (
-        <button
-          type="button"
-          onClick={openAdd}
-          disabled={available.length === 0}
-          className="mt-3.5 text-[12.5px] font-semibold text-[#D4A868] hover:brightness-110 disabled:opacity-40"
-        >
-          + Add a category preference
-        </button>
-      ) : (
-        <div className="mt-3.5 flex flex-col gap-3 rounded-xl border border-border bg-card p-3.5">
-          <label className="block">
-            <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-              Category
-            </span>
-            <select
-              value={sel}
-              onChange={(e) => onSelChange(e.target.value)}
-              className="w-full rounded-lg border border-input bg-background px-2.5 py-2 text-[13.5px] text-foreground"
-            >
-              {CLASSES.map((c) => {
-                const opts = available.filter((s) => s.class === c);
-                if (opts.length === 0) return null;
-                return (
-                  <optgroup key={c} label={CLASS_LABEL[c]}>
-                    {opts.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.label}
-                      </option>
-                    ))}
-                  </optgroup>
-                );
-              })}
-            </select>
-          </label>
-
-          <label className="block">
-            <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-              Your share of total portfolio
-            </span>
-            <div className="flex flex-wrap items-center gap-2.5">
-              <input
-                type="number"
-                min={1}
-                max={100}
-                value={pctStr}
-                onChange={(e) => setPctStr(e.target.value)}
-                className="w-[84px] rounded-lg border border-input bg-background px-2.5 py-2 text-right text-[13.5px] tabular-nums text-foreground"
-              />
-              <span className="text-[13px] text-muted-foreground">%</span>
-              {sel && subById[sel] ? (
-                <span className="text-[11.5px] text-muted-foreground">
-                  <span className="text-[#D4A868]">Prozpr {subById[sel].recommended_pct_of_total}%</span> &middot; up to{" "}
-                  <b className="text-foreground">{classRoom(mix, pins, subById, subById[sel].class)}%</b> inside{" "}
-                  {CLASS_LABEL[subById[sel].class]}
+              <span className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                {CLASS_LABEL[cls]}
+              </span>
+              {showBudget ? (
+                <span className="ml-auto flex items-baseline gap-2 text-[11.5px] tabular-nums">
+                  <span className="text-muted-foreground">
+                    {allocated.toFixed(1)} of {budget.toFixed(1)}%
+                  </span>
+                  <span className={STATE_CLASS[state]}>
+                    {state === "balanced"
+                      ? "balanced"
+                      : `${Math.abs(delta).toFixed(1)}% ${state === "over" ? "over" : "left"}`}
+                  </span>
                 </span>
               ) : null}
             </div>
-            {err ? <div className="mt-1 text-[11.5px] text-destructive">{err}</div> : null}
-          </label>
 
-          <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setAdding(false)}
-              className="h-9 rounded-lg bg-secondary px-4 text-[12.5px] font-semibold text-foreground"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={confirmAdd}
-              className="h-9 rounded-lg bg-[#D4A868] px-4 text-[12.5px] font-semibold text-[#191307]"
-            >
-              Add pin
-            </button>
+            {/* Same rule as the budget header: stay quiet until the customer
+                engages. An untouched screen showing "Yours 0.0% · Prozpr 30.0%"
+                in every group is noise, not information (spec §7). */}
+            {/* A single-row class (commodity holds only gold) would draw two
+                identical full-width bars comparing nothing, duplicating the row
+                beneath — so the comparison needs at least two segments. */}
+            {showBudget && rows.length > 1 ? (
+              <ClassDistributionBars cls={cls} categories={rows} values={values} />
+            ) : null}
+
+            {rows.map((c) => (
+              <div key={c.id} className="flex items-center gap-3 border-b border-border py-3">
+                <div className="min-w-0">
+                  <div className="text-[13.5px] font-medium text-foreground">{c.label}</div>
+                  <div className="mt-0.5 text-[10px] tabular-nums text-[#D4A868]">
+                    {`Prozpr ${c.recommended_pct_of_total.toFixed(1)}%`}
+                  </div>
+                </div>
+                <div className="ml-auto flex items-center gap-2.5">
+                  <PctInput
+                    label={c.label}
+                    value={values[c.id] ?? null}
+                    onChange={(v) => set(c.id, v)}
+                  />
+                  <span className="text-[13px] text-muted-foreground">%</span>
+                </div>
+              </div>
+            ))}
           </div>
-        </div>
-      )}
+        );
+      })}
     </section>
   );
 }
