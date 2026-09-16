@@ -22,3 +22,27 @@ describe("AssetMixBar overlapping dividers", () => {
     expect(zIndexOf("Debt / Commodity divider")).toBeGreaterThan(zIndexOf("Equity / Debt divider"));
   });
 });
+
+const leftOf = (label: string) =>
+  parseFloat(screen.getByRole("slider", { name: label }).style.left);
+
+// Same rule as the class bars: a segment floored to a visible sliver keeps the
+// two dividers apart and off the bar's own edge.
+describe("AssetMixBar handle separation", () => {
+  it("keeps the dividers apart when a class is squeezed to nothing", () => {
+    render(<AssetMixBar mode="interactive" mix={{ equity: 100, debt: 0, others: 0 }} onChange={vi.fn()} />);
+    expect(leftOf("Debt / Commodity divider")).toBeGreaterThan(leftOf("Equity / Debt divider"));
+  });
+
+  it("never puts a divider on the bar's edge", () => {
+    render(<AssetMixBar mode="interactive" mix={{ equity: 0, debt: 0, others: 100 }} onChange={vi.fn()} />);
+    for (const l of [leftOf("Equity / Debt divider"), leftOf("Debt / Commodity divider")]) {
+      expect(l > 0 && l < 100).toBe(true);
+    }
+  });
+
+  it("prints each class on the one-decimal grid, never a float artifact", () => {
+    render(<AssetMixBar mode="reference" mix={{ equity: 62.1, debt: 28, others: 9.9 }} />);
+    expect(screen.getByText("28.0%")).toBeTruthy();
+  });
+});

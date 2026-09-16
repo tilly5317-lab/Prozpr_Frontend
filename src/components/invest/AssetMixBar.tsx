@@ -1,13 +1,16 @@
 import { useRef } from "react";
 
 import type { ClassMix } from "@/lib/api";
-import { applyDividerDrag, CLASS_COLOR, CLASSES } from "@/lib/investment-preferences";
+import {
+  applyDividerDrag, CLASS_COLOR, CLASSES, flooredShares, sharePosToValue,
+} from "@/lib/investment-preferences";
 
 /**
  * The Equity / Debt / Commodity split as one bar. `interactive` mode carries
  * two draggable gold-lozenge dividers (drag or ←/→) that trade between
  * neighbours and always total 100%; `reference` mode is Prozpr's static bar.
- * A segment's % label hides under ~14% so it never collides with a handle.
+ * A segment's % label hides on a narrow segment so it never collides with a
+ * handle, and every segment is floored to a visible sliver (see `widths`).
  */
 export default function AssetMixBar({
   mode,
@@ -23,9 +26,17 @@ export default function AssetMixBar({
   mixRef.current = mix; // always the latest split for in-flight drags
   const dragging = useRef(false);
 
-  const pctFromClientX = (clientX: number): number => {
+  // Drawn widths, floored so a class squeezed to nothing still shows a sliver:
+  // without it the two dividers land on the same pixel (and, at either end, on
+  // the bar's own edge) exactly as they did on the class bars.
+  const widths = flooredShares([mix.equity, mix.debt, mix.others], 100);
+  const shares = () => [mixRef.current.equity, mixRef.current.debt, mixRef.current.others];
+
+  /** Pointer position → a position in VALUE space, inverting the floor. */
+  const valueFromClientX = (clientX: number): number => {
     const r = barRef.current!.getBoundingClientRect();
-    return ((clientX - r.left) / r.width) * 100;
+    if (!r.width) return 0;
+    return sharePosToValue(shares(), 100, ((clientX - r.left) / r.width) * 100);
   };
 
   const onDown = (e: React.PointerEvent) => {
@@ -36,7 +47,7 @@ export default function AssetMixBar({
   };
   const onMove = (h: 1 | 2) => (e: React.PointerEvent) => {
     if (!dragging.current || !onChange) return;
-    onChange(applyDividerDrag(mixRef.current, h, pctFromClientX(e.clientX)));
+    onChange(applyDividerDrag(mixRef.current, h, valueFromClientX(e.clientX)));
   };
   const onUp = () => {
     dragging.current = false;
@@ -50,20 +61,27 @@ export default function AssetMixBar({
     onChange(applyDividerDrag(mix, h, cur + d));
   };
 
-  // Show the % on any segment wide enough to hold it: the bar is ~3.7px per %
-  // and "N%" is ~14px, so below ~5% the digits crowd the handle / clip.
-  const labelMin = 5;
+  // Show the % on any segment wide enough to hold it. "62.1%" is ~28px at 9px
+  // type and the bar is ~3.4px per drawn %, so anything under ~9% clips or
+  // crowds a handle. Measured against the DRAWN width, not the value.
+  const labelMin = 9;
 
-  // When debt is 0 both dividers land on the same spot. The one still free to
-  // move must sit on top (z-index also decides which one the pointer grabs):
-  // handle 1 (drag left to shed equity) unless we're pinned at the far left.
+  // The floor keeps the dividers ~5px apart at worst, but their hit areas are
+  // 20px wide and still overlap there, and z-index decides which one the pointer
+  // grabs. The one still free to move must win: handle 1 (drag left to shed
+  // equity) unless we are pinned at the far left.
   const topHandle: 1 | 2 = mix.equity === 0 ? 2 : 1;
 
   const handles =
     mode === "interactive"
       ? ([
-          { h: 1 as const, left: mix.equity, label: "Equity / Debt divider", now: mix.equity },
-          { h: 2 as const, left: mix.equity + mix.debt, label: "Debt / Commodity divider", now: mix.equity + mix.debt },
+          { h: 1 as const, left: widths[0], label: "Equity / Debt divider", now: mix.equity },
+          {
+            h: 2 as const,
+            left: widths[0] + widths[1],
+            label: "Debt / Commodity divider",
+            now: mix.equity + mix.debt,
+          },
         ] as const)
       : [];
 
@@ -80,10 +98,12 @@ export default function AssetMixBar({
           className={`flex h-full items-center justify-center overflow-hidden whitespace-nowrap ${
             i === 0 ? "rounded-l-lg" : ""
           } ${i === CLASSES.length - 1 ? "rounded-r-lg" : ""}`}
-          style={{ width: `${mix[k]}%`, background: CLASS_COLOR[k] }}
+          style={{ width: `${widths[i]}%`, background: CLASS_COLOR[k] }}
         >
-          {mix[k] >= labelMin && (
-            <span className="text-[9px] font-semibold tabular-nums text-white/95">{mix[k]}%</span>
+          {widths[i] >= labelMin && (
+            <span className="text-[9px] font-semibold tabular-nums text-white/95">
+              {mix[k].toFixed(1)}%
+            </span>
           )}
         </div>
       ))}

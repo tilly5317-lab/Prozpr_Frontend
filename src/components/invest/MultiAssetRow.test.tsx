@@ -1,51 +1,36 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 
 import MultiAssetRow from "./MultiAssetRow";
 
-const BAR = { equity: 78, debt: 14, others: 8 };
-const props = { label: "Multi-Asset", recommended: 20, mix: BAR, onChange: () => {} };
-
 afterEach(cleanup);
 
+const row = (value: number, max = 100) =>
+  render(
+    <MultiAssetRow label="multi-asset funds" value={value} max={max} recommended={20} onChange={vi.fn()} />,
+  );
+
 describe("MultiAssetRow", () => {
-  it("shows the three-class breakdown of the entered value", () => {
-    render(<MultiAssetRow {...props} value={20} />);
-    expect(screen.getByTestId("ma-breakdown"))
-      .toHaveTextContent("counts as 13.0% Equity · 5.0% Debt · 2.0% Commodity");
+  it("spells out what the sleeve counts as in each class", () => {
+    row(20);
+    // 65 / 25 / 10 of 20, equity carrying the residual
+    expect(screen.getByTestId("ma-breakdown").textContent).toContain("13.0% Equity");
+    expect(screen.getByTestId("ma-breakdown").textContent).toContain("5.0% Debt");
+    expect(screen.getByTestId("ma-breakdown").textContent).toContain("2.0% Commodity");
   });
 
-  it("prints Prozpr's figure to one decimal", () => {
-    render(<MultiAssetRow {...props} value={null} recommended={8} />);
-    expect(screen.getByText("Prozpr 8.0%")).toBeInTheDocument();
+  // The cap is what makes an overdrawn class impossible: the slider simply
+  // stops, so there is no error left to report.
+  it("stops at the largest entry the bar can fund", () => {
+    row(20, 50);
+    // The name matters as much as the cap: Radix puts role="slider" on the
+    // thumb, so a label on the Root leaves the control unnamed.
+    const thumb = screen.getByRole("slider", { name: /multi-asset share/i });
+    expect(thumb.getAttribute("aria-valuemax")).toBe("50");
   });
 
-  it("names the class when the entry overdraws one", () => {
-    render(<MultiAssetRow {...props} value={20} mix={{ equity: 88, debt: 4, others: 8 }} />);
-    // scoped: the breakdown line also contains the word "debt"
-    expect(within(screen.getByTestId("ma-overdraw")).getByText(
-      /20\.0% multi-asset needs 5\.0% Debt but your bar only has 4\.0%/i)).toBeInTheDocument();
-  });
-
-  it("shows no breakdown and no error when blank", () => {
-    render(<MultiAssetRow {...props} value={null} />);
-    expect(screen.queryByTestId("ma-breakdown")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("ma-overdraw")).not.toBeInTheDocument();
-  });
-
-  it("snaps an over-precise entry onto the one-decimal grid on blur", () => {
-    const onChange = vi.fn();
-    render(<MultiAssetRow {...props} value={20} onChange={onChange} />);
-    const input = screen.getByLabelText("Multi-Asset");
-    fireEvent.change(input, { target: { value: "12.34" } });
-    fireEvent.blur(input);
-    expect(onChange).toHaveBeenLastCalledWith(12.3);
-  });
-
-  it("reports a cleared field as blank, not as zero", () => {
-    const onChange = vi.fn();
-    render(<MultiAssetRow {...props} value={20} onChange={onChange} />);
-    fireEvent.change(screen.getByLabelText("Multi-Asset"), { target: { value: "" } });
-    expect(onChange).toHaveBeenCalledWith(null);
+  it("capitalises the backend's prose label", () => {
+    row(20);
+    expect(screen.getByText("Multi-asset funds")).toBeTruthy();
   });
 });

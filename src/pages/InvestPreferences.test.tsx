@@ -15,11 +15,11 @@ import { getInvestmentPreferences, saveInvestmentPreferences } from "@/lib/api";
 import InvestPreferences from "./InvestPreferences";
 
 const CATS = [
-  { id: "multi_asset",       class: "equity", label: "Multi-Asset", recommended_pct_of_total: 20 },
-  { id: "low_beta_equities", class: "equity", label: "Large-cap",   recommended_pct_of_total: 30 },
-  { id: "short_debt",        class: "debt",   label: "Short Debt",  recommended_pct_of_total: 20 },
-  { id: "arbitrage",         class: "debt",   label: "Arbitrage",   recommended_pct_of_total: 0 },
-  { id: "gold_commodities",  class: "others", label: "Gold",        recommended_pct_of_total: 30 },
+  { id: "multi_asset",       class: "equity", label: "multi-asset funds", recommended_pct_of_total: 20 },
+  { id: "low_beta_equities", class: "equity", label: "large-cap equity",  recommended_pct_of_total: 30 },
+  { id: "short_debt",        class: "debt",   label: "short-duration debt", recommended_pct_of_total: 20 },
+  { id: "arbitrage",         class: "debt",   label: "arbitrage",         recommended_pct_of_total: 0 },
+  { id: "gold_commodities",  class: "others", label: "gold",              recommended_pct_of_total: 30 },
 ];
 // look-through of the above: multi-asset 20 -> 13/5/2, so 43 / 25 / 32
 const GET = {
@@ -42,15 +42,11 @@ const mockGet = (data: unknown) =>
   (getInvestmentPreferences as ReturnType<typeof vi.fn>).mockResolvedValue(data);
 const saveBtn = () => screen.getByRole("button", { name: /save preferences/i });
 const ready = () => screen.findByRole("button", { name: /save preferences/i });
-const enterValue = (label: string, v: string) =>
-  fireEvent.change(screen.getByLabelText(label), { target: { value: v } });
-const enterCompleteDistribution = () => {
-  enterValue("Multi-Asset", "20");
-  enterValue("Large-cap", "30");
-  enterValue("Short Debt", "20");
-  enterValue("Gold", "30");            // Arbitrage left blank => sent as 0
-};
-const clearAllRows = () => CATS.forEach((c) => enterValue(c.label, ""));
+const openCats = () =>
+  fireEvent.click(screen.getByRole("button", { name: /set your categories/i }));
+// The only class with two rows in this catalog, so the only bar with a divider.
+const nudgeDebt = (key: "ArrowLeft" | "ArrowRight") =>
+  fireEvent.keyDown(screen.getByRole("slider", { name: "Short-duration / Arbitrage divider" }), { key });
 const nudgeBar = () =>
   fireEvent.keyDown(screen.getByRole("slider", { name: "Equity / Debt divider" }), {
     key: "ArrowRight",
@@ -100,22 +96,18 @@ describe("InvestPreferences (percentage screen)", () => {
 });
 
 describe("InvestPreferences — full distribution", () => {
-  it("disables Save while any class is unbalanced", async () => {
+  it("does not commit the customer just for opening the section", async () => {
     mockGet(GET); renderPage(); await ready();
-    enterValue("Large-cap", "24");
+    openCats();
+    // Prozpr's shape is on display, but looking is not choosing.
+    expect(screen.getByText("Short-duration")).toBeInTheDocument();
     expect(saveBtn()).toBeDisabled();
   });
 
-  it("says which class is holding Save back", async () => {
+  it("sends every row once a class is divided, blanks as explicit zeros", async () => {
     mockGet(GET); renderPage(); await ready();
-    enterValue("Multi-Asset", "20");
-    enterValue("Large-cap", "24");
-    expect(screen.getByTestId("save-reason")).toHaveTextContent("Equity 6.0% left");
-  });
-
-  it("enables Save once every class balances, and sends every row with zeros", async () => {
-    mockGet(GET); renderPage(); await ready();
-    enterCompleteDistribution();
+    openCats();
+    nudgeDebt("ArrowRight");          // clamped by the next divider: shape unchanged
     expect(saveBtn()).toBeEnabled();
     fireEvent.click(saveBtn());
     await waitFor(() => expect(saveInvestmentPreferences).toHaveBeenCalled());
@@ -123,7 +115,20 @@ describe("InvestPreferences — full distribution", () => {
     expect(savedArgs().pins).toContainEqual({ subgroup: "arbitrage", pct_of_total: 0 });
   });
 
-  it("still saves a bare class mix when subcategories are untouched", async () => {
+  // The bar sets every class budget, so moving it has to carry the distribution
+  // with it — this is the invariant the whole screen rests on.
+  it("keeps the distribution on the bar when the bar itself moves", async () => {
+    mockGet(GET); renderPage(); await ready();
+    openCats();
+    nudgeDebt("ArrowRight");
+    nudgeBar();
+    fireEvent.click(saveBtn());
+    await waitFor(() => expect(saveInvestmentPreferences).toHaveBeenCalled());
+    const total = savedArgs().pins.reduce((s: number, p: { pct_of_total: number }) => s + p.pct_of_total, 0);
+    expect(Math.round(total * 10) / 10).toBe(100);
+  });
+
+  it("still saves a bare class mix when the categories are untouched", async () => {
     mockGet(GET); renderPage(); await ready();
     nudgeBar();
     expect(saveBtn()).toBeEnabled();
@@ -132,48 +137,33 @@ describe("InvestPreferences — full distribution", () => {
     expect(savedArgs().pins).toEqual([]);
   });
 
-  it("shows no allocated figure while untouched", async () => {
-    mockGet(GET); renderPage(); await ready();
-    nudgeBar();
-    expect(screen.queryByText(/allocated/i)).not.toBeInTheDocument();
-  });
-
-  it("lets a customer clear a saved distribution back to engine-decides", async () => {
+  it("lets Reset to Prozpr clear a saved distribution back to engine-decides", async () => {
     mockGet({ ...GET, saved: SAVED_COMPLETE }); renderPage(); await ready();
-    clearAllRows();
-    expect(saveBtn()).toBeEnabled();
-    fireEvent.click(saveBtn());
-    await waitFor(() => expect(saveInvestmentPreferences).toHaveBeenCalled());
-    expect(savedArgs().pins).toEqual([]);
-  });
-
-  it("Reset to Prozpr lands on a saveable distribution", async () => {
-    mockGet(GET); renderPage(); await ready();
     fireEvent.click(screen.getByRole("button", { name: /reset to prozpr/i }));
     expect(saveBtn()).toBeEnabled();
-  });
-
-  it("never claims 100% allocated while Save is disabled", async () => {
-    mockGet(GET); renderPage(); await ready();
-    // offsetting errors: rows total 100 but equity is 6 over and debt 6 short
-    enterValue("Multi-Asset", "20");
-    enterValue("Large-cap", "36");
-    enterValue("Short Debt", "14");
-    enterValue("Gold", "30");
-    expect(saveBtn()).toBeDisabled();
-    expect(screen.queryByText(/100(\.0)?% allocated/)).not.toBeInTheDocument();
+    fireEvent.click(saveBtn());
+    await waitFor(() => expect(saveInvestmentPreferences).toHaveBeenCalled());
+    expect(savedArgs().pins).toEqual([]);
   });
 });
 
-describe("InvestPreferences — carve-out notice", () => {
-  it("shows no carve-out notice when nothing is at risk", async () => {
+describe("InvestPreferences — scope notice", () => {
+  it("always promises a directional target, even with nothing at risk", async () => {
     mockGet(GET); renderPage(); await ready();
-    expect(screen.queryByText(/replacing our planning/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/directional target/i)).toBeInTheDocument();
+    expect(screen.queryByText(/No separate emergency fund/i)).not.toBeInTheDocument();
   });
 
   it("shows only the bullets that apply", async () => {
     mockGet({ ...GET, carve_outs_at_risk: ["emergency_fund"] }); renderPage(); await ready();
     expect(screen.getByText(/No separate emergency fund/i)).toBeInTheDocument();
     expect(screen.queryByText(/stop offsetting your loans/i)).not.toBeInTheDocument();
+  });
+
+  // A saved split changes what a goal's plan is built around; it does not stop
+  // us planning for the goal. The backend still sends the key.
+  it("never says near-term goals stop being planned for", async () => {
+    mockGet({ ...GET, carve_outs_at_risk: ["near_term_goals"] }); renderPage(); await ready();
+    expect(screen.queryByText(/stop being planned for/i)).not.toBeInTheDocument();
   });
 });

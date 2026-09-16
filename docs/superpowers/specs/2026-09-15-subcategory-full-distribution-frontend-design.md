@@ -1,6 +1,13 @@
 # Subcategory Full Distribution — Invest ▸ Preferences (Frontend)
 
-**Status:** design — not yet implemented
+**Status:** implemented 2026-09-16 (frontend). Backend in progress.
+**Revised 2026-09-16 (b):** a copy and legibility pass — the intro trimmed, the
+SIP explainer dropped, the per-class recommendation bar removed, and the
+reference figures and headings recoloured. See §5.2, §5.6 and §8.
+**Revised 2026-09-16 (a):** the per-row number inputs were replaced by one draggable
+bar per class. That change is not cosmetic — it makes a balanced distribution
+structural rather than validated, so §4.2, §5, §6 and §7 were rewritten and the
+screen's entire error surface was deleted. The wire contract (§9) is unchanged.
 **Branch:** `central_investment_preferences` (frontend) / `feat-central_investment_preference` (backend)
 **Paired with:** `Prozpr_Backend/docs/superpowers/specs/2026-09-15-subcategory-full-distribution-backend-design.md`
 **Supersedes the fine-tune section of:** `2026-09-10-investment-preferences-s4-pct-screen-frontend-design.md`
@@ -51,7 +58,7 @@ The customer is in exactly one of two states:
 There is no in-between. Entering a single number commits the customer to making
 every class add up before they can save.
 
-### 4.2 The binding rule is per-class, not overall
+### 4.2 The binding rule is per-class, not overall — and it is now structural
 
 The headline rule is "your numbers must total 100%", but the rule that actually
 binds is stricter:
@@ -60,18 +67,29 @@ binds is stricter:
 > on the bar above.**
 
 Because the bar always totals 100%, per-class exactness makes the overall 100%
-fall out automatically. So the UI validates three sums (equity, debt,
-commodity), and the overall total is shown as reassurance, not as the check.
+fall out automatically.
 
-This is stricter than "don't exceed the bar" — a class that is *under* its share
-is just as invalid as one that is over, because the leftover has nowhere to go.
+**Revised 2026-09-16 — this is no longer validated, because it can no longer be
+broken.** Each class is drawn as a single bar whose segments are its categories;
+a divider trades between the two rows it sits between, so the class total is
+invariant under every edit. The only two things that can move a class *budget*
+are the bar above and the multi-asset slider, and both run through one function
+(`normalise`) that rescales the class's rows in proportion to land back on it.
 
-### 4.3 Blank means zero
+The consequence is the point: there is no "over", no "under", no invalid state,
+no save gate beyond "something changed", and no error copy anywhere on the
+screen. The earlier design validated three sums after the fact; this one makes
+the sums unbreakable and deletes the validation.
 
-Once engaged, an empty row is read as **0%**, not as "engine decides". The
-customer never has to type `0` into the seven categories they do not want. This
-keeps "all or nothing" intact — the distribution is still wholly theirs; unfilled
-simply means *none of this one*.
+### 4.3 Zero is a real entry
+
+Once engaged, a category at 0% means **"none of this"**, not "engine decides",
+and goes on the wire as an explicit `0` (§9).
+
+The earlier design reached zero by *leaving a box blank*. With bars there is no
+blank: every row always has a value, and a row reaches zero by being squeezed
+flat between its dividers. A flattened row keeps both of its dividers, so it can
+always be grown back — see §5.4, which exists only to keep that true.
 
 > **Backend consequence (new — not in the earlier scoping):** a zero in
 > `subgroup_emphasis` is a **hard exclusion** in the engine, which is the correct
@@ -101,217 +119,333 @@ Two things this screen has to reflect honestly:
 
 ## 5. Screen anatomy
 
-Three stacked regions replace the current fine-tune card. Mobile-first, 375px.
+Mobile-first, 375px. **The categories section is collapsed by default** — most
+customers are happy with Prozpr's categories, and the detail should not be the
+first thing they meet. Its summary line states which state they are in.
 
 ```
-┌─ (unchanged) class bar: YOUR PREFERENCE / PROZPR RECOMMENDS ─┐
+┌─ Set your asset mix ─────────────────────────────────────────┐
+│  (unchanged class bar: YOUR PREFERENCE / PROZPR RECOMMENDS)  │
+└──────────────────────────────────────────────────────────────┘
 
-┌─ SET YOUR CATEGORIES ────────────────────────────────────────┐
-│  Multi-asset fund                          Prozpr 20.0%      │
-│  [ 20.0 ] %                                                  │
-│  ↳ counts as 13.0% equity · 5.0% debt · 2.0% commodity       │
+┌─ SET YOUR CATEGORIES                                      ▾ ─┐
+│  Following Prozpr's suggestion   (or: Your own split)        │
+│    ↑ summary of what is folded away — hidden once expanded   │
+└──────────────────────────────────────────────────────────────┘
+        │ expanded:
+┌───────┴──────────────────────────────────────────────────────┐
+│  Multi-asset funds                    Prozpr 47.7    47.7%   │
+│  ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━○······························ │
+│  Counts as 31.0% Equity · 11.9% Debt · 4.8% Commodity        │
 ├──────────────────────────────────────────────────────────────┤
-│  EQUITY            52.0 of 65.0%          13.0% left    ●    │
-│                                                              │
-│    YOURS      ▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░                │
-│    PROZPR     ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓                │
-│                                                              │
-│    Large Cap        Prozpr 7.5%           [ 20.0 ] %         │
-│    Mid Cap          Prozpr 26.2%          [ 22.0 ] %         │
-│    Small Cap        Prozpr 13.1%          [ 10.0 ] %         │
-│    US Equities      Prozpr 11.5%          [      ] %         │
-│    Value            Prozpr 0.0%           [      ] %         │
+│  ● EQUITY                                             31.1%  │
+│   ▌████████│███████│▌│██████│                                │
+│     ↑ one bar; each │ is a draggable divider                 │
+│  ● Small-cap               Prozpr 0.0            0.0%        │
+│  ● Large-cap               Prozpr 10.5          10.5%        │
+│  ● Mid-cap & flexi-cap     Prozpr 10.5          10.5%        │
+│  ● Sectoral & thematic     Prozpr 0.0            0.0%        │
+│  ● US                      Prozpr 10.1          10.1%        │
+│  ● Value                   Prozpr 0.0            0.0%        │
 ├──────────────────────────────────────────────────────────────┤
-│  DEBT               9.0 of 9.0%           balanced      ✓    │
-│    (same dual-bar + rows: Short-Term Debt, Arbitrage,        │
-│     Arbitrage + Income)                                      │
-├──────────────────────────────────────────────────────────────┤
-│  COMMODITY          6.0 of 6.0%           balanced      ✓    │
-│    (Gold / Commodities)                                      │
+│  ● DEBT                                               16.1%  │
+│  ● COMMODITY                                           5.1%  │
+│    (single-row class — no bar, just the row)                 │
 └──────────────────────────────────────────────────────────────┘
 
 ┌─ sticky footer ──────────────────────────────────────────────┐
-│  87.0% allocated · 13.0% left      [ Save preferences ]      │
+│  [ Reset to Prozpr ]              [ Save preferences ]       │
 └──────────────────────────────────────────────────────────────┘
 ```
 
+**Row labels are shortened on the frontend.** The backend's `SUBGROUP_LABELS`
+are written for prose — *"Your large-cap equity sits at ₹4.2L today"* — which is
+why they are lowercase and carry a class suffix. Under a group header that
+already says EQUITY, `"large-cap equity"` is wrong on both counts, so `shortLabel`
+drops the trailing class word and capitalises the first letter. It reads the
+class the backend assigned; it never decides one, so the standing rule that the
+frontend classifies nothing still holds. `"US"` and `"ELSS (tax-saver)"` survive
+untouched because only the first character is altered.
+
 ### 5.1 Grouping by class
 
-Rows are grouped under their asset class because the constraint is per-class.
-Each group header carries a **live budget**: allocated / target, and the
-remaining gap. This is the primary feedback surface — the customer should be
-able to fix an invalid state by looking only at group headers.
+Rows are grouped under their asset class because the budget is per-class. The
+group header carries that budget and nothing else — under the old design it was
+the primary feedback surface (`52.0 of 65.0% · 13.0% left`); there is now no
+error for it to report, so it states the one fact that matters: how much of the
+portfolio this class gets.
 
-### 5.2 Showing the recommendation — mirror the class bar
+### 5.2 Showing the recommendation — a figure per row, not a second bar
 
-The recommendation is not a footnote. It gets the **same dual treatment the
-class bar already uses**: the customer's split shown against Prozpr's, as two
-parallel bars, so the comparison is visual rather than arithmetic.
+Wherever the customer sets a number, what Prozpr recommends is visible next to
+it. Each row carries `Prozpr N.N` beside the customer's own value.
 
-Applied per class group: a stacked bar of the customer's distribution across
-that class's categories, and directly beneath it Prozpr's recommended
-distribution across the same categories — segment colours consistent between
-the two so the eye maps them without a legend. The per-row `Prozpr N%` figure
-stays as the precise number behind the picture.
+**Reversed 2026-09-16.** Earlier revisions of this spec called the dual-bar
+treatment a fixed principle: the customer's distribution drawn as a bar with
+Prozpr's drawn beneath it, mirroring the class bar at the top of the screen. It
+was built, shipped, and then removed.
 
-The principle is fixed: wherever the customer sets a number, what Prozpr
-recommends is visible next to it, in the same visual language as the class bar
-above.
+Why it did not survive contact: the two bars share a palette and sit flush, so
+they read as one thick bar rather than a comparison. Fixing that cost a caption,
+and the caption then had to move above the bar it labelled to stop being read as
+labelling both — and after all that, it was still answering a question the row
+figures answer more precisely, in a screen the customer had already told us was
+too dense. The per-row figure is exact, needs no legend, and costs no vertical
+space.
 
-**Resolved 2026-09-15 — normalised, with a size label.** The two bars can have
-different totals: Prozpr's recommendation for a class is its own number, while
-the customer's class share is whatever they set. Drawn at true width the bars are
-different lengths and the segments are not comparable; normalised they are
-comparable but hide that the customer is running a smaller book. So: **both bars
-render full width**, and a line above them carries both totals —
-`Yours 20.0% · Prozpr 40.0%` — so the mix is comparable *and* the size difference
-is stated.
+The principle survives; the *mirroring* did not. The class bar at the top of the
+screen keeps its Prozpr twin — there it compares three segments, not eleven.
 
-Both bars measure the **rows in the table beneath**, multi-asset excluded from
-each. Comparing a class share that silently includes the multi-asset draw against
-a table that does not is the same category error the per-class budgets exist to
-prevent.
+### 5.3 The interaction
 
-Segment colours come from `CLASS_COLOR` at descending opacity by position — no new
-palette, and the two bars map onto each other by index.
+Dragging divider *k* trades rows *k−1* and *k*, clamped by the dividers on
+either side. Arrow keys nudge by 0.5pp. Nothing else in the class moves, so the
+total cannot drift.
 
-### 5.3 The sticky footer
+**Stacked dividers.** A row squeezed to 0% leaves its two dividers on one point.
+A press within 16px of both defers the choice until the first movement, then
+picks whichever divider is free to travel that way — so a flattened row grows
+back from either side. Without this the collapsed row is unrecoverable.
 
-With eleven rows the customer will be scrolled away from any summary, so the
-running total and the Save button are pinned to the bottom. Save is disabled
-until all three class budgets balance (§7).
+### 5.4 Why the bar is not quite proportional
+
+A 0% row would render zero pixels wide. Three consequences, all bad: its two
+dividers stack invisibly, at either end of the class a divider lands on the
+bar's own edge where it reads as an end cap, and a class whose budget sits
+entirely in one row draws as a solid block with no visible control at all. On
+the live dev profile **five of eleven rows are 0.0%**, so this is the normal
+case, not an edge case.
+
+So every segment is floored at **1.5% of the bar** (≈4.5px at 375px), and the
+shortfall is taken from the rows above the floor in proportion. The large
+segments stay within about 1.5pp of their true share; only the invisible ones
+are distorted.
+
+This is the one place the bar stops being literally proportional, and it is
+contained:
+
+- `segmentLayout` produces the drawn widths, which always sum to 100%.
+- `barPosToValue` inverts it, so a drag lands on the value under the finger
+  rather than on a raw share of the bar's width. It is monotonic, and a
+  boundary maps to exactly that row's cumulative value.
+- The numbers beside each row are never transformed. They remain the truth.
+
+A class the bar funds with nothing draws an **empty track** — equal slivers
+would read as an even split, which is the opposite of what is true.
+
+**The asset-mix bar at the top uses the same floor** (2026-09-16). It had the
+identical fault — squeeze debt flat and its two dividers land on one pixel; push
+commodity flat and one sits on the bar's edge — so `flooredShares` /
+`sharePosToValue` are the shared primitives and `segmentLayout` /
+`barPosToValue` are thin wrappers over them for a class's rows.
+
+### 5.7 The bar must stay on the one-decimal grid
+
+`applyDividerDrag` snaps every class it returns with `round1`.
+
+A recommendation arrives as 62.1 / 28 / 9.9, and **debt is the derived residual
+on both handles** (`cap − equity`, `cum − floor`). Subtracting floats therefore
+returned values like `29.099999999999994`, and `AssetMixBar` printed the raw
+number — so the customer saw fifteen decimal places on the debt segment. Two
+faults compounding: one that left the grid, and one that had no formatter to
+catch it.
+
+Both are fixed, and both rules matter independently — the value goes on the wire
+and into every class budget, so it has to be on the grid whether or not anything
+prints it. Segment labels are `toFixed(1)`.
+
+### 5.5 The sticky footer
+
+Two buttons: Reset to Prozpr, and Save. The running total, the per-class fault
+line and the directional disclaimer have all left it — the first two because the
+states they described no longer exist, the third because it belongs with the
+other promises (§8). The footer is now a fixed height, so the page reserves a
+constant for it rather than measuring.
 
 ---
 
+### 5.6 Reference figures must be legible
+
+The `Prozpr N.N` figures are `text-muted-foreground`, not the app's gold accent.
+
+The gold `#D4A868` is hardcoded across the app for graphic accents — bar handles,
+the Save button, the tab pill — and is correct there. It is the **dark-theme**
+value of `--wealth-amber`, so as small text on the light theme's white card it
+lands near 2:1 contrast. It shipped that way at 10px and was reported unreadable.
+
+Rule: the gold is for shapes, never for small text. A figure that exists to be
+read takes a foreground token.
+
+**The same fault hit the headings** (2026-09-16). `Set your categories` was an
+11px uppercase micro-label at `0.16em` tracking in `muted-foreground` — small,
+letter-spaced and low-contrast at once, which is three legibility costs stacked
+on the screen's only section heading. It is now 15px semibold sentence-case in
+`foreground`. The class labels (EQUITY / DEBT / COMMODITY) keep the uppercase
+label style — they name groups rather than head sections — but take a foreground
+colour and tighter tracking.
+
+Rule: uppercase + wide tracking is for *labels*, and a label may not also be
+low-contrast. Anything that heads a section is sentence case, weighted, and
+foreground.
+
+**Both cards carry a heading** — `Set your asset mix` (the three classes) and
+`Set your categories` (the eleven subgroups) — so the page reads as a pair of
+parallel steps rather than one titled section and one untitled one. "Asset mix"
+rather than "split" because §8's notice uses *the split* for the whole
+preference, classes and categories together.
+
+Both are real `h2`s under the page's `h1`. The collapsible one uses the standard
+accordion pattern, `<h2><button>…</button></h2>` — a heading cannot sit inside a
+button, which takes phrasing content only.
+
 ## 6. Multi-asset — the three-budget problem
 
-This is the hardest interaction in the screen and deserves its own treatment.
-
 Multi-asset is a single fund holding 65% equity / 25% debt / 10% commodity.
-Under this design that split is **real maths, not a label**: one number the
-customer types draws down all three class budgets at once.
+Under this design that split is **real maths, not a label**: one number draws
+down all three class budgets at once.
 
 **Placement.** Multi-asset sits *above* the three class groups, in its own
 region — it cannot live inside one of them without lying about what it does.
 
-**Live breakdown.** The moment a value is entered, show the decomposition
-directly beneath the input:
+**A capped slider, not a number.** Its maximum is the largest entry the
+customer's bar can actually fund: the scarcest class sets the ceiling, and the
+published cap steps down until every class is fundable *after* rounding (the
+sleeve rounds debt and commodity to a tenth and hands equity the residual, so
+the exact ratio can still overdraw by a tenth).
 
-> `20%  ↳ counts as 13.0% equity · 5.0% debt · 2.0% commodity`
+**This retired the overdraw error.** The earlier design let multi-asset outrun a
+class and reported it on the row: *"20% multi-asset needs 5.0% debt but your bar
+only has 4.0%."* A class budget can no longer go negative, so there is nothing
+to warn about — the slider simply stops. `multiAssetOverdraw` is deleted.
 
-**Budgets are net of it.** Each class group's target is the bar share *minus*
-multi-asset's contribution to that class. With the bar at 78/14/8 and
-multi-asset at 20%:
+**Live breakdown.** Beneath the slider, the decomposition:
 
-| Class | Bar | Multi-asset draw | Budget for the rows below |
-|---|---|---|---|
-| Equity | 78.0% | 13.0% | **65.0%** |
-| Debt | 14.0% | 5.0% | **9.0%** |
-| Commodity | 8.0% | 2.0% | **6.0%** |
+> `counts as 31.0% Equity · 11.9% Debt · 4.8% Commodity`
 
-So the group header reads `EQUITY · 52.0 of 65.0%`, not `of 78%`. Changing the
-multi-asset number re-targets all three groups simultaneously — the headers
-should animate so that cause and effect are visible.
+The slider's filled track is a 65/25/10 gradient in the three class colours, so
+the control shows the same fact the line states.
 
-**Edge case.** If multi-asset is set so high that its draw on any single class
-exceeds that class's bar share, the budget for that class goes negative. Surface
-it on the multi-asset row itself, not the class group: *"20% multi-asset needs
-5.0% debt but your bar only has 4.0% — raise Debt above, or lower this."*
+**Budgets are net of it.** Each class group's budget is the bar share *minus*
+multi-asset's contribution to that class, so the header reads `EQUITY 31.1%`,
+not the bar's 62.1%. Moving the slider re-targets all three groups at once and
+rescales their rows.
+
+**Accessibility note.** Radix puts `role="slider"` on the *thumb*, so an
+`aria-label` on the Root leaves the control unnamed. Label the thumb. This screen
+uses the Radix primitive directly rather than the shared `ui/slider` wrapper,
+which is styled for `CompleteProfile` and hardcodes its Range and Thumb classes.
 
 ---
 
-## 7. States and validation
+## 7. States
 
 | State | Group header | Footer | Save |
 |---|---|---|---|
-| Untouched (all blank) | neutral, no budget shown | hidden | disabled |
-| Under budget | `52.0 of 65.0% · 13.0% left`, amber dot | `13.0% left` | disabled |
-| Over budget | `71.0 of 65.0% · 6.0% over`, red dot | `6.0% over` | disabled |
-| Balanced | `65.0 of 65.0% · balanced`, green tick | `100% allocated` | **enabled** |
-| Clearing a saved preference | all rows emptied | `Preference cleared` | enabled |
+| Collapsed, untouched | — | Reset · Save | disabled |
+| Expanded, untouched | budget only; bars show Prozpr's recommendation | Reset · Save | disabled |
+| Engaged | budget only | Reset · Save | **enabled when changed** |
+| Cleared back to engine-decides | budget only | Reset · Save | enabled |
 
-**Per-row input rules.** Numeric, one decimal place, 0–100. No spinners on
-mobile. Clamp at the class budget on blur rather than mid-keystroke (typing
-"2" on the way to "25" should not fight the customer).
+There are no other states. No over, no under, no balanced, no allocated total,
+no save-blocked reason — a class is always exactly on its budget, so Save gates
+on `dirty` alone.
 
-**The clear path.** A customer with a saved distribution who empties every row
-is asking to go back to engine-decides. That must be saveable — it maps to an
-empty `pins` array — so Save stays enabled in that specific state.
+**Looking is not choosing.** Until the customer moves something, the bars show
+Prozpr's recommendation fitted to whatever bar they have set, while `values`
+stays blank — so merely opening the section still saves an empty payload, which
+means "engine decides". Engagement begins at the first drag.
+
+**Loading a saved distribution.** A saved distribution was stored against the
+bar of the day; a later catalog or rounding change can leave it a tenth off. It
+is normalised on load, before anyone looks at it.
+
+**The clear path.** Reset to Prozpr sets the bar back to the recommendation and
+clears the rows to engine-decides (an empty `pins`), which is the honest meaning
+of the button.
 
 ---
 
 ## 8. Copy
 
-**Section intro** (replaces "Pin a specific category…"):
+**Page intro**, under the headline:
 
-> Set the share of your whole portfolio for each category. Anything you leave
-> blank counts as zero. Each class has to add up to the budget shown next to it —
-> the multi-asset fund is counted separately, because it holds all three.
+> Where you want your whole portfolio to sit over time.
 
-*(Corrected 2026-09-15. The earlier wording — "the numbers in each class need to
-add up to what you chose above" — describes a rule the screen does not enforce:
-once multi-asset is filled, the rows under Equity add up to the budget, which is
-the bar share minus multi-asset's draw, not to the bar itself.)*
+*(Cut 2026-09-16 from three sentences. The instruction to tweak it was redundant
+with "Drag the gold handles to set your split" directly below, and the screen was
+reading as a wall of text.)*
 
-**Directional disclaimer** — sits just above the Save button, always visible:
+**Section intro** (shown when the section is expanded):
 
-> This is a directional target. We'll get as close to it as we can; the exact
-> final split can move slightly when we fit real funds.
+> Drag a divider to shift share between categories.
 
-**Carve-out notice** — a panel directly above Save, not a modal. First iteration,
-written 2026-09-15 from the measured consequences in backend spec §3.3–§3.4:
+*(Cut 2026-09-16 from a four-line paragraph. The class total and the multi-asset
+carve-out are both facts the screen shows continuously; explaining them in prose
+as well was redundant.)*
 
-> **You're replacing our planning, not just our fund picks**
+**Removed: the deployment explainer.** A paragraph under the class bar said new
+money goes to whatever is furthest from target. It is being dropped because the
+deficit-fill logic it describes is itself changing — better silent than stale.
+
+**The collapsed-section summary** (`Following Prozpr's suggestion` / `Your own
+split`) describes what is folded away, so it is **hidden once the section is
+open**, where the content speaks for itself.
+
+**Scope notice** — a panel above the footer, not a modal. **It always renders**,
+because it carries the directional promise, which is true of every saved split.
+Only the bullets are conditional.
+
+> **You set the split. We still pick the funds.**   *(amber panel)*
 >
-> You're telling us where your whole portfolio should sit, so we'll stop making
-> these calls for you:
+> Your preference replaces the allocation we'd have chosen for you. Which funds
+> go into each slot, and when to switch them, stays with us.
 >
 > - **No separate emergency fund.** We'd normally hold a reserve back before
->   investing the rest. We won't — all of it follows your split.
-> - **Goals in the next five years stop being planned for.** They stay on your
->   record, but your plan gets built around your split, not around their dates.
-> - **We'll stop offsetting your loans.** You owe more than you hold, so we
+>   investing the rest. With your split, all of it follows your percentages.
+> - **We stop offsetting your loans.** You owe more than you hold, so we
 >   currently keep some money in short-term debt to cover that. That stops.
 >
-> You can clear your preference any time and we'll go back to planning it for you.
+> This is a directional target — we'll get as close to it as we can, and the
+> exact split can move slightly when we fit real funds. You can clear your
+> preference any time.
 
-Three separate facts, three separate triggers — so each bullet renders only when
-its own condition holds:
+The panel is amber-on-amber (`--wealth-amber` border, `--wealth-amber-light`
+ground), not a neutral card — it is the one place on the screen making a promise
+about what Prozpr keeps doing, and it should not read as body text.
+
+*(Reframed 2026-09-16. The earlier version led with "You're replacing our
+planning, not just our fund picks", which told the customer what they were
+taking away without saying what they still get. They are setting the allocation;
+fund selection — where Prozpr's work actually shows — is unchanged.)*
+
+**The near-term-goals bullet was removed**, deliberately. It read *"Goals in the
+next five years stop being planned for"*, which overstates it: a saved split
+changes what a goal's plan is built around, not whether the goal is planned for.
+The backend still sends the `near_term_goals` key and the type still carries it;
+the frontend simply renders no bullet for it.
+
+Each remaining bullet renders only when its own condition holds:
 
 | Bullet | Trigger | Measured |
 |---|---|---|
 | Emergency fund | `emergency_fund_needed` | ₹6,00,000 → ₹0 |
-| Near-term goals | any goal < 60 months | an 18-month ₹20,00,000 goal absorbed into the long-term pool, absent from `goals_allocated` |
 | Liability offset | `net_financial_assets < 0` | `short_debt ₹8,00,000` → absent |
 
-The second bullet says *"stop being planned for"*, not *"stop being earmarked"*,
-deliberately: under backend §3.3 a sub-60-month goal does not merely lose its
-bucket linkage, it **leaves the plan** — step 4 only selects goals ≥ 60 months.
-The third is not an emergency-fund story at all; it is a liability offset a
-leveraged customer never expressed a preference about (backend §3.4).
-
-**This needs one new field on GET.** The screen cannot know which bullets apply —
-`ScreenPreferenceGetResponse` carries no profile flags. Backend spec §9.1 adds
-`carve_outs_at_risk`, the same three conditions Change 8 already evaluates for
-`shortfall_reason`. Until it ships, the field is absent and the panel renders
-nothing, which is the correct degradation: silence rather than a warning shown to
-customers it does not apply to.
+**This needs one field on GET.** The screen cannot know which bullets apply —
+backend spec §9.1 adds `carve_outs_at_risk`. Until it ships the array is empty
+and only the heading and the directional line render, which is the correct
+degradation: silence rather than a warning shown to customers it does not apply
+to.
 
 **Two different moments — don't conflate them.** This notice fires *before* the
-customer commits, so they can change their mind. Separately, the backend now
-attaches a post-save disclosure on `shortfall_reason` saying the buffer was
-suspended (backend spec §9), which belongs wherever the resulting plan is shown.
-Same fact, two places, both wanted: one is a warning, the other is a record.
+customer commits, so they can change their mind. Separately, the backend
+attaches a post-save disclosure on `shortfall_reason` (backend spec §9), which
+belongs wherever the resulting plan is shown. Same fact, two places, both wanted:
+one is a warning, the other is a record.
 
 **Do not invent your own version of `shortfall_reason`.** It is engine-authored
 and already carries the cases where the plan could not meet the ask. Render it;
-don't second-guess it. (Backend spec §8 also adds a rounding tolerance so a
-±0.1pp difference stops producing a spurious "your multi-asset choice was larger
-than your split can fund" warning — if you see one of those in testing before
-that lands, it is the known bug, not your maths.)
-
-**Group header when balanced:** `balanced` (not "valid" / "OK" — this is money,
-not a form).
+don't second-guess it.
 
 ---
 
@@ -341,58 +475,96 @@ is what the per-row "Prozpr N%" reads from — no backend change needed for that
 
 | File | Change |
 |---|---|
-| `src/components/invest/SubcategoryPins.tsx` | Rewrite: dropdown+single-pin → grouped full table |
-| `src/components/invest/MultiAssetRow.tsx` | **New** — the three-budget row and its breakdown |
-| `src/lib/investment-preferences.ts` | Per-class budget maths incl. 65/25/10 attribution; replace `pinsValid` |
-| `src/pages/InvestPreferences.tsx` | Sticky footer, save-gating, cleared-state handling |
-| `src/components/invest/ClassDistributionBars.tsx` | **New** — the yours-vs-Prozpr bars per class group (§5.2) |
-| `src/lib/api.ts` | Add optional `carve_outs_at_risk` to the GET response (§8). `pct_of_total: 0` already passes — it is typed `number`, with no client-side guard |
+| `src/lib/investment-preferences.ts` | Class-budget maths incl. 65/25/10 attribution; `normalise`, `applySegmentDrag`, `maxMultiAsset`, `segmentLayout`, `barPosToValue`, `shortLabel` |
+| `src/components/invest/ClassSegmentBar.tsx` | **New** — one class as a draggable segmented bar (§5.3–§5.4) |
+| `src/components/invest/SubcategoryPins.tsx` | Rewrite: grouped bars + row legend; every edit leaves through `normalise` |
+| `src/components/invest/MultiAssetRow.tsx` | Capped Radix slider with the 65/25/10 gradient and breakdown (§6) |
+| `src/components/invest/PreferenceScopeNotice.tsx` | Renamed from `CarveOutNotice`; always renders (§8) |
+| `src/pages/InvestPreferences.tsx` | Collapsible section, `normalise` on bar change, fixed-height footer |
+| `src/lib/api.ts` | Optional `carve_outs_at_risk` on the GET response (§8) |
+
+**Deleted:** `PctInput.tsx` (no typed entry left), `ClassDistributionBars.tsx`
+(absorbed into `ClassSegmentBar`), and from the maths module `distributionValid`,
+`resetValues`, `multiAssetOverdraw`, `classStatus` and its `ClassState` — every
+one of them describing a state the screen can no longer be in.
 
 ## 11. Testing
 
-- `investment-preferences.test.ts` — budget maths: multi-asset attribution,
-  per-class sums, the negative-budget edge case, blank-as-zero.
-- `SubcategoryPins.test.tsx` — group headers reflect over/under/balanced;
-  Save gating; clearing all rows stays saveable.
-- `InvestPreferences.test.tsx` — untouched state still saves a bare class mix.
+- `investment-preferences.test.ts` — multi-asset attribution; `normalise` lands
+  every class exactly on budget for any bar, including the catalog-rounding case
+  (the live catalog sums to 100.1); `applySegmentDrag` preserves the class total
+  under any drag and lets a collapsed row grow from either side; `segmentLayout`
+  always fills the bar and floors collapsed rows; `barPosToValue` is monotonic
+  and maps boundaries back to exact cumulative values; `shortLabel`.
+- `ClassSegmentBar.test.tsx` — segment widths, one divider per pair, divider
+  naming, keyboard nudge stays on budget, no two dividers on one pixel and none
+  on the bar's edge, single-row and zero-budget classes.
+- `SubcategoryPins.test.tsx` — budget headers, shortened labels, bar only where
+  a class has two or more rows, edits arrive normalised.
+- `InvestPreferences.test.tsx` — opening the section does not engage; every row
+  sent with explicit zeros once engaged; the distribution stays on the bar when
+  the bar moves; untouched still saves a bare class mix; Reset clears to
+  engine-decides; the notice always shows the directional line and never the
+  near-term-goals bullet.
+
+**Verify against real data, not only fixtures.** Two defects survived a green
+unit suite and were caught only in the browser on the live dev profile: the
+unlabelled Radix thumb (§6) and the zero-width segments (§5.4). Both were
+invisible to tests that supplied tidy values.
 
 ## 12. Decisions taken
 
+- **The per-class recommendation bar was removed** (2026-09-16) — reversing a
+  principle two earlier revisions called fixed. The reasoning is in §5.2; the
+  short version is that it competed with the bar it sat under and answered a
+  question the row figures already answered.
+- **Gold is for shapes, not small text** (§5.6) — a real contrast defect, not a
+  taste call.
+- **One segmented bar per class** (2026-09-16) — chosen over per-row sliders and
+  over keeping typed boxes with an auto-balance button. It makes balance
+  structural (§4.2), which is what let the entire validation and error surface be
+  deleted. The cost is that hitting an exact value by dragging is harder than
+  typing it; judged acceptable because the screen is a directional target (§8).
+- **The bar is floored, not literally proportional** (§5.4) — accepted as a
+  deliberate, contained inaccuracy; the row numbers stay exact.
+- **The categories section is collapsed by default** (§5).
+- **Row labels are shortened on the frontend** (§5) — display only; the backend's
+  prose labels are correct for their own use and are not changed.
+- **Multi-asset is capped rather than validated** (§6).
 - **Recommendation display** — mirrors the class bar's dual treatment, not a
   text annotation (§5.2).
-- **Reset to Prozpr** — resets *everything*: the class bar and every
-  subcategory row, back to Prozpr's recommendation. Not a bar-only reset.
-  What Reset fills the rows with is Prozpr's **real** recommendation — computed
-  with the emergency fund, goal funding and the full practical allocation logic
-  intact (backend spec §8). Saving it then suspends those carve-outs, so the
-  plan the customer ends up with is *labelled* differently — everything becomes
-  long-term, goals stop being earmarked — even though the **per-subgroup rupees
-  round-trip**. That equivalence depends on backend spec §7 (the debt split);
-  until §7 lands, accepting the recommendation can put ₹0 in a debt row the
-  screen showed as 9%. Nothing to build here, but don't trust Reset in testing
-  before then.
+- **Reset to Prozpr** — resets the class bar to the recommendation and clears the
+  rows back to engine-decides. What the bars then display is Prozpr's **real**
+  recommendation — computed with the emergency fund, goal funding and the full
+  practical allocation logic intact (backend spec §8). Saving a distribution then
+  suspends those carve-outs, so the plan the customer ends up with is *labelled*
+  differently even though the **per-subgroup rupees round-trip**. That equivalence
+  depends on backend spec §7 (the debt split); until §7 lands, accepting the
+  recommendation can put ₹0 in a debt row the screen showed as 9%.
 - **Arbitrage stays a settable category** even though its recommendation is
   0%. Confirmed fundable: 182 ranked funds, none excluded — and it is being
   wired into the long-term engine, which it was previously absent from
   (backend spec §4).
-- **Recommendation bars — normalised, with both totals labelled above** (§5.2,
-  resolved 2026-09-15).
-- **The class bar stays draggable once subcategories are filled** (§13.1, resolved
-  2026-09-15). Budgets re-target live, the group headers show which classes broke,
-  Save disables until they balance. This is today's behaviour, so it costs nothing
-  to build; the alternative (locking with an explicit unlock) stays available as a
-  later change and needs no maths rework.
-- **Blank means zero** once engaged (§4.3), and zeros go on the wire (§9).
+- **The class bar stays draggable once subcategories are set** (§13.1, resolved
+  2026-09-15). Budgets re-target live; under the revised design the distribution
+  is rescaled to follow rather than being flagged as broken.
+- **Zero is a real entry** (§4.3), and zeros go on the wire (§9).
 - **A stated preference suspends Prozpr's bucket carve-outs** (§4.4) — any
   preference, including a bare class tilt, not just a full distribution.
   Existing saved preferences therefore change behaviour on their next run.
 
 ## 13. Open questions
 
-**None blocking.** Both former open questions were resolved on 2026-09-15 and
-moved to §12: the bar interaction (§13.1 → stays draggable) and the dual-bar
-scaling (§5.2 → normalised with a size label). The carve-out copy in §8 is a
-first iteration and will be refined.
+**None blocking.** The 2026-09-15 questions were resolved and moved to §12: the
+bar interaction (§13.1 → stays draggable) and the dual-bar scaling (§5.2 →
+normalised with a size label — since superseded, the per-class bar was removed
+entirely). The §8 copy is a first iteration and will be refined.
+
+**Not yet exercised end to end.** No real save has run against the backend — the
+frontend is verified by unit tests plus a live read of the dev profile. The
+contract in §9 is unchanged by the 2026-09-16 revision, so the backend work is
+unaffected, but the first genuine round-trip is still the test most likely to
+surface a mismatch.
 
 *(`sector_equities` fundability — resolved 2026-09-15: it stays selectable and
 this screen treats it like any other row. Sector funds will start being rated,

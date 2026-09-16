@@ -3,9 +3,11 @@ import { describe, it, expect } from "vitest";
 import type { ClassMix, ScreenSubcategory } from "@/lib/api";
 import {
   applyDividerDrag,
-  classAllocated, classBudget, classStatus, distributionValid, fromSavedPins,
-  isEngaged, multiAssetDraw, multiAssetOverdraw, recommendedMix, resetValues,
+  classAllocated, classBudget, fromSavedPins,
+  isEngaged, multiAssetDraw, recommendedMix,
   round1, roundMix, sameMix, samePins, toSavePins, type RowValues,
+  applySegmentDrag, maxMultiAsset, normalise, shortLabel, CLASSES, MULTI_ASSET_ID, recommendedValues,
+  barPosToValue, segmentLayout,
 } from "@/lib/investment-preferences";
 
 const mix = { equity: 72, debt: 18, others: 10 };
@@ -35,6 +37,28 @@ describe("applyDividerDrag", () => {
   it("always sums to 100", () => {
     const m = applyDividerDrag(mix, 1, 33);
     expect(m.equity + m.debt + m.others).toBe(100);
+  });
+
+  // The recommendation arrives on the one-decimal grid (62.1 / 28 / 9.9), and
+  // debt is the derived residual on BOTH handles — so a raw subtraction handed
+  // the bar 29.099999999999994 to print.
+  it("keeps every class on the one-decimal grid from a one-decimal start", () => {
+    expect(applyDividerDrag({ equity: 62.1, debt: 28, others: 9.9 }, 1, 61))
+      .toEqual({ equity: 61, debt: 29.1, others: 9.9 });
+    expect(applyDividerDrag({ equity: 62.1, debt: 28, others: 9.9 }, 2, 80))
+      .toEqual({ equity: 62.1, debt: 17.9, others: 20 });
+  });
+
+  it("never drifts off the grid or off 100, wherever it is dragged", () => {
+    for (const start of [{ equity: 62.1, debt: 28, others: 9.9 }, { equity: 33.3, debt: 33.3, others: 33.4 }]) {
+      for (const pos of [-10, 0, 13, 47, 61, 88, 100, 130]) {
+        for (const h of [1, 2] as const) {
+          const m = applyDividerDrag(start, h, pos);
+          expect(m.equity + m.debt + m.others).toBe(100);
+          for (const v of [m.equity, m.debt, m.others]) expect(v).toBe(round1(v));
+        }
+      }
+    }
   });
 });
 
@@ -84,22 +108,6 @@ describe("classBudget", () => {
     expect(classBudget(BAR, v, "others")).toBe(30);
   });
 
-  it("is always reachable by typing the number it returns", () => {
-    // The bug this replaces: a raw budget of 12.75 printed as "12.8" that
-    // neither 12.7 nor 12.8 could satisfy.
-    const bar: ClassMix = { equity: 78, debt: 14, others: 8 };
-    for (let k = 1; k <= 200; k++) {
-      const v: RowValues = { multi_asset: k / 10 };
-      const budget = classBudget(bar, v, "debt");
-      if (budget < 0) continue;
-      expect(classStatus(bar, { ...v, short_debt: budget }, CATS, "debt").state).toBe("balanced");
-    }
-  });
-
-  it("flags the class a too-large multi-asset entry overdraws", () => {
-    expect(multiAssetOverdraw({ equity: 88, debt: 4, others: 8 }, { multi_asset: 20 })).toBe("debt");
-    expect(multiAssetOverdraw(BAR, { multi_asset: 20 })).toBeNull();
-  });
 });
 
 describe("classAllocated excludes multi-asset", () => {
@@ -111,19 +119,6 @@ describe("classAllocated excludes multi-asset", () => {
   });
 });
 
-describe("classStatus", () => {
-  const v = (eq: number): RowValues => ({ multi_asset: 20, low_beta_equities: eq });
-  it("is under when the rows do not fill the budget", () => {
-    expect(classStatus(BAR, v(24), CATS, "equity")).toMatchObject({ state: "under", delta: -6 });
-  });
-  it("is over when they exceed it", () => {
-    expect(classStatus(BAR, v(36), CATS, "equity")).toMatchObject({ state: "over", delta: 6 });
-  });
-  it("is balanced on an exact match — no tolerance involved", () => {
-    expect(classStatus(BAR, v(30), CATS, "equity")).toMatchObject({ state: "balanced", delta: 0 });
-  });
-});
-
 describe("isEngaged", () => {
   it("is false when every row is blank", () => {
     expect(isEngaged({})).toBe(false);
@@ -131,21 +126,6 @@ describe("isEngaged", () => {
   });
   it("treats a zero as a real entry, not as absent", () => {
     expect(isEngaged({ gold_commodities: 0 })).toBe(true);
-  });
-});
-
-describe("distributionValid", () => {
-  const complete: RowValues = {
-    multi_asset: 20, low_beta_equities: 30, short_debt: 20, gold_commodities: 30,
-  };
-  it("accepts a distribution where every class balances", () => {
-    expect(distributionValid(BAR, complete, CATS)).toBe(true);
-  });
-  it("rejects one where a single class is short", () => {
-    expect(distributionValid(BAR, { ...complete, short_debt: 19 }, CATS)).toBe(false);
-  });
-  it("rejects an untouched distribution", () => {
-    expect(distributionValid(BAR, {}, CATS)).toBe(false);
   });
 });
 
@@ -160,7 +140,11 @@ describe("Reset to Prozpr lands balanced by construction", () => {
     const cats = withTotal(nudge);
     const mix = recommendedMix(cats);
     expect(round1(mix.equity + mix.debt + mix.others)).toBe(100);
-    expect(distributionValid(mix, resetValues(cats, mix), cats)).toBe(true);
+    const out = normalise(mix, recommendedValues(cats), cats);
+    for (const c of CLASSES) {
+      if (!cats.some((x) => x.id !== MULTI_ASSET_ID && x.class === c)) continue;
+      expect(classAllocated(out, cats, c)).toBe(classBudget(mix, out, c));
+    }
   });
 });
 
@@ -201,5 +185,187 @@ describe("toSavePins", () => {
       multi_asset: null, low_beta_equities: null, short_debt: null,
       arbitrage: null, gold_commodities: null,
     });
+  });
+});
+
+// ── Segmented-bar model ───────────────────────────────────
+// A class's rows are segments of one bar, so "balanced" is structural: every
+// path that can change a class budget runs through `normalise`, and every edit
+// inside a class runs through `applySegmentDrag`. Both preserve the sum.
+
+const EQ_ROWS: ScreenSubcategory[] = [
+  { id: "a", class: "equity", label: "A", recommended_pct_of_total: 30 },
+  { id: "b", class: "equity", label: "B", recommended_pct_of_total: 20 },
+  { id: "c", class: "equity", label: "C", recommended_pct_of_total: 10 },
+];
+
+describe("shortLabel", () => {
+  it("drops the class word the group header already carries", () => {
+    expect(shortLabel({ id: "x", class: "equity", label: "large-cap equity", recommended_pct_of_total: 0 }))
+      .toBe("Large-cap");
+    expect(shortLabel({ id: "x", class: "debt", label: "short-duration debt", recommended_pct_of_total: 0 }))
+      .toBe("Short-duration");
+  });
+
+  it("capitalises without touching the rest of the words", () => {
+    expect(shortLabel({ id: "x", class: "debt", label: "corporate & credit debt", recommended_pct_of_total: 0 }))
+      .toBe("Corporate & credit");
+    expect(shortLabel({ id: "x", class: "equity", label: "US equity", recommended_pct_of_total: 0 })).toBe("US");
+  });
+
+  it("leaves a label that does not end in its class word alone", () => {
+    expect(shortLabel({ id: "x", class: "others", label: "gold", recommended_pct_of_total: 0 })).toBe("Gold");
+    expect(shortLabel({ id: "x", class: "equity", label: "multi-asset funds", recommended_pct_of_total: 0 }))
+      .toBe("Multi-asset funds");
+  });
+});
+
+describe("maxMultiAsset", () => {
+  it("is bounded by the scarcest class the sleeve draws on", () => {
+    // debt is scarcest: 25 / 0.25 = 100, others 10 / 0.1 = 100, equity 65 / 0.65 = 100
+    expect(maxMultiAsset({ equity: 65, debt: 25, others: 10 })).toBe(100);
+    // commodity at 5 caps the sleeve at 50
+    expect(maxMultiAsset({ equity: 70, debt: 25, others: 5 })).toBe(50);
+  });
+
+  it("never publishes a cap that overdraws a class once rounded", () => {
+    for (const others of [1, 3, 7, 9, 13]) {
+      const m = { equity: 100 - others - 20, debt: 20, others };
+      const cap = maxMultiAsset(m);
+      const at = { [MULTI_ASSET_ID]: cap };
+      for (const c of CLASSES) expect(classBudget(m, at, c)).toBeGreaterThanOrEqual(0);
+    }
+  });
+});
+
+describe("normalise", () => {
+  it("rescales a class's rows to sum EXACTLY to its budget", () => {
+    const out = normalise(BAR, { a: 30, b: 20, c: 10 }, EQ_ROWS);
+    expect(classAllocated(out, EQ_ROWS, "equity")).toBe(classBudget(BAR, out, "equity"));
+  });
+
+  it("keeps the proportions the customer set", () => {
+    // 30:20:10 of a 60 budget -> 30:20:10
+    const out = normalise({ equity: 60, debt: 30, others: 10 }, { a: 15, b: 10, c: 5 }, EQ_ROWS);
+    expect(out).toMatchObject({ a: 30, b: 20, c: 10 });
+  });
+
+  it("clamps multi-asset to what the bar can fund", () => {
+    const cats = [...EQ_ROWS, { id: MULTI_ASSET_ID, class: "equity" as const, label: "MA", recommended_pct_of_total: 0 }];
+    const out = normalise({ equity: 70, debt: 25, others: 5 }, { [MULTI_ASSET_ID]: 90, a: 10, b: 10, c: 10 }, cats);
+    expect(out[MULTI_ASSET_ID]).toBe(50);
+  });
+
+  it("lands every class on its budget for any bar", () => {
+    for (const eq of [0, 7, 33, 61, 88, 100]) {
+      const m = roundMix({ equity: eq, debt: (100 - eq) * 0.6, others: 0 });
+      const out = normalise(m, recommendedValues(CATS), CATS);
+      for (const c of CLASSES) {
+        const rows = CATS.filter((x) => x.id !== MULTI_ASSET_ID && x.class === c);
+        if (!rows.length) continue;
+        expect(classAllocated(out, CATS, c)).toBe(classBudget(m, out, c));
+      }
+    }
+  });
+
+  it("gives an all-zero class its budget rather than leaving it stranded", () => {
+    const out = normalise({ equity: 60, debt: 30, others: 10 }, { a: 0, b: 0, c: 0 }, EQ_ROWS);
+    expect(classAllocated(out, EQ_ROWS, "equity")).toBe(60);
+  });
+});
+
+describe("applySegmentDrag", () => {
+  const values: RowValues = { a: 30, b: 20, c: 10 };
+
+  it("trades the two rows the divider sits between, leaving the rest alone", () => {
+    // budget 60, divider 1 sits at 30; drag to 40% of the bar = 24
+    const out = applySegmentDrag(EQ_ROWS, values, 60, 1, 40);
+    expect(out).toMatchObject({ a: 24, b: 26, c: 10 });
+  });
+
+  it("cannot cross the divider on either side", () => {
+    expect(applySegmentDrag(EQ_ROWS, values, 60, 1, 100)).toMatchObject({ a: 50, b: 0, c: 10 });
+    expect(applySegmentDrag(EQ_ROWS, values, 60, 2, 0)).toMatchObject({ a: 30, b: 0, c: 30 });
+  });
+
+  it("keeps the class on its budget whatever the drag", () => {
+    for (const pos of [-20, 0, 12.3, 55, 99.9, 140]) {
+      for (const h of [1, 2]) {
+        const out = applySegmentDrag(EQ_ROWS, values, 60, h, pos);
+        expect(classAllocated(out, EQ_ROWS, "equity")).toBe(60);
+      }
+    }
+  });
+
+  it("lets a collapsed row grow back from either side", () => {
+    const collapsed: RowValues = { a: 30, b: 0, c: 30 };
+    expect(applySegmentDrag(EQ_ROWS, collapsed, 60, 1, 40).b).toBe(6); // left divider moves left
+    expect(applySegmentDrag(EQ_ROWS, collapsed, 60, 2, 60).b).toBe(6); // right divider moves right
+  });
+});
+
+// ── Bar layout ────────────────────────────────────────────
+// A 0% row would otherwise render zero pixels wide, stacking its two dividers
+// on one another and — at either end of the class — on the bar's own edge,
+// where they read as end caps rather than controls.
+
+describe("segmentLayout", () => {
+  const widths = (v: RowValues, budget: number) => segmentLayout(EQ_ROWS, v, budget);
+
+  it("always fills the bar exactly", () => {
+    for (const v of [{ a: 30, b: 20, c: 10 }, { a: 60, b: 0, c: 0 }, { a: 0, b: 0, c: 60 }]) {
+      expect(round1(widths(v, 60).reduce((s, x) => s + x, 0))).toBe(100);
+    }
+  });
+
+  it("gives a collapsed row a visible sliver instead of nothing", () => {
+    const [a, b, c] = widths({ a: 30, b: 0, c: 30 }, 60);
+    expect(b).toBeGreaterThan(1);
+    expect(a).toBe(c);
+  });
+
+  it("takes the sliver from the rows that can afford it, leaving them near-true", () => {
+    const [a, b] = widths({ a: 30, b: 0, c: 30 }, 60);
+    // true share is 50%; it gives up only the 1.5% the collapsed row needs
+    expect(a).toBeCloseTo(50 * (100 - 1.5) / 100, 4);
+    expect(b).toBe(1.5);
+  });
+
+  it("shrinks the floor rather than distorting a long class list", () => {
+    const many = Array.from({ length: 12 }, (_, i) => ({
+      id: `r${i}`, class: "equity" as const, label: `R${i}`, recommended_pct_of_total: 0,
+    }));
+    const out = segmentLayout(many, { r0: 60 }, 60);
+    expect(round1(out.reduce((s, x) => s + x, 0))).toBe(100);
+    expect(out[1]).toBe(1);            // 12 / 12 rows, not the 1.5 default
+  });
+
+  it("draws nothing at all when the bar funds the class with nothing", () => {
+    // Equal slivers would read as an even split; the truth is "nothing here".
+    expect(segmentLayout(EQ_ROWS, { a: 0, b: 0, c: 0 }, 0)).toEqual([0, 0, 0]);
+  });
+});
+
+describe("barPosToValue", () => {
+  const values: RowValues = { a: 30, b: 0, c: 30 };
+
+  it("maps a segment boundary back to that row's exact cumulative value", () => {
+    const w = segmentLayout(EQ_ROWS, values, 60);
+    expect(barPosToValue(EQ_ROWS, values, 60, w[0])).toBe(30);
+    expect(barPosToValue(EQ_ROWS, values, 60, w[0] + w[1])).toBe(30);
+  });
+
+  it("never runs off either end of the bar", () => {
+    expect(barPosToValue(EQ_ROWS, values, 60, -50)).toBe(0);
+    expect(barPosToValue(EQ_ROWS, values, 60, 150)).toBe(60);
+  });
+
+  it("rises with the pointer, so a drag never jumps backwards", () => {
+    let prev = -1;
+    for (let p = 0; p <= 100; p += 2.5) {
+      const v = barPosToValue(EQ_ROWS, values, 60, p);
+      expect(v).toBeGreaterThanOrEqual(prev);
+      prev = v;
+    }
   });
 });

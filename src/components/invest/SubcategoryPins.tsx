@@ -1,37 +1,28 @@
 import type { ClassMix, ScreenSubcategory } from "@/lib/api";
-import ClassDistributionBars from "@/components/invest/ClassDistributionBars";
+import ClassSegmentBar from "@/components/invest/ClassSegmentBar";
 import MultiAssetRow from "@/components/invest/MultiAssetRow";
-import PctInput from "@/components/invest/PctInput";
 import {
   CLASS_COLOR,
   CLASS_LABEL,
   CLASSES,
-  classStatus,
-  isEngaged,
+  classBudget,
+  maxMultiAsset,
   MULTI_ASSET_ID,
+  normalise,
+  shortLabel,
   type RowValues,
 } from "@/lib/investment-preferences";
 
-/** The state word and its colour. `delta` is printed as an absolute figure —
- *  "-6.0% left" would be wrong twice over. */
-const STATE_CLASS = {
-  under: "text-[hsl(var(--wealth-amber))]",
-  over: "text-destructive",
-  balanced: "text-[hsl(var(--wealth-green))]",
-} as const;
-
 /**
- * The complete distribution the customer owns: every settable category gets a
- * row, grouped under its class, with a live budget header showing what that
- * class's rows have taken of what the bar gives them.
+ * The complete distribution the customer owns: one bar per class whose segments
+ * are that class's categories, with the rows listed beneath as a legend.
  *
- * The multi-asset fund sits ABOVE the groups because it draws on all three
- * budgets at once — its breakdown and any overdraw message live on that row
- * (spec §6). A class whose budget multi-asset has overdrawn goes fully neutral
- * here: a negative budget is not the group's problem to state.
+ * Every edit leaves here through `normalise`, so what the parent receives is
+ * always a distribution that sits exactly on the bar — there is no invalid
+ * state for the page to detect or report.
  *
- * Holds no state. The only state anywhere is the in-flight keystroke string
- * inside each `PctInput`; the value itself lives with the parent.
+ * Holds no state. `values` arrives complete (the page substitutes Prozpr's
+ * recommendation until the customer engages), so nothing here is nullable.
  */
 export default function SubcategoryPins({
   values,
@@ -44,85 +35,73 @@ export default function SubcategoryPins({
   mix: ClassMix;
   onChange: (next: RowValues) => void;
 }) {
-  const engaged = isEngaged(values);
   const multiAsset = subcategories.find((c) => c.id === MULTI_ASSET_ID);
-  const set = (id: string, v: number | null) => onChange({ ...values, [id]: v });
+  const commit = (next: RowValues) => onChange(normalise(mix, next, subcategories));
 
   return (
-    <section className="mt-2">
+    <section className="mt-3">
       {multiAsset ? (
         <MultiAssetRow
-          value={values[multiAsset.id] ?? null}
           label={multiAsset.label}
+          value={values[multiAsset.id] ?? 0}
+          max={maxMultiAsset(mix)}
           recommended={multiAsset.recommended_pct_of_total}
-          mix={mix}
-          onChange={(v) => set(multiAsset.id, v)}
+          onChange={(v) => commit({ ...values, [multiAsset.id]: v })}
         />
       ) : null}
 
       {CLASSES.map((cls) => {
         const rows = subcategories.filter((c) => c.class === cls && c.id !== MULTI_ASSET_ID);
-        const { allocated, budget, delta, state } = classStatus(mix, values, subcategories, cls);
-        // A class multi-asset has overdrawn shows its name only: the budget is
-        // negative and the actionable message is already on the row above.
-        // Test this class's OWN budget — a large multi-asset entry can overdraw
-        // two classes at once, and multiAssetOverdraw only ever names the first.
-        const showBudget = engaged && budget >= 0;
+        if (rows.length === 0) return null;
+        const budget = classBudget(mix, values, cls);
 
         return (
-          <div key={cls} data-testid={`group-${cls}`} className="mt-4">
-            <div className="flex items-center gap-2 border-b border-border pb-2">
-              {showBudget ? (
-                <span
-                  className="h-2 w-2 shrink-0 rounded-full"
-                  style={{ background: CLASS_COLOR[cls] }}
-                />
-              ) : null}
-              <span className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+          <div key={cls} data-testid={`group-${cls}`} className="mt-5">
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: CLASS_COLOR[cls] }} />
+              <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground">
                 {CLASS_LABEL[cls]}
               </span>
-              {showBudget ? (
-                <span className="ml-auto flex items-baseline gap-2 text-[11.5px] tabular-nums">
-                  <span className="text-muted-foreground">
-                    {allocated.toFixed(1)} of {budget.toFixed(1)}%
-                  </span>
-                  <span className={STATE_CLASS[state]}>
-                    {state === "balanced"
-                      ? "balanced"
-                      : `${Math.abs(delta).toFixed(1)}% ${state === "over" ? "over" : "left"}`}
-                  </span>
-                </span>
-              ) : null}
+              <span
+                data-testid={`budget-${cls}`}
+                className="ml-auto text-[11.5px] font-semibold tabular-nums text-foreground"
+              >
+                {`${budget.toFixed(1)}%`}
+              </span>
             </div>
 
-            {/* Same rule as the budget header: stay quiet until the customer
-                engages. An untouched screen showing "Yours 0.0% · Prozpr 30.0%"
-                in every group is noise, not information (spec §7). */}
-            {/* A single-row class (commodity holds only gold) would draw two
-                identical full-width bars comparing nothing, duplicating the row
-                beneath — so the comparison needs at least two segments. */}
-            {showBudget && rows.length > 1 ? (
-              <ClassDistributionBars cls={cls} categories={rows} values={values} />
+            {/* A single-row class (commodity holds only gold) has nothing to
+                divide — the bar would just duplicate the row beneath it. */}
+            {rows.length > 1 ? (
+              <ClassSegmentBar
+                cls={cls}
+                rows={rows}
+                values={values}
+                budget={budget}
+                onChange={(next) => commit(next)}
+              />
             ) : null}
 
-            {rows.map((c) => (
-              <div key={c.id} className="flex items-center gap-3 border-b border-border py-3">
-                <div className="min-w-0">
-                  <div className="text-[13.5px] font-medium text-foreground">{c.label}</div>
-                  <div className="mt-0.5 text-[10px] tabular-nums text-[#D4A868]">
-                    {`Prozpr ${c.recommended_pct_of_total.toFixed(1)}%`}
-                  </div>
-                </div>
-                <div className="ml-auto flex items-center gap-2.5">
-                  <PctInput
-                    label={c.label}
-                    value={values[c.id] ?? null}
-                    onChange={(v) => set(c.id, v)}
+            <div className="mt-2.5 flex flex-col gap-1.5">
+              {rows.map((c, i) => (
+                <div key={c.id} className="flex items-baseline gap-2 text-[12.5px]">
+                  <span
+                    className="h-2 w-2 shrink-0 translate-y-[-1px] rounded-sm"
+                    style={{
+                      background: CLASS_COLOR[cls],
+                      opacity: rows.length <= 1 ? 1 : 1 - (i / (rows.length - 1)) * 0.6,
+                    }}
                   />
-                  <span className="text-[13px] text-muted-foreground">%</span>
+                  <span className="min-w-0 truncate text-foreground">{shortLabel(c)}</span>
+                  <span className="ml-auto shrink-0 text-[10.5px] tabular-nums text-muted-foreground">
+                    {`Prozpr ${c.recommended_pct_of_total.toFixed(1)}`}
+                  </span>
+                  <span className="w-[46px] shrink-0 text-right font-medium tabular-nums text-foreground">
+                    {`${(values[c.id] ?? 0).toFixed(1)}%`}
+                  </span>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         );
       })}
