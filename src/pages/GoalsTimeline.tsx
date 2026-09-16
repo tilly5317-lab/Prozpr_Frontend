@@ -59,20 +59,22 @@ import {
 import { exportCashflowXls } from "@/lib/export-xls";
 import {
   bandForRate,
-  clampRate,
+  clearSavedMix,
+  DEBT_RETURN,
+  EQUITY_RETURN,
+  EQUITY_STEP,
+  equityPctForRate,
+  formatMix,
   formatRate,
   PROJECTION_BASE_RATE,
-  ratePct,
-  readSavedRate,
-  RETURN_BANDS,
-  RETURN_MAX,
-  RETURN_MIN,
-  RETURN_STEP,
+  rateForEquityPct,
+  readSavedMix,
   scaleAnnualRowsToRate,
-  writeSavedRate,
+  writeSavedMix,
 } from "@/lib/projectionScenario";
 import CashflowGate from "@/components/goals/CashflowGate";
 import CashflowInputsForm from "@/components/goals/CashflowInputsForm";
+import AssetMixDial from "@/components/goals/AssetMixDial";
 import GuidedTour, { type TourStep } from "@/components/GuidedTour";
 
 /** Marks the first-run goal-planning walkthrough as seen, per browser. */
@@ -107,6 +109,12 @@ const MAX_HORIZON_YEARS = 100;
 const FALLBACK_CURRENT_AGE = 30;
 // Always show at least this many years even if retirement is in the past.
 const MIN_HORIZON_YEARS = 5;
+// Row density. The near term is where the plan is actionable, so the first
+// DENSE_ROW_YEARS get a bar each; after that the timeline thins to one bar
+// every YEAR_ROW_STEP years. Goal years and the final year are always kept, so
+// nothing the user placed can be thinned away.
+const DENSE_ROW_YEARS = 5;
+const YEAR_ROW_STEP = 3;
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, v));
@@ -138,7 +146,10 @@ function birthYearFromDob(dob: string | null | undefined): number | null {
 
 // NAV chart spans the full row width and renders behind the row content.
 const NAV_PAD_PCT = 4; // horizontal padding (%) so the line never touches the edges
-const TORNADO_CENTER_X = 50; // viewBox x for ₹0 (symmetric tornado axis)
+const TORNADO_CENTER_X = 50; // viewBox x for ₹0 when the plan dips negative
+// No negative year in the plan? The left half would sit empty, so the ₹0 axis
+// moves left (clear of the age column) and positive bars get the extra width.
+const TORNADO_CENTER_X_POSITIVE = 20;
 
 // Earned milestones — light up the first year the projected NAV crosses each.
 interface Milestone {
@@ -238,14 +249,18 @@ function tornadoBarScaleMax(absValues: number[]): number {
 function corpusToTornadoX(
   corpus: number,
   scaleMax: number,
-  halfSpan: number,
+  centerX: number,
 ): number {
-  if (scaleMax <= 0 || corpus === 0) return TORNADO_CENTER_X;
+  if (scaleMax <= 0 || corpus === 0) return centerX;
   const sign = corpus > 0 ? 1 : -1;
+  // Each side runs from the axis to its own edge padding — equal at a centred
+  // axis, and all of the extra room on the right once the axis shifts left.
+  const span =
+    sign > 0 ? 100 - NAV_PAD_PCT - centerX : centerX - NAV_PAD_PCT;
   let norm = Math.abs(corpus) / scaleMax;
   if (norm > 0 && norm < 0.04) norm = 0.04;
   norm = Math.min(1, norm);
-  return TORNADO_CENTER_X + sign * norm * halfSpan;
+  return centerX + sign * norm * span;
 }
 
 function priorityChipStyle(p: Priority): { bg: string; fg: string; border: string } {
@@ -493,6 +508,7 @@ function AddGoalSheet({
             className="fixed inset-0 z-[60] flex items-center justify-center px-4"
           >
             <div
+              data-tour="goal-form"
               className="w-full max-w-md rounded-2xl bg-card shadow-2xl flex flex-col overflow-hidden"
               style={{ maxHeight: "min(88dvh, 720px)" }}
               onClick={(e) => e.stopPropagation()}
@@ -732,7 +748,7 @@ function AddGoalSheet({
                   </div>
                 )}
 
-                <div>
+                <div data-tour="goal-value-kind">
                   <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">
                     Is this in today&apos;s money or at the target date?
                   </p>
@@ -933,8 +949,12 @@ interface ProjectionContentProps {
   onGoToInputs?: () => void;
   /** The return rate currently driving the goal-planning page's cashflow. */
   appliedRate: number;
-  /** Commit a rate to the plan — only fired by the explicit Apply button. */
-  onApplyRate: (rate: number) => void;
+  /** Applied equity share, or null while the plan runs on the engine's return. */
+  appliedEquityPct: number | null;
+  /** Commit an asset mix to the plan — only fired by the explicit Apply button. */
+  onApplyMix: (equityPct: number) => void;
+  /** Drop the applied mix and go back to the engine's computed plan. */
+  onResetMix: () => void;
 }
 
 type WaterfallItem = { axis: string; label: string; value: number; kind: WaterfallKind };
@@ -973,17 +993,25 @@ function ProjectionContent({
   sipMonthly,
   onGoToInputs,
   appliedRate,
-  onApplyRate,
+  appliedEquityPct,
+  onApplyMix,
+  onResetMix,
 }: ProjectionContentProps) {
   // Moving the slider only previews here — every figure below it recalculates
   // live. The goal-planning page's cashflow changes when, and only when, the
   // user presses Apply, so nobody has their plan rewritten by an exploratory drag.
-  const [draftRate, setDraftRate] = useState(appliedRate);
+  //
+  // The mix is what the user sets; the return is read off it. With no mix applied
+  // yet the slider opens on the split nearest the plan's own return, so the first
+  // drag starts from where the plan already is.
+  const openingMix = appliedEquityPct ?? equityPctForRate(appliedRate);
+  const [draftEquity, setDraftEquity] = useState(openingMix);
   useEffect(() => {
-    setDraftRate(appliedRate);
-  }, [appliedRate]);
+    setDraftEquity(openingMix);
+  }, [openingMix]);
+  const draftRate = rateForEquityPct(draftEquity);
   const band = bandForRate(draftRate);
-  const isDirty = draftRate !== appliedRate;
+  const isDirty = draftEquity !== openingMix;
 
   const currentYear = new Date().getFullYear();
   // Horizon comes from the engine: last FY-end = max(retirement, last goal).
@@ -1079,76 +1107,51 @@ function ProjectionContent({
   return (
     <div className="space-y-4">
       <p className="text-[11px] text-muted-foreground">
-        Through {horizonLabel} · {monthlyLabel} · {formatRate(draftRate)} post-tax
+        Through {horizonLabel} · {monthlyLabel} · {formatMix(draftEquity)} equity-debt ·{" "}
+        {formatRate(draftRate)} post-tax
       </p>
       <div className="space-y-4">
-                {/* Assumed return — everything below recalculates as this moves. */}
-                <div data-tour="assumed-return">
-                  <div className="mb-2 flex items-end justify-between gap-2">
+                {/* Asset mix — the return is derived from the split, and every
+                    figure below recalculates as it moves. */}
+                <div data-tour="asset-mix">
+                  <div className="mb-3 flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                        Assumed return
+                        Equity / debt mix
                       </p>
                       <p className="text-[11px] leading-snug text-muted-foreground/70">
                         {band.blurb}
                       </p>
                     </div>
-                    <div className="shrink-0 text-right">
-                      <p
-                        className="text-[20px] font-bold leading-none tabular-nums"
-                        style={{ color: "#D4A868", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
-                      >
-                        {formatRate(draftRate)}
-                      </p>
-                      <p className="mt-0.5 text-[11px] font-semibold text-foreground">{band.label}</p>
-                    </div>
-                  </div>
-
-                  {/* Track painted by the wrapper; the input supplies only the thumb.
-                      One hue deepening with the rate — the bands are a labelling of
-                      that magnitude, not four unrelated categories. */}
-                  <div className="relative">
-                    <div
-                      className="pointer-events-none absolute inset-x-0 top-1/2 h-2.5 -translate-y-1/2 overflow-hidden rounded-full"
+                    {/* The wheel carries the split and the rate, so the header
+                        only names the band the mix lands in. */}
+                    <span
+                      className="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold"
                       style={{
-                        background:
-                          "linear-gradient(90deg, rgba(212,168,104,0.14) 0%, rgba(212,168,104,0.42) 55%, rgba(212,168,104,0.85) 100%)",
+                        backgroundColor: "rgba(212,168,104,0.16)",
+                        color: "#D4A868",
+                        border: "1px solid rgba(212,168,104,0.45)",
                       }}
                     >
-                      {RETURN_BANDS.slice(1).map((b) => (
-                        <span
-                          key={b.label}
-                          className="absolute top-0 h-full w-px"
-                          style={{ left: `${ratePct(b.from)}%`, backgroundColor: "hsl(var(--card))" }}
-                        />
-                      ))}
-                    </div>
-                    <input
-                      type="range"
-                      className="return-slider relative"
-                      min={RETURN_MIN}
-                      max={RETURN_MAX}
-                      step={RETURN_STEP}
-                      value={draftRate}
-                      onChange={(e) => setDraftRate(Number(e.target.value))}
-                      aria-label="Assumed annual post-tax return"
-                      aria-valuetext={`${formatRate(draftRate)}, ${band.label}`}
-                    />
+                      {band.label}
+                    </span>
                   </div>
 
-                  <div className="flex justify-between text-[9.5px] text-muted-foreground/70">
-                    {RETURN_BANDS.map((b) => (
-                      <span key={b.label} className="tabular-nums">
-                        {b.label} {b.from}–{b.to}%
-                      </span>
-                    ))}
-                  </div>
+                  {/* The wheel IS the control — press or drag the ring to re-split. */}
+                  <AssetMixDial
+                    equityPct={draftEquity}
+                    step={EQUITY_STEP}
+                    onChange={setDraftEquity}
+                    centerLabel={`${formatRate(draftRate)} p.a.`}
+                    equityNote={`assumes ${formatRate(EQUITY_RETURN)} p.a.`}
+                    debtNote={`assumes ${formatRate(DEBT_RETURN)} p.a.`}
+                  />
 
                   {/* Preview stays in this panel until applied. */}
                   <button
                     type="button"
                     disabled={!isDirty}
-                    onClick={() => onApplyRate(draftRate)}
+                    onClick={() => onApplyMix(draftEquity)}
                     className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-xl py-2.5 text-[12px] font-bold transition-all active:scale-[0.99] disabled:cursor-not-allowed"
                     style={
                       isDirty
@@ -1166,19 +1169,31 @@ function ProjectionContent({
                     {isDirty ? (
                       <>
                         <Check className="h-3.5 w-3.5" />
-                        Apply {formatRate(draftRate)} to my plan
+                        Apply {formatMix(draftEquity)} ({formatRate(draftRate)}) to my plan
                       </>
+                    ) : appliedEquityPct != null ? (
+                      `${formatMix(appliedEquityPct)} (${formatRate(appliedRate)}) is applied to your plan`
                     ) : (
                       `${formatRate(appliedRate)} is applied to your plan`
                     )}
                   </button>
 
+                  {appliedEquityPct != null && (
+                    <button
+                      type="button"
+                      onClick={onResetMix}
+                      className="mt-1.5 w-full rounded-xl border border-border py-2 text-[11px] font-semibold text-muted-foreground hover:text-foreground"
+                    >
+                      Back to the engine&apos;s plan ({formatRate(PROJECTION_BASE_RATE)})
+                    </button>
+                  )}
+
                   <p className="mt-1.5 text-[10.5px] leading-snug text-muted-foreground/70">
                     {isDirty
-                      ? "The figures below are already on this rate. The goal-planning page keeps your applied rate until you press Apply."
-                      : appliedRate === PROJECTION_BASE_RATE
-                        ? "Your plan as the engine computed it. Drag to see another return, then apply it."
-                        : "The goal-planning page is running on this rate. Contributions, one-offs and goal payouts are unchanged — only returns move."}
+                      ? `The figures below are already on a ${formatMix(draftEquity)} mix. The goal-planning page keeps your applied mix until you press Apply.`
+                      : appliedEquityPct == null
+                        ? `Your plan as the engine computed it, at ${formatRate(appliedRate)} — roughly a ${formatMix(openingMix)} mix. Drag to test another split, then apply it.`
+                        : "The goal-planning page is running on this mix. Contributions, one-offs and goal payouts are unchanged — only the return the corpus earns moves."}
                   </p>
                 </div>
 
@@ -1399,6 +1414,11 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
 
   const closeTour = useCallback(() => {
     setTourOpen(false);
+    // Steps 1-2 open the goal form to explain it; leaving the tour at any point
+    // should put the page back the way it was found.
+    setAddYear(null);
+    setEditGoal(null);
+    setPanelOpen(false);
     try {
       localStorage.setItem(GOAL_TOUR_SEEN_KEY, "1");
     } catch {
@@ -1408,33 +1428,66 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
 
   /* Steps 3 and 4 live inside the plan panel, so each opens the panel on the
      right tab before the tour measures its target. */
+  /* Step-by-step walkthrough of everything that drives a plan, in the order a
+     first-timer meets it: add a goal, tell us the inputs, set the mix, then the
+     two levers (SIP, priority) that change what the projection says. */
   const tourSteps = useMemo<TourStep[]>(
     () => [
       {
-        anchor: "add-goal",
+        anchor: "goal-form",
         title: "Add a goal",
-        body: "Tap + to add one — name it, set the year, and enter the amount. You'll pick whether that amount is today's value (what it costs now, which Prozpr inflates to the target year) or future value (what you'll actually need by then, used as-is). Drag the goal later to move its year.",
-        before: () => setPanelOpen(false),
+        body: "The + button opens this form. Pick a category, name the goal, set its target year and enter what it costs \u2014 you can drag it up or down the timeline later to move the year.",
+        // Opens the goal form so steps 1 and 2 explain it in place.
+        before: () => {
+          setPanelOpen(false);
+          setEditGoal(null);
+          setAddYear(new Date().getFullYear() + 5);
+        },
+      },
+      {
+        anchor: "goal-value-kind",
+        title: "Today's value vs future value",
+        body: "Today's value = what it costs at today's prices, and Prozpr inflates it to the target year for you. Future value = the amount you'll actually need by then, used exactly as entered.",
+        // Opens the goal form so the choice is spotlighted where it's made.
+        before: () => {
+          setPanelOpen(false);
+          setEditGoal(null);
+          setAddYear(new Date().getFullYear() + 5);
+        },
+      },
+      {
+        anchor: "chart-legend",
+        title: "Reading the chart",
+        body: "Each bar is your portfolio at the end of that year: green to the right is positive, red to the left means goals have outpaced your savings. The first few years show one bar each; after that it's every third year, plus any year holding a goal.",
+        before: () => {
+          setAddYear(null);
+          setEditGoal(null);
+          setPanelOpen(false);
+        },
       },
       {
         anchor: "plan-button",
         title: "Open your plan",
-        body: "Plan holds the two halves of the projection: Inputs (income, expenses, savings) and the Projection those produce.",
-        before: () => setPanelOpen(false),
+        body: "Plan holds the two tabs behind every figure on this page: Inputs and Projection.",
+        before: () => {
+          setAddYear(null);
+          setEditGoal(null);
+          setPanelOpen(false);
+        },
       },
       {
         anchor: "plan-inputs",
-        title: "Your inputs",
-        body: "What you earn, spend and save each month. Nothing projects until these are filled in — every figure on the page is built from them.",
+        title: "Inputs",
+        body: "What you earn, spend and save each month. Nothing projects until these are filled in.",
         before: () => {
           setPanelTab("inputs");
           setPanelOpen(true);
         },
       },
       {
-        anchor: "assumed-return",
-        title: "Assumed return",
-        body: "Drag to test a different post-tax return. Every figure below it recalculates as a preview — it only changes your plan once you apply it.",
+        anchor: "asset-mix",
+        title: "Projection",
+        body: `Drag the wheel to split equity and debt — the return follows from it. All debt is ${formatRate(DEBT_RETURN)} a year, all equity ${formatRate(EQUITY_RETURN)}, 80/20 lands on ${formatRate(rateForEquityPct(80))}. Figures preview as you drag; Apply commits it.`,
         before: () => {
           setPanelTab("projection");
           setPanelOpen(true);
@@ -1442,14 +1495,14 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
       },
       {
         anchor: "monthly-sip",
-        title: "Edit your monthly SIP",
-        body: "Type a different monthly amount to see it play out on the timeline straight away. Apply to plan makes it real; the reset arrow puts it back to your plan's SIP.",
+        title: "Monthly SIP",
+        body: "Type a different monthly amount to see it on the timeline straight away. Apply to plan makes it real; the reset arrow restores your plan's SIP.",
         before: () => setPanelOpen(false),
       },
       {
         anchor: "priority-filter",
-        title: "Goal priority",
-        body: "Toggle High, Medium and Low to drop goals in and out of the projection — a quick way to see what's affordable if the lower-priority ones wait.",
+        title: "Priority",
+        body: "Toggle High, Medium and Low to drop goals in and out of the projection — a quick read on what's affordable if the rest wait.",
         before: () => setPanelOpen(false),
       },
     ],
@@ -1470,19 +1523,30 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   // panel because it drives this page's cashflow; the panel only previews a draft
   // until the user presses Apply. Saved so the choice survives a reload — someone
   // who applied 4% should not silently be back on the engine's 9%.
-  const [appliedRate, setAppliedRate] = useState(readSavedRate);
+  // The scenario is an equity/debt split, not a bare return: the user sets the
+  // mix and the assumed post-tax return is read off it. Null = no mix applied,
+  // so the plan is still exactly what the engine computed.
+  const [appliedEquityPct, setAppliedEquityPct] = useState<number | null>(readSavedMix);
+  const appliedRate =
+    appliedEquityPct == null ? PROJECTION_BASE_RATE : rateForEquityPct(appliedEquityPct);
   const band = bandForRate(appliedRate);
-  const isBaseRate = appliedRate === PROJECTION_BASE_RATE;
+  const isBaseRate = appliedEquityPct == null;
 
-  const applyRate = useCallback((rate: number) => {
-    const next = clampRate(rate);
-    setAppliedRate(next);
-    writeSavedRate(next);
-    toast.success(`${formatRate(next)} applied`, {
-      description:
-        next === PROJECTION_BASE_RATE
-          ? "Your goal plan is back on the engine's computed returns."
-          : `Your goal plan now runs on ${formatRate(next)} post-tax returns (${bandForRate(next).label.toLowerCase()}).`,
+  const applyMix = useCallback((equityPct: number) => {
+    const next = Math.min(100, Math.max(0, Math.round(equityPct / EQUITY_STEP) * EQUITY_STEP));
+    const rate = rateForEquityPct(next);
+    setAppliedEquityPct(next);
+    writeSavedMix(next);
+    toast.success(`${formatMix(next)} equity-debt applied`, {
+      description: `Your goal plan now runs on ${formatRate(rate)} post-tax returns (${bandForRate(rate).label.toLowerCase()}) — the blended return of a ${next}% equity, ${100 - next}% debt portfolio.`,
+    });
+  }, []);
+
+  const resetMix = useCallback(() => {
+    setAppliedEquityPct(null);
+    clearSavedMix();
+    toast.success("Back to the engine's plan", {
+      description: "Your goal plan is back on the engine's computed returns.",
     });
   }, []);
 
@@ -1908,14 +1972,20 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
     capYear,
     Math.max(baseEndYear, revealEndYear ?? baseEndYear),
   );
-  const years = useMemo(
-    () =>
-      Array.from(
-        { length: Math.max(1, displayEndYear - currentYear + 1) },
-        (_, i) => currentYear + i,
-      ),
-    [currentYear, displayEndYear],
-  );
+  const years = useMemo(() => {
+    const span = Math.max(1, displayEndYear - currentYear + 1);
+    const out: number[] = [];
+    for (let i = 0; i < span; i += 1) {
+      const y = currentYear + i;
+      const keep =
+        i < DENSE_ROW_YEARS ||
+        (i - DENSE_ROW_YEARS) % YEAR_ROW_STEP === 0 ||
+        y === displayEndYear ||
+        goalsByYear.has(y);
+      if (keep) out.push(y);
+    }
+    return out;
+  }, [currentYear, displayEndYear, goalsByYear]);
 
   // Kept fresh for the drag handlers so they never read stale values.
   const capYearRef = useRef(capYear);
@@ -2017,11 +2087,22 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
     [tornadoAbsValues],
   );
 
-  const tornadoHalfSpan = TORNADO_CENTER_X - NAV_PAD_PCT;
+  /** Any year underwater? Only then does the axis need a left half. */
+  const tornadoHasNegative = useMemo(
+    () =>
+      tornadoCorpusByYear
+        ? [...tornadoCorpusByYear.values()].some((r) => r.corpusClosing < 0)
+        : false,
+    [tornadoCorpusByYear],
+  );
+
+  const tornadoCenterX = tornadoHasNegative
+    ? TORNADO_CENTER_X
+    : TORNADO_CENTER_X_POSITIVE;
 
   const corpusToTornadoXCb = useCallback(
-    (corpus: number) => corpusToTornadoX(corpus, tornadoBarScale, tornadoHalfSpan),
-    [tornadoBarScale, tornadoHalfSpan],
+    (corpus: number) => corpusToTornadoX(corpus, tornadoBarScale, tornadoCenterX),
+    [tornadoBarScale, tornadoCenterX],
   );
 
   const peakAnchor = useMemo(
@@ -2306,31 +2387,43 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
         {/* Applied return scenario. Read-only on purpose: the plan changes only
             via Apply in the Projection panel, never by a stray tap out here. */}
         {tornadoCorpusByYear && !isBaseRate && (
-          <div className="flex items-start gap-2 px-1">
-            <span
-              className="mt-[1px] inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold tabular-nums"
-              style={{
-                backgroundColor: "rgba(212,168,104,0.16)",
-                color: "#D4A868",
-                border: "1px solid rgba(212,168,104,0.45)",
-              }}
-            >
-              {formatRate(appliedRate)} · {band.label}
-            </span>
-            <p className="text-[10.5px] leading-snug text-muted-foreground/70">
-              Showing an applied {formatRate(appliedRate)} return, not the engine's computed plan.
-              Contributions, one-offs and goal payouts are unchanged — only returns move.{" "}
-              <button
-                type="button"
-                onClick={() => {
-                  setPanelTab("projection");
-                  setPanelOpen(true);
+          <div
+            className="mx-1 rounded-xl px-3 py-2.5"
+            style={{
+              backgroundColor: "rgba(212,168,104,0.08)",
+              border: "1px solid rgba(212,168,104,0.35)",
+            }}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span
+                className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold tabular-nums"
+                style={{
+                  backgroundColor: "rgba(212,168,104,0.18)",
+                  color: "#D4A868",
+                  border: "1px solid rgba(212,168,104,0.45)",
                 }}
-                className="font-semibold text-[#D4A868] underline underline-offset-2"
               >
-                Change or reset
-              </button>
+                {formatMix(appliedEquityPct ?? 0)} · {formatRate(appliedRate)}
+              </span>
+              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-[#D4A868]/80">
+                {band.label}
+              </span>
+            </div>
+            <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+              Your own {appliedEquityPct}% equity / {100 - (appliedEquityPct ?? 0)}% debt mix, not
+              the engine&apos;s computed plan. Only returns move — contributions, one-offs and goal
+              payouts are unchanged.
             </p>
+            <button
+              type="button"
+              onClick={() => {
+                setPanelTab("projection");
+                setPanelOpen(true);
+              }}
+              className="mt-2 text-[11px] font-semibold text-[#D4A868] underline underline-offset-2"
+            >
+              Change or reset
+            </button>
           </div>
         )}
 
@@ -2340,20 +2433,30 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
           </p>
         )}
 
-        {/* Chart axis legend — explains what the bars mean */}
-        {isTornado && (
-          <div className="flex items-center justify-between px-1 pt-2 pb-1 text-[11px] text-muted-foreground">
-            <div className="flex items-center gap-1.5">
-              <span className="inline-block h-2 w-3 rounded-sm" style={{ backgroundColor: "rgb(239,68,68)" }} />
-              <span>Negative</span>
+        {/* Column header + chart axis legend. The left slot mirrors the row's
+            age column (px-2 + w-[48px] + gap-3) so "Age" sits directly above the
+            ages and the Negative swatch starts clear of that column. */}
+        <div
+          data-tour="chart-legend"
+          className="flex items-center gap-3 px-2 pt-2 pb-1 text-[11px] text-muted-foreground"
+        >
+          <span className="w-[48px] shrink-0 font-semibold tracking-wide text-foreground/80">
+            {birthYear != null ? "Age" : "Year"}
+          </span>
+          {isTornado && (
+            <div className="flex min-w-0 flex-1 items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <span className="inline-block h-2 w-3 rounded-sm" style={{ backgroundColor: "rgb(239,68,68)" }} />
+                <span>Negative</span>
+              </div>
+              <span className="font-semibold tracking-wide text-foreground/80">Portfolio Value</span>
+              <div className="flex items-center gap-1.5">
+                <span>Positive</span>
+                <span className="inline-block h-2 w-3 rounded-sm" style={{ backgroundColor: "rgb(16,185,129)" }} />
+              </div>
             </div>
-            <span className="font-semibold tracking-wide text-foreground/80">Portfolio Value</span>
-            <div className="flex items-center gap-1.5">
-              <span>Positive</span>
-              <span className="inline-block h-2 w-3 rounded-sm" style={{ backgroundColor: "rgb(16,185,129)" }} />
-            </div>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Integrated vertical NAV chart + goal timeline */}
         <ul className="space-y-0">
@@ -2388,11 +2491,16 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
               tornadoBarScale > 0
                 ? Math.min(1, Math.abs(corpusClosing) / tornadoBarScale)
                 : 0;
-            const tornadoX1 = Math.min(TORNADO_CENTER_X, tipX);
-            const tornadoX2 = Math.max(TORNADO_CENTER_X, tipX);
+            const tornadoX1 = Math.min(tornadoCenterX, tipX);
+            const tornadoX2 = Math.max(tornadoCenterX, tipX);
             const tornadoBaseHue = tornadoIsPositive ? "16, 185, 129" : "239, 68, 68";
             const tornadoDeepHue = tornadoIsPositive ? "5, 95, 70" : "136, 19, 55";
-            const tornadoFillOpacity = 0.35 + tornadoNorm * 0.65;
+            // Positive bars stay solid — a near-transparent green reads as washed out
+    // against the page rather than as a small number. Negatives keep the wider
+    // fade, where the lighter end is doing the work.
+    const tornadoFillOpacity = tornadoIsPositive
+      ? 0.85 + tornadoNorm * 0.15
+      : 0.35 + tornadoNorm * 0.65;
 
             const xBottom = isTornado ? tipX : xBottomLine;
 
@@ -2526,7 +2634,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                             <stop
                               offset="0%"
                               stopColor={`rgb(${tornadoIsPositive ? tornadoBaseHue : tornadoDeepHue})`}
-                              stopOpacity={tornadoIsPositive ? 0.3 : 1}
+                              stopOpacity={tornadoIsPositive ? 0.8 : 1}
                             />
                             <stop
                               offset="100%"
@@ -2538,9 +2646,9 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
 
                         {/* Zero axis — corpus_closing bars extend left (negative) or right (positive). */}
                         <line
-                          x1={TORNADO_CENTER_X}
+                          x1={tornadoCenterX}
                           y1={isFirst ? 50 : 0}
-                          x2={TORNADO_CENTER_X}
+                          x2={tornadoCenterX}
                           y2={isLast ? 50 : 100}
                           stroke="hsl(var(--foreground))"
                           strokeOpacity={0.35}
@@ -2551,36 +2659,25 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                         {hasTornadoBar && tornadoX2 > tornadoX1 && (
                           <rect
                             x={tornadoX1}
-                            y={17.5}
+                            y={isHovered ? 8 : 17.5}
                             width={Math.max(0, tornadoX2 - tornadoX1)}
-                            height={65}
+                            height={isHovered ? 84 : 65}
                             fill={`url(#tornadoBar-${y})`}
                             fillOpacity={tornadoFillOpacity}
+                            style={{ transition: "y 120ms ease-out, height 120ms ease-out" }}
                           />
                         )}
 
-                        {hasGoals && hasTornadoBar && (
+                        {/* Years with no bar still need a mark on the axis; a year
+                            that has one is read by its tip, so nothing sits there. */}
+                        {!hasTornadoBar && (
                           <circle
-                            cx={tipX}
+                            cx={tornadoCenterX}
                             cy={50}
-                            r={5}
-                            fill="none"
-                            stroke="hsl(var(--muted-foreground))"
-                            strokeOpacity={0.35}
-                            strokeWidth={1}
-                            vectorEffect="non-scaling-stroke"
+                            r={isHovered ? 4 : hasGoals ? 3 : 2}
+                            fill={nodeColor}
                           />
                         )}
-
-                        <circle
-                          cx={hasTornadoBar ? tipX : TORNADO_CENTER_X}
-                          cy={50}
-                          r={isHovered ? 4 : hasGoals ? 3 : 2}
-                          fill={nodeColor}
-                          stroke="hsl(var(--background))"
-                          strokeWidth={1.5}
-                          vectorEffect="non-scaling-stroke"
-                        />
                       </>
                     )}
                   </svg>
@@ -2662,7 +2759,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                           : "text-muted-foreground/50"
                       }`}
                     >
-                      {ageAtYear != null && ageAtYear >= 0 ? `${ageAtYear} yrs` : y}
+                      {ageAtYear != null && ageAtYear >= 0 ? ageAtYear : y}
                     </span>
                   </div>
 
@@ -3000,7 +3097,9 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                     sipMonthly={planSip}
                     onGoToInputs={() => setPanelTab("inputs")}
                     appliedRate={appliedRate}
-                    onApplyRate={applyRate}
+                    appliedEquityPct={appliedEquityPct}
+                    onApplyMix={applyMix}
+                    onResetMix={resetMix}
                   />
                 ) : (
                   <div data-tour="plan-inputs">
@@ -3065,7 +3164,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
           (prompt CTA, ?inputs=1 auto-open) lands on the side panel's Inputs tab.
           Remounts via gateRefresh after a save so its readiness stays fresh. */}
       {/* First-run walkthrough — spotlights the timeline, +, Plan and the
-          assumed-return slider, opening the panel where a step needs it. */}
+          asset-mix slider, opening the panel where a step needs it. */}
       <GuidedTour steps={tourSteps} open={tourOpen} onClose={closeTour} />
 
       <CashflowGate

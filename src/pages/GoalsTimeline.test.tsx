@@ -28,12 +28,16 @@ vi.mock("sonner", () => ({
 
 import GoalsTimeline from "./GoalsTimeline";
 
-const renderPage = () =>
-  render(
+// The first-run tour opens the goal form on its first step; these tests are
+// about the year bars, so start from a browser that has already seen it.
+const renderPage = () => {
+  localStorage.setItem("goalPlanningTourSeen", "1");
+  return render(
     <MemoryRouter initialEntries={["/goal-planner"]}>
       <GoalsTimeline variant="tornado" />
     </MemoryRouter>,
   );
+};
 
 describe("GoalsTimeline — year bars (mobile readout, not add-goal)", () => {
   it("year bars are labelled to reveal the projected corpus, not to add a goal", async () => {

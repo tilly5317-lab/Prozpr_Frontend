@@ -47,6 +47,90 @@ export function clampRate(rate: number): number {
   return Math.min(RETURN_MAX, Math.max(RETURN_MIN, rate));
 }
 
+/* ── Asset mix ────────────────────────────────────────────────────────────
+ *
+ * The return is no longer dialled in directly. The user sets an equity/debt
+ * split and the assumed post-tax return follows from it, so a scenario is
+ * always a portfolio someone could actually hold rather than a bare number.
+ *
+ * The blend is linear between the two sleeve assumptions below: 80/20 lands on
+ * 17%, 60/40 on 14%, all-debt on 5%, all-equity on 20%.
+ */
+
+/** Assumed post-tax return of an all-equity sleeve. */
+export const EQUITY_RETURN = 20;
+/** Assumed post-tax return of an all-debt sleeve. */
+export const DEBT_RETURN = 5;
+/** Split granularity — 5-point steps keep the mix aimable on a phone. */
+export const EQUITY_STEP = 5;
+
+/** The blended post-tax return for an equity share of `pct` (0-100). */
+export function rateForEquityPct(pct: number): number {
+  const e = Math.min(100, Math.max(0, Number.isFinite(pct) ? pct : 0));
+  const blended = (e * EQUITY_RETURN + (100 - e) * DEBT_RETURN) / 100;
+  // Two decimals is well inside the step grid and keeps 80/20 at exactly 17.
+  return Math.round(blended * 100) / 100;
+}
+
+/** The nearest mix on the step grid that produces `rate`. Inverse of the above. */
+export function equityPctForRate(rate: number): number {
+  const raw = ((clampRate(rate) - DEBT_RETURN) / (EQUITY_RETURN - DEBT_RETURN)) * 100;
+  const snapped = Math.round(raw / EQUITY_STEP) * EQUITY_STEP;
+  return Math.min(100, Math.max(0, snapped));
+}
+
+/** "80 / 20" — equity first, the way a mix is normally quoted. */
+export function formatMix(pct: number): string {
+  return `${Math.round(pct)} / ${100 - Math.round(pct)}`;
+}
+
+const SAVED_MIX_KEY = "goals-projection-equity-pct";
+
+/**
+ * The applied mix from a previous visit, or null when the plan is still running
+ * on the engine's own computed return.
+ *
+ * Falls back to the mix nearest a rate saved under the old dial-a-return setup,
+ * so an existing scenario survives the switch instead of silently resetting.
+ */
+export function readSavedMix(): number | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const stored = window.localStorage.getItem(SAVED_MIX_KEY);
+    if (stored !== null) {
+      const n = Number(stored);
+      if (Number.isFinite(n) && n >= 0 && n <= 100) {
+        return Math.min(100, Math.max(0, Math.round(n / EQUITY_STEP) * EQUITY_STEP));
+      }
+      return null;
+    }
+    const legacyRate = readSavedRate();
+    return legacyRate === PROJECTION_BASE_RATE ? null : equityPctForRate(legacyRate);
+  } catch {
+    return null;
+  }
+}
+
+export function writeSavedMix(pct: number): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(SAVED_MIX_KEY, String(pct));
+  } catch {
+    /* private mode / quota — the choice just won't survive the reload */
+  }
+}
+
+/** Drop the applied mix, returning the plan to the engine's computed return. */
+export function clearSavedMix(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(SAVED_MIX_KEY);
+    window.localStorage.removeItem(SAVED_RATE_KEY);
+  } catch {
+    /* nothing to do — the stale choice just outlives the reset */
+  }
+}
+
 /** Where a rate sits along the track, 0-100, for painting fills and ticks. */
 export function ratePct(rate: number): number {
   return ((clampRate(rate) - RETURN_MIN) / (RETURN_MAX - RETURN_MIN)) * 100;
