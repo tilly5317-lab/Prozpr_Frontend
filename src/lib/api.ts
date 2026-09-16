@@ -89,8 +89,6 @@ const ONBOARDING_SESSION_FLAGS = [
   "onboardingComplete",
   "camsStatementImported",
   "camsUploadPromptShown",
-  "completedLinkAccounts",
-  "completedTellUs",
 ] as const;
 
 function clearOnboardingSessionFlags() {
@@ -282,11 +280,36 @@ export interface UserInfo {
   first_name: string | null;
   last_name: string | null;
   is_onboarding_complete: boolean;
+  /**
+   * The user chose "I'll do this later" on the onboarding CAMS step. Onboarding
+   * no longer resumes onto that step; every in-app upload entry point stays.
+   * Cleared by the backend as soon as a statement is imported.
+   */
+  cams_skipped?: boolean;
+  /**
+   * PAN as `ABCDE****F`, or null when none is on file. The full value never
+   * reaches this client — there is no reveal endpoint. Nothing in the app needs
+   * the whole thing, and `/auth/me` ends up in devtools and error reports.
+   */
+  pan_masked?: string | null;
+  /** Whether a PAN exists at all — tells "not set" apart from "set but hidden". */
+  pan_set?: boolean;
+  /** Field parked awaiting a step-up code, so the UI can show the pending
+      change instead of silently dropping it. */
+  pending_change_field?: string | null;
+  /** Whether a profile picture exists. The URL is fetched separately — see
+      `getAvatarUrl`. */
+  avatar_set?: boolean;
 }
 
 export interface UserUpdatePayload {
   first_name?: string;
   last_name?: string;
+  /**
+   * Only accepted while the account has NO email yet (the signup setup page).
+   * Replacing an existing address 403s — it goes through
+   * `requestSensitiveChange("email", ...)` instead.
+   */
   email?: string;
 }
 
@@ -314,6 +337,13 @@ export async function login(p: LoginPayload): Promise<{ user_id: string; access_
 export interface MobileStatus {
   exists: boolean;
   is_onboarding_complete: boolean;
+  /**
+   * Masked address on the account (`j••••••n@gmail.com`), or null when the
+   * number is unknown or has no email on file. Lets the forgot-PIN screen name
+   * the inbox before sending anything. Masked by the backend — the app never
+   * receives the address in full.
+   */
+  email_hint: string | null;
 }
 
 export async function checkMobileStatus(p: {
@@ -339,6 +369,59 @@ export async function updateMe(p: UserUpdatePayload): Promise<UserInfo> {
     method: "PUT",
     body: JSON.stringify(p),
   });
+}
+
+/**
+ * Change the signed-in user's 4-digit sign-in PIN.
+ *
+ * `current_pin` is required whenever the account already has one — the session
+ * alone is not enough to replace the credential it was issued against. Needs no
+ * email or SMS: the user proves themselves with the PIN they already know.
+ * (A "forgot PIN" reset is a different problem and does need a delivery channel.)
+ */
+export async function changePin(p: {
+  current_pin?: string;
+  new_pin: string;
+}): Promise<void> {
+  await request<void>("/auth/me/pin", {
+    method: "PUT",
+    body: JSON.stringify(p),
+  });
+}
+
+export interface PinResetRequestResult {
+  message: string;
+  /** Masked address the code went to (`j••n@gmail.com`), or null if nothing
+      was sent — the backend answers identically either way so the response
+      can't be used to discover which numbers are registered. */
+  email_hint: string | null;
+  expires_in_minutes: number;
+}
+
+/** Start a forgot-PIN reset: emails a 6-digit code to the address on file. */
+export async function requestPinReset(p: {
+  country_code: string;
+  mobile: string;
+}): Promise<PinResetRequestResult> {
+  return request<PinResetRequestResult>(
+    "/auth/pin-reset/request",
+    { method: "POST", body: JSON.stringify(p) },
+    false,
+  );
+}
+
+/** Finish a forgot-PIN reset: exchange the emailed code for a new PIN. */
+export async function confirmPinReset(p: {
+  country_code: string;
+  mobile: string;
+  code: string;
+  new_pin: string;
+}): Promise<void> {
+  await request<void>(
+    "/auth/pin-reset/confirm",
+    { method: "POST", body: JSON.stringify(p) },
+    false,
+  );
 }
 
 // ── Onboarding API ──────────────────────────────────────
@@ -430,6 +513,27 @@ export async function completeOnboarding() {
   });
 }
 
+export interface CamsSkipStatus {
+  cams_skipped: boolean;
+  skipped_at: string | null;
+}
+
+/**
+ * Record (or clear) the "I'll do this later" choice on the onboarding CAMS step.
+ *
+ * Durable on the backend, so a reload — or another device — doesn't drop the
+ * user back onto /cams-upload. The cached `/auth/me` payload carries
+ * `cams_skipped`, so it is invalidated here.
+ */
+export async function setCamsSkipped(skipped = true): Promise<CamsSkipStatus> {
+  const res = await request<CamsSkipStatus>("/onboarding/cams-skip", {
+    method: "POST",
+    body: JSON.stringify({ skipped }),
+  });
+  invalidateUserContextCache();
+  return res;
+}
+
 /** Maps About You investment-preference letters (A–E) to backend risk_level 0–4. */
 export const ONBOARDING_RISK_LETTER_TO_LEVEL: Record<string, number> = {
   A: 0,
@@ -500,7 +604,6 @@ export async function markOnboardingComplete(): Promise<void> {
   await completeOnboarding();
   try {
     sessionStorage.setItem("onboardingComplete", "true");
-    sessionStorage.setItem("completedTellUs", "true");
   } catch {
     // Ignore private browsing / quota errors.
   }
@@ -840,6 +943,17 @@ export interface ChatSendResponse {
   /** Present when chat persisted an ideal allocation — use for CTA to `/invest/rebalance-explanation`. */
   ideal_allocation_rebalancing_id?: string | null;
   ideal_allocation_snapshot_id?: string | null;
+  /**
+   * The question needed the user's holdings and none are imported yet. Pi's
+   * reply says so; the client pairs it with an "Add CAMS statement" CTA.
+   */
+  portfolio_data_missing?: boolean;
+  /**
+   * The session's title after this turn. Only changes on the first turn, when
+   * the backend's auto-titler replaces the "New Chat" placeholder with a name
+   * derived from what the user actually asked.
+   */
+  session_title?: string | null;
 }
 
 export interface ChatSessionDetail extends ChatSessionInfo {
@@ -871,6 +985,69 @@ export async function sendChatMessage(
     true,
     CHAT_REQUEST_TIMEOUT_MS
   );
+}
+
+/**
+ * Streaming twin of `sendChatMessage`. Calls the SSE endpoint and invokes
+ * `onDelta` with each incremental slice of the answer as it is generated.
+ *
+ * The resolved value comes from the terminal `done` event and IS AUTHORITATIVE:
+ * the backend may discard a truncated answer in favour of a fallback, so the
+ * caller must render the resolved content rather than keep what it painted from
+ * deltas.
+ */
+export async function sendChatMessageStreaming(
+  sessionId: string,
+  content: string,
+  clientContext: Record<string, unknown> | undefined,
+  onDelta: (text: string) => void
+): Promise<ChatSendResponse> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const token = getToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const familyMemberId = getActiveFamilyMemberId();
+  if (familyMemberId) headers["X-Family-Member-Id"] = familyMemberId;
+
+  const res = await fetch(`${API}/chat/sessions/${sessionId}/messages/stream`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ content, client_context: clientContext ?? null }),
+  });
+  if (!res.ok || !res.body) {
+    throw new Error(`Request failed: ${res.status}`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let result: ChatSendResponse | null = null;
+  let failure: string | null = null;
+
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    // SSE frames are separated by a blank line; keep the trailing partial.
+    const frames = buffer.split("\n\n");
+    buffer = frames.pop() ?? "";
+    for (const frame of frames) {
+      let event: string | null = null;
+      let data: string | null = null;
+      for (const line of frame.split("\n")) {
+        if (line.startsWith("event: ")) event = line.slice(7);
+        else if (line.startsWith("data: ")) data = line.slice(6);
+      }
+      if (!data) continue;
+      const parsed = JSON.parse(data);
+      if (event === "delta") onDelta(parsed.text as string);
+      else if (event === "done") result = parsed as ChatSendResponse;
+      else if (event === "error") failure = String(parsed.detail ?? "stream error");
+    }
+  }
+
+  if (failure) throw new Error(failure);
+  if (!result) throw new Error("Stream ended without a result");
+  return result;
 }
 
 export async function listChatSessions(): Promise<ChatSessionInfo[]> {
@@ -2892,4 +3069,201 @@ export async function createTeamCall(startIso: string, agenda: string): Promise<
 /** Cancel a previously booked team call. 404/already-gone is treated as success server-side. */
 export async function cancelTeamCall(meetingId: number): Promise<void> {
   await request<void>(`/team-call/${meetingId}`, { method: "DELETE" });
+}
+
+// ── Sensitive edits (step-up verification) ───────────────
+
+/** Fields that cannot be changed on a session alone. */
+export type SensitiveField = "email" | "pan" | "mobile";
+
+export interface SensitiveChangeResult {
+  field: SensitiveField;
+  /**
+   * False when the backend applied the change immediately — the first PAN on an
+   * account (nothing to verify against), or an account on a bypass domain. The
+   * UI must not show a code screen in that case.
+   */
+  verification_required: boolean;
+  message: string;
+  /** Masked inbox the code went to (`j••n@gmail.com`) — always the address
+      ALREADY on file, never the proposed new one. */
+  email_hint: string | null;
+  expires_in_minutes: number | null;
+}
+
+/**
+ * Start a change to the email or PAN.
+ *
+ * The new value is parked on the backend, not applied. Nothing changes until
+ * `confirmSensitiveChange` is called with the code sent to the address already
+ * on the account.
+ */
+export async function requestSensitiveChange(
+  field: SensitiveField,
+  newValue: string,
+  /** Only read for `mobile`; the backend folds it into the parked value. */
+  countryCode?: string,
+): Promise<SensitiveChangeResult> {
+  const res = await request<SensitiveChangeResult>("/auth/me/sensitive/request", {
+    method: "POST",
+    body: JSON.stringify({ field, new_value: newValue, country_code: countryCode }),
+  });
+  // A straight-through apply (first PAN, bypass domain) has already changed the
+  // user, so the cached /auth/me is stale the moment this returns.
+  if (!res.verification_required) invalidateUserContextCache();
+  return res;
+}
+
+/**
+ * Finish the change. Carries only the code — the pending value lives on the
+ * backend, so an intercepted call can't redirect the change somewhere else.
+ */
+export async function confirmSensitiveChange(code: string): Promise<UserInfo> {
+  const me = await request<UserInfo>("/auth/me/sensitive/confirm", {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+  invalidateUserContextCache();
+  return me;
+}
+
+// ── DPDP privacy rights ─────────────────────────────────
+
+export type ConsentPurpose =
+  | "account_and_advisory"
+  | "cas_ingestion"
+  | "llm_processing"
+  | "analytics"
+  | "marketing_comms";
+
+export interface PurposeNotice {
+  purpose: ConsentPurpose;
+  title: string;
+  detail: string;
+  /** Necessary purposes cannot be declined while the account exists. */
+  necessary: boolean;
+  /** Null means never asked — which is NOT consent. */
+  granted: boolean | null;
+  recorded_at: string | null;
+  policy_version: string | null;
+}
+
+export interface ConsentState {
+  policy_version: string;
+  purposes: PurposeNotice[];
+}
+
+export async function getConsentState(): Promise<ConsentState> {
+  return request<ConsentState>("/privacy/consent");
+}
+
+/** Withdrawal is this same call with `granted: false` — the Act requires it to
+    be as easy as granting, so there is no separate withdraw endpoint. */
+export async function updateConsent(
+  consents: { purpose: ConsentPurpose; granted: boolean }[],
+): Promise<ConsentState> {
+  return request<ConsentState>("/privacy/consent", {
+    method: "POST",
+    body: JSON.stringify({ consents }),
+  });
+}
+
+export interface DataExport {
+  generated_at: string;
+  policy_version: string;
+  about: string;
+  purposes: Record<string, unknown>;
+  recipients: { name: string; purpose: string }[];
+  statement_archive: Record<string, unknown>[];
+  truncated_tables: string[];
+  row_cap_per_table: number;
+  tables: Record<string, unknown>;
+}
+
+export async function exportMyData(): Promise<DataExport> {
+  return request<DataExport>("/privacy/export");
+}
+
+export type GrievanceCategory =
+  | "access"
+  | "correction"
+  | "erasure"
+  | "consent"
+  | "general";
+
+export async function raiseGrievance(
+  category: GrievanceCategory,
+  message: string,
+): Promise<{ id: string; category: string; status: string; created_at: string }> {
+  return request("/privacy/grievance", {
+    method: "POST",
+    body: JSON.stringify({ category, message }),
+  });
+}
+
+export interface ErasureResult {
+  deleted_at: string;
+  purge_scheduled_for: string;
+  grace_days: number;
+  detail: string;
+}
+
+/**
+ * Erase the account.
+ *
+ * Identity columns are destroyed immediately and the session stops
+ * authenticating on the next request; the rows are purged after the grace
+ * window. Not reversible from the app — treat the returned dates as the real
+ * ones and show them to the user.
+ */
+export async function deleteMyAccount(): Promise<ErasureResult> {
+  const res = await request<ErasureResult>("/privacy/account", { method: "DELETE" });
+  invalidateUserContextCache();
+  return res;
+}
+
+// ── Profile picture ─────────────────────────────────────
+
+/**
+ * Short-lived read URL for the profile picture, or null.
+ *
+ * Deliberately not part of `UserInfo`: the URL is presigned and expires, so
+ * putting it on `/auth/me` — called on nearly every page load — would hand back
+ * a different URL each time and defeat image caching. Fetch it where the avatar
+ * is drawn.
+ */
+export async function getAvatarUrl(): Promise<string | null> {
+  const res = await request<{ url: string | null }>("/auth/me/avatar");
+  return res.url;
+}
+
+/** Upload a new profile picture. Send an already-downscaled square blob. */
+export async function uploadAvatar(image: Blob): Promise<string | null> {
+  if (Date.now() < backendOfflineUntil) throw new BackendOfflineError();
+
+  const form = new FormData();
+  form.append("file", image, "avatar.jpg");
+
+  // NB: do not set Content-Type — the browser must add the multipart boundary.
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const res = await fetch(`${API}/auth/me/avatar`, { method: "POST", headers, body: form });
+  const text = await res.text();
+  if (!res.ok) {
+    let msg = readableErrorBody(text, res.status);
+    try {
+      const body = JSON.parse(text) as { detail?: unknown };
+      if (typeof body?.detail === "string") msg = body.detail;
+    } catch { /* keep the readable fallback */ }
+    throw new Error(msg);
+  }
+  invalidateUserContextCache();
+  return (JSON.parse(text) as { url: string | null }).url;
+}
+
+export async function removeAvatar(): Promise<void> {
+  await request<void>("/auth/me/avatar", { method: "DELETE" });
+  invalidateUserContextCache();
 }

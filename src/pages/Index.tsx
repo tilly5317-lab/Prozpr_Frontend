@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Loader2 } from "lucide-react";
-import NewOnboardingFlow from "@/components/onboarding/NewOnboardingFlow";
+import WelcomeScreen from "@/components/onboarding/WelcomeScreen";
 import PortfolioDashboard from "@/components/dashboard/PortfolioDashboard";
 import { useAuth } from "@/context/AuthContext";
 import { markOnboardingComplete } from "@/lib/api";
@@ -17,8 +17,6 @@ const Index = () => {
   const [screen, setScreen] = useState<Screen>("onboarding");
   // True while we're deciding where a returning, unfinished user should resume.
   const [resolvingResume, setResolvingResume] = useState(false);
-  // Authenticated users resuming the wizard skip the welcome/phone screens.
-  const [startAtQuestions, setStartAtQuestions] = useState(false);
 
   useEffect(() => {
     if (loading) return;
@@ -31,25 +29,17 @@ const Index = () => {
     if (authenticated && user && !backendDone && !sessionDone) {
       // Resume an unfinished onboarding exactly where the user left off —
       // resolved from backend state, so it survives any time away:
-      //   holdings imported → /about-you · questions answered → /cams-upload ·
-      //   otherwise the tell-us wizard right here (questions only, no phone).
+      //   holdings imported / CAMS deferred → /about-you · otherwise the CAMS
+      //   step. Onboarding never runs on this route once the account exists, so
+      //   an authenticated, unfinished user is always sent onward.
       let cancelled = false;
       setResolvingResume(true);
       void resolveOnboardingResumeRoute()
         .then((route) => {
-          if (cancelled) return;
-          if (route) {
-            navigate(route, { replace: true });
-          } else {
-            setStartAtQuestions(true);
-            setResolvingResume(false);
-          }
+          if (!cancelled) navigate(route, { replace: true });
         })
         .catch(() => {
-          if (!cancelled) {
-            setStartAtQuestions(true);
-            setResolvingResume(false);
-          }
+          if (!cancelled) navigate("/cams-upload", { replace: true });
         });
       return () => {
         cancelled = true;
@@ -81,9 +71,12 @@ const Index = () => {
       <AnimatePresence mode="wait">
         {screen === "onboarding" && (
           <motion.div key="onboarding" exit={{ opacity: 0 }} transition={{ duration: 0.3 }}>
-            <NewOnboardingFlow
-              onComplete={handleOnboardingComplete}
-              startAtQuestions={startAtQuestions}
+            {/* Account setup (phone → PIN → name/email). It hands off to the
+                first onboarding step itself; `onNext` is only its fallback when
+                resume resolution fails. */}
+            <WelcomeScreen
+              onNext={() => navigate("/cams-upload")}
+              onExistingUserLogin={handleOnboardingComplete}
             />
           </motion.div>
         )}

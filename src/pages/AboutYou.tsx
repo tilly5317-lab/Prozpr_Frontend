@@ -2,7 +2,7 @@ import type React from "react";
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, Briefcase, Calendar, Check, Plus, Target, Wallet, X, ShieldCheck, ChevronDown, Loader2 } from "lucide-react";
+import { ArrowRight, Briefcase, Calendar, Check, Plus, Target, Wallet, X, ShieldCheck, ChevronDown, Loader2, Home, Umbrella, GraduationCap, Heart, TrendingUp, Sparkles } from "lucide-react";
 import {
   getOnboardingProfile,
   getRiskProfile,
@@ -14,6 +14,7 @@ import { toast } from "@/hooks/use-toast";
 import { useOnboardingStep } from "@/hooks/useOnboardingStep";
 import { useEnterSubmit } from "@/hooks/useEnterSubmit";
 import { trackOnboardingCompleted } from "@/lib/onboardingAnalytics";
+import OnboardingNav from "@/components/onboarding/OnboardingNav";
 
 interface Props {
   onComplete: () => void;
@@ -66,7 +67,7 @@ const formatINR = (v: number) => {
 const NumberInputINR = ({
   label, description, value, onChange, placeholder, subtext,
 }: {
-  label: string; description?: string; value: number; onChange: (v: number) => void; placeholder?: string; subtext?: string;
+  label: string; description?: string; value: number | null; onChange: (v: number | null) => void; placeholder?: string; subtext?: string;
 }) => (
   <div className="space-y-1.5">
     <span className="text-sm font-medium text-foreground">{label}</span>
@@ -78,10 +79,13 @@ const NumberInputINR = ({
       <input
         type="text"
         inputMode="numeric"
-        value={value > 0 ? value.toLocaleString("en-IN") : ""}
+        /* null = nothing typed yet (placeholder shows); 0 is a real, valid
+           answer — someone between jobs, a homemaker, a retiree living off
+           corpus — so it must render as "0", not as an empty box. */
+        value={value == null ? "" : value.toLocaleString("en-IN")}
         onChange={(e) => {
           const digits = e.target.value.replace(/[^0-9]/g, "");
-          onChange(digits ? Number(digits) : 0);
+          onChange(digits ? Number(digits) : null);
         }}
         placeholder={placeholder ?? "Enter amount"}
         className="w-full rounded-xl border border-border bg-card pl-7 pr-3 py-2.5 text-sm text-foreground outline-none focus:border-primary transition-colors tabular-nums"
@@ -92,13 +96,21 @@ const NumberInputINR = ({
 );
 
 /* ─── Constants ─── */
-// Keep in sync with DEFAULT_GOALS in NewOnboardingFlow — the same question is
-// asked in both places and a label missing from one side comes back as a custom
-// chip instead of the built-in goal it was saved as.
+/**
+ * Goal tags offered on this page. The labels are free text end to end — they
+ * are stored verbatim as `selected_goals` and nothing matches on them — so the
+ * list can grow without any backend change.
+ *
+ * NOTE the labels are NOT the goals on /goal-planner. These are tags captured
+ * during onboarding; real goals (with a target amount and date) are created
+ * separately on that page.
+ */
 const DEFAULT_GOALS = [
-  { label: "Wealth building", icon: "🌱" },
-  { label: "Buying a home", icon: "🏡" }, { label: "Retiring", icon: "🌴" },
-  { label: "Education", icon: "🎓" }, { label: "Marriage", icon: "💍" },
+  { label: "Buying a home", icon: Home },
+  { label: "Retiring", icon: Umbrella },
+  { label: "Education", icon: GraduationCap },
+  { label: "Marriage", icon: Heart },
+  { label: "Wealth building", icon: TrendingUp },
 ];
 
 const HORIZON_OPTIONS = [
@@ -107,12 +119,49 @@ const HORIZON_OPTIONS = [
   { label: "5+ years", sub: "Long-term wealth building" },
 ];
 
+/**
+ * The five risk buckets, written the way a first-time investor would describe
+ * themselves rather than in portfolio language.
+ *
+ * The `letter` is the only part that leaves this file — it's persisted as
+ * `risk_choice_letter` and the backend's risk mapping keys off it — so the
+ * wording can be changed freely, but the letters must not be.
+ *
+ * `best` / `worst` are the good-year and bad-year swings for the bucket. They
+ * stay (they're the most honest thing on the page) but are demoted to a quiet
+ * one-line footnote under each choice instead of *being* the choice.
+ */
 const INVESTMENT_PREF_OPTIONS = [
-  { letter: "A", equity: 10, debt: 90, best: 10, worst: -2, riskLabel: "Conservative" },
-  { letter: "B", equity: 30, debt: 70, best: 15, worst: -5, riskLabel: "Moderately conservative" },
-  { letter: "C", equity: 50, debt: 50, best: 25, worst: -15, riskLabel: "Balanced" },
-  { letter: "D", equity: 70, debt: 30, best: 30, worst: -20, riskLabel: "Moderately aggressive" },
-  { letter: "E", equity: 90, debt: 10, best: 40, worst: -30, riskLabel: "Aggressive" },
+  {
+    letter: "A",
+    title: "Keep my money safe",
+    blurb: "I'd rather earn a little than watch my savings fall.",
+    equity: 10, debt: 90, best: 10, worst: -2, riskLabel: "Conservative",
+  },
+  {
+    letter: "B",
+    title: "Mostly safe",
+    blurb: "A small dip is fine if it means slightly better growth.",
+    equity: 30, debt: 70, best: 15, worst: -5, riskLabel: "Moderately conservative",
+  },
+  {
+    letter: "C",
+    title: "A balance of both",
+    blurb: "I can sit through an average bad year to grow faster.",
+    equity: 50, debt: 50, best: 25, worst: -15, riskLabel: "Balanced",
+  },
+  {
+    letter: "D",
+    title: "Growth matters more",
+    blurb: "I'm okay with a big fall if the long-term gain is bigger.",
+    equity: 70, debt: 30, best: 30, worst: -20, riskLabel: "Moderately aggressive",
+  },
+  {
+    letter: "E",
+    title: "Go for maximum growth",
+    blurb: "A sharp crash won't make me sell. I'm in it for the long run.",
+    equity: 90, debt: 10, best: 40, worst: -30, riskLabel: "Aggressive",
+  },
 ];
 
 
@@ -128,8 +177,8 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
   const [addingGoal, setAddingGoal] = useState(false);
   const [newGoalText, setNewGoalText] = useState("");
   const [horizon, setHorizon] = useState("");
-  const [income, setIncome] = useState<number>(0);
-  const [monthlyExpense, setMonthlyExpense] = useState<number>(0);
+  const [income, setIncome] = useState<number | null>(null);
+  const [monthlyExpense, setMonthlyExpense] = useState<number | null>(null);
   const [investmentView, setInvestmentView] = useState("");
   const [occupation, setOccupation] = useState("");
   const [occupationOther, setOccupationOther] = useState("");
@@ -183,8 +232,8 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
         setCustomGoals((prev) => (prev.length ? prev : savedCustom));
       }
       if (profile.investment_horizon) {
-        // The tell-us wizard stores "Short/Medium/Long term"; this page uses
-        // year ranges — map either form onto this page's options.
+        // Profiles saved by the old tell-us wizard hold "Short/Medium/Long
+        // term"; this page uses year ranges — map either form onto its options.
         const saved = profile.investment_horizon;
         const wizardToRange: Record<string, string> = {
           "Short term": "< 2 years",
@@ -196,13 +245,13 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
           : wizardToRange[saved];
         if (mapped) setHorizon((prev) => prev || mapped);
       }
-      if (profile.annual_income != null && profile.annual_income > 0) {
+      if (profile.annual_income != null) {
         const saved = Math.round(profile.annual_income);
-        setIncome((prev) => (prev > 0 ? prev : saved));
+        setIncome((prev) => (prev != null ? prev : saved));
       }
       if (profile.monthly_household_expense != null && profile.monthly_household_expense > 0) {
         const saved = Math.round(profile.monthly_household_expense);
-        setMonthlyExpense((prev) => (prev > 0 ? prev : saved));
+        setMonthlyExpense((prev) => (prev != null ? prev : saved));
       }
       if (risk?.risk_level != null) {
         // risk_level 0–4 ↔ preference letters A–E (what this page persists
@@ -233,7 +282,7 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
     switch (id) {
       case "basic": return dobValid && occupation !== "" && (occupation !== "Other" || occupationOther.trim() !== "");
       case "goals": return selectedGoals.length > 0 && horizon !== "";
-      case "income": return income > 0 && monthlyExpense > 0;
+      case "income": return income != null && monthlyExpense != null && monthlyExpense > 0;
       case "risk": return investmentView !== "";
     }
   };
@@ -284,7 +333,10 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
     const occupationLabel =
       occupation === "Other" ? occupationOther.trim() : occupation;
     // User enters a monthly figure; the backend stores an annual one, so ×12.
-    const annualExpense = monthlyExpense * 12;
+    // Both are answered by now (allComplete gates the button), and income may
+    // legitimately be 0 — so coalesce rather than treating 0 as missing.
+    const annualExpense = (monthlyExpense ?? 0) * 12;
+    const annualIncome = income ?? 0;
     setSubmitting(true);
     try {
       await persistOnboardingProfile({
@@ -293,8 +345,8 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
         selected_goals: selectedGoals,
         custom_goals: customGoals,
         investment_horizon: horizon || undefined,
-        annual_income_min: income,
-        annual_income_max: income,
+        annual_income_min: annualIncome,
+        annual_income_max: annualIncome,
         annual_expense_min: annualExpense,
         annual_expense_max: annualExpense,
         risk_choice_letter: investmentView || undefined,
@@ -328,9 +380,12 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
   };
 
   // Income is annual; expense is monthly → annualise it to compare against income.
-  const annualExpense = monthlyExpense * 12;
-  const estSavings = Math.max(0, income - annualExpense);
-  const expensePct = income > 0 ? Math.round((annualExpense / income) * 100) : 0;
+  const annualExpense = (monthlyExpense ?? 0) * 12;
+  const estSavings = Math.max(0, (income ?? 0) - annualExpense);
+  // Undefined on zero income — the ratio is meaningless there, so the subtext
+  // below drops it rather than printing a divide-by-zero percentage.
+  const expensePct = income != null && income > 0 ? Math.round((annualExpense / income) * 100) : null;
+  const bothAnswered = income != null && monthlyExpense != null;
 
   const toggleSection = (id: SectionId) => {
     setOpenSection((prev) => (prev === id ? null : id));
@@ -365,7 +420,9 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
           <div className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary">
             <Check className="h-3.5 w-3.5 text-muted-foreground" />
           </div>
-          <span className="text-[11px] text-muted-foreground mt-1.5">Link accounts</span>
+          {/* Step 1 is the CAMS import (/cams-upload) — the old "Link accounts"
+              page it used to name was removed. */}
+          <span className="text-[11px] text-muted-foreground mt-1.5">Import statement</span>
           <span className="text-[11px] text-muted-foreground">~90 secs</span>
         </div>
         <div className="flex-1 h-[1.5px] bg-border mx-2 mt-[-22px]" />
@@ -472,13 +529,14 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
                     <div>
                       <p className="text-xs font-medium text-muted-foreground mb-2.5">What are your key financial goals?</p>
                       <div className="flex flex-wrap gap-2">
-                        {[...DEFAULT_GOALS, ...customGoals.map((g) => ({ label: g, icon: "✦" }))].map((g) => {
+                        {[...DEFAULT_GOALS, ...customGoals.map((g) => ({ label: g, icon: Sparkles }))].map((g) => {
                           const isSelected = selectedGoals.includes(g.label);
+                          const GoalIcon = g.icon;
                           return (
                             <button key={g.label} onClick={() => toggleGoal(g.label)}
                               className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-medium transition-all ${isSelected ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground hover:bg-muted"}`}>
                               {isSelected && <Check className="h-3 w-3" />}
-                              <span>{g.icon}</span>
+                              <GoalIcon className="h-3.5 w-3.5" />
                               {g.label}
                             </button>
                           );
@@ -541,7 +599,7 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
                       value={income}
                       onChange={setIncome}
                       placeholder="e.g. 5000000"
-                      subtext={income > 0 && monthlyExpense > 0 ? `Estimated savings: ${formatINR(estSavings)} / year` : undefined}
+                      subtext={bothAnswered ? `Estimated savings: ${formatINR(estSavings)} / year` : undefined}
                     />
                     <NumberInputINR
                       label="Monthly expense"
@@ -549,7 +607,7 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
                       value={monthlyExpense}
                       onChange={setMonthlyExpense}
                       placeholder="e.g. 80000"
-                      subtext={income > 0 && monthlyExpense > 0 ? `That's roughly ${expensePct}% of your annual income` : undefined}
+                      subtext={expensePct != null ? `That's roughly ${expensePct}% of your annual income` : undefined}
                     />
                   </div>
                 </motion.div>
@@ -557,9 +615,9 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
             </AnimatePresence>
           </div>
 
-          {/* Investment Preference */}
+          {/* Risk comfort — plain-language wording of the five risk buckets */}
           <div className="border rounded-xl bg-card overflow-hidden border-border/60">
-            {sectionHeader("risk", <ShieldCheck className="h-[20px] w-[20px] text-muted-foreground" />, "Investment Preference")}
+            {sectionHeader("risk", <ShieldCheck className="h-[20px] w-[20px] text-muted-foreground" />, "Comfort with ups & downs")}
             <AnimatePresence initial={false}>
               {openSection === "risk" && (
                 <motion.div
@@ -571,22 +629,40 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
                   className="overflow-hidden"
                 >
                   <div className="px-4 pb-4">
-                    <p className="text-xs font-medium text-muted-foreground mb-1">Which scenario best fits your comfort level?</p>
-                    <p className="text-[11px] italic text-muted-foreground/80 mb-3 leading-snug">
-                      <span className="font-semibold text-foreground/80">Worst</span> = the drop in a bad year, <span className="font-semibold text-foreground/80">Best</span> = the gain in a good one. Higher upside, deeper drawdowns — pick the combination you're most comfortable with.
+                    <p className="text-sm font-medium text-foreground mb-3">
+                      Markets go up and down. Which sounds most like you?
                     </p>
                     <div className="space-y-2">
                       {INVESTMENT_PREF_OPTIONS.map((opt) => {
                         const isSelected = investmentView === opt.letter;
-                        const worstLabel = opt.worst >= 0 ? `${opt.worst}%` : `${opt.worst}%`;
                         return (
-                          <button key={opt.letter} onClick={() => setInvestmentView(opt.letter)}
-                            className={`w-full text-left px-4 py-3 rounded-xl text-xs font-medium transition-all ${isSelected ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground hover:bg-muted"}`}>
-                            {opt.letter} — Worst {worstLabel} / Best {opt.best}%
+                          <button
+                            key={opt.letter}
+                            type="button"
+                            aria-pressed={isSelected}
+                            onClick={() => setInvestmentView(opt.letter)}
+                            className={`w-full text-left px-4 py-3 rounded-xl border transition-all ${
+                              isSelected
+                                ? "border-primary bg-primary/10 ring-1 ring-primary"
+                                : "border-border/60 bg-secondary hover:bg-muted"
+                            }`}
+                          >
+                            <span className="block text-sm font-medium text-foreground">{opt.title}</span>
+                            <span className="block text-[11px] text-muted-foreground leading-snug mt-0.5">
+                              {opt.blurb}
+                            </span>
+                            {/* The numbers still matter, but as evidence for the
+                                choice above — not as the choice itself. */}
+                            <span className="block text-[11px] text-muted-foreground/70 tabular-nums mt-1.5">
+                              Good year {opt.best > 0 ? "+" : ""}{opt.best}% · bad year {opt.worst}%
+                            </span>
                           </button>
                         );
                       })}
                     </div>
+                    <p className="text-[11px] text-muted-foreground/70 leading-snug mt-3">
+                      There's no wrong answer, and you can change this later.
+                    </p>
                   </div>
                 </motion.div>
               )}
@@ -597,21 +673,18 @@ const TellUsAboutYou = ({ onComplete, onBack }: Props) => {
 
       {/* Fixed bottom actions */}
       <div className="fixed bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-background via-background to-transparent">
-        <div className="max-w-md mx-auto flex flex-col items-center gap-3">
-          <button onClick={onBack} disabled={submitting} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40">
-            ← Back
-          </button>
-          <button onClick={handleSaveAndContinue} disabled={!allComplete || submitting}
-            className={`flex w-full items-center justify-center gap-2 rounded-xl py-3.5 text-[15px] font-semibold tracking-wide transition-all active:scale-[0.98] disabled:pointer-events-none ${allComplete ? "bg-foreground text-background" : "bg-secondary text-muted-foreground"}`}>
-            {submitting ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Generating your portfolio…
-              </>
-            ) : (
-              "Generate my portfolio ✦"
-            )}
-          </button>
+        <div className="max-w-md mx-auto">
+          <OnboardingNav
+            tone="foreground"
+            nextLabel="Generate my portfolio ✦"
+            nextArrow={false}
+            onNext={() => void handleSaveAndContinue()}
+            nextDisabled={!allComplete}
+            nextLoading={submitting}
+            loadingLabel="Generating your portfolio…"
+            onBack={onBack}
+            backLabel="Back to statement import"
+          />
         </div>
       </div>
     </div>

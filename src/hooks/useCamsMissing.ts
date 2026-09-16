@@ -47,29 +47,12 @@ export function useCamsMissing(): CamsMissingState {
   return { hasCams, missing: hasCams === false, loading, refresh: run };
 }
 
-// ── One-time-per-session upload prompt ────────────────────────────────────
-// The CAMS upload popup auto-opens at most once per browser session, shared
-// across every surface (portfolio, invest), so the user is nudged a single time
-// and never pestered repeatedly.
-const PROMPT_SHOWN_KEY = "camsUploadPromptShown";
+// ── Session import marker ─────────────────────────────────────────────────
+// There is deliberately NO auto-opening popup. CAMS is optional, so every
+// surface that needs holdings renders an in-page prompt (see CamsMissingNotice)
+// and the import opens only when the user taps it. The old
+// once-per-session auto-popup helpers were removed with that change.
 const IMPORTED_KEY = "camsStatementImported";
-
-/** True if the auto-popup has already been shown this session. */
-export function camsPromptAlreadyShown(): boolean {
-  try {
-    return sessionStorage.getItem(PROMPT_SHOWN_KEY) === "true";
-  } catch {
-    return false;
-  }
-}
-
-export function markCamsPromptShown(): void {
-  try {
-    sessionStorage.setItem(PROMPT_SHOWN_KEY, "true");
-  } catch {
-    /* ignore (private mode) */
-  }
-}
 
 /** True if the user already imported a statement this session. */
 export function camsImportedThisSession(): boolean {
@@ -78,17 +61,4 @@ export function camsImportedThisSession(): boolean {
   } catch {
     return false;
   }
-}
-
-/**
- * Decide whether to auto-open the upload popup now: only when we know CAMS is
- * missing, it hasn't been shown this session, and nothing was imported yet.
- * Marks it shown (so it won't fire again) and returns true when it should open.
- */
-export function shouldAutoOpenCamsPrompt(missing: boolean): boolean {
-  if (!missing) return false;
-  if (camsPromptAlreadyShown()) return false;
-  if (camsImportedThisSession()) return false;
-  markCamsPromptShown();
-  return true;
 }

@@ -59,7 +59,7 @@ const CashflowGate = ({
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
   // The missing-inputs prompt is a dismissible hint, never a blocker — the user
-  // can close it and keep using the (example/blank) page. Once dismissed it stays
+  // can close it and keep using the (empty) page. Once dismissed it stays
   // hidden for this visit; it re-surfaces on the next page mount if still missing.
   const [promptDismissed, setPromptDismissed] = useState(false);
 
@@ -137,27 +137,20 @@ const CashflowGate = ({
       )}
 
       {/* Dismissible "add a few details" prompt — lists the inputs the projection
-          still needs. Centred over a dimmed, blurred backdrop so it stands out
-          from the example page behind it; the user can open the inputs form, or
-          click the backdrop / "Maybe later" to dismiss and keep exploring. */}
+          still needs. Anchored above the bottom nav with NO backdrop: it used to
+          be a dimmed full-screen overlay, which is a blocker in everything but
+          name — you had to dismiss it before you could touch the page. The page
+          behind stays fully interactive; "Maybe later" or the X hides it. */}
       <AnimatePresence>
         {showPrompt && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            onClick={() => setPromptDismissed(true)}
-            className="fixed inset-0 z-[55] flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+            className="fixed inset-x-0 bottom-[72px] z-[55] flex justify-center px-4"
           >
-            <motion.div
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 16 }}
-              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-              onClick={(e) => e.stopPropagation()}
-              className="relative w-full max-w-md overflow-hidden rounded-2xl border border-[#D4A868]/35 bg-card/95 p-4 shadow-2xl backdrop-blur-xl"
-            >
+            <div className="pointer-events-auto relative w-full max-w-md overflow-hidden rounded-2xl border border-[#D4A868]/35 bg-card/95 p-4 shadow-2xl backdrop-blur-xl">
               <button
                 type="button"
                 onClick={() => setPromptDismissed(true)}
@@ -171,12 +164,14 @@ const CashflowGate = ({
                   <Sparkles className="h-3.5 w-3.5" />
                 </span>
                 <h3 className="text-sm font-semibold text-foreground">
-                  See your real numbers
+                  Your projection needs a few numbers
                 </h3>
               </div>
+              {/* Not "you're viewing an example" — the page deliberately shows
+                  no projection at all until the engine has real inputs. */}
               <p className="mt-1.5 text-xs leading-snug text-muted-foreground">
-                You&apos;re viewing an example. Add a few details and your projection runs
-                on your real figures:
+                We don&apos;t compute anything on placeholder figures, so the timeline
+                stays empty until you add:
               </p>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {missingFields.map((f) => (
@@ -208,7 +203,7 @@ const CashflowGate = ({
                   Maybe later
                 </button>
               </div>
-            </motion.div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

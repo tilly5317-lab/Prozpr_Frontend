@@ -42,16 +42,6 @@
     --wealth-blue-light: 215 40% 94%;
     --wealth-green: 164 54% 40%;     /* #2E9C7E — the app's buy/positive green */
     --wealth-green-light: 164 35% 93%;
-    /* Two-series chart pair (you vs benchmark). Distinct from --wealth-green /
-       --wealth-blue because those flip lightness between modes and the resulting
-       pairs fail colourblind separation (deutan ΔE 2.6 in dark). These two are
-       validated in BOTH modes — re-run the palette validator before changing them. */
-    --chart-you: 164 54% 40%;        /* #2f9d80 */
-    --chart-bench: 221 83% 53%;      /* #2463eb */
-    /* Concern status — orange, deliberately not --destructive red (that reads as
-       "broken") and not the gold used for "worth watching". Deep enough here to
-       stay legible as small text on a light ground. */
-    --concern-orange: 24 88% 42%;
     --wealth-amber: 38 80% 48%;
     --wealth-amber-light: 38 60% 93%;
     --wealth-surface: 220 15% 98%;
@@ -127,12 +117,6 @@
     --wealth-blue-light: 215 55% 18%;
     --wealth-green: 156 51% 50%;     /* #3fbf8a brighter for legibility */
     --wealth-green-light: 156 40% 14%;
-    /* Chart pair, dark steps — green holds (already inside the dark lightness
-       band); only the benchmark blue lifts. Both validated against #1c1c1b. */
-    --chart-you: 164 54% 40%;        /* #2f9d80 */
-    --chart-bench: 217 90% 63%;      /* #4c8df6 */
-    /* Concern orange, lifted for the dark ground. */
-    --concern-orange: 26 92% 62%;
     --wealth-amber: 35 57% 62%;      /* #d4a868 */
     --wealth-amber-light: 35 40% 16%;
     --wealth-surface: 0 0% 8%;
@@ -292,6 +276,47 @@
   animation: ticker 28s linear infinite;
 }
 
+/* "Thinking aloud" text — a bright band sweeps across dim text, the standard
+   way an assistant shows it is still working (as opposed to a finished reply).
+   The gradient is 200% wide with its highlight at the middle stop, so walking
+   background-position from 100% to 0% carries that highlight left → right.
+   Percentage background-position moves an oversized image in the opposite
+   direction, which is why the keyframes count down rather than up. */
+@keyframes thinking-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0% 0;
+  }
+}
+.thinking-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    hsl(var(--muted-foreground) / 0.5) 0%,
+    hsl(var(--muted-foreground) / 0.5) 38%,
+    hsl(var(--foreground)) 50%,
+    hsl(var(--muted-foreground) / 0.5) 62%,
+    hsl(var(--muted-foreground) / 0.5) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: thinking-shimmer 2.4s linear infinite;
+}
+/* Clipped-to-text transparency has no meaning without the sweep — fall back to
+   plain dim text rather than an invisible line. */
+@media (prefers-reduced-motion: reduce) {
+  .thinking-shimmer {
+    background-image: none;
+    animation: none;
+    color: hsl(var(--muted-foreground));
+    -webkit-text-fill-color: currentColor;
+  }
+}
+
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
 }
@@ -306,52 +331,4 @@
 }
 .alloc-slider::-moz-range-thumb {
   border-color: var(--slider-fill, #1A3A6B) !important;
-}
-
-/* Projection return slider (goals → your plan → projection).
-   The track is painted by the wrapper so the band shading shows through; the
-   input itself contributes only the thumb. */
-.return-slider {
-  -webkit-appearance: none;
-  appearance: none;
-  background: transparent;
-  width: 100%;
-  height: 28px;
-  margin: 0;
-  cursor: pointer;
-}
-.return-slider::-webkit-slider-runnable-track {
-  height: 28px;
-  background: transparent;
-}
-.return-slider::-moz-range-track {
-  height: 28px;
-  background: transparent;
-}
-.return-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  height: 22px;
-  width: 22px;
-  margin-top: 3px;
-  border-radius: 9999px;
-  background: #D4A868;
-  border: 3px solid hsl(var(--card));
-  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.28);
-}
-.return-slider::-moz-range-thumb {
-  height: 22px;
-  width: 22px;
-  border-radius: 9999px;
-  background: #D4A868;
-  border: 3px solid hsl(var(--card));
-  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.28);
-}
-.return-slider:focus-visible::-webkit-slider-thumb {
-  outline: 2px solid hsl(var(--foreground));
-  outline-offset: 2px;
-}
-.return-slider:focus-visible::-moz-range-thumb {
-  outline: 2px solid hsl(var(--foreground));
-  outline-offset: 2px;
 }

@@ -6,7 +6,6 @@ import {
   ChevronDown,
   Check,
   Settings,
-  UserPlus,
   ShieldCheck,
   ArrowRightLeft,
   Sun,
@@ -14,6 +13,7 @@ import {
   Monitor,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import UserAvatar from "@/components/UserAvatar";
 import { useFamily } from "@/context/FamilyContext";
 import { useTheme, type ThemeMode } from "@/context/ThemeContext";
 
@@ -83,18 +83,25 @@ const ProfileSwitcher = () => {
         }`}
         aria-label="Switch profile"
       >
+        {/* The photo is the signed-in user's, so it only stands in for the
+            SELF view — while acting as a family member or on the cumulative
+            view the pill must keep showing whose data is on screen. */}
         {showExtras ? (
-          <div
-            className={`flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold ${
-              isCumulative
-                ? "bg-gradient-to-br from-primary/20 to-accent/20 text-primary"
-                : isActingAs
-                ? "bg-primary/15 text-primary"
-                : "bg-accent/10 text-accent"
-            }`}
-          >
-            {isCumulative ? <Users className="h-3.5 w-3.5" /> : getActiveInitials()}
-          </div>
+          isSelf ? (
+            <UserAvatar size={28} />
+          ) : (
+            <div
+              className={`flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold ${
+                isCumulative
+                  ? "bg-gradient-to-br from-primary/20 to-accent/20 text-primary"
+                  : "bg-primary/15 text-primary"
+              }`}
+            >
+              {isCumulative ? <Users className="h-3.5 w-3.5" /> : getActiveInitials()}
+            </div>
+          )
+        ) : isSelf ? (
+          <UserAvatar size={28} />
         ) : (
           <span className="flex items-center justify-center text-[13px] font-bold text-accent">
             {isCumulative ? <Users className="h-4 w-4" /> : getActiveInitials()}
@@ -147,9 +154,7 @@ const ProfileSwitcher = () => {
               }}
               className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/50 transition-colors"
             >
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-accent/10 text-xs font-bold text-accent shrink-0">
-                {userInitials}
-              </div>
+              <UserAvatar size={32} />
               <div className="flex-1 min-w-0 text-left">
                 <p className="text-xs font-semibold text-foreground truncate">
                   {[user?.first_name, user?.last_name].filter(Boolean).join(" ") || "My Account"}
@@ -264,25 +269,18 @@ const ProfileSwitcher = () => {
               </div>
             </div>
 
-            {/* Actions */}
+            {/* Actions — Manage Family is gone while family sharing is locked.
+                A disabled control with a "Soon" badge is still a row people
+                read and reason about; the honest version of an action that
+                does nothing is not showing it. */}
             <div className="h-px bg-border/40" />
-            <div className="px-1.5 py-1.5 flex gap-1">
-              <button
-                onClick={() => {
-                  setOpen(false);
-                  navigate("/family");
-                }}
-                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-[11px] font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
-              >
-                <UserPlus className="h-3 w-3" />
-                Manage Family
-              </button>
+            <div className="px-1.5 py-1.5">
               <button
                 onClick={() => {
                   setOpen(false);
                   navigate("/profile");
                 }}
-                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-[11px] font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
+                className="w-full flex items-center justify-center gap-1.5 rounded-lg py-2 text-[11px] font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
               >
                 <Settings className="h-3 w-3" />
                 {isActingAs ? `${activeView.member.nickname}'s Profile` : "My Profile"}

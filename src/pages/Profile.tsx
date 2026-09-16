@@ -1,47 +1,26 @@
 import { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  User, Pencil, Check, ChevronRight, ChevronDown,
-  MessageSquareText, Calculator, BarChart3, Users, Briefcase, AlertCircle, LogOut, UploadCloud, Bug, FileText, Lock,
+  User, ChevronRight, ChevronDown, ShieldCheck,
+  Calculator, BarChart3, Users, AlertCircle, LogOut, UploadCloud, Bug, FileText,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import BottomNav from "@/components/BottomNav";
 import ReportIssueDialog from "@/components/ReportIssueDialog";
+import UserAvatar from "@/components/UserAvatar";
+import { maskEmail, maskMobile } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/context/AuthContext";
 import {
-  updateMe,
   getFullProfile,
   getAboutYouStatus,
   updatePersonalInfo,
   BackendOfflineError,
   type FullProfileResponse,
-  type UserUpdatePayload,
 } from "@/lib/api";
 
 /* ── tiny helpers ── */
-
-// The two statements behind the Reports row — listed here purely as the row's
-// subtitle; each is rendered (with filters + Excel/PDF download) on `/reports`.
-const REPORT_NAMES = ["Portfolio holdings", "Capital gains"];
-
-const EmptyHint = ({ label }: { label: string }) => (
-  <span className="text-[11px] italic text-muted-foreground/60">
-    {label} — tap edit to add
-  </span>
-);
-
-const FieldRow = ({ label, value }: { label: string; value: string | null | undefined }) => (
-  <div>
-    <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">{label}</p>
-    {value ? (
-      <p className="text-xs text-foreground">{value}</p>
-    ) : (
-      <EmptyHint label={`No ${label.toLowerCase()}`} />
-    )}
-  </div>
-);
 
 const SectionCard = ({
   title,
@@ -103,35 +82,12 @@ const SectionCard = ({
   </div>
 );
 
-/* ── reusable sub-components (outside Profile to preserve identity across renders) ── */
-const ProfileInput = ({ value, onChange, placeholder, prefix }: { value: string; onChange: (v: string) => void; placeholder?: string; prefix?: string }) => (
-  <div className="relative">
-    {prefix && <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">{prefix}</span>}
-    <input
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      className={`w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary transition-colors ${prefix ? "pl-6" : ""}`}
-    />
-  </div>
-);
-
 const ProfileChip = ({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) => (
   <button
     onClick={onClick}
     className={`rounded-full px-2.5 py-1 text-[11px] font-medium border transition-all ${active ? "bg-accent text-accent-foreground border-accent" : "bg-card text-muted-foreground border-border hover:border-accent/40"}`}
   >
     {label}
-  </button>
-);
-
-const EditSaveBtn = ({ editing, onEdit, onSave }: { editing: boolean; onEdit: () => void; onSave: () => void }) => (
-  <button
-    onClick={editing ? onSave : onEdit}
-    className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
-  >
-    {editing ? <Check className="h-3 w-3" /> : <Pencil className="h-3 w-3" />}
-    {editing ? "Save" : "Edit"}
   </button>
 );
 
@@ -148,14 +104,6 @@ const Profile = () => {
      know the profile is fully complete. */
   const [aboutYouConfirmed, setAboutYouConfirmed] = useState(false);
 
-  /* editable contact fields */
-  const [editingContact, setEditingContact] = useState(false);
-  const [contactDraft, setContactDraft] = useState({
-    first_name: "",
-    last_name: "",
-    email: "",
-  });
-
   /* editable personal info */
   const [editingPersonal, setEditingPersonal] = useState(false);
   const [personalDraft, setPersonalDraft] = useState({
@@ -167,16 +115,6 @@ const Profile = () => {
   });
 
   /* ── load data ── */
-  useEffect(() => {
-    if (user) {
-      setContactDraft({
-        first_name: user.first_name ?? "",
-        last_name: user.last_name ?? "",
-        email: user.email ?? "",
-      });
-    }
-  }, [user]);
-
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -216,22 +154,6 @@ const Profile = () => {
   }, []);
 
   /* ── save handlers ── */
-  const saveContact = useCallback(async () => {
-    try {
-      const payload: UserUpdatePayload = {};
-      if (contactDraft.first_name) payload.first_name = contactDraft.first_name;
-      if (contactDraft.last_name) payload.last_name = contactDraft.last_name;
-      if (contactDraft.email) payload.email = contactDraft.email;
-      await updateMe(payload);
-      await refresh();
-      setEditingContact(false);
-      toast.success("Contact info updated");
-    } catch (err) {
-      if (err instanceof BackendOfflineError) return;
-      toast.error(err instanceof Error ? err.message : "Failed to save");
-    }
-  }, [contactDraft, refresh]);
-
   const savePersonal = useCallback(async () => {
     try {
       const res = await updatePersonalInfo({
@@ -268,8 +190,11 @@ const Profile = () => {
   /* ── display ── */
   const displayName =
     [user?.first_name, user?.last_name].filter(Boolean).join(" ") || "User";
-  const displayEmail = user?.email ?? "";
-  const displayPhone = user ? `${user.country_code} ${user.mobile}` : "";
+  // Masked, like everywhere else. The header sits above the fold on a page
+  // people open in public; printing a full address here undid the masking the
+  // account page does.
+  const displayEmail = user?.email ? maskEmail(user.email) : "";
+  const displayPhone = user ? `${user.country_code} ${maskMobile(user.mobile)}` : "";
   const pi = profile?.personal_info;
 
   if (loading) {
@@ -294,12 +219,9 @@ const Profile = () => {
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="flex h-12 w-12 items-center justify-center rounded-full bg-accent/10 mb-1.5"
+          className="mb-1.5"
         >
-          <span className="text-sm font-bold text-accent">
-            {(user?.first_name?.[0] ?? "U").toUpperCase()}
-            {(user?.last_name?.[0] ?? "").toUpperCase()}
-          </span>
+          <UserAvatar size={48} />
         </motion.div>
         <p className="text-sm font-semibold text-foreground">{displayName}</p>
         <p className="text-[11px] text-muted-foreground">{displayEmail || displayPhone}</p>
@@ -326,53 +248,12 @@ const Profile = () => {
         </div>
       )}
 
-      {/* Contact Information */}
-      <div className="px-5 mb-2">
-        <div className="wealth-card !p-3">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-[11px] font-semibold text-foreground">Account Details</h3>
-            <EditSaveBtn editing={editingContact} onEdit={() => setEditingContact(true)} onSave={saveContact} />
-          </div>
-          <div className="space-y-1.5">
-            {editingContact ? (
-              <>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">First Name</p>
-                    <ProfileInput value={contactDraft.first_name} onChange={(v) => setContactDraft((d) => ({ ...d, first_name: v }))} placeholder="First name" />
-                  </div>
-                  <div>
-                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">Last Name</p>
-                    <ProfileInput value={contactDraft.last_name} onChange={(v) => setContactDraft((d) => ({ ...d, last_name: v }))} placeholder="Last name" />
-                  </div>
-                </div>
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">Email</p>
-                  <ProfileInput value={contactDraft.email} onChange={(v) => setContactDraft((d) => ({ ...d, email: v }))} placeholder="email@example.com" />
-                </div>
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">Phone</p>
-                  <p className="text-xs text-muted-foreground">{displayPhone || "Not set"}</p>
-                </div>
-              </>
-            ) : (
-              <>
-                <FieldRow label="Name" value={displayName !== "User" ? displayName : null} />
-                <FieldRow label="Email" value={displayEmail} />
-                <FieldRow label="Phone" value={displayPhone} />
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-
-
       {/* Navigation rows */}
       {([
+        { icon: ShieldCheck, title: "Account Centre", sub: "Your details and sign-in PIN", route: "/account", showDot: false },
         { icon: User, title: "Tell Us More About You", sub: "Goals, risk tolerance & mandates", route: "/profile/complete", showDot: !aboutYouConfirmed },
         { icon: UploadCloud, title: "Update Holdings", sub: "Upload your latest CAMS / KFintech statement", route: "/cams-upload?from=profile", showDot: false },
         { icon: FileText, title: "My CAS Statements", sub: "Download statements you've imported", route: "/cas-statements", showDot: false },
-        { icon: Lock, title: "Your Data & Privacy", sub: "What we store, who sees it, how long we keep it", route: "/privacy", showDot: false },
       ]).map((item) => (
         <div key={item.title} className="px-5 mb-1.5">
           <button
@@ -396,25 +277,6 @@ const Profile = () => {
         </div>
       ))}
 
-      {/* Reports — opens the statements screen (view, filter, download) */}
-      <div className="px-5 mb-1.5">
-        <button
-          onClick={() => navigate("/reports")}
-          className="wealth-card !p-2.5 w-full text-left flex items-center gap-2.5 active:scale-[0.98] transition-transform"
-        >
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-secondary">
-            <FileText className="h-3 w-3 text-muted-foreground" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <h3 className="text-xs font-semibold text-foreground">Reports</h3>
-            <p className="text-[11px] text-muted-foreground">
-              {REPORT_NAMES.join(" · ")} — view or download
-            </p>
-          </div>
-          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-        </button>
-      </div>
-
       {/* Report an Issue */}
       <div className="px-5 mb-1.5">
         <ReportIssueDialog>
@@ -434,6 +296,7 @@ const Profile = () => {
       {/* Coming Soon items */}
       {([
         { icon: Users, title: "Family Members", sub: undefined },
+        { icon: BarChart3, title: "Reports", sub: "Track performance & analytics" },
         { icon: Calculator, title: "Tax Optimisation", sub: "Smart tax-efficient strategies" },
       ]).map((item) => (
         <div key={item.title} className="px-5 mb-1.5">

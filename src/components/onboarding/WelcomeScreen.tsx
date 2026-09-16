@@ -1,11 +1,19 @@
-﻿import { useState, useRef, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { useNavigate } from "react-router-dom";
-import { ArrowRight, TrendingUp, Sparkles, ChevronDown, ArrowLeft, Loader2, FileText, Lock, UploadCloud } from "lucide-react";
-import CamsStatementPasswordModal from "./CamsStatementPasswordModal";
+import { useLocation, useNavigate } from "react-router-dom";
+import { TrendingUp, Sparkles, Shield, ChevronDown, Mail } from "lucide-react";
+import OnboardingNav from "./OnboardingNav";
 import prozprLogoLight from "@/assets/prozpr-logo-light.png";
 import prozprLogoDark from "@/assets/prozpr-logo-dark.png";
-import { signup, login, getMe, updateMe, checkMobileStatus } from "@/lib/api";
+import {
+  signup,
+  login,
+  getMe,
+  updateMe,
+  checkMobileStatus,
+  requestPinReset,
+  confirmPinReset,
+} from "@/lib/api";
 import { resolveOnboardingResumeRoute } from "@/lib/onboardingResume";
 import { useEnterSubmit } from "@/hooks/useEnterSubmit";
 import {
@@ -41,12 +49,37 @@ const countryCodes = [
   { code: "+65", label: "SG", flag: flagEmoji("SG") },
 ];
 
-const MAX_PDF_BYTES = 20 * 1024 * 1024;
+/**
+ * Account setup only — phone, then either the returning-user PIN or the
+ * new-user setup page. The CAMS import lives on its own route (/cams-upload),
+ * which this screen hands off to once the account exists. "reset" is the
+ * forgot-PIN detour off the PIN step; it returns there when done.
+ */
+type Step = "phone" | "setup" | "pin" | "reset";
 
-type Step = "phone" | "setup" | "pin" | "cams";
+/** Accounts are keyed on a 10-digit national number; the country code is
+    picked separately and is never part of this count. Mirrors the backend
+    rule in `identity/schemas/auth.py` — keep the two in step. */
+const MOBILE_DIGITS = 10;
+
+/**
+ * Forgot-PIN (screen below, `/auth/pin-reset/*` on the backend), now live.
+ *
+ * Kept as a kill switch rather than deleted: the flow depends on an outside
+ * mail provider (Resend), and if sending breaks — key revoked, domain
+ * verification lapsed, quota hit — a request tells the user a code is on its
+ * way and then fails. Setting this back to `false` hides the entry point
+ * entirely (no link, no notice) until the provider is healthy again.
+ *
+ * Sending requires `RESEND_API_KEY` on the backend AND the sending domain in
+ * `RESEND_FROM_EMAIL` verified in Resend by DNS — Resend delivers from a
+ * verified domain only.
+ */
+const FORGOT_PIN_ENABLED = true;
 
 const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { refresh } = useAuth();
   const [step, setStep] = useState<Step>("phone");
   const [phone, setPhone] = useState("");
@@ -54,7 +87,6 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
   const [showCodes, setShowCodes] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const [isReturningUser, setIsReturningUser] = useState(false);
   const [returningUserOnboardingDone, setReturningUserOnboardingDone] = useState(false);
 
   const [pin, setPin] = useState("");
@@ -68,20 +100,60 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
   const [email, setEmail] = useState("");
   const [emailError, setEmailError] = useState("");
 
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [camsFile, setCamsFile] = useState<File | null>(null);
-  const [camsPickError, setCamsPickError] = useState("");
-  const [showCamsPasswordModal, setShowCamsPasswordModal] = useState(false);
+  // Forgot-PIN reset (emailed 6-digit code)
+  const [resetSent, setResetSent] = useState(false);
+  const [resetHint, setResetHint] = useState<string | null>(null);
+  const [resetCode, setResetCode] = useState("");
+  const [resetPin, setResetPin] = useState("");
+  const [resetConfirm, setResetConfirm] = useState("");
+  const [resetError, setResetError] = useState("");
+  const [resetNotice, setResetNotice] = useState("");
+  const [resetExpiryMinutes, setResetExpiryMinutes] = useState<number | null>(null);
+  /** Masked address for this number, learned from the check-mobile call the
+      phone step already makes — so the reset screen can name the inbox before
+      a code is sent, without a second request. */
+  const [accountEmailHint, setAccountEmailHint] = useState<string | null>(null);
 
-  const isValid = phone.replace(/\s/g, "").length >= 7;
+  /**
+   * Deep link from Account Centre's "Reset PIN".
+   *
+   * That screen signs the user out and hands the number over, so the reset
+   * opens on the code step instead of making someone who is already signed in
+   * retype the phone number they just proved they own. The masked inbox hint
+   * normally comes off the phone step's check-mobile call, which this path
+   * skips, so it is fetched here — a null hint just falls back to "your email".
+   */
+  useEffect(() => {
+    const handoff = (location.state as { resetPhone?: { country_code: string; mobile: string } } | null)
+      ?.resetPhone;
+    if (!handoff || !FORGOT_PIN_ENABLED) return;
+    // Clear the state so a back-navigation doesn't drop into reset a second time.
+    navigate(".", { replace: true, state: null });
+    const match = countryCodes.find((c) => c.code === handoff.country_code);
+    if (match) setCountryCode(match);
+    setPhone(handoff.mobile);
+    setStep("reset");
+    void checkMobileStatus({
+      country_code: handoff.country_code,
+      mobile: handoff.mobile,
+    })
+      .then((status) => setAccountEmailHint(status.email_hint))
+      .catch(() => { /* hint is a nicety; the reset still works without it */ });
+    // Runs once, on the handoff that mounted this screen.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // The input only ever holds digits, so this is a plain length check.
+  const isValid = phone.length === MOBILE_DIGITS;
 
   // Enter anywhere = the step's primary (highlighted) button.
   useEnterSubmit(() => void handlePhoneSubmit(), step === "phone" && !showCodes);
   useEnterSubmit(() => void handlePinSubmit(), step === "pin");
   useEnterSubmit(() => void handleCreateAccount(), step === "setup");
-  useEnterSubmit(() => {
-    if (camsFile) setShowCamsPasswordModal(true);
-  }, step === "cams" && !showCamsPasswordModal);
+  useEnterSubmit(
+    () => void (resetSent ? handleResetConfirm() : handleResetRequest()),
+    step === "reset",
+  );
 
   // WelcomeScreen is a single component that swaps between internal sub-steps,
   // so the onboarding "viewed" events are emitted here on each sub-step change
@@ -90,6 +162,20 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
     if (step === "phone") trackOnboardingStepViewed("phone_entry");
     else if (step === "setup") trackOnboardingStepViewed("account_setup");
   }, [step]);
+
+  // Back from either post-phone step returns to the number entry with that
+  // step's inputs cleared, so nothing half-typed leaks into a different number.
+  const backToPhone = () => {
+    setStep("phone");
+    setPin("");
+    setName("");
+    setNewPin("");
+    setConfirmPin("");
+    setEmail("");
+    setNameError("");
+    setPinError("");
+    setEmailError("");
+  };
 
   const handlePhoneSubmit = async () => {
     if (!isValid || loading) return;
@@ -103,11 +189,11 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
         mobile: digits,
       });
       exists = status.exists;
-      setIsReturningUser(status.exists);
       setReturningUserOnboardingDone(status.exists && status.is_onboarding_complete);
+      setAccountEmailHint(status.email_hint ?? null);
     } catch {
-      setIsReturningUser(false);
       setReturningUserOnboardingDone(false);
+      setAccountEmailHint(null);
     }
 
     setLoading(false);
@@ -133,21 +219,18 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
   };
 
   // A returning user with unfinished onboarding lands EXACTLY where they left
-  // off — resolved from backend state (answers saved + holdings imported), so
+  // off — resolved from backend state (holdings imported / CAMS deferred), so
   // progress survives any time away or a different device.
   const resumeOnboarding = async () => {
     setLoading(true);
     try {
-      const route = await resolveOnboardingResumeRoute();
-      if (route) {
-        navigate(route);
-        return;
-      }
+      navigate(await resolveOnboardingResumeRoute());
+      return;
     } catch {
-      /* resolution failed → safest is the wizard, which re-checks itself */
+      /* resolution failed → fall back to the first onboarding step */
     }
     setLoading(false);
-    onNext(); // tell-us wizard — asks only the still-missing questions
+    onNext(); // /cams-upload — the step right after account setup
   };
 
   // Returning user: verify the PIN they set at signup and drop them into the app.
@@ -165,16 +248,20 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
       password: pin,
     };
 
+    // A failed PIN must FAIL. There used to be a retry here that called
+    // login() without the password, which signed the user in on any wrong PIN
+    // and made the PIN decorative. Accounts that never set one still sign in,
+    // because the backend only checks a password when a hash exists.
     try {
       await login(creds);
     } catch {
-      try {
-        await login({ country_code: creds.country_code, mobile: creds.mobile });
-      } catch {
-        setPinError("Could not sign in. Check your PIN and try again.");
-        setLoading(false);
-        return;
-      }
+      setPinError(
+        FORGOT_PIN_ENABLED
+          ? "That PIN doesn't match. Try again, or reset it below."
+          : "That PIN doesn't match. Please try again.",
+      );
+      setLoading(false);
+      return;
     }
     await refresh();
     setLoading(false);
@@ -191,6 +278,89 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
       }
     }
     await resumeOnboarding();
+  };
+
+  const openReset = () => {
+    setStep("reset");
+    setResetSent(false);
+    // Seeded from check-mobile, so the screen opens already naming the inbox.
+    setResetHint(accountEmailHint);
+    setResetCode("");
+    setResetPin("");
+    setResetConfirm("");
+    setResetError("");
+    setResetNotice("");
+    setResetExpiryMinutes(null);
+  };
+
+  const backToPin = () => {
+    setStep("pin");
+    setPin("");
+    setPinError("");
+  };
+
+  /** Ask for a code. The backend answers the same whether or not the number is
+      registered, so a "sent" state here is never proof an account exists. */
+  const handleResetRequest = async () => {
+    if (loading) return;
+    setResetError("");
+    setLoading(true);
+    try {
+      const res = await requestPinReset({
+        country_code: countryCode.code,
+        mobile: phone,
+      });
+      setResetHint(res.email_hint);
+      setResetExpiryMinutes(res.expires_in_minutes);
+      setResetSent(true);
+      // When there's an address to name, it gets its own block below rather
+      // than a sentence — which inbox to open is the one thing the user needs
+      // off this screen. The plain message is kept for the deliberately vague
+      // answer a number with no account on file gets.
+      setResetNotice(res.email_hint ? "" : res.message);
+    } catch (e) {
+      setResetError(
+        e instanceof Error ? e.message : "Could not send a reset code. Try again.",
+      );
+    }
+    setLoading(false);
+  };
+
+  const handleResetConfirm = async () => {
+    if (loading) return;
+    if (resetCode.length !== 6) {
+      setResetError("Enter the 6-digit code from your email");
+      return;
+    }
+    if (resetPin.length !== 4) {
+      setResetError("Choose a 4-digit PIN");
+      return;
+    }
+    if (resetPin !== resetConfirm) {
+      setResetError("The two PINs don't match");
+      return;
+    }
+    setResetError("");
+    setLoading(true);
+    try {
+      await confirmPinReset({
+        country_code: countryCode.code,
+        mobile: phone,
+        code: resetCode,
+        new_pin: resetPin,
+      });
+    } catch (e) {
+      setResetError(
+        e instanceof Error ? e.message : "Could not reset your PIN. Try again.",
+      );
+      setLoading(false);
+      return;
+    }
+    setLoading(false);
+    // Straight back to the PIN prompt rather than auto-signing in: typing the
+    // new PIN once confirms it landed, and keeps one sign-in path.
+    backToPin();
+    setPinError("PIN updated — sign in with your new PIN.");
   };
 
   const isEmailValid = (v: string) => {
@@ -267,142 +437,6 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
     navigate("/cams-upload");
   };
 
-  const pickCamsFile = (f: File | null) => {
-    setCamsPickError("");
-    if (!f) {
-      setCamsFile(null);
-      return;
-    }
-    const isPdf = f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf");
-    if (!isPdf) {
-      setCamsPickError("Please choose a PDF (CAMS or KFintech Consolidated Account Statement).");
-      setCamsFile(null);
-      return;
-    }
-    if (f.size > MAX_PDF_BYTES) {
-      setCamsPickError("That PDF is larger than 20 MB. Try a shorter statement period.");
-      setCamsFile(null);
-      return;
-    }
-    setCamsFile(f);
-    setShowCamsPasswordModal(true);
-  };
-
-  /* â”€â”€â”€ CAMS upload (new users only) â”€â”€â”€ */
-  if (step === "cams") {
-    return (
-      <div className="mobile-container flex flex-col bg-background px-6 pb-6 pt-12">
-        <motion.div
-          initial={{ opacity: 0, x: 40 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.35 }}
-          className="flex-1 flex flex-col"
-        >
-          <button
-            type="button"
-            onClick={() => {
-              setStep("pin");
-              setCamsFile(null);
-              setCamsPickError("");
-              setShowCamsPasswordModal(false);
-            }}
-            className="flex items-center gap-1 text-sm text-muted-foreground mb-6 hover:text-foreground transition-colors"
-          >
-            <ArrowLeft className="h-4 w-4" /> Back
-          </button>
-
-          <h1 className="text-xl font-semibold text-foreground mb-2">
-            Upload your CAMS statement
-          </h1>
-          <p className="text-xs text-muted-foreground mb-6 leading-relaxed">
-            Add your CAMS or KFintech Consolidated Account Statement (CAS) as a PDF. After you choose
-            the file, we&apos;ll ask for the PDF password on the next step to read folios and holdings.
-          </p>
-
-          <div className="mb-6">
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="flex w-full items-center gap-3 rounded-xl border border-dashed border-border bg-card px-3.5 py-4 text-left transition-colors hover:bg-accent/40"
-            >
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-secondary">
-                {camsFile ? (
-                  <FileText className="h-5 w-5 text-foreground" />
-                ) : (
-                  <UploadCloud className="h-5 w-5 text-muted-foreground" />
-                )}
-              </div>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-foreground">
-                  {camsFile ? camsFile.name : "Choose CAMS / KFintech CAS PDF"}
-                </p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">
-                  {camsFile
-                    ? `${(camsFile.size / 1024).toFixed(0)} KB Â· tap to change file`
-                    : "PDF only Â· up to 20 MB"}
-                </p>
-              </div>
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="application/pdf,.pdf"
-              className="hidden"
-              onChange={(e) => pickCamsFile(e.target.files?.[0] ?? null)}
-            />
-            {camsPickError && (
-              <p className="text-xs text-destructive mt-3">{camsPickError}</p>
-            )}
-          </div>
-
-          <p className="text-[11px] text-muted-foreground leading-relaxed mb-auto">
-            The password is only used to open the PDF on our servers and is not stored.
-          </p>
-        </motion.div>
-
-        <motion.button
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2, duration: 0.4 }}
-          type="button"
-          onClick={() => camsFile && setShowCamsPasswordModal(true)}
-          disabled={!camsFile}
-          className="flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold text-primary-foreground tracking-wide transition-all active:scale-[0.98] disabled:opacity-90 disabled:pointer-events-none"
-        >
-          Enter password & extract
-          <ArrowRight className="h-4 w-4" />
-        </motion.button>
-
-        <button
-          type="button"
-          onClick={() => navigate("/cams-upload")}
-          className="mt-3 w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors"
-        >
-          No PDF handy? Get your statement by email instead
-        </button>
-
-        <CamsStatementPasswordModal
-          open={showCamsPasswordModal}
-          file={camsFile}
-          onClose={() => {
-            setShowCamsPasswordModal(false);
-          }}
-          onImportedContinue={() => {
-            try {
-              // The link-accounts confirmation page is gone — mark its legacy
-              // session flag so resume/options screens agree, and continue
-              // straight to About You.
-              sessionStorage.setItem("completedLinkAccounts", "true");
-            } catch {
-              /* ignore */
-            }
-            navigate("/about-you");
-          }}
-        />
-      </div>
-    );
-  }
-
   /* ─── New user: account setup (name + PIN + confirm + email on one page) ─── */
   if (step === "setup") {
     return (
@@ -413,23 +447,6 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
           transition={{ duration: 0.35 }}
           className="flex-1 flex flex-col overflow-y-auto"
         >
-          <button
-            type="button"
-            onClick={() => {
-              setStep("phone");
-              setName("");
-              setNewPin("");
-              setConfirmPin("");
-              setEmail("");
-              setNameError("");
-              setPinError("");
-              setEmailError("");
-            }}
-            className="flex items-center gap-1 text-sm text-muted-foreground mb-6 hover:text-foreground transition-colors"
-          >
-            <ArrowLeft className="h-4 w-4" /> Back
-          </button>
-
           <h1 className="text-xl font-semibold text-foreground mb-2">Set up your account</h1>
           <p className="text-xs text-muted-foreground mb-1">
             A few quick details to get you started.
@@ -509,24 +526,162 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
           </div>
         </motion.div>
 
-        <motion.button
+        <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2, duration: 0.4 }}
-          type="button"
-          onClick={() => void handleCreateAccount()}
-          disabled={loading}
-          className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold text-primary-foreground tracking-wide transition-all active:scale-[0.98] disabled:opacity-90 disabled:pointer-events-none"
+          className="mt-4"
         >
-          {loading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <>
-              Create account
-              <ArrowRight className="h-4 w-4" />
-            </>
+          <OnboardingNav
+            nextLabel="Create account"
+            onNext={() => void handleCreateAccount()}
+            nextLoading={loading}
+            loadingLabel="Creating your account…"
+            onBack={backToPhone}
+            backLabel="Back to phone number"
+          />
+        </motion.div>
+      </div>
+    );
+  }
+
+  /* ─── Forgot PIN: emailed code → new PIN ─── */
+  if (step === "reset") {
+    return (
+      <div className="mobile-container flex flex-col bg-background px-6 pb-6 pt-12">
+        <motion.div
+          initial={{ opacity: 0, x: 40 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.35 }}
+          className="flex-1 flex flex-col"
+        >
+          <h1 className="text-xl font-semibold text-foreground mb-2">Reset your PIN</h1>
+          {/* Say EMAIL, and then show the inbox. Leading with the phone number
+              invites the assumption that a text is coming, and someone waiting
+              on an SMS never opens the inbox the code is actually sitting in. */}
+          <p className="text-xs text-muted-foreground mb-1">
+            {resetSent
+              ? "Enter the 6-digit code from your email, then choose a new PIN."
+              : resetHint
+                ? "We'll email a 6-digit code to:"
+                : "We'll email you a 6-digit code — it goes to the email address on your account, not to this number."}
+          </p>
+          {/* The address once it is known, the number only as a fallback: an
+              account with no email on file still has to see WHICH account is
+              being reset. Hidden after sending, where the block below says it
+              with the expiry attached. */}
+          {!(resetSent && resetHint) && (
+            <p className="mb-6 truncate text-xs font-semibold text-foreground">
+              {resetHint ?? `${countryCode.code} ${phone}`}
+            </p>
           )}
-        </motion.button>
+
+          {/* The address the code went to, named as plainly as the masking
+              allows. The backend masks it; the app never sees it in full. */}
+          {resetSent && resetHint && (
+            <div className="mb-5 flex items-start gap-2.5 rounded-lg border border-border bg-muted/40 px-3 py-2.5">
+              <Mail className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+              <div className="min-w-0">
+                <p className="text-[11px] text-muted-foreground">Code sent to</p>
+                <p className="truncate text-xs font-semibold text-foreground">
+                  {resetHint}
+                </p>
+                {resetExpiryMinutes !== null && (
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Expires in {resetExpiryMinutes} minutes. Check spam if it
+                    hasn't arrived.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {resetNotice && (
+            <p className="text-[11px] text-muted-foreground mb-4 leading-relaxed">
+              {resetNotice}
+            </p>
+          )}
+
+          {resetSent && (
+            <div className="space-y-5">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-2 block">
+                  6-digit code
+                </label>
+                <InputOTP maxLength={6} value={resetCode} onChange={setResetCode}>
+                  <InputOTPGroup>
+                    {[0, 1, 2, 3, 4, 5].map((i) => (
+                      <InputOTPSlot key={i} index={i} />
+                    ))}
+                  </InputOTPGroup>
+                </InputOTP>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-2 block">
+                  New 4-digit PIN
+                </label>
+                <InputOTP maxLength={4} value={resetPin} onChange={setResetPin}>
+                  <InputOTPGroup>
+                    <InputOTPSlot index={0} />
+                    <InputOTPSlot index={1} />
+                    <InputOTPSlot index={2} />
+                    <InputOTPSlot index={3} />
+                  </InputOTPGroup>
+                </InputOTP>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-2 block">
+                  Confirm new PIN
+                </label>
+                <InputOTP maxLength={4} value={resetConfirm} onChange={setResetConfirm}>
+                  <InputOTPGroup>
+                    <InputOTPSlot index={0} />
+                    <InputOTPSlot index={1} />
+                    <InputOTPSlot index={2} />
+                    <InputOTPSlot index={3} />
+                  </InputOTPGroup>
+                </InputOTP>
+              </div>
+            </div>
+          )}
+
+          {resetError && (
+            <p className="text-xs text-destructive mt-4">{resetError}</p>
+          )}
+
+          <div className="mb-auto" />
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2, duration: 0.4 }}
+        >
+          <OnboardingNav
+            nextLabel={resetSent ? "Set new PIN" : "Email me a code"}
+            onNext={() =>
+              void (resetSent ? handleResetConfirm() : handleResetRequest())
+            }
+            nextLoading={loading}
+            loadingLabel={resetSent ? "Updating your PIN…" : "Sending the code…"}
+            onBack={backToPin}
+            backLabel="Back to sign in"
+            secondary={
+              resetSent ? (
+                <button
+                  type="button"
+                  onClick={() => void handleResetRequest()}
+                  disabled={loading}
+                  className="text-[12px] font-medium text-primary transition-colors hover:text-primary/80 disabled:opacity-50"
+                >
+                  Send a new code
+                </button>
+              ) : undefined
+            }
+          />
+        </motion.div>
       </div>
     );
   }
@@ -541,18 +696,6 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
           transition={{ duration: 0.35 }}
           className="flex-1 flex flex-col"
         >
-          <button
-            type="button"
-            onClick={() => {
-              setStep("phone");
-              setPin("");
-              setPinError("");
-            }}
-            className="flex items-center gap-1 text-sm text-muted-foreground mb-6 hover:text-foreground transition-colors"
-          >
-            <ArrowLeft className="h-4 w-4" /> Back
-          </button>
-
           <h1 className="text-xl font-semibold text-foreground mb-2">
             Welcome back
           </h1>
@@ -578,31 +721,35 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
             <p className="text-xs text-destructive text-center mb-4">{pinError}</p>
           )}
 
-          {isReturningUser && (
-            <p className="text-[11px] text-muted-foreground text-center mb-auto">
-              Seeded test accounts may use any 4-digit PIN, or the PIN set at signup.
-            </p>
+          {/* Nothing is shown while the flow is off — no link, no notice. The
+              spacer keeps the Continue button pinned to the bottom either way. */}
+          {FORGOT_PIN_ENABLED && (
+            <button
+              type="button"
+              onClick={openReset}
+              className="mx-auto text-[12px] font-medium text-primary underline-offset-2 transition-colors hover:underline"
+            >
+              Forgot your PIN?
+            </button>
           )}
+          <div className="mb-auto" />
         </motion.div>
 
-        <motion.button
+        <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2, duration: 0.4 }}
-          type="button"
-          onClick={() => void handlePinSubmit()}
-          disabled={pin.length < 4 || loading}
-          className="flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold text-primary-foreground tracking-wide transition-all active:scale-[0.98] disabled:opacity-90 disabled:pointer-events-none"
         >
-          {loading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <>
-              Continue
-              <ArrowRight className="h-4 w-4" />
-            </>
-          )}
-        </motion.button>
+          <OnboardingNav
+            nextLabel="Continue"
+            onNext={() => void handlePinSubmit()}
+            nextDisabled={pin.length < 4}
+            nextLoading={loading}
+            loadingLabel="Signing you in…"
+            onBack={backToPhone}
+            backLabel="Back to phone number"
+          />
+        </motion.div>
       </div>
     );
   }
@@ -627,6 +774,12 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
           {[
             { icon: TrendingUp, label: "Track all investments", sub: "Mutual funds, stocks and more" },
             { icon: Sparkles, label: "Prozpr, your own AI wealth advisor", sub: "Personalized recommendations" },
+            // Restored third card. It sat here originally as "Bank-grade
+            // security / 256-bit encryption" and was dropped somewhere before
+            // release/mvp-v2; the slot is back with plainer words. The number
+            // field is directly below, and "why should I hand this over" is
+            // where people actually stop — so this answers that, not specs.
+            { icon: Shield, label: "Your data stays private", sub: "Encrypted, never sold or shared" },
           ].map((item, i) => (
             <motion.div
               key={item.label}
@@ -685,11 +838,18 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
               </div>
             )}
           </div>
+          {/* Digits only, capped at the exact length the backend accepts —
+              letters and separators are dropped as they're typed rather than
+              failing on submit. */}
           <input
             type="tel"
+            inputMode="numeric"
+            maxLength={MOBILE_DIGITS}
             value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            placeholder="Phone number"
+            onChange={(e) =>
+              setPhone(e.target.value.replace(/\D/g, "").slice(0, MOBILE_DIGITS))
+            }
+            placeholder={`${MOBILE_DIGITS}-digit mobile number`}
             className="flex-1 bg-transparent py-2.5 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none"
           />
         </div>
@@ -707,40 +867,25 @@ const WelcomeScreen = ({ onNext, onExistingUserLogin }: WelcomeScreenProps) => {
         <p className="text-xs text-muted-foreground leading-relaxed">
           New users set a PIN, then can import holdings from a CAMS CAS PDF.
         </p>
+        <p className="text-[11px] text-muted-foreground/80 leading-relaxed mt-1">
+          Enter your {MOBILE_DIGITS}-digit number without the country code.
+        </p>
       </motion.div>
 
-      <motion.button
+      {/* Entry point of the whole flow — nothing precedes it, so no Back. */}
+      <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.9, duration: 0.5 }}
-        type="button"
-        onClick={() => void handlePhoneSubmit()}
-        disabled={!isValid || loading}
-        className="flex w-full items-center justify-center gap-2 rounded-xl wealth-gradient py-3.5 text-[15px] font-semibold text-primary-foreground tracking-wide transition-all active:scale-[0.98] disabled:opacity-90 disabled:pointer-events-none"
       >
-        {loading ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <>
-            Get Started
-            <ArrowRight className="h-4 w-4" />
-          </>
-        )}
-      </motion.button>
-
-      {/* Privacy note. The long-form version lives at /privacy, linked from Profile. */}
-      <motion.p
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.95, duration: 0.5 }}
-        className="mt-3 flex items-start justify-center gap-1.5 text-center text-[11px] leading-relaxed text-muted-foreground"
-      >
-        <Lock className="mt-[1px] h-3 w-3 shrink-0" aria-hidden="true" />
-        <span>
-          Anything you upload is stored securely. Our team does not track or review individual
-          customer data.
-        </span>
-      </motion.p>
+        <OnboardingNav
+          nextLabel="Get Started"
+          onNext={() => void handlePhoneSubmit()}
+          nextDisabled={!isValid}
+          nextLoading={loading}
+          loadingLabel="Checking your number…"
+        />
+      </motion.div>
     </div>
   );
 };
