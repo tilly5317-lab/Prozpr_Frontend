@@ -41,6 +41,19 @@ function lastIndexMatching<T>(arr: T[], pred: (x: T) => boolean): number {
  * candidate is saved, so "Save preference" only returns while there is a
  * candidate left to save.
  */
+/**
+ * KNOWN LIMITATION (2026-09-17). A preference-redirect turn carries
+ * `intent === "rebalancing"` but presents NO plan, so on restore the plan pill
+ * can attach to it: this picks the LAST rebalancing message, and that may now
+ * be a redirect. The misattribution is cosmetic — `rebalancingRunId` is still
+ * the real latest run, so the pill opens a real plan — but the pill appears
+ * beside a reply that did not produce one.
+ *
+ * NOT fixable from here: the restored history carries only `role` and `intent`,
+ * with nothing distinguishing a redirect from a plan. The fix is a per-message
+ * marker persisted server-side (the live path already has one:
+ * `show_preferences_pill`, which is per-turn and so is also not restored).
+ */
 export function deriveChatPlanPills(
   history: ChatMessageLike[],
   rebalancingRunId: string | null,

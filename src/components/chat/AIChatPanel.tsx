@@ -96,7 +96,10 @@ interface Message {
   additionalInvestmentCadence?: string;
   /** True when this rebalancing turn produced a savable candidate preference
    *  (a "what-if"): the Save-plan pill notes the preference is kept and the
-   *  "View preferences" link shows. Backend `has_candidate_preference`. */
+   *  "View preferences" link shows. Backend `has_candidate_preference`.
+   *  RETIRED 2026-09-17: chat runs no preference what-ifs, so the backend never
+   *  sets this now and the branches below cannot fire. Kept as the matching
+   *  seam for when chat-side preference changes ship. */
   hasCandidatePreference?: boolean;
   /**
    * The question needed the user's holdings and none are imported yet (CAMS was
@@ -104,6 +107,12 @@ interface Message {
    * beside it so the fix is one tap away, without a modal opening uninvited.
    */
   showAddCams?: boolean;
+  /**
+   * The turn was about their saved investment preferences. Chat does not answer
+   * those (ruling 2026-09-17) — Pi points at the preferences page, and this
+   * renders the link beside the reply so the pointer is one tap away.
+   */
+  showPreferencesPill?: boolean;
   /** Chart visualization payloads from backend AI modules. */
   chartPayloads?: any[] | null;
   /** Bubble currently being filled by SSE deltas; replaced by the done event. */
@@ -1717,6 +1726,7 @@ const AIChatPanel = ({
         ...(additionalInvestmentCadence ? { additionalInvestmentCadence } : {}),
         ...(hasCandidatePreference ? { hasCandidatePreference: true } : {}),
         ...(resp.portfolio_data_missing ? { showAddCams: true } : {}),
+        ...(resp.show_preferences_pill ? { showPreferencesPill: true } : {}),
         chartPayloads: resp.assistant_message.chart_payloads || null,
       };
       setMessages((prev) => {
@@ -2111,6 +2121,18 @@ const AIChatPanel = ({
                   ) : null}
                 </div>
               </div>
+              {msg.showPreferencesPill ? (
+                /* Preference turns carry no plan, so this sits OUTSIDE the
+                   plan-gated pill container above — same placement as the
+                   Add-CAMS CTA. Inline per-message, never a floating FAB. */
+                <button
+                  type="button"
+                  onClick={() => navigate("/invest/preferences")}
+                  className="ml-7 mt-2 self-start inline-flex items-center gap-1 rounded-full border border-foreground/10 bg-transparent px-3 py-1.5 text-[12px] font-medium text-foreground/60 transition-colors hover:text-foreground/90"
+                >
+                  Open preferences
+                </button>
+              ) : null}
               {msg.showAddCams ? (
                 <button
                   type="button"

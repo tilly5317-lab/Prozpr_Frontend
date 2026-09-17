@@ -957,14 +957,22 @@ export interface ChatSendResponse {
    *  "lumpsum") — lets the chat route "View plan" to the SIP vs Lump sum tab. */
   additional_investment_cadence?: string | null;
   /** True when this turn produced a savable candidate preference (a "what-if").
-   *  The rebalancing pill uses it to note the preference is kept on save and to
-   *  show the "View preferences" link only on what-if turns. */
+   *  RETIRED 2026-09-17: chat runs no preference what-ifs, so the backend never
+   *  sets this now. Kept as the matching seam for when chat-side preference
+   *  changes ship; use `show_preferences_pill` for today's behaviour. */
   has_candidate_preference?: boolean | null;
   /**
    * The question needed the user's holdings and none are imported yet. Pi's
    * reply says so; the client pairs it with an "Add CAMS statement" CTA.
    */
   portfolio_data_missing?: boolean;
+  /**
+   * The turn was about the customer's saved investment preferences — reading
+   * them, changing them, or asking for more/less of a class or category. Chat
+   * does not answer those (ruling 2026-09-17): Pi points at the preferences
+   * page and this renders the link that makes the pointer actionable.
+   */
+  show_preferences_pill?: boolean;
   /**
    * The session's title after this turn. Only changes on the first turn, when
    * the backend's auto-titler replaces the "New Chat" placeholder with a name
