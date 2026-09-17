@@ -36,15 +36,12 @@ export default function AssetMixDial({
   equityPct,
   step,
   onChange,
-  centerLabel,
   equityNote,
   debtNote,
 }: {
   equityPct: number;
   step: number;
   onChange: (pct: number) => void;
-  /** Rendered inside the hole — typically the return the mix implies. */
-  centerLabel?: string;
   /** Sleeve assumptions, shown beside each arc so the blend is never a mystery. */
   equityNote: string;
   debtNote: string;
@@ -166,7 +163,7 @@ export default function AssetMixDial({
 
         <text
           x={CENTER}
-          y={CENTER - 3}
+          y={CENTER + 1}
           textAnchor="middle"
           className="fill-foreground"
           style={{ fontSize: 17, fontWeight: 700 }}
@@ -175,31 +172,18 @@ export default function AssetMixDial({
         </text>
         <text
           x={CENTER}
-          y={CENTER + 8}
+          y={CENTER + 11}
           textAnchor="middle"
           className="fill-muted-foreground"
           style={{ fontSize: 7.5, letterSpacing: 0.4 }}
         >
           EQUITY
         </text>
-        {centerLabel && (
-          <text
-            x={CENTER}
-            y={CENTER + 19}
-            textAnchor="middle"
-            style={{ fontSize: 8, fontWeight: 700, fill: EQUITY_COLOR }}
-          >
-            {centerLabel}
-          </text>
-        )}
       </svg>
 
       <div className="min-w-0 flex-1 space-y-2">
         <MixLegendRow color={EQUITY_COLOR} name="Equity" pct={equityPct} note={equityNote} />
         <MixLegendRow color={DEBT_COLOR} name="Debt" pct={debtPct} note={debtNote} />
-        <p className="text-[10px] leading-snug text-muted-foreground/70">
-          Drag the ring to re-split. More equity, higher assumed return.
-        </p>
       </div>
     </div>
   );

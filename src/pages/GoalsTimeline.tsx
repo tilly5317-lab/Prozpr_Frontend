@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { formatMoneyInput } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
@@ -16,8 +16,9 @@ import {
 import {
   BriefcaseBusiness,
   Car,
-  Check,
+  ChevronDown,
   ChevronLeft,
+  ChevronUp,
   Download,
   GraduationCap,
   Heart,
@@ -25,12 +26,14 @@ import {
   HelpCircle,
   Landmark,
   Loader2,
+  Minus,
   PanelRightOpen,
   PiggyBank,
   Plane,
   Plus,
   RotateCcw,
   Settings2,
+  SlidersHorizontal,
   Target,
   TrendingUp,
   Trophy,
@@ -59,17 +62,22 @@ import {
 import { exportCashflowXls } from "@/lib/export-xls";
 import {
   bandForRate,
-  clearSavedMix,
+  clampEquityReturn,
   DEBT_RETURN,
   EQUITY_RETURN,
+  EQUITY_RETURN_MAX,
+  EQUITY_RETURN_MIN,
+  EQUITY_RETURN_STEP,
   EQUITY_STEP,
   equityPctForRate,
   formatMix,
   formatRate,
   PROJECTION_BASE_RATE,
   rateForEquityPct,
+  readSavedEquityReturn,
   readSavedMix,
   scaleAnnualRowsToRate,
+  writeSavedEquityReturn,
   writeSavedMix,
 } from "@/lib/projectionScenario";
 import CashflowGate from "@/components/goals/CashflowGate";
@@ -79,6 +87,28 @@ import GuidedTour, { type TourStep } from "@/components/GuidedTour";
 
 /** Marks the first-run goal-planning walkthrough as seen, per browser. */
 const GOAL_TOUR_SEEN_KEY = "goalPlanningTourSeen";
+
+// The strategy card closes to its tab row. A per-browser preference, so the
+// layout someone chose survives a reload.
+const STRATEGY_COLLAPSED_KEY = "goals-strategy-collapsed";
+
+function readFlag(key: string): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(key) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeFlag(key: string, on: boolean): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, on ? "1" : "0");
+  } catch {
+    /* private mode / quota — the choice just won't survive the reload */
+  }
+}
 
 type Priority = "Low" | "Medium" | "High";
 
@@ -100,6 +130,8 @@ const PRIORITIES: Priority[] = ["High", "Medium", "Low"];
 // last goal year and the retirement year (age 60 by default); dragging a goal
 // past the bottom can reveal future rows up to MAX_HORIZON_YEARS from today.
 const DEFAULT_RETIREMENT_AGE = 60;
+/** Step for the monthly-SIP stepper — a SIP moves in round thousands. */
+const SIP_STEP = 1000;
 // Hard ceiling for the draggable timeline: currentYear + this many years
 // (e.g. 2026 → 2126, 2027 → 2127). Mirrors the backend cashflow engine's
 // horizon cap (compute_horizon_years cap=100 FY-years from today) so every
@@ -111,10 +143,11 @@ const FALLBACK_CURRENT_AGE = 30;
 const MIN_HORIZON_YEARS = 5;
 // Row density. The near term is where the plan is actionable, so the first
 // DENSE_ROW_YEARS get a bar each; after that the timeline thins to one bar
-// every YEAR_ROW_STEP years. Goal years and the final year are always kept, so
-// nothing the user placed can be thinned away.
+// every YEAR_ROW_STEP years, landing on round marks (age 25 / 30 / 35 ...).
+// Goal years and the final year are always kept, so nothing the user placed
+// can be thinned away.
 const DENSE_ROW_YEARS = 5;
-const YEAR_ROW_STEP = 3;
+const YEAR_ROW_STEP = 5;
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, v));
@@ -951,10 +984,8 @@ interface ProjectionContentProps {
   appliedRate: number;
   /** Applied equity share, or null while the plan runs on the engine's return. */
   appliedEquityPct: number | null;
-  /** Commit an asset mix to the plan — only fired by the explicit Apply button. */
-  onApplyMix: (equityPct: number) => void;
-  /** Drop the applied mix and go back to the engine's computed plan. */
-  onResetMix: () => void;
+  /** Jump to the Strategy tab, where the mix and the return are actually set. */
+  onGoToStrategy: () => void;
 }
 
 type WaterfallItem = { axis: string; label: string; value: number; kind: WaterfallKind };
@@ -994,24 +1025,12 @@ function ProjectionContent({
   onGoToInputs,
   appliedRate,
   appliedEquityPct,
-  onApplyMix,
-  onResetMix,
+  onGoToStrategy,
 }: ProjectionContentProps) {
-  // Moving the slider only previews here — every figure below it recalculates
-  // live. The goal-planning page's cashflow changes when, and only when, the
-  // user presses Apply, so nobody has their plan rewritten by an exploratory drag.
-  //
-  // The mix is what the user sets; the return is read off it. With no mix applied
-  // yet the slider opens on the split nearest the plan's own return, so the first
-  // drag starts from where the plan already is.
-  const openingMix = appliedEquityPct ?? equityPctForRate(appliedRate);
-  const [draftEquity, setDraftEquity] = useState(openingMix);
-  useEffect(() => {
-    setDraftEquity(openingMix);
-  }, [openingMix]);
-  const draftRate = rateForEquityPct(draftEquity);
-  const band = bandForRate(draftRate);
-  const isDirty = draftEquity !== openingMix;
+  // Everything here reads the mix and return the plan is actually running on.
+  // Setting them lives one tab over, in Strategy — a projection that quietly
+  // previewed an unapplied draft would be a different plan than the timeline's.
+  const band = bandForRate(appliedRate);
 
   const currentYear = new Date().getFullYear();
   // Horizon comes from the engine: last FY-end = max(retirement, last goal).
@@ -1037,10 +1056,10 @@ function ProjectionContent({
   const horizonYears = Math.max(1, horizonYear - currentYear);
   const ROI = useMemo(() => {
     const factor =
-      Math.pow(1 + draftRate / 100, horizonYears) /
+      Math.pow(1 + appliedRate / 100, horizonYears) /
       Math.pow(1 + PROJECTION_BASE_RATE / 100, horizonYears);
     return Math.round(ROI_BASE * factor);
-  }, [draftRate, horizonYears, ROI_BASE]);
+  }, [appliedRate, horizonYears, ROI_BASE]);
 
   // No plan yet → don't fabricate a waterfall; prompt to complete inputs.
   if (!fundFlow) {
@@ -1107,24 +1126,26 @@ function ProjectionContent({
   return (
     <div className="space-y-4">
       <p className="text-[11px] text-muted-foreground">
-        Through {horizonLabel} · {monthlyLabel} · {formatMix(draftEquity)} equity-debt ·{" "}
-        {formatRate(draftRate)} post-tax
+        Through {horizonLabel} · {monthlyLabel} ·{" "}
+        {appliedEquityPct != null ? `${formatMix(appliedEquityPct)} equity-debt · ` : ""}
+        {formatRate(appliedRate)} post-tax
       </p>
       <div className="space-y-4">
-                {/* Asset mix — the return is derived from the split, and every
-                    figure below recalculates as it moves. */}
-                <div data-tour="asset-mix">
-                  <div className="mb-3 flex items-start justify-between gap-2">
+                {/* What this projection is built on. The controls themselves are
+                    in Strategy, so there is exactly one place a plan is changed
+                    and this tab only ever shows the applied one. */}
+                <div className="rounded-xl border border-border bg-muted/30 px-3 py-2.5">
+                  <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                        Equity / debt mix
+                        Built on
                       </p>
-                      <p className="text-[11px] leading-snug text-muted-foreground/70">
-                        {band.blurb}
+                      <p className="mt-0.5 text-[12px] font-semibold text-foreground">
+                        {appliedEquityPct != null
+                          ? `${formatMix(appliedEquityPct)} equity-debt · ${formatRate(appliedRate)} p.a.`
+                          : `The engine's own plan · ${formatRate(appliedRate)} p.a.`}
                       </p>
                     </div>
-                    {/* The wheel carries the split and the rate, so the header
-                        only names the band the mix lands in. */}
                     <span
                       className="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold"
                       style={{
@@ -1136,65 +1157,14 @@ function ProjectionContent({
                       {band.label}
                     </span>
                   </div>
-
-                  {/* The wheel IS the control — press or drag the ring to re-split. */}
-                  <AssetMixDial
-                    equityPct={draftEquity}
-                    step={EQUITY_STEP}
-                    onChange={setDraftEquity}
-                    centerLabel={`${formatRate(draftRate)} p.a.`}
-                    equityNote={`assumes ${formatRate(EQUITY_RETURN)} p.a.`}
-                    debtNote={`assumes ${formatRate(DEBT_RETURN)} p.a.`}
-                  />
-
-                  {/* Preview stays in this panel until applied. */}
                   <button
                     type="button"
-                    disabled={!isDirty}
-                    onClick={() => onApplyMix(draftEquity)}
-                    className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-xl py-2.5 text-[12px] font-bold transition-all active:scale-[0.99] disabled:cursor-not-allowed"
-                    style={
-                      isDirty
-                        ? {
-                            backgroundColor: "#D4A868",
-                            color: "#2D1F05",
-                            boxShadow: "0 2px 8px rgba(212,168,104,0.45)",
-                          }
-                        : {
-                            backgroundColor: "hsl(var(--muted) / 0.6)",
-                            color: "hsl(var(--muted-foreground))",
-                          }
-                    }
+                    onClick={onGoToStrategy}
+                    className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#D4A868] underline underline-offset-2"
                   >
-                    {isDirty ? (
-                      <>
-                        <Check className="h-3.5 w-3.5" />
-                        Apply {formatMix(draftEquity)} ({formatRate(draftRate)}) to my plan
-                      </>
-                    ) : appliedEquityPct != null ? (
-                      `${formatMix(appliedEquityPct)} (${formatRate(appliedRate)}) is applied to your plan`
-                    ) : (
-                      `${formatRate(appliedRate)} is applied to your plan`
-                    )}
+                    <SlidersHorizontal className="h-3 w-3" />
+                    Change in Strategy
                   </button>
-
-                  {appliedEquityPct != null && (
-                    <button
-                      type="button"
-                      onClick={onResetMix}
-                      className="mt-1.5 w-full rounded-xl border border-border py-2 text-[11px] font-semibold text-muted-foreground hover:text-foreground"
-                    >
-                      Back to the engine&apos;s plan ({formatRate(PROJECTION_BASE_RATE)})
-                    </button>
-                  )}
-
-                  <p className="mt-1.5 text-[10.5px] leading-snug text-muted-foreground/70">
-                    {isDirty
-                      ? `The figures below are already on a ${formatMix(draftEquity)} mix. The goal-planning page keeps your applied mix until you press Apply.`
-                      : appliedEquityPct == null
-                        ? `Your plan as the engine computed it, at ${formatRate(appliedRate)} — roughly a ${formatMix(openingMix)} mix. Drag to test another split, then apply it.`
-                        : "The goal-planning page is running on this mix. Contributions, one-offs and goal payouts are unchanged — only the return the corpus earns moves."}
-                  </p>
                 </div>
 
                 {/* Closing headline (live) */}
@@ -1328,10 +1298,543 @@ function ProjectionContent({
                 </div>
 
                 <p className="text-[11px] leading-snug text-muted-foreground/80">
-                  Sensitivity varies only investment returns; contributions, one-off flows and goal
-                  outflows are held constant. Assumptions, not a guarantee.
+                  Only returns vary. Assumptions, not a guarantee.
                 </p>
       </div>
+    </div>
+  );
+}
+
+type StrategyTab = "summary" | "sip" | "allocation" | "priority";
+
+interface StrategyContentProps {
+  /** Every goal on the plan, unfiltered — the priority list is where priority is set. */
+  goals: TimelineGoal[];
+  /** Commit a goal's priority. Optimistic upstream; this only reports the intent. */
+  onSetPriority: (id: string, priority: Priority) => void;
+  /** Goal whose priority is mid-save, so its row can show a spinner. */
+  savingPriorityId: string | null;
+  /** Priorities currently feeding the timeline, and the chip that toggles them. */
+  enabledPriorities: Set<Priority>;
+  onToggleFilter: (priority: Priority) => void;
+  /** The return the goal-planning page's cashflow is currently running on. */
+  appliedRate: number;
+  /** Applied equity share, or null while the plan runs on the engine's return. */
+  appliedEquityPct: number | null;
+  /** The equity-sleeve assumption in force (user-set or the standing default). */
+  equityReturn: number;
+  /**
+   * Commit the tab's edits — the mix, the equity assumption, or both. Each
+   * argument is null when that half is unchanged, so one Save can send
+   * whichever of the two the user actually touched.
+   */
+  onSave: (equityPct: number | null, equityReturn: number | null) => void;
+  /** The monthly-SIP control, built by the page that owns its state. */
+  sipPanel: React.ReactNode;
+  /** The SIP saved to the plan — null until a plan exists. */
+  sipApplied: number | null;
+  /** Which section is showing, owned by the page so other CTAs can aim at one. */
+  tab: StrategyTab;
+  onTabChange: (tab: StrategyTab) => void;
+  /** Whole card closed to just its tab row. */
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+}
+
+/**
+ * The three things the user can change about a plan — which goals matter most,
+ * how the money is split, and what equity is assumed to earn — as three tabs
+ * side by side rather than a stack behind a disclosure.
+ *
+ * Priority saves as you press it: it ranks intent, not money. The mix and the
+ * return each stay a draft until their own Apply, because both rewrite the
+ * projection the whole page is reading.
+ */
+function StrategyContent({
+  goals,
+  onSetPriority,
+  savingPriorityId,
+  enabledPriorities,
+  onToggleFilter,
+  appliedRate,
+  appliedEquityPct,
+  equityReturn,
+  onSave,
+  sipPanel,
+  sipApplied,
+  tab,
+  onTabChange,
+  collapsed,
+  onToggleCollapsed,
+}: StrategyContentProps) {
+  // With no mix applied yet the wheel opens on the split nearest the plan's own
+  // return, so the first drag starts from where the plan already is.
+  const openingMix = appliedEquityPct ?? equityPctForRate(appliedRate, equityReturn);
+  const [draftEquity, setDraftEquity] = useState(openingMix);
+  useEffect(() => {
+    setDraftEquity(openingMix);
+  }, [openingMix]);
+  const draftRate = rateForEquityPct(draftEquity, equityReturn);
+  const mixDirty = draftEquity !== openingMix;
+
+  const [equityInfoOpen, setEquityInfoOpen] = useState(false);
+  const [draftEquityReturn, setDraftEquityReturn] = useState(String(equityReturn));
+  useEffect(() => {
+    setDraftEquityReturn(String(equityReturn));
+  }, [equityReturn]);
+  const parsedEquityReturn = Number(draftEquityReturn);
+  const equityReturnValid =
+    draftEquityReturn.trim() !== "" &&
+    Number.isFinite(parsedEquityReturn) &&
+    parsedEquityReturn >= EQUITY_RETURN_MIN &&
+    parsedEquityReturn <= EQUITY_RETURN_MAX;
+  const returnDirty = equityReturnValid && parsedEquityReturn !== equityReturn;
+  // Stepping works off the last good number, so the buttons still do something
+  // sensible while the field holds a half-typed value.
+  const equityReturnBase = equityReturnValid ? parsedEquityReturn : equityReturn;
+  const stepEquityReturn = (delta: number) => {
+    setDraftEquityReturn(String(clampEquityReturn(equityReturnBase + delta)));
+  };
+
+  // One Save for the tab, lit as soon as either half is off what is applied.
+  const tabDirty = mixDirty || returnDirty;
+  // What the mix on screen would earn under the edited assumption.
+  const previewRate = equityReturnValid
+    ? rateForEquityPct(draftEquity, parsedEquityReturn)
+    : draftRate;
+
+  // Most important first, then soonest — the order someone would rank them in.
+  const rankedGoals = useMemo(
+    () =>
+      [...goals].sort((a, b) => {
+        const byPriority = PRIORITIES.indexOf(a.priority) - PRIORITIES.indexOf(b.priority);
+        return byPriority !== 0 ? byPriority : a.year - b.year;
+      }),
+    [goals],
+  );
+
+  const hasGoals = rankedGoals.length > 0;
+  // Summary first — what the plan is running on — then the two levers that
+  // change it, then the ranking. Fixed: an absent tab reads as a bug, so Goal
+  // priority stays put and simply has nothing listed under it until there are
+  // goals.
+  const TABS: { id: StrategyTab; label: string }[] = [
+    { id: "summary", label: "Summary" },
+    { id: "sip", label: "SIP" },
+    { id: "allocation", label: "Asset & Returns" },
+    { id: "priority", label: "Priority" },
+  ];
+  const active = tab;
+  const isBaseRate = appliedEquityPct == null;
+
+  // One headline figure per section, with a quiet line of context under it.
+  // Anything that needs two numbers to be read at a glance gets the second one
+  // in the note, never a second figure competing with the first.
+  const SUMMARY_ROWS: {
+    id: StrategyTab;
+    label: string;
+    value: string;
+    chip?: string;
+    note: string;
+  }[] = [
+    {
+      id: "allocation",
+      label: "Blended return",
+      value: formatRate(appliedRate),
+      chip: bandForRate(appliedRate).label,
+      // The split and the equity assumption are one sentence: neither means much
+      // without the other, and together they are how the figure above was got.
+      note: isBaseRate
+        ? "the engine's own plan"
+        : `${Math.round(appliedEquityPct ?? 0)} equity / ${
+            100 - Math.round(appliedEquityPct ?? 0)
+          } debt mix, with ${formatRate(equityReturn)} equity return`,
+    },
+    {
+      id: "sip",
+      label: "Monthly SIP",
+      value: sipApplied != null ? `${formatINRCompact(sipApplied)}/mo` : "Not set",
+      note: sipApplied != null ? `${formatINRCompact(sipApplied * 12)} a year` : "",
+    },
+  ];
+
+  // Stacked, not a table. Each section is a label, a figure and a line of
+  // context — hairlines instead of boxes, so the numbers are the only thing
+  // with weight. Defined once: pinned and in-tab are the same summary.
+  const summaryBlocks = (
+    <div className="divide-y divide-border">
+      {SUMMARY_ROWS.map((row) => (
+        <button
+          key={row.label}
+          type="button"
+          onClick={() => onTabChange(row.id)}
+          className="group block w-full py-3 text-left first:pt-0 last:pb-0"
+        >
+          <span className="block text-[10px] uppercase tracking-[0.12em] text-muted-foreground/70">
+            {row.label}
+          </span>
+          <span className="mt-1 flex items-center gap-2">
+            <span className="text-[20px] font-semibold leading-none tracking-tight text-foreground transition-colors group-hover:text-[#D4A868]">
+              {row.value}
+            </span>
+            {row.chip && (
+              <span
+                className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                style={{
+                  backgroundColor: "rgba(212,168,104,0.16)",
+                  color: "#D4A868",
+                  border: "1px solid rgba(212,168,104,0.45)",
+                }}
+              >
+                {row.chip}
+              </span>
+            )}
+          </span>
+          {row.note && (
+            <span className="mt-1.5 block text-[11px] text-muted-foreground">{row.note}</span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+
+  const blurb =
+    active === "summary"
+      ? ""
+      : active === "sip"
+        ? "What you invest each month."
+        : active === "priority"
+          ? "Filter for:"
+        : `At a ${formatMix(draftEquity)} mix, blended return is ${formatRate(
+            equityReturnValid ? previewRate : draftRate,
+          )} p.a.`;
+
+  return (
+    <div>
+      <div role="tablist" aria-label="Plan strategy" className="flex items-center gap-5 border-b border-border">
+        {TABS.map((t) => {
+          const isActive = active === t.id;
+          return (
+            <Fragment key={t.id}>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => {
+                  onTabChange(t.id);
+                  if (collapsed) onToggleCollapsed();
+                }}
+                className={`relative -mb-px whitespace-nowrap pb-2 text-[13px] transition-colors ${
+                  isActive
+                    ? "font-bold text-foreground"
+                    : "font-medium text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {t.label}
+                {isActive && (
+                  <span className="absolute inset-x-0 bottom-0 h-[2px] rounded-full bg-foreground" />
+                )}
+              </button>
+            </Fragment>
+          );
+        })}
+        {/* Closes the whole card to its tab row — the timeline is what the page
+            is for, and this is a lot of controls to sit above it. */}
+        <button
+          type="button"
+          onClick={onToggleCollapsed}
+          className="ml-auto pb-2 text-muted-foreground/60 transition-colors hover:text-foreground"
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? "Open" : "Minimise"}
+          title={collapsed ? "Open" : "Minimise"}
+        >
+          {collapsed ? (
+            <ChevronDown className="h-4 w-4" />
+          ) : (
+            <ChevronUp className="h-4 w-4" />
+          )}
+        </button>
+      </div>
+
+      {!collapsed && (
+      <>
+      {blurb && (
+        <p
+          className={
+            active === "allocation"
+              ? "mt-2 text-[18px] font-semibold leading-snug tracking-tight text-muted-foreground"
+              : "mt-2 text-[11px] leading-snug text-muted-foreground/80"
+          }
+        >
+          {blurb}
+        </p>
+      )}
+
+      <div className="mt-2.5">
+        {active === "sip" && sipPanel}
+
+        {active === "summary" && (
+          <div>
+            {summaryBlocks}
+          </div>
+        )}
+
+        {active === "priority" && (
+          <div data-tour="goal-priority">
+            {/* Which priorities feed the projection — the filter, above the
+                list it acts on. */}
+            <div className="mb-2 flex flex-wrap items-center gap-1.5">
+              {PRIORITIES.map((p) => {
+                const on = enabledPriorities.has(p);
+                const chip = priorityChipStyle(p);
+                const count = goals.filter((g) => g.priority === p).length;
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => onToggleFilter(p)}
+                    className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                      on ? "" : "bg-muted/50 text-muted-foreground/70 hover:text-foreground"
+                    }`}
+                    style={
+                      on
+                        ? {
+                            backgroundColor: chip.bg,
+                            color: chip.fg,
+                            border: `1px solid ${chip.border}`,
+                          }
+                        : { border: "1px solid hsl(var(--border))" }
+                    }
+                    aria-pressed={on}
+                    title={`${on ? "Hide" : "Show"} ${p.toLowerCase()}-priority goals`}
+                  >
+                    <span
+                      className="inline-block h-1.5 w-1.5 rounded-full"
+                      style={{ backgroundColor: priorityNodeColor(p) }}
+                    />
+                    {p}
+                    <span className="opacity-70">· {count}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {hasGoals && (
+            <ul className="overflow-hidden rounded-xl border border-border">
+              {rankedGoals.map((g, idx) => {
+                const Icon = goalIconFor(g.name);
+                const saving = savingPriorityId === g.id;
+                return (
+                  <li
+                    key={g.id}
+                    className="px-3 py-2.5"
+                    style={{
+                      borderBottom:
+                        idx === rankedGoals.length - 1 ? undefined : "1px solid hsl(var(--border))",
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                        style={{ backgroundColor: priorityNodeColor(g.priority) }}
+                      />
+                      <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-foreground">
+                        {g.name}
+                      </span>
+                      {saving && (
+                        <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />
+                      )}
+                      <span
+                        className="shrink-0 text-[11px] tabular-nums text-muted-foreground"
+                        style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
+                      >
+                        {formatINRCompact(g.presentValue)} · {g.year}
+                      </span>
+                    </div>
+                    <div className="mt-1.5 flex gap-1.5 pl-[22px]">
+                      {PRIORITIES.map((pr) => {
+                        const on = g.priority === pr;
+                        const chip = priorityChipStyle(pr);
+                        return (
+                          <button
+                            key={pr}
+                            type="button"
+                            disabled={saving}
+                            onClick={() => onSetPriority(g.id, pr)}
+                            className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition-colors disabled:opacity-60 ${
+                              on ? "" : "text-muted-foreground/70 hover:text-foreground"
+                            }`}
+                            style={
+                              on
+                                ? {
+                                    backgroundColor: chip.bg,
+                                    color: chip.fg,
+                                    border: `1px solid ${chip.border}`,
+                                  }
+                                : { border: "1px solid hsl(var(--border))" }
+                            }
+                            aria-pressed={on}
+                            aria-label={`Set ${g.name} to ${pr.toLowerCase()} priority`}
+                          >
+                            {pr}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+            )}
+            {hasGoals && (
+              <p className="mt-1.5 text-[10.5px] text-muted-foreground/70">
+                Saves as you press it. Ranking doesn&apos;t move money between goals.
+              </p>
+            )}
+          </div>
+        )}
+
+        {active === "allocation" && (
+          <div data-tour="asset-mix">
+            {/* The split the wheel is showing, stated in figures — it tracks the
+                drag, and the caption above carries the return it blends to. */}
+
+            {/* The wheel IS the control — press or drag the ring to re-split. */}
+            <AssetMixDial
+              equityPct={draftEquity}
+              step={EQUITY_STEP}
+              onChange={setDraftEquity}
+              equityNote={`assumes ${formatRate(equityReturn)} p.a.`}
+              debtNote={`assumes ${formatRate(DEBT_RETURN)} p.a.`}
+            />
+
+            {/* How to work the wheel, and what moving it does. Full width under
+                the dial rather than squeezed into the legend column beside it. */}
+            <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
+              Drag the ring to re-split. More equity, higher assumed return.
+            </p>
+
+            {(mixDirty || appliedEquityPct == null) && (
+              <p className="mt-2.5 text-[10.5px] text-muted-foreground/70">
+                {mixDirty
+                  ? "Nothing moves until you press Save."
+                  : `The engine's own plan, at ${formatRate(appliedRate)}. Drag to test another split.`}
+              </p>
+            )}
+
+            {/* The mix is blended from this number, so it belongs with the wheel
+                rather than a tab away — change the assumption, and the split
+                above re-rates against it. */}
+            <div className="mt-4 border-t border-border pt-3" data-tour="equity-return">
+              <div className="flex items-center gap-1">
+                <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground/70">
+                  Equity return
+                </p>
+                {/* Where the standing number comes from — on demand, so the
+                    field itself stays uncluttered. */}
+                <button
+                  type="button"
+                  onClick={() => setEquityInfoOpen((o) => !o)}
+                  className="text-muted-foreground/60 hover:text-foreground"
+                  aria-expanded={equityInfoOpen}
+                  aria-label="Where this assumption comes from"
+                >
+                  <HelpCircle className="h-3 w-3" />
+                </button>
+              </div>
+              {equityInfoOpen && (
+                <p className="mb-1.5 mt-1 text-[11px] italic leading-snug text-muted-foreground">
+                  What all-equity is assumed to earn, post-tax. An assumption, not a forecast. Pi
+                  assumes return to be {formatRate(EQUITY_RETURN)} based on historical data.
+                </p>
+              )}
+              {/* The heading above names this field, so the label is for
+                  screen readers rather than the same words twice. */}
+              <label htmlFor="strategy-equity-return" className="sr-only">
+                Assumed equity return, percent a year
+              </label>
+              <div
+                className={`flex items-center gap-1 rounded-xl border bg-background p-1 ${
+                  equityReturnValid ? "border-border" : "border-destructive"
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => stepEquityReturn(-EQUITY_RETURN_STEP)}
+                  disabled={equityReturnBase <= EQUITY_RETURN_MIN}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
+                  aria-label={`Lower by ${formatRate(EQUITY_RETURN_STEP)}`}
+                >
+                  <Minus className="h-4 w-4" />
+                </button>
+                <div className="flex flex-1 items-baseline justify-center gap-1">
+                  <input
+                    id="strategy-equity-return"
+                    type="text"
+                    inputMode="decimal"
+                    value={draftEquityReturn}
+                    onChange={(e) => setDraftEquityReturn(e.target.value.replace(/[^\d.]/g, ""))}
+                    className="w-[4.5ch] bg-transparent text-right text-[15.3px] font-semibold tabular-nums text-foreground outline-none"
+                    aria-describedby="strategy-equity-return-hint"
+                  />
+                  <span className="text-[15.3px] font-semibold text-muted-foreground">% p.a.</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => stepEquityReturn(EQUITY_RETURN_STEP)}
+                  disabled={equityReturnBase >= EQUITY_RETURN_MAX}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
+                  aria-label={`Raise by ${formatRate(EQUITY_RETURN_STEP)}`}
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+              </div>
+
+              {!equityReturnValid && (
+                <p
+                  id="strategy-equity-return-hint"
+                  className="mt-2 text-[10.5px] leading-snug text-destructive"
+                >
+                  Enter a return between {formatRate(EQUITY_RETURN_MIN)} and{" "}
+                  {formatRate(EQUITY_RETURN_MAX)}.
+                </p>
+              )}
+
+            </div>
+
+            {/* One commit for the tab: the split and the assumption it blends
+                from are one decision, and both stay a draft until this. */}
+            <button
+              type="button"
+              disabled={!tabDirty}
+              onClick={() =>
+                onSave(
+                  mixDirty ? draftEquity : null,
+                  returnDirty ? clampEquityReturn(parsedEquityReturn) : null,
+                )
+              }
+              className="mt-4 w-full rounded-xl py-2.5 text-[12px] font-bold transition-all active:scale-[0.99] disabled:cursor-not-allowed"
+              style={
+                tabDirty
+                  ? {
+                      backgroundColor: "#D4A868",
+                      color: "#2D1F05",
+                      boxShadow: "0 2px 8px rgba(212,168,104,0.45)",
+                    }
+                  : {
+                      backgroundColor: "hsl(var(--muted) / 0.6)",
+                      color: "hsl(var(--muted-foreground))",
+                    }
+              }
+            >
+              Save
+            </button>
+          </div>
+        )}
+
+      </div>
+      </>
+      )}
     </div>
   );
 }
@@ -1353,6 +1856,23 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
     new Set<Priority>(["Low", "Medium", "High"]),
   );
   const [hoveredYear, setHoveredYear] = useState<number | null>(null);
+  // Goal whose priority is mid-save, so the Strategy row can show a spinner.
+  const [prioritySavingId, setPrioritySavingId] = useState<string | null>(null);
+  // Ranking, mix and return live on the page itself, as three tabs.
+  const [strategyTab, setStrategyTab] = useState<StrategyTab>("summary");
+  // The whole card closes to its tab row; the choice survives a reload.
+  const [strategyCollapsed, setStrategyCollapsed] = useState(() =>
+    readFlag(STRATEGY_COLLAPSED_KEY),
+  );
+
+  const toggleStrategyCollapsed = useCallback(() => {
+    setStrategyCollapsed((on) => {
+      const next = !on;
+      writeFlag(STRATEGY_COLLAPSED_KEY, next);
+      return next;
+    });
+  }, []);
+  const strategyRef = useRef<HTMLDivElement | null>(null);
   // Starts at 0 and is populated from the plan's actual SIP once it loads (the
   // effect below) — never a fabricated default.
   const [monthlyContrib, setMonthlyContrib] = useState<number>(0);
@@ -1485,25 +2005,31 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
         },
       },
       {
-        anchor: "asset-mix",
-        title: "Projection",
-        body: `Drag the wheel to split equity and debt — the return follows from it. All debt is ${formatRate(DEBT_RETURN)} a year, all equity ${formatRate(EQUITY_RETURN)}, 80/20 lands on ${formatRate(rateForEquityPct(80))}. Figures preview as you drag; Apply commits it.`,
+        anchor: "monthly-sip",
+        title: "SIP",
+        body: "Type a different monthly amount to see it on the timeline straight away. Apply to plan makes it real; the reset arrow restores your plan's SIP.",
         before: () => {
-          setPanelTab("projection");
-          setPanelOpen(true);
+          setPanelOpen(false);
+          setStrategyTab("sip");
         },
       },
       {
-        anchor: "monthly-sip",
-        title: "Monthly SIP",
-        body: "Type a different monthly amount to see it on the timeline straight away. Apply to plan makes it real; the reset arrow restores your plan's SIP.",
-        before: () => setPanelOpen(false),
+        anchor: "priority-filter",
+        title: "Priority and strategy",
+        body: "Three tabs: rank your goals and filter which ones count, set the equity-debt mix, and set what equity is assumed to earn.",
+        before: () => {
+          setPanelOpen(false);
+          setStrategyTab("priority");
+        },
       },
       {
-        anchor: "priority-filter",
-        title: "Priority",
-        body: "Toggle High, Medium and Low to drop goals in and out of the projection — a quick read on what's affordable if the rest wait.",
-        before: () => setPanelOpen(false),
+        anchor: "asset-mix",
+        title: "Asset allocation",
+        body: `Drag the wheel to split equity and debt — the return follows from it. Debt is ${formatRate(DEBT_RETURN)} a year, equity ${formatRate(EQUITY_RETURN)} unless you change it below. Nothing moves until you press Save.`,
+        before: () => {
+          setPanelOpen(false);
+          setStrategyTab("allocation");
+        },
       },
     ],
     [],
@@ -1527,28 +2053,64 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   // mix and the assumed post-tax return is read off it. Null = no mix applied,
   // so the plan is still exactly what the engine computed.
   const [appliedEquityPct, setAppliedEquityPct] = useState<number | null>(readSavedMix);
+  // What an all-equity sleeve is assumed to earn. The mix blends against it, so
+  // this sits beside the mix rather than inside it — and is saved the same way,
+  // because someone who set 12% should not silently be back on 20% next visit.
+  const [equityReturn, setEquityReturn] = useState<number>(readSavedEquityReturn);
   const appliedRate =
-    appliedEquityPct == null ? PROJECTION_BASE_RATE : rateForEquityPct(appliedEquityPct);
-  const band = bandForRate(appliedRate);
-  const isBaseRate = appliedEquityPct == null;
+    appliedEquityPct == null
+      ? PROJECTION_BASE_RATE
+      : rateForEquityPct(appliedEquityPct, equityReturn);
 
-  const applyMix = useCallback((equityPct: number) => {
-    const next = Math.min(100, Math.max(0, Math.round(equityPct / EQUITY_STEP) * EQUITY_STEP));
-    const rate = rateForEquityPct(next);
-    setAppliedEquityPct(next);
-    writeSavedMix(next);
-    toast.success(`${formatMix(next)} equity-debt applied`, {
-      description: `Your goal plan now runs on ${formatRate(rate)} post-tax returns (${bandForRate(rate).label.toLowerCase()}) — the blended return of a ${next}% equity, ${100 - next}% debt portfolio.`,
-    });
+  /**
+   * Commit the Asset allocation tab: the equity/debt split, the equity-sleeve
+   * assumption, or both. Each is null when untouched, so one Save sends only
+   * what the user actually changed — and one toast reports the result rather
+   * than two firing at each other.
+   */
+  const saveStrategy = useCallback(
+    (nextEquityPct: number | null, nextEquityReturn: number | null) => {
+      const equity =
+        nextEquityReturn != null ? clampEquityReturn(nextEquityReturn) : equityReturn;
+      if (nextEquityReturn != null) {
+        setEquityReturn(equity);
+        writeSavedEquityReturn(equity);
+      }
+
+      const mix =
+        nextEquityPct != null
+          ? Math.min(100, Math.max(0, Math.round(nextEquityPct / EQUITY_STEP) * EQUITY_STEP))
+          : appliedEquityPct;
+      if (nextEquityPct != null) {
+        setAppliedEquityPct(mix);
+        writeSavedMix(mix as number);
+      }
+
+      const rate = mix == null ? PROJECTION_BASE_RATE : rateForEquityPct(mix, equity);
+      const changed: string[] = [];
+      if (nextEquityPct != null) changed.push(`${formatMix(mix as number)} equity-debt`);
+      if (nextEquityReturn != null) changed.push(`${formatRate(equity)} equity return`);
+      toast.success(changed.join(" · "), {
+        description:
+          mix == null
+            ? `Your plan is still the engine's own at ${formatRate(PROJECTION_BASE_RATE)} — set a mix to project on your own.`
+            : `Your goal plan now runs on ${formatRate(rate)} post-tax returns (${bandForRate(rate).label.toLowerCase()}).`,
+      });
+    },
+    [appliedEquityPct, equityReturn],
+  );
+
+  /** Close the panel and bring the on-page strategy card to a given tab. */
+  const openStrategy = useCallback((tab: StrategyTab) => {
+    setStrategyTab(tab);
+    setPanelOpen(false);
+    // After the panel's slide-out, so the card is measured where it lands.
+    window.setTimeout(
+      () => strategyRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }),
+      300,
+    );
   }, []);
 
-  const resetMix = useCallback(() => {
-    setAppliedEquityPct(null);
-    clearSavedMix();
-    toast.success("Back to the engine's plan", {
-      description: "Your goal plan is back on the engine's computed returns.",
-    });
-  }, []);
 
   /** Engine rows replayed at the applied return — identical to the engine at 9%. */
   const scenarioAnnualRows = useMemo(
@@ -1660,6 +2222,17 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   // Persist the typed SIP and re-run the engine so the whole cashflow
   // (corpus bars, annual rows, goal funding) reflects the new amount. The
   // canonical SIP is the value we just saved, so reflect it immediately.
+  const sipDisplay = Number.isFinite(monthlyContrib)
+    ? monthlyContrib.toLocaleString("en-IN")
+    : "";
+
+  const stepSip = useCallback((delta: number) => {
+    setMonthlyContrib((current) => {
+      const base = Number.isFinite(current) ? current : 0;
+      return Math.max(0, Math.round((base + delta) / SIP_STEP) * SIP_STEP);
+    });
+  }, []);
+
   const applySipToPlan = useCallback(async () => {
     if (!Number.isFinite(monthlyContrib)) return;
     setApplyingSip(true);
@@ -1878,6 +2451,41 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
     [goals, fetchCashflow, reloadGoals],
   );
 
+  /**
+   * Set a goal's priority from the Strategy panel.
+   *
+   * Optimistic: priority is a ranking, not money, so nothing about the cashflow
+   * moves and there is no plan to recompute — only the filter chips read it. A
+   * failed save rolls the row back rather than leaving the UI ahead of the API.
+   */
+  const handleSetGoalPriority = useCallback(
+    async (id: string, priority: Priority) => {
+      const goal = goals.find((g) => g.id === id);
+      if (!goal || goal.priority === priority) return;
+      const previous = goal.priority;
+      setGoals((prev) => prev.map((g) => (g.id === id ? { ...g, priority } : g)));
+      // Re-ranking into a priority the filter is hiding would make the goal
+      // vanish from the timeline mid-edit — switch that chip on instead.
+      setEnabledPriorities((prev) =>
+        prev.has(priority) ? prev : new Set(prev).add(priority),
+      );
+      if (!isPersistedGoalId(id)) return;
+      setPrioritySavingId(id);
+      try {
+        await updateGoal(id, { priority: priority.toUpperCase() });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Could not update priority';
+        toast.error(msg);
+        setGoals((prev) =>
+          prev.map((g) => (g.id === id ? { ...g, priority: previous } : g)),
+        );
+      } finally {
+        setPrioritySavingId(null);
+      }
+    },
+    [goals],
+  );
+
   const togglePriority = (p: Priority) => {
     setEnabledPriorities((prev) => {
       const next = new Set(prev);
@@ -1972,21 +2580,6 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
     capYear,
     Math.max(baseEndYear, revealEndYear ?? baseEndYear),
   );
-  const years = useMemo(() => {
-    const span = Math.max(1, displayEndYear - currentYear + 1);
-    const out: number[] = [];
-    for (let i = 0; i < span; i += 1) {
-      const y = currentYear + i;
-      const keep =
-        i < DENSE_ROW_YEARS ||
-        (i - DENSE_ROW_YEARS) % YEAR_ROW_STEP === 0 ||
-        y === displayEndYear ||
-        goalsByYear.has(y);
-      if (keep) out.push(y);
-    }
-    return out;
-  }, [currentYear, displayEndYear, goalsByYear]);
-
   // Kept fresh for the drag handlers so they never read stale values.
   const capYearRef = useRef(capYear);
   capYearRef.current = capYear;
@@ -2014,6 +2607,37 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
     }
     return map.size > 0 ? map : null;
   }, [scenarioAnnualRows]);
+
+  const years = useMemo(() => {
+    // Engine rows are keyed by FY END (FY26-27 closes 31 Mar 2027 → 2027), so
+    // the current calendar year has no corpus row of its own and would draw as
+    // an empty top line — an axis tick with no bar. Start the timeline at the
+    // first year the engine actually closes a FY; an earlier year is kept only
+    // if the user put a goal there.
+    const firstEngineYear = tornadoCorpusByYear
+      ? Math.min(...tornadoCorpusByYear.keys())
+      : currentYear;
+    const startYear = clamp(firstEngineYear, currentYear, displayEndYear);
+    const out: number[] = [];
+    for (let y = currentYear; y <= displayEndYear; y += 1) {
+      if (y < startYear) {
+        if (goalsByYear.has(y)) out.push(y);
+        continue;
+      }
+      // Past the dense near term, thin against the label the user actually
+      // reads — their age when we know the birth year, else the calendar year —
+      // so the axis steps on round fives (25, 30, 35 ...) rather than on an
+      // offset from the first row.
+      const label = birthYear != null ? y - birthYear : y;
+      const keep =
+        y - startYear < DENSE_ROW_YEARS ||
+        label % YEAR_ROW_STEP === 0 ||
+        y === displayEndYear ||
+        goalsByYear.has(y);
+      if (keep) out.push(y);
+    }
+    return out;
+  }, [currentYear, displayEndYear, goalsByYear, birthYear, tornadoCorpusByYear]);
 
   const cashflowProjection: ProjectionPoint[] | null = useMemo(() => {
     if (!tornadoCorpusByYear) return null;
@@ -2121,6 +2745,111 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   const goalSheetOpen = addYear !== null || editGoal !== null;
   const goalSheetYear = addYear ?? editGoal?.year ?? currentYear + 5;
 
+  /**
+   * The SIP control, handed to the strategy card as its own tab.
+   *
+   * It is built here rather than inside StrategyContent because it reads a
+   * dozen pieces of this page's state — the typed amount, the plan's own SIP,
+   * the in-flight apply, the cashflow headroom. Passing the node keeps that
+   * state where it lives instead of threading it all through props.
+   */
+  const sipPanel = (
+    <div data-tour="monthly-sip">
+          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-1 rounded-xl border border-border bg-background p-1 focus-within:ring-1 focus-within:ring-[#D4A868]">
+            <button
+              type="button"
+              onClick={() => stepSip(-SIP_STEP)}
+              disabled={monthlyContrib <= 0}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
+              aria-label={`Lower by ${formatINRCompact(SIP_STEP)}`}
+            >
+              <Minus className="h-4 w-4" />
+            </button>
+            <div className="flex min-w-0 flex-1 items-baseline justify-center gap-0.5">
+              {/* Sized to its own digits so the amount and "/mo" centre together
+                  — a full-width input would shove the unit to the far edge. */}
+              <input
+                type="text"
+                inputMode="numeric"
+                value={sipDisplay}
+                onChange={(e) => {
+                  const digits = e.target.value.replace(/[^\d]/g, "");
+                  const v = digits === "" ? 0 : Number(digits);
+                  if (Number.isFinite(v)) setMonthlyContrib(Math.max(0, v));
+                }}
+                style={{ width: `${Math.max(2, sipDisplay.length)}ch` }}
+                className="min-w-0 shrink bg-transparent text-right text-[15.3px] font-semibold tabular-nums text-foreground outline-none"
+                placeholder="0"
+                aria-label="Monthly investment amount"
+              />
+              <span className="shrink-0 text-[13px] text-muted-foreground">/mo</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => stepSip(SIP_STEP)}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              aria-label={`Raise by ${formatINRCompact(SIP_STEP)}`}
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          </div>
+          {/* Apply the typed SIP to the actual plan — saves the input and re-runs
+              the engine so the whole cashflow reflects it. Shown only when the
+              amount differs from the plan's current SIP. */}
+          {planSip != null && monthlyContrib !== planSip && (
+            <button
+              type="button"
+              onClick={() => void applySipToPlan()}
+              disabled={applyingSip}
+              className="shrink-0 inline-flex items-center gap-1 rounded-full px-2.5 h-7 text-[11px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+              style={{ backgroundColor: "#D4A868" }}
+              title="Save this SIP and recompute your cashflow plan"
+            >
+              {applyingSip ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+              {applyingSip ? "Updating…" : "Apply to plan"}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setMonthlyContrib(planSip ?? 0)}
+            disabled={monthlyContrib === (planSip ?? 0)}
+            className="shrink-0 inline-flex items-center justify-center rounded-full bg-muted/50 h-7 w-7 text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            style={{ border: "1px solid hsl(var(--border))" }}
+            aria-label="Reset monthly investment to your plan's SIP"
+            title="Reset to plan SIP"
+          >
+            <RotateCcw className="h-3 w-3" />
+          </button>
+          </div>
+          {/* Helper line — yearly equivalent plus the cashflow headroom hint
+              (absorbs the old marquee banner). */}
+          <div className="mt-1 flex items-center gap-1.5 px-0.5">
+            <p className="min-w-0 truncate text-[11px] text-[#D4A868]">
+              <span className="font-semibold">{formatINRCompact(monthlyContrib * 12)}/yr</span>
+              {!sipCapped &&
+                displayAffordableMonthly != null &&
+                displayAffordableMonthly > 0 && (
+                  <>
+                    {" "}· you can invest up to{" "}
+                    <span className="font-semibold">
+                      {formatINRCompact(displayAffordableMonthly)}/mo
+                    </span>{" "}
+                    from your cashflow
+                  </>
+                )}
+            </p>
+          </div>
+          {sipCapped && affordableMonthly != null && (
+            <p className="mt-1 text-[11px] leading-snug text-amber-600 dark:text-amber-400">
+              You can invest about {formatINRCompact(affordableMonthly)}/mo from your income
+              (after tax, expenses &amp; EMIs). A higher SIP is capped to that — it won't grow
+              your corpus further, since the plan never invests more than you can save.
+            </p>
+          )}
+    </div>
+  );
+
   return (
     <div className="mobile-container min-h-screen bg-background pb-20">
       <header className="sticky top-0 z-40 bg-background">
@@ -2227,11 +2956,6 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
         {goalsLoading && (
           <p className="px-1 text-[11px] text-muted-foreground">Loading goals from your plan…</p>
         )}
-        {!goalsLoading && goals.length === 0 && !fromProfile && (
-          <p className="px-1 text-[11px] text-muted-foreground">
-            No goals in your account yet. Use + to add one.
-          </p>
-        )}
         {/* Mid-profile-setup with no goal yet: spell out exactly what completes
             the "What are you trying to achieve?" section and what happens next. */}
         {!goalsLoading && fromProfile && !hasPersistedGoals && (
@@ -2243,189 +2967,33 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
             </p>
           </div>
         )}
-        {/* Monthly investment (SIP what-if). Line mode previews instantly on the
-            gold spine; in both modes "Apply to plan" re-runs the engine so the
-            corpus bars / cashflow reflect the new SIP. */}
+        {/* Goal priority, the mix and the return — three tabs side by side, all
+            on the page. Each changes what the projection says, so they sit where
+            the timeline can be watched reacting to them. */}
         <div
-          className="sticky z-30 -mx-5 bg-background px-5 pb-1 pt-1"
-          style={{ top: "64px" }}
+          ref={strategyRef}
+          className="mx-1 rounded-xl border border-border bg-card px-3 py-3"
+          data-tour="priority-filter"
         >
-          <div className="rounded-xl border border-border bg-card px-3 py-2" data-tour="monthly-sip">
-          <div className="flex items-center gap-2">
-          <p className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
-            Monthly SIP
-          </p>
-          <div className="flex-1 min-w-0 flex items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1.5 focus-within:ring-1 focus-within:ring-[#D4A868]">
-            <span className="text-[12px] text-muted-foreground shrink-0">₹</span>
-            <input
-              type="text"
-              inputMode="numeric"
-              value={Number.isFinite(monthlyContrib) ? monthlyContrib.toLocaleString("en-IN") : ""}
-              onChange={(e) => {
-                const digits = e.target.value.replace(/[^\d]/g, "");
-                const v = digits === "" ? 0 : Number(digits);
-                if (Number.isFinite(v)) setMonthlyContrib(Math.max(0, v));
-              }}
-              className="w-full min-w-0 bg-transparent text-[12px] font-semibold tabular-nums text-foreground outline-none"
-              style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
-              placeholder="0"
-              aria-label="Monthly investment amount"
-            />
-            <span className="text-[10px] text-muted-foreground shrink-0">/mo</span>
-          </div>
-          {/* Apply the typed SIP to the actual plan — saves the input and re-runs
-              the engine so the whole cashflow reflects it. Shown only when the
-              amount differs from the plan's current SIP. */}
-          {planSip != null && monthlyContrib !== planSip && (
-            <button
-              type="button"
-              onClick={() => void applySipToPlan()}
-              disabled={applyingSip}
-              className="shrink-0 inline-flex items-center gap-1 rounded-full px-2.5 h-7 text-[11px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
-              style={{ backgroundColor: "#D4A868" }}
-              title="Save this SIP and recompute your cashflow plan"
-            >
-              {applyingSip ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-              {applyingSip ? "Updating…" : "Apply to plan"}
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => setMonthlyContrib(planSip ?? 0)}
-            disabled={monthlyContrib === (planSip ?? 0)}
-            className="shrink-0 inline-flex items-center justify-center rounded-full bg-muted/50 h-7 w-7 text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            style={{ border: "1px solid hsl(var(--border))" }}
-            aria-label="Reset monthly investment to your plan's SIP"
-            title="Reset to plan SIP"
-          >
-            <RotateCcw className="h-3 w-3" />
-          </button>
-          </div>
-          {/* Helper line — yearly equivalent plus the cashflow headroom hint
-              (absorbs the old marquee banner); "Use" fills the input with it. */}
-          <div className="mt-1 flex items-center gap-1.5 px-0.5">
-            <p className="min-w-0 truncate text-[11px] text-muted-foreground">
-              {formatINRCompact(monthlyContrib * 12)}/yr
-              {!sipCapped &&
-                displayAffordableMonthly != null &&
-                displayAffordableMonthly > 0 && (
-                  <>
-                    {" "}· you can invest up to{" "}
-                    <span className="font-semibold text-foreground">
-                      {formatINRCompact(displayAffordableMonthly)}/mo
-                    </span>{" "}
-                    from your cashflow
-                  </>
-                )}
-            </p>
-            {!sipCapped &&
-              displayAffordableMonthly != null &&
-              displayAffordableMonthly > 0 &&
-              Math.round(displayAffordableMonthly) !== monthlyContrib && (
-                <button
-                  type="button"
-                  onClick={() => setMonthlyContrib(Math.round(displayAffordableMonthly))}
-                  className="ml-auto shrink-0 rounded-full border border-[#D4A868]/50 px-2 py-0.5 text-[10px] font-semibold text-[#D4A868] hover:bg-[#D4A868]/10"
-                  title="Set your SIP to what your cashflow allows"
-                >
-                  Use {formatINRCompact(displayAffordableMonthly)}
-                </button>
-              )}
-          </div>
-          </div>
-          {sipCapped && affordableMonthly != null && (
-            <p className="mt-1 px-1 text-[11px] leading-snug text-amber-600 dark:text-amber-400">
-              You can invest about {formatINRCompact(affordableMonthly)}/mo from your income
-              (after tax, expenses &amp; EMIs). A higher SIP is capped to that — it won't grow
-              your corpus further, since the plan never invests more than you can save.
-            </p>
-          )}
+          <StrategyContent
+            goals={goals}
+            onSetPriority={handleSetGoalPriority}
+            savingPriorityId={prioritySavingId}
+            enabledPriorities={enabledPriorities}
+            onToggleFilter={togglePriority}
+            appliedRate={appliedRate}
+            appliedEquityPct={appliedEquityPct}
+            equityReturn={equityReturn}
+            onSave={saveStrategy}
+            sipPanel={sipPanel}
+            sipApplied={planSip}
+            tab={strategyTab}
+            onTabChange={setStrategyTab}
+            collapsed={strategyCollapsed}
+            onToggleCollapsed={toggleStrategyCollapsed}
+          />
         </div>
 
-        {/* Priority filter — toggle which goals feed the projection */}
-        <div className="flex items-center gap-2 px-1" data-tour="priority-filter">
-          <span className="text-[11px] uppercase tracking-wide text-muted-foreground shrink-0">
-            Goal priority
-          </span>
-          <div className="flex flex-wrap gap-1.5">
-            {PRIORITIES.map((p) => {
-              const active = enabledPriorities.has(p);
-              const chip = priorityChipStyle(p);
-              const count = goals.filter((g) => g.priority === p).length;
-              return (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => togglePriority(p)}
-                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors ${
-                    active ? "" : "bg-muted/50 text-muted-foreground/70 hover:text-foreground"
-                  }`}
-                  style={
-                    active
-                      ? {
-                          backgroundColor: chip.bg,
-                          color: chip.fg,
-                          border: `1px solid ${chip.border}`,
-                        }
-                      : { border: "1px solid hsl(var(--border))" }
-                  }
-                  aria-pressed={active}
-                  title={`${active ? "Hide" : "Show"} ${p.toLowerCase()}-priority goals`}
-                >
-                  <span
-                    className="inline-block h-1.5 w-1.5 rounded-full"
-                    style={{ backgroundColor: priorityNodeColor(p) }}
-                  />
-                  {p}
-                  <span className="opacity-70">· {count}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Applied return scenario. Read-only on purpose: the plan changes only
-            via Apply in the Projection panel, never by a stray tap out here. */}
-        {tornadoCorpusByYear && !isBaseRate && (
-          <div
-            className="mx-1 rounded-xl px-3 py-2.5"
-            style={{
-              backgroundColor: "rgba(212,168,104,0.08)",
-              border: "1px solid rgba(212,168,104,0.35)",
-            }}
-          >
-            <div className="flex items-center justify-between gap-2">
-              <span
-                className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold tabular-nums"
-                style={{
-                  backgroundColor: "rgba(212,168,104,0.18)",
-                  color: "#D4A868",
-                  border: "1px solid rgba(212,168,104,0.45)",
-                }}
-              >
-                {formatMix(appliedEquityPct ?? 0)} · {formatRate(appliedRate)}
-              </span>
-              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-[#D4A868]/80">
-                {band.label}
-              </span>
-            </div>
-            <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-              Your own {appliedEquityPct}% equity / {100 - (appliedEquityPct ?? 0)}% debt mix, not
-              the engine&apos;s computed plan. Only returns move — contributions, one-offs and goal
-              payouts are unchanged.
-            </p>
-            <button
-              type="button"
-              onClick={() => {
-                setPanelTab("projection");
-                setPanelOpen(true);
-              }}
-              className="mt-2 text-[11px] font-semibold text-[#D4A868] underline underline-offset-2"
-            >
-              Change or reset
-            </button>
-          </div>
-        )}
 
         {isTornado && !tornadoCorpusByYear && !cashflowLoading && (
           <p className="px-1 text-[11px] text-amber-600">
@@ -2464,7 +3032,6 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
           {years.map((y, i) => {
             const yearGoals = goalsByYear.get(y) ?? [];
             const hasGoals = yearGoals.length > 0;
-            const isMilestone = y % 5 === 0;
             // The user's age in this calendar year — shown beside the year so the
             // timeline reads in life-stage terms, not just dates. Only when DOB is known.
             const ageAtYear = birthYear != null ? y - birthYear : null;
@@ -2659,9 +3226,12 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                         {hasTornadoBar && tornadoX2 > tornadoX1 && (
                           <rect
                             x={tornadoX1}
-                            y={isHovered ? 8 : 17.5}
+                            y={isHovered ? 0 : 17.5}
                             width={Math.max(0, tornadoX2 - tornadoX1)}
-                            height={isHovered ? 84 : 65}
+                            /* 84 was the hovered height; another 20% of it is
+                               100.8, and the row's own box is 100 — so a hover
+                               now fills the row edge to edge. */
+                            height={isHovered ? 100 : 65}
                             fill={`url(#tornadoBar-${y})`}
                             fillOpacity={tornadoFillOpacity}
                             style={{ transition: "y 120ms ease-out, height 120ms ease-out" }}
@@ -2753,10 +3323,8 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                   >
                     <span
                       title={ageAtYear != null && ageAtYear >= 0 ? `Year ${y}` : undefined}
-                      className={`text-[12px] tabular-nums ${
-                        isMilestone || hasGoals
-                          ? "font-semibold text-foreground"
-                          : "text-muted-foreground/50"
+                      className={`text-[12px] tabular-nums transition-colors ${
+                        isHovered ? "font-bold text-foreground" : "text-muted-foreground/50"
                       }`}
                     >
                       {ageAtYear != null && ageAtYear >= 0 ? ageAtYear : y}
@@ -3038,7 +3606,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
               transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
               role="dialog"
               aria-modal="true"
-              aria-label="Projection and inputs"
+              aria-label="Your plan"
               className="fixed inset-y-0 right-0 z-[60] flex w-[min(420px,92vw)] flex-col border-l border-border bg-background shadow-2xl"
             >
               <div className="flex items-center gap-2 border-b border-border px-4 pb-3 pt-4">
@@ -3098,8 +3666,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                     onGoToInputs={() => setPanelTab("inputs")}
                     appliedRate={appliedRate}
                     appliedEquityPct={appliedEquityPct}
-                    onApplyMix={applyMix}
-                    onResetMix={resetMix}
+                    onGoToStrategy={() => openStrategy("allocation")}
                   />
                 ) : (
                   <div data-tour="plan-inputs">

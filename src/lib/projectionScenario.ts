@@ -57,24 +57,59 @@ export function clampRate(rate: number): number {
  * 17%, 60/40 on 14%, all-debt on 5%, all-equity on 20%.
  */
 
-/** Assumed post-tax return of an all-equity sleeve. */
+/**
+ * Assumed post-tax return of an all-equity sleeve.
+ *
+ * This is the one sleeve assumption the user can override — equity is where
+ * the argument actually is, and a plan built on 20% reads very differently
+ * from one built on 12%. The debt sleeve stays fixed: it is the anchor the
+ * blend is measured against, and letting both float turns the mix into a
+ * two-variable guess rather than a portfolio choice.
+ */
 export const EQUITY_RETURN = 20;
 /** Assumed post-tax return of an all-debt sleeve. */
 export const DEBT_RETURN = 5;
 /** Split granularity — 5-point steps keep the mix aimable on a phone. */
 export const EQUITY_STEP = 5;
 
-/** The blended post-tax return for an equity share of `pct` (0-100). */
-export function rateForEquityPct(pct: number): number {
+/** Bounds for a user-set equity assumption. Above the debt sleeve, below fantasy. */
+export const EQUITY_RETURN_MIN = 6;
+export const EQUITY_RETURN_MAX = 30;
+/** Half-point steps — fine enough to matter compounded, coarse enough to type. */
+export const EQUITY_RETURN_STEP = 0.5;
+
+/** `n` snapped onto the equity-assumption grid and clamped to its bounds. */
+export function clampEquityReturn(n: number): number {
+  if (!Number.isFinite(n)) return EQUITY_RETURN;
+  const snapped = Math.round(n / EQUITY_RETURN_STEP) * EQUITY_RETURN_STEP;
+  return Math.min(EQUITY_RETURN_MAX, Math.max(EQUITY_RETURN_MIN, snapped));
+}
+
+/**
+ * The blended post-tax return for an equity share of `pct` (0-100).
+ *
+ * `equityReturn` defaults to the standing assumption, so every existing call
+ * site keeps its old answer; passing it threads a user-set sleeve return
+ * through the same blend.
+ */
+export function rateForEquityPct(pct: number, equityReturn: number = EQUITY_RETURN): number {
   const e = Math.min(100, Math.max(0, Number.isFinite(pct) ? pct : 0));
-  const blended = (e * EQUITY_RETURN + (100 - e) * DEBT_RETURN) / 100;
+  const eq = Number.isFinite(equityReturn) ? equityReturn : EQUITY_RETURN;
+  const blended = (e * eq + (100 - e) * DEBT_RETURN) / 100;
   // Two decimals is well inside the step grid and keeps 80/20 at exactly 17.
   return Math.round(blended * 100) / 100;
 }
 
 /** The nearest mix on the step grid that produces `rate`. Inverse of the above. */
-export function equityPctForRate(rate: number): number {
-  const raw = ((clampRate(rate) - DEBT_RETURN) / (EQUITY_RETURN - DEBT_RETURN)) * 100;
+export function equityPctForRate(rate: number, equityReturn: number = EQUITY_RETURN): number {
+  const eq = Number.isFinite(equityReturn) ? equityReturn : EQUITY_RETURN;
+  const spread = eq - DEBT_RETURN;
+  // An equity sleeve at or below the debt sleeve makes the mix unreadable from
+  // the rate — every split earns the same. Say all-debt rather than divide by
+  // zero and hand back NaN.
+  if (spread <= 0) return 0;
+  const r = Number.isFinite(rate) ? rate : PROJECTION_BASE_RATE;
+  const raw = ((Math.max(RETURN_MIN, r) - DEBT_RETURN) / spread) * 100;
   const snapped = Math.round(raw / EQUITY_STEP) * EQUITY_STEP;
   return Math.min(100, Math.max(0, snapped));
 }
@@ -117,6 +152,45 @@ export function writeSavedMix(pct: number): void {
     window.localStorage.setItem(SAVED_MIX_KEY, String(pct));
   } catch {
     /* private mode / quota — the choice just won't survive the reload */
+  }
+}
+
+const SAVED_EQUITY_RETURN_KEY = "goals-projection-equity-return";
+
+/** The user's equity-sleeve assumption from a previous visit, or the default. */
+export function readSavedEquityReturn(): number {
+  if (typeof window === "undefined") return EQUITY_RETURN;
+  try {
+    const stored = window.localStorage.getItem(SAVED_EQUITY_RETURN_KEY);
+    if (stored === null) return EQUITY_RETURN;
+    const n = Number(stored);
+    // Junk or out-of-range falls back to the standing assumption rather than
+    // projecting on a number the user never chose.
+    if (!Number.isFinite(n) || n < EQUITY_RETURN_MIN || n > EQUITY_RETURN_MAX) {
+      return EQUITY_RETURN;
+    }
+    return n;
+  } catch {
+    return EQUITY_RETURN;
+  }
+}
+
+export function writeSavedEquityReturn(pct: number): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(SAVED_EQUITY_RETURN_KEY, String(pct));
+  } catch {
+    /* private mode / quota — the choice just won't survive the reload */
+  }
+}
+
+/** Drop the user's equity assumption, back to the standing one. */
+export function clearSavedEquityReturn(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(SAVED_EQUITY_RETURN_KEY);
+  } catch {
+    /* nothing to do — the stale choice just outlives the reset */
   }
 }
 
