@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import {
   ArrowRight,
   Calculator,
@@ -22,22 +22,18 @@ import {
 import { isPostHogEnabled, posthog } from "@/lib/posthog";
 
 /**
- * /earlyaccess — recruitment page for the 100-seat MVP 2.0 private beta.
+ * /earlyaccess — recruitment page for the 100-seat early-access programme.
  *
  * Public route (no session needed). Sign-ups go to the backend, which keeps
  * them in a Google Sheet — nothing here creates an app account. While the
  * beta runs, the app's own sign-up is closed (see WelcomeScreen), so this
  * page is the only way in for a new number.
  *
- * Ported from the "Prozpr MVP2 Beta" page in the Prozpr Launch Website
+ * Ported from the early-access page in the Prozpr Launch Website
  * design project. The palette is committed to one light look on purpose
  * (a marketing page, not an app screen), so colours are literal hex values
  * rather than the app's theme tokens, and the app's dark mode leaves it alone.
  */
-
-/** Denominator shown before the live figure lands; the backend owns the real
-    one (`EARLY_ACCESS_SEATS`) and its value replaces this as soon as it loads. */
-const BETA_SEATS = 100;
 
 /**
  * How often the live count is re-read while the page is open, matching the
@@ -69,9 +65,13 @@ const WHATSAPP_DIGITS = 10;
 
 const SIGNUP_KEY = "prozpr_early_access_signup";
 
-const PAGE_TITLE = "Prozpr MVP 2.0 — Become a founding tester";
+/** No version numbers anywhere a visitor can read. "MVP" is our word for the
+    build, and an edition number ("2.0") tells a prospective customer they have
+    been handed a numbered pre-release. The programme has a name instead, and
+    the backend's ticket mail uses the same one. */
+const PAGE_TITLE = "Prozpr Early Access — Become a founding tester";
 const PAGE_DESCRIPTION =
-  "Test Prozpr MVP 2.0 before anyone else. Free premium portfolio assessment, unlimited fund analysis, and a direct line to the founders. 100 seats.";
+  "Join the 100 investors who use the new Prozpr first. A free premium portfolio assessment, unlimited fund analysis, and a direct line to the founders.";
 
 /* ─── Seat state ─── */
 
@@ -151,6 +151,103 @@ function useSignupDone(): [boolean, () => void] {
   return [done, markDone];
 }
 
+/* ─── What the page says about availability ─── */
+
+/**
+ * Exact figures are published only over the closing stretch.
+ *
+ * A precise "3 of 100 seats claimed" on the first morning is an empty room
+ * rendered as a statistic: it argues the visitor out of the seat the page
+ * exists to fill. The same precision over the last stretch is what makes the
+ * urgency credible, because by then the number is the point. So the page
+ * states the stage it has genuinely reached, and names the figure once naming
+ * it helps.
+ *
+ * Every line below is a FACT about the live count, not a dial. The stage is
+ * derived from the figure the backend reports, so "less than half remain"
+ * appears only when less than half really do; and when the count cannot be
+ * read, `describeSeats` returns null and the page says nothing about
+ * availability at all rather than guessing a stage.
+ */
+const EXACT_COUNT_FROM = 20;
+
+type SeatStage = "open" | "half" | "closing" | "full";
+
+interface SeatCopy {
+  stage: SeatStage;
+  /** Compact status beside a heading. */
+  pill: string;
+  /** Shorter still, for the nav's gold chip. */
+  badge: string;
+  /** The availability card's lead line. */
+  headline: string;
+  /** Primary button label. */
+  cta: string;
+  /** The closing section's headline. */
+  closing: string;
+}
+
+function describeSeats(seats: EarlyAccessSeats | null): SeatCopy | null {
+  if (!seats || !Number.isFinite(seats.seats_total)) return null;
+  const total = seats.seats_total;
+  const left = Math.max(0, seats.seats_left);
+
+  if (left <= 0)
+    return {
+      stage: "full",
+      pill: "Standby list open",
+      badge: "Standby",
+      headline: "Every seat in this round is taken",
+      cta: "Join the standby list",
+      closing: "Every seat in this round is taken.",
+    };
+
+  if (left <= EXACT_COUNT_FROM) {
+    const seatWord = `${left} ${left === 1 ? "seat" : "seats"}`;
+    return {
+      stage: "closing",
+      pill: `${seatWord} available`,
+      badge: `${left} left`,
+      headline: `${seatWord} available of ${total}`,
+      cta: `Claim one of the last ${left}`,
+      closing: `${seatWord} available.`,
+    };
+  }
+
+  // Strictly fewer than half, so the headline is true as written: at exactly
+  // half remaining the page falls through to "filling fast" rather than
+  // claiming a milestone the register has not reached.
+  if (left * 2 < total)
+    return {
+      stage: "half",
+      pill: "Over half claimed",
+      badge: "Half claimed",
+      headline: "Less than half the seats remain",
+      cta: "Claim your seat now",
+      closing: "Less than half the seats remain.",
+    };
+
+  return {
+    stage: "open",
+    pill: "Filling fast",
+    badge: "Filling fast",
+    headline: "Seats are filling fast",
+    cta: "Claim your seat",
+    closing: "Seats are filling fast.",
+  };
+}
+
+/** The three milestones the track lights up, in order. Each one is a true
+    statement about the register by the time its segment fills. */
+const STAGE_TRACK: { stage: SeatStage; label: string }[] = [
+  { stage: "open", label: "Registration open" },
+  { stage: "half", label: "Over half claimed" },
+  { stage: "closing", label: "Final seats" },
+];
+
+const stagesLit = (stage: SeatStage): number =>
+  stage === "open" ? 1 : stage === "half" ? 2 : 3;
+
 /* ─── Small pieces ─── */
 
 const LivePulse = ({ size = "h-2 w-2" }: { size?: string }) => (
@@ -160,10 +257,10 @@ const LivePulse = ({ size = "h-2 w-2" }: { size?: string }) => (
   </span>
 );
 
-const SeatsLeftPill = ({ left }: { left: number }) => (
-  <span className="inline-flex items-center gap-1.5 rounded-full bg-[#FBEFEC] px-2.5 py-1 text-[12px] font-bold text-[#C8321F]">
+const AvailabilityPill = ({ copy }: { copy: SeatCopy }) => (
+  <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-[#FBEFEC] px-2.5 py-1 text-[12px] font-bold text-[#C8321F]">
     <LivePulse />
-    {left} {left === 1 ? "seat" : "seats"} left
+    {copy.pill}
   </span>
 );
 
@@ -198,8 +295,7 @@ interface SignupProps {
 
 function SignupForm({ seats, done, onDone }: SignupProps) {
   const [open, setOpen] = useState(false);
-  const left = seats?.seats_left;
-  const full = left !== undefined && left <= 0;
+  const copy = describeSeats(seats);
 
   if (done) {
     return (
@@ -208,8 +304,8 @@ function SignupForm({ seats, done, onDone }: SignupProps) {
           <Check className="h-5 w-5" /> You&apos;re on the list.
         </div>
         <p className="mt-1.5 text-sm text-[#111113]/80">
-          Watch your inbox. Your invite and the WhatsApp group link arrive before the beta
-          opens. Seats are confirmed in sign-up order.
+          Watch your inbox. Your invite and the WhatsApp group link arrive before early
+          access opens. Seats are confirmed in registration order.
         </p>
       </div>
     );
@@ -217,24 +313,21 @@ function SignupForm({ seats, done, onDone }: SignupProps) {
 
   return (
     <div className="flex flex-col items-center">
+      {/* No notification dot on the button. A pinging red badge on a call to
+          action is a nudge borrowed from a messaging app, and this page is
+          asking someone to trust us with their portfolio. The live pulse still
+          appears where it means something — beside a figure that is genuinely
+          live. */}
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="group relative inline-flex h-14 w-full max-w-sm items-center justify-center gap-2.5 rounded-2xl bg-[#111113] px-8 text-[16px] font-semibold text-[#F7F3EC] shadow-[0_8px_24px_rgba(17,17,19,0.25)] transition-all hover:-translate-y-0.5 hover:bg-[#2F2F33]"
+        className="group inline-flex h-14 w-full max-w-sm items-center justify-center gap-2.5 rounded-2xl bg-[#111113] px-8 text-[16px] font-semibold text-[#F7F3EC] shadow-[0_8px_24px_rgba(17,17,19,0.18)] transition-all hover:-translate-y-0.5 hover:bg-[#2F2F33]"
       >
-        {full
-          ? "Join the waitlist"
-          : left !== undefined
-            ? `Claim 1 of the last ${left} seats`
-            : "Claim your seat"}
+        {copy ? copy.cta : "Claim your seat"}
         <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-        <span className="absolute -right-1.5 -top-1.5 flex h-4 w-4">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#C8321F] opacity-60" />
-          <span className="relative inline-flex h-4 w-4 rounded-full border-2 border-[#F7F3EC] bg-[#C8321F]" />
-        </span>
       </button>
       <p className="mt-2.5 text-[12px] text-[#8A8275]">
-        Takes 30 seconds. Free, and we never ask for payment details.
+        Takes 30 seconds, and stays free throughout. No payment details needed.
       </p>
       {open && <SignupModal seats={seats} onClose={() => setOpen(false)} onDone={onDone} />}
     </div>
@@ -249,7 +342,7 @@ function SignupModal({
   onClose,
   onDone,
 }: {
-  seats: EarlyAccessSeats;
+  seats: EarlyAccessSeats | null;
   onClose: () => void;
   onDone: (seats: EarlyAccessSeats | null) => void;
 }) {
@@ -262,7 +355,7 @@ function SignupModal({
   const [referrerNote, setReferrerNote] = useState("");
   const [err, setErr] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const left = seats?.seats_left;
+  const copy = describeSeats(seats);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -341,12 +434,12 @@ function SignupModal({
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            {left !== undefined && <SeatsLeftPill left={Math.max(0, left)} />}
+            {copy && <AvailabilityPill copy={copy} />}
             <h3
               id="early-access-title"
-              className={`text-xl font-semibold tracking-tight${left !== undefined ? " mt-2.5" : ""}`}
+              className={`text-xl font-semibold tracking-tight${copy ? " mt-2.5" : ""}`}
             >
-              {left !== undefined && left <= 0 ? "Join the waitlist" : "Claim your seat"}
+              {copy?.stage === "full" ? "Join the standby list" : "Claim your seat"}
             </h3>
           </div>
           <button
@@ -449,7 +542,7 @@ function SignupModal({
             )}
           </button>
           <p className="text-center text-[12px] text-[#8A8275]">
-            No spam, no sales calls. Your details are used only to run the beta.
+            Your details stay with us, and are used only to run early access.
           </p>
         </form>
       </div>
@@ -460,70 +553,61 @@ function SignupModal({
 const METER_SHELL =
   "mx-auto mt-6 w-full max-w-md rounded-2xl border border-[#E8E2D2] bg-white p-4 text-left";
 
+/**
+ * The availability card.
+ *
+ * A milestone track rather than a percentage bar, for the same reason the copy
+ * withholds the figure until the closing stretch: a bar filled to its true 3%
+ * publishes the exact count to anyone holding a ruler, and a bar filled to a
+ * flattering width publishes a number we made up. Three segments, each lighting
+ * only once the register has genuinely reached that milestone, says where the
+ * round stands and nothing it cannot support.
+ */
 function SeatMeter({ seats, status }: { seats: EarlyAccessSeats | null; status: SeatsStatus }) {
-  const total = seats?.seats_total || BETA_SEATS;
-  const claimed = seats ? Math.min(total, seats.seats_claimed) : 0;
-  const [n, setN] = useState(0);
-  // What the counter is currently showing. The animation runs from here rather
-  // than from zero, so a poll that moves the figure by one ticks up by one
-  // instead of replaying the whole count every 30 seconds.
-  const shown = useRef(0);
-
-  useEffect(() => {
-    if (!seats) return;
-    const from = shown.current;
-    const delta = claimed - from;
-    if (delta === 0) return;
-    let raf = 0;
-    let t0 = 0;
-    const tick = (t: number) => {
-      if (!t0) t0 = t;
-      const p = Math.min((t - t0) / 900, 1);
-      const v = Math.round(from + delta * (1 - Math.pow(1 - p, 3)));
-      shown.current = v;
-      setN(v);
-      if (p < 1) raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [claimed, seats]);
+  const copy = describeSeats(seats);
 
   if (status === "loading") {
     return (
       <div className={METER_SHELL} aria-hidden>
         <div className="flex items-baseline justify-between gap-3">
-          <span className="h-5 w-40 animate-pulse rounded bg-[#EDE6D6]" />
+          <span className="h-5 w-44 animate-pulse rounded bg-[#EDE6D6]" />
           <span className="h-6 w-24 animate-pulse rounded-full bg-[#EDE6D6]" />
         </div>
-        <div className="mt-2 h-2.5 animate-pulse rounded-full bg-[#EDE6D6]" />
-        <p className="mt-2 text-[12px] text-[#8A8275]">
-          Seats are confirmed in sign-up order. When the bar fills, the beta closes.
-        </p>
+        <div className="mt-3 flex gap-1.5">
+          {STAGE_TRACK.map((t) => (
+            <span key={t.stage} className="h-1.5 flex-1 animate-pulse rounded-full bg-[#EDE6D6]" />
+          ))}
+        </div>
+        <div className="mt-3 h-4 w-56 animate-pulse rounded bg-[#EDE6D6]" />
       </div>
     );
   }
 
   // Live count unreadable and never read. The page says less rather than
-  // showing a number it cannot stand behind — the copy below still carries the
-  // scarcity, and the button falls back to "Claim your seat".
-  if (!seats) return null;
+  // showing a stage it cannot stand behind — the copy elsewhere still carries
+  // the invitation, and the button falls back to "Claim your seat".
+  if (!copy) return null;
+
+  const lit = stagesLit(copy.stage);
 
   return (
     <div className={METER_SHELL}>
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="text-sm font-semibold">
-          <span className="text-xl font-bold tabular-nums">{n}</span> of {total} seats claimed
-        </span>
-        <SeatsLeftPill left={Math.max(0, seats.seats_left)} />
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-2">
+        <span className="text-[15px] font-semibold">{copy.headline}</span>
+        <AvailabilityPill copy={copy} />
       </div>
-      <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-[#EDE6D6]">
-        <div
-          className="h-full rounded-full bg-gradient-to-r from-[#E0B84A] to-[#C8321F] transition-[width] duration-1000 ease-out"
-          style={{ width: `${total > 0 ? (n / total) * 100 : 0}%` }}
-        />
+      <div className="mt-3 flex gap-1.5" aria-hidden>
+        {STAGE_TRACK.map((t, i) => (
+          <span
+            key={t.stage}
+            className={`h-1.5 flex-1 rounded-full transition-colors duration-700 ${
+              i < lit ? "bg-gradient-to-r from-[#E0B84A] to-[#C8321F]" : "bg-[#EDE6D6]"
+            }`}
+          />
+        ))}
       </div>
-      <p className="mt-2 text-[12px] text-[#8A8275]">
-        Seats are confirmed in sign-up order. When the bar fills, the beta closes.
+      <p className="mt-3 text-[12px] text-[#8A8275]">
+        {STAGE_TRACK[lit - 1].label} · seats are confirmed in registration order.
       </p>
     </div>
   );
@@ -531,7 +615,7 @@ function SeatMeter({ seats, status }: { seats: EarlyAccessSeats | null; status: 
 
 /* ─── Sections ─── */
 
-function Nav({ left }: { left: number | undefined }) {
+function Nav({ copy }: { copy: SeatCopy | null }) {
   return (
     <header className="sticky top-0 z-40 border-b border-[#E8E2D2]/80 bg-[#F7F3EC]/90 backdrop-blur">
       <div className="bg-[#111113] px-4 py-1.5 text-center text-[11px] font-medium tracking-wide text-[#F7F3EC]/80 sm:text-[12px]">
@@ -542,7 +626,7 @@ function Nav({ left }: { left: number | undefined }) {
         <div className="flex items-center gap-2.5">
           <Wordmark />
           <span className="ml-1 hidden rounded-full border border-[#E0B84A] bg-[#F7ECCC] px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-[#9B8030] sm:inline">
-            MVP 2.0 Beta
+            Early access
           </span>
         </div>
         <a
@@ -550,9 +634,9 @@ function Nav({ left }: { left: number | undefined }) {
           className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#111113] px-4 text-sm font-semibold text-[#F7F3EC] hover:bg-[#2F2F33] hover:text-[#F7F3EC]"
         >
           Become a tester
-          {left !== undefined && (
-            <span className="rounded-full bg-[#E0B84A] px-1.5 py-0.5 text-[10px] font-bold text-[#111113]">
-              {Math.max(0, left)} left
+          {copy && (
+            <span className="whitespace-nowrap rounded-full bg-[#E0B84A] px-1.5 py-0.5 text-[10px] font-bold text-[#111113]">
+              {copy.badge}
             </span>
           )}
         </a>
@@ -565,14 +649,15 @@ function Hero({ seats, status, done, onDone }: SignupProps & { status: SeatsStat
   return (
     <section className="px-5 pb-16 pt-14 text-center sm:pt-20">
       <div className="mx-auto max-w-3xl">
-        <SectionLabel>Private beta · 100 seats · Free</SectionLabel>
+        <SectionLabel>Early access · 100 seats · Free</SectionLabel>
         <h1 className="mt-4 text-[34px] font-semibold leading-[1.1] tracking-tight sm:text-6xl sm:leading-[1.08]">
           Be one of the <em className="font-display font-normal italic">100</em> who test the new
           Prozpr.
         </h1>
         <p className="mx-auto mt-5 max-w-xl text-lg leading-relaxed text-[#57534A]">
-          MVP 2.0 is ready. Before we open it to everyone, we want 100 real investors to use it,
-          break it, and shape it, and get the premium experience free while doing it.
+          The new Prozpr is ready. Before it opens to everyone, we are giving 100 real
+          investors the run of it — to use it, stress-test it and shape it, with the full
+          premium experience free while they do.
         </p>
         <p className="mx-auto mt-3 max-w-xl text-sm text-[#8A8275]">
           Built by IIT and Ivy League MBA graduates.
@@ -597,38 +682,38 @@ const PERKS: Perk[] = [
   {
     icon: Sparkles,
     title: "The Founding Tester community",
-    body: "Join a select circle of 100. All testers keep premium free for 6 months after launch. Top-grade testers hold the Founding Tester badge for life, with access to exclusive networking and investing events plus unique in-app benefits.",
+    body: "A select circle of 100. Every tester keeps premium free for six months after launch, and our most engaged testers hold the Founding Tester badge for life — with invitations to networking and investing events, and benefits reserved for them in the app.",
     tag: "Lifetime badge",
   },
   {
     icon: Users,
     title: "A direct line to the builders",
-    body: "A private WhatsApp group with the founders. Report something broken and watch it get fixed in days. Suggest a feature and see it ship. Your name in our launch credits, if you want it.",
+    body: "A private WhatsApp group with the founders. Flag something and watch it get fixed in days. Suggest a feature and see it ship. Your name in our launch credits, if you would like it there.",
     tag: "Shape the product",
   },
   {
     icon: Wallet,
     title: "Free premium portfolio assessment",
-    body: "Upload or link your current mutual fund holdings and get a full premium health check: overlap, risk, expense drag, goal fit, with clear insights on what to fix. Paid at launch; free for testers.",
+    body: "Link your mutual fund holdings and get the full premium health check: overlap, risk, expense drag and goal fit, with clear guidance on what to act on. A paid feature at launch, and free for testers.",
     tag: "Premium, free",
   },
   {
     icon: TrendingUp,
     title: "Unlimited advanced fund analysis",
-    body: "Deep analysis and rankings across every mutual fund in India: returns, consistency, downside behaviour, manager record. No caps and no locked screens during the beta.",
+    body: "Deep analysis and rankings across every mutual fund in India: returns, consistency, downside behaviour and manager record. Every screen stays open to you, with no usage limits.",
     tag: "Unlimited",
   },
   {
     icon: Calculator,
     title: "A one-on-one portfolio review",
-    body: "Every tester gets one 45-minute, one-on-one session: a thorough walkthrough of your portfolio, what is working, what is dragging, and how to structure it around your goals.",
+    body: "Every tester gets a 45-minute session with us: a thorough walkthrough of your portfolio, what is working well, what is holding it back, and how to structure it around your goals.",
     tag: "45 min, 1:1",
   },
   {
     icon: ShieldCheck,
-    title: "Zero risk, zero cost",
-    body: "No payment details, no real-money commitment, and read-only analysis of your portfolio. Leave the beta at any time and your data is deleted on request.",
-    tag: "Safe by design",
+    title: "Free, and safe by design",
+    body: "Your portfolio is analysed read-only, everything stays free, and you keep full control: step away whenever you like, and we delete your data the moment you ask.",
+    tag: "Read-only",
   },
 ];
 
@@ -665,22 +750,22 @@ const STEPS = [
   {
     n: "01",
     title: "Register",
-    body: "Drop your email and WhatsApp number. Seats are confirmed in sign-up order, and you will hear from us within a day.",
+    body: "Leave your email and WhatsApp number. Seats are confirmed in registration order, and you hear from us within a day.",
   },
   {
     n: "02",
     title: "Get your invite",
-    body: "You receive your beta login and join the testers' WhatsApp group. Setup takes under five minutes.",
+    body: "Your login arrives and you join the testers' WhatsApp group. Setup takes under five minutes.",
   },
   {
     n: "03",
     title: "Use it like it's yours",
-    body: "Assess your portfolio, analyse funds, and chat with Prozpr. About 15 minutes a week, on your schedule.",
+    body: "Assess your portfolio, analyse funds, and put Prozpr to work. About 15 minutes a week, entirely on your own schedule.",
   },
   {
     n: "04",
     title: "Tell us the truth",
-    body: "One short feedback prompt a week. What confused you, what you loved, what's missing. That's the whole job.",
+    body: "One short feedback prompt a week: what worked, what confused you, what is still missing. That is the whole job.",
   },
 ];
 
@@ -688,7 +773,7 @@ function HowItWorks() {
   return (
     <section className="px-5 py-16 sm:py-20">
       <div className="mx-auto max-w-6xl">
-        <SectionLabel className="text-center">How the beta works</SectionLabel>
+        <SectionLabel className="text-center">How early access works</SectionLabel>
         <h2 className="mt-3 text-center text-[26px] font-semibold tracking-tight sm:text-4xl">
           Four steps.{" "}
           <em className="font-display font-normal italic">Fifteen minutes a week.</em>
@@ -711,7 +796,7 @@ const WHO_FOR = [
   "You hold mutual funds (or plan to start SIPs) and wonder whether your mix is actually right.",
   "You've outgrown star ratings and want real analysis before you pick a fund.",
   "You'd rather ask a question in plain English than decode a factsheet.",
-  "You enjoy being early, and don't mind telling us when something's rough.",
+  "You enjoy being early, and you're happy to say so when something still feels rough.",
 ];
 
 function WhoFor() {
@@ -721,11 +806,11 @@ function WhoFor() {
         <div>
           <SectionLabel className="!text-[#E0B84A]">Who we're looking for</SectionLabel>
           <h2 className="mt-3 text-[26px] font-semibold tracking-tight sm:text-4xl">
-            This beta is for you if…
+            Early access is for you if…
           </h2>
           <p className="mt-4 max-w-md text-[15px] leading-relaxed text-[#F7F3EC]/70">
-            We're not looking for professional reviewers. We're looking for 100 everyday investors
-            whose honest reactions decide what Prozpr becomes.
+            We're looking for 100 everyday investors whose honest reactions decide what
+            Prozpr becomes. Your own perspective is the whole qualification.
           </p>
           <div className="mt-6 rounded-xl border border-white/10 bg-white/5 p-4 text-sm leading-relaxed text-[#F7F3EC]/80">
             <p className="font-semibold text-[#E0B84A]">Who's building this</p>
@@ -751,34 +836,41 @@ function WhoFor() {
   );
 }
 
+/** Answers lead with what IS true, not with a "No".
+ *
+ * Seven questions in a row that opened "No." / "Not yet." read as a list of
+ * things Prozpr will not do, which is a strange note to strike on the page
+ * asking someone to join. The facts are unchanged — the costs, the limits and
+ * the registration status are all still stated plainly, including in the one
+ * answer where the honest response is genuinely a qualified one. */
 const FAQS = [
   {
-    q: "Does it cost anything?",
-    a: "No. The beta is completely free, including features that will be paid at launch. Testers also keep premium free for 6 months after launch.",
+    q: "What does early access cost?",
+    a: "Nothing at all. Everything is free, including the features that will be paid at launch, and testers keep premium free for six months afterwards.",
   },
   {
-    q: "Do I have to invest real money?",
-    a: "No. Prozpr 2.0 analyses and plans. You can test everything without moving a rupee, and what you do with the insights is entirely up to you.",
+    q: "Do I need to invest real money?",
+    a: "You can explore all of it without moving a rupee. Prozpr analyses and plans; whether you act on what it shows you is entirely your call.",
   },
   {
-    q: "Is my data safe?",
-    a: "Yes. Portfolio access is read-only, your details are used only to run the beta, and you can ask us to delete everything at any time.",
+    q: "How is my data handled?",
+    a: "Carefully. Portfolio access is read-only, your details are used only to run early access, and we delete everything the moment you ask us to.",
   },
   {
     q: "How much time does it take?",
-    a: "Around 15 minutes a week. Use the product normally and answer one short feedback prompt. No calls or meetings unless you want them.",
+    a: "Around 15 minutes a week. Use the product as you normally would and answer one short feedback prompt. Calls and meetings are entirely optional.",
   },
   {
-    q: "Why do you need my WhatsApp number?",
-    a: "The beta runs on WhatsApp: invites, updates, and the testers' group with the founders. We never use it for marketing.",
+    q: "Why do you ask for a WhatsApp number?",
+    a: "Early access runs on WhatsApp: invites, updates, and the testers' group with the founders. We keep it to exactly that, and never use it for marketing.",
   },
   {
-    q: "What if I sign up after all 100 seats are filled?",
-    a: "You join the waitlist in order. Testers who go inactive free up seats every week, so waitlisted sign-ups do get in.",
+    q: "What if I register once all 100 seats are taken?",
+    a: "You join the standby list in order. Places free up most weeks as testers move on, so standby registrations do come through.",
   },
   {
     q: "Are you SEBI or AMFI registered?",
-    a: "Not yet. We are in the process of obtaining AMFI and SEBI registration. During the beta, Prozpr provides educational analysis and insights only, not regulated investment advice or transactions.",
+    a: "Our AMFI and SEBI registrations are in progress. Throughout early access Prozpr offers educational analysis and insights, rather than regulated investment advice or transactions.",
   },
 ];
 
@@ -791,6 +883,9 @@ function Faq() {
         <h2 className="mt-3 text-center text-[26px] font-semibold tracking-tight sm:text-3xl">
           Fair questions, straight answers.
         </h2>
+        <p className="mx-auto mt-3 max-w-md text-center text-sm leading-relaxed text-[#57534A]">
+          Anything still unanswered, ask us in the testers&apos; group once you are in.
+        </p>
         <div className="mt-8 divide-y divide-[#E8E2D2] rounded-2xl border border-[#E8E2D2] bg-white">
           {FAQS.map((f, i) => (
             <div key={f.q}>
@@ -817,23 +912,19 @@ function Faq() {
 }
 
 function FinalCta({ seats, done, onDone }: SignupProps) {
-  const left = seats ? Math.max(0, seats.seats_left) : undefined;
+  const copy = describeSeats(seats);
   return (
     <section className="border-t border-[#E8E2D2] bg-white px-5 py-16 sm:py-20">
       <div className="mx-auto max-w-xl text-center">
         <h2 className="text-[26px] font-semibold tracking-tight sm:text-4xl">
-          {left === undefined
-            ? "The beta is filling up."
-            : left > 0
-              ? `${left} ${left === 1 ? "seat" : "seats"} left.`
-              : "All seats are taken."}{" "}
+          {copy ? copy.closing : "Early access is filling up."}{" "}
           <em className="font-display font-normal italic">
-            {left !== undefined && left <= 0 ? "The waitlist is open." : "Then the doors close."}
+            {copy?.stage === "full" ? "The standby list is open." : "Claim yours now."}
           </em>
         </h2>
         <p className="mt-4 text-[15px] leading-relaxed text-[#57534A]">
-          Free premium assessment, unlimited fund analysis, and a product that listens to you, in
-          exchange for your honest opinion.
+          A free premium assessment, unlimited fund analysis, and a product that listens to
+          you — in exchange for your honest opinion.
         </p>
         <div className="mt-7">
           <SignupForm seats={seats} done={done} onDone={onDone} />
@@ -886,7 +977,7 @@ const EarlyAccess = () => {
 
   return (
     <div className="early-access min-h-screen bg-[#F7F3EC] font-sans text-[#111113] antialiased selection:bg-[#111113] selection:text-[#F7F3EC]">
-      <Nav left={seats?.seats_left} />
+      <Nav copy={describeSeats(seats)} />
       <main>
         <Hero seats={seats} status={status} done={done} onDone={handleDone} />
         <Perks />

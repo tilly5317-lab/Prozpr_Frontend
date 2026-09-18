@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 const submitEarlyAccessSignup = vi.fn();
@@ -21,6 +21,8 @@ const renderPage = () =>
     </MemoryRouter>,
   );
 
+// 40 of 100 left, i.e. past the halfway mark but well clear of the last 20:
+// the stage the page describes without naming a figure.
 const seats = { seats_total: 100, seats_claimed: 60, seats_left: 40 };
 
 beforeEach(() => {
@@ -30,16 +32,74 @@ beforeEach(() => {
 });
 
 describe("/earlyaccess", () => {
-  it("shows the live seat count from the backend", async () => {
+  it("describes the stage the backend reports", async () => {
     renderPage();
-    expect(await screen.findAllByText("40 seats left")).not.toHaveLength(0);
+    expect(await screen.findAllByText("Over half claimed")).not.toHaveLength(0);
     expect(document.title).toContain("founding tester");
+  });
+
+  it("carries no version label anywhere a visitor can read", async () => {
+    // "MVP" is our word for the build, and an edition number tells a
+    // prospective customer they have been handed a numbered pre-release.
+    renderPage();
+    await screen.findAllByText("Over half claimed");
+    const copy = document.body.textContent ?? "";
+    expect(copy).not.toContain("MVP");
+    expect(copy).not.toContain("2.0");
+    expect(document.title).not.toContain("MVP");
+  });
+
+  describe("how much of the count it publishes", () => {
+    const stage = async (seats_left: number) => {
+      getEarlyAccessSeats.mockReset().mockResolvedValue({
+        seats_total: 100,
+        seats_claimed: 100 - seats_left,
+        seats_left,
+      });
+      renderPage();
+      return screen.findAllByText(/Filling fast|Over half claimed|seats? available|Standby/);
+    };
+
+    it("withholds the figure while seats are plentiful", async () => {
+      // A true "3 of 100 claimed" on the first morning is an empty room
+      // rendered as a statistic. The page states the stage instead.
+      await stage(78);
+      expect(screen.getAllByText("Filling fast").length).toBeGreaterThan(0);
+      expect(await screen.findByText("Seats are filling fast")).toBeInTheDocument();
+      expect(screen.queryByText(/\d+ seats? available/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/seats claimed/)).not.toBeInTheDocument();
+    });
+
+    it("says less than half remain only once that is true", async () => {
+      // Exactly half left is NOT less than half, so it stays on the earlier
+      // stage; one seat past it, the claim holds and the page makes it.
+      await stage(50);
+      expect(await screen.findByText("Seats are filling fast")).toBeInTheDocument();
+      cleanup();
+
+      await stage(49);
+      expect(await screen.findByText("Less than half the seats remain")).toBeInTheDocument();
+      expect(screen.queryByText(/\d+ seats? available/)).not.toBeInTheDocument();
+    });
+
+    it("names the number over the last 20 seats", async () => {
+      await stage(19);
+      expect(await screen.findByText("19 seats available of 100")).toBeInTheDocument();
+      expect(screen.getAllByText("19 seats available").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("Claim one of the last 19").length).toBeGreaterThan(0);
+    });
+
+    it("opens the standby list rather than closing the door", async () => {
+      await stage(0);
+      expect(await screen.findByText("Every seat in this round is taken")).toBeInTheDocument();
+      expect(screen.getAllByText("Join the standby list").length).toBeGreaterThan(0);
+    });
   });
 
   it("validates before submitting and sends the sign-up to the backend", async () => {
     submitEarlyAccessSignup.mockResolvedValue({ ok: true, ...seats, seats_claimed: 61, seats_left: 39 });
     renderPage();
-    fireEvent.click((await screen.findAllByText(/Claim 1 of the last/))[0]);
+    fireEvent.click((await screen.findAllByText("Claim your seat now"))[0]);
 
     fireEvent.click(screen.getByText("Confirm my seat"));
     expect(screen.getByText("Please enter your name.")).toBeInTheDocument();
@@ -62,27 +122,20 @@ describe("/earlyaccess", () => {
       referrer_note: "",
     });
     expect(await screen.findAllByText("You're on the list.")).not.toHaveLength(0);
-    // The meter moves to the count the backend returned with the sign-up.
-    expect(screen.getAllByText("39 seats left").length).toBeGreaterThan(0);
+    // The card follows the count the backend returned with the sign-up.
+    expect(screen.getAllByText("Over half claimed").length).toBeGreaterThan(0);
   });
 
-  it("renders the claimed count the backend reported", async () => {
-    renderPage();
-    expect(await screen.findByText(/of 100 seats claimed/)).toBeInTheDocument();
-    // The counter animates up to the real figure rather than landing on it.
-    await waitFor(() => expect(screen.getByText("60")).toBeInTheDocument(), { timeout: 2500 });
-  });
-
-  it("never invents a seat count when the live figure is unreadable", async () => {
-    // A fabricated fallback would state a signup number to visitors that
-    // nothing backs. The page must say less instead.
+  it("never invents a stage when the live figure is unreadable", async () => {
+    // A fabricated fallback would make a claim about how many people signed
+    // up that nothing backs. The page must say less instead.
     getEarlyAccessSeats.mockReset().mockRejectedValue(new Error("503"));
     renderPage();
 
     expect(await screen.findAllByText("Claim your seat")).not.toHaveLength(0);
-    expect(screen.queryByText(/seats claimed/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/seats left/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Claim 1 of the last/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Filling fast")).not.toBeInTheDocument();
+    expect(screen.queryByText("Over half claimed")).not.toBeInTheDocument();
+    expect(screen.queryByText(/seats? available/)).not.toBeInTheDocument();
   });
 
   it("still lets someone sign up while the count is unavailable", async () => {
@@ -100,14 +153,14 @@ describe("/earlyaccess", () => {
 
     await waitFor(() => expect(submitEarlyAccessSignup).toHaveBeenCalledTimes(1));
     expect(await screen.findAllByText("You're on the list.")).not.toHaveLength(0);
-    // The sign-up response carries real figures, so the meter appears now.
-    expect(screen.getAllByText("40 seats left").length).toBeGreaterThan(0);
+    // The sign-up response carries real figures, so the card appears now.
+    expect(screen.getAllByText("Over half claimed").length).toBeGreaterThan(0);
   });
 
   it("caps the WhatsApp number at 10 digits and sends the bare digits", async () => {
     submitEarlyAccessSignup.mockResolvedValue({ ok: true, ...seats });
     renderPage();
-    fireEvent.click((await screen.findAllByText(/Claim 1 of the last/))[0]);
+    fireEvent.click((await screen.findAllByText("Claim your seat now"))[0]);
 
     fireEvent.change(screen.getByPlaceholderText("Name"), { target: { value: "Asha" } });
     fireEvent.change(screen.getByPlaceholderText("Email address"), {
@@ -136,7 +189,7 @@ describe("/earlyaccess", () => {
   it("rejects a short WhatsApp number but allows a blank one", async () => {
     submitEarlyAccessSignup.mockResolvedValue({ ok: true, ...seats });
     renderPage();
-    fireEvent.click((await screen.findAllByText(/Claim 1 of the last/))[0]);
+    fireEvent.click((await screen.findAllByText("Claim your seat now"))[0]);
     fireEvent.change(screen.getByPlaceholderText("Name"), { target: { value: "Asha" } });
     fireEvent.change(screen.getByPlaceholderText("Email address"), {
       target: { value: "asha@example.com" },
@@ -174,7 +227,7 @@ describe("/earlyaccess", () => {
   it("surfaces the backend's error and keeps the form open", async () => {
     submitEarlyAccessSignup.mockRejectedValue(new Error("Email already registered"));
     renderPage();
-    fireEvent.click((await screen.findAllByText(/Claim 1 of the last/))[0]);
+    fireEvent.click((await screen.findAllByText("Claim your seat now"))[0]);
     fireEvent.change(screen.getByPlaceholderText("Name"), { target: { value: "Asha" } });
     fireEvent.change(screen.getByPlaceholderText("Email address"), {
       target: { value: "asha@example.com" },
