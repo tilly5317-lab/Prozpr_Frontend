@@ -1296,6 +1296,8 @@ const AIChatPanel = ({
           role: m.role === "assistant" ? ("ai" as const) : ("user" as const),
           content: m.content,
           chartPayloads: m.chart_payloads || null,
+          showPreferencesPill: m.cta === "preferences",
+          showAddCams: m.cta === "add_cams",
         })),
       );
       void rehydratePlanPills(session.messages, session.id);
@@ -1426,6 +1428,8 @@ const AIChatPanel = ({
               role: m.role === "assistant" ? ("ai" as const) : ("user" as const),
               content: m.content,
               chartPayloads: m.chart_payloads || null,
+              showPreferencesPill: m.cta === "preferences",
+              showAddCams: m.cta === "add_cams",
             })),
           );
           void rehydratePlanPills(session.messages, session.id);
@@ -2016,7 +2020,7 @@ const AIChatPanel = ({
                   }}
                 >
                   <MarkdownMessage text={msg.content} />
-                  {(msg.showViewExecutePlan || msg.rebalancingRunId || msg.additionalInvestmentRunId || msg.additionalInvestmentCadence) ? (
+                  {(msg.showViewExecutePlan || msg.rebalancingRunId || msg.additionalInvestmentRunId || msg.additionalInvestmentCadence || msg.showPreferencesPill) ? (
                     <div className="mt-3 flex flex-wrap items-center justify-center gap-2 border-t border-foreground/10 pt-3">
                       {msg.showViewExecutePlan || msg.additionalInvestmentCadence ? (
                         /* View — exploratory, quiet ink ghost */
@@ -2117,48 +2121,57 @@ const AIChatPanel = ({
                               : "Save preference"}
                         </button>
                       ) : null}
+                      {msg.showPreferencesPill ? (
+                        /* Lives in the in-bubble pill row, not beside it: the
+                           reply's copy says "tap below", so the control has to
+                           read as part of that reply. */
+                        <button
+                          type="button"
+                          onClick={() => navigate("/invest/preferences")}
+                          className="group inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[12.5px] font-semibold transition-all hover:brightness-[1.04] active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100"
+                          style={{
+                            background:
+                              "linear-gradient(135deg, #E5C079 0%, #D4A868 100%)",
+                            color: "#3a2c0e",
+                            boxShadow: "0 2px 8px -3px rgba(212,168,104,0.7)",
+                          }}
+                        >
+                          Open preferences
+                          <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" />
+                        </button>
+                      ) : null}
                     </div>
+                  ) : null}
+                  {msg.showAddCams ? (
+                    /* Inside the bubble, like the pill row above: the card
+                       belongs to the reply that asked for the statement. */
+                    <button
+                      type="button"
+                      onClick={() => setCamsModalOpen(true)}
+                      className="mt-3 flex w-full items-center justify-between gap-3 rounded-xl border px-4 py-3 transition-opacity hover:opacity-90"
+                      style={{
+                        borderColor: "rgba(212, 168, 104, 0.35)",
+                        backgroundColor: "rgba(212, 168, 104, 0.07)",
+                      }}
+                    >
+                      <div className="flex flex-col text-left">
+                        <span className="text-[11px] font-medium text-muted-foreground">
+                          Portfolio data missing
+                        </span>
+                        <span className="text-[13px] font-semibold text-foreground">
+                          Add CAMS statement
+                        </span>
+                      </div>
+                      <div
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
+                        style={{ backgroundColor: "rgba(212, 168, 104, 0.18)" }}
+                      >
+                        <UploadCloud className="h-4 w-4" style={{ color: "#D4A868" }} />
+                      </div>
+                    </button>
                   ) : null}
                 </div>
               </div>
-              {msg.showPreferencesPill ? (
-                /* Preference turns carry no plan, so this sits OUTSIDE the
-                   plan-gated pill container above — same placement as the
-                   Add-CAMS CTA. Inline per-message, never a floating FAB. */
-                <button
-                  type="button"
-                  onClick={() => navigate("/invest/preferences")}
-                  className="ml-7 mt-2 self-start inline-flex items-center gap-1 rounded-full border border-foreground/10 bg-transparent px-3 py-1.5 text-[12px] font-medium text-foreground/60 transition-colors hover:text-foreground/90"
-                >
-                  Open preferences
-                </button>
-              ) : null}
-              {msg.showAddCams ? (
-                <button
-                  type="button"
-                  onClick={() => setCamsModalOpen(true)}
-                  className="ml-7 mt-2 self-start flex items-center gap-3 rounded-xl border px-4 py-3 transition-opacity hover:opacity-90"
-                  style={{
-                    borderColor: "rgba(212, 168, 104, 0.35)",
-                    backgroundColor: "rgba(212, 168, 104, 0.07)",
-                  }}
-                >
-                  <div className="flex flex-col text-left">
-                    <span className="text-[11px] font-medium text-muted-foreground">
-                      Portfolio data missing
-                    </span>
-                    <span className="text-[13px] font-semibold text-foreground">
-                      Add CAMS statement
-                    </span>
-                  </div>
-                  <div
-                    className="flex h-8 w-8 items-center justify-center rounded-full"
-                    style={{ backgroundColor: "rgba(212, 168, 104, 0.18)" }}
-                  >
-                    <UploadCloud className="h-4 w-4" style={{ color: "#D4A868" }} />
-                  </div>
-                </button>
-              ) : null}
             </div>
           )}
         </motion.div>

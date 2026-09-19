@@ -926,6 +926,10 @@ export interface CashflowAnnualBarPayload {
 
 export type ChatChartPayload = CashflowAnnualBarPayload | Record<string, unknown>;
 
+/** The controls a chat reply can offer. Server vocabulary — keep in sync with
+ *  CTA_PREFERENCES / CTA_ADD_CAMS in app/domains/chat/models/chat.py. */
+export type ChatCta = "preferences" | "add_cams";
+
 export interface ChatMessageInfo {
   id: string;
   role: string;
@@ -935,6 +939,15 @@ export interface ChatMessageInfo {
   intent_reasoning: string | null;
   chart_payloads: ChatChartPayload[] | null;
   created_at: string;
+  /** Which control this reply offered, or null for none. Persisted with the
+   *  message, so a reopened session re-renders it; the live turn reads the same
+   *  fact off ChatSendResponse's own flags. A turn raises at most one, which is
+   *  why this is a value and not a flag per control.
+   *
+   *  It names the CONTROL, never a destination — where each one leads (a route,
+   *  a modal) is the client's business, so a route rename never orphans a
+   *  stored row. Mirrors CTA_* in app/domains/chat/models/chat.py. */
+  cta?: ChatCta | null;
   /** The rebalancing run this turn produced. Backend adds this to chat history;
    *  absent until that ships (frontend degrades gracefully). */
   ideal_allocation_rebalancing_id?: string | null;
