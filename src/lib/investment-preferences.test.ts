@@ -321,11 +321,61 @@ describe("applyTypedEntry", () => {
   });
 
   // The whole point of D3: the class total is untouched, so the bar above it
-  // cannot move no matter what is typed.
-  it("leaves the class total exactly on budget in every case", () => {
+  // cannot move no matter what is typed. This guard uses a 3-row class; see the
+  // property test below for a sweep of row counts (including 5-6 rows where
+  // rounding errors are most pronounced).
+  it("leaves the class total exactly on budget in every case (3-row class)", () => {
     for (const typed of [0, 7.3, 24, 59.9, 60, 120, -3]) {
       const next = applyTypedEntry(EQ_ROWS, values, 60, "a", typed);
       expect(classAllocated(next, EQ_ROWS, "equity")).toBe(60);
+    }
+  });
+
+  // Property test: walk row counts 2-7, budgets [10, 25, 60, 33.3, 7.7], three
+  // starting shapes (even / skewed / one-hot), and every typed value on the
+  // tenth grid. This guards against rounding errors in `spread` being lost when
+  // residuals are negative and larger than one row can absorb — the empirical
+  // finding was 24+ violations across this sweep before the fix.
+  it("sum is always exactly budget for any row count and starting shape (property sweep)", () => {
+    const rowCounts = [2, 3, 5, 6, 7];
+    const budgets = [10, 25, 60, 33.3, 7.7];
+
+    for (const n of rowCounts) {
+      const rows: ScreenSubcategory[] = Array.from({ length: n }, (_, i) => ({
+        id: `r${i}`,
+        class: "equity" as const,
+        label: `R${i}`,
+        recommended_pct_of_total: 0,
+      }));
+
+      for (const budget of budgets) {
+        // Three starting shapes: all equal, skewed, and one-hot
+        const shapes: RowValues[] = [
+          // Even distribution
+          Object.fromEntries(rows.map((r) => [r.id, budget / n])),
+          // Skewed: first row gets 60%, rest split the rest
+          Object.fromEntries(
+            rows.map((r, i) => [
+              r.id,
+              i === 0 ? (budget * 0.6) : ((budget * 0.4) / (n - 1)),
+            ]),
+          ),
+          // One-hot: all on first row
+          Object.fromEntries(
+            rows.map((r, i) => [r.id, i === 0 ? budget : 0]),
+          ),
+        ];
+
+        for (const shape of shapes) {
+          // Every typed value on the tenth grid (0.0, 0.1, 0.2, ..., budget, ..., budget + 0.5)
+          for (let tenths = 0; tenths <= (budget + 0.5) * 10; tenths += 1) {
+            const typed = round1(tenths / 10);
+            const next = applyTypedEntry(rows, shape, budget, "r0", typed);
+            const allocated = classAllocated(next, rows, "equity");
+            expect(allocated).toBe(round1(budget));
+          }
+        }
+      }
     }
   });
 

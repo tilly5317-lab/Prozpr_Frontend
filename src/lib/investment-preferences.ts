@@ -141,8 +141,10 @@ export function classAllocated(values: RowValues, cats: ScreenSubcategory[], cls
  *  This is the one place the screen knows how to divide a budget. A set that is
  *  entirely zero has no proportions left to preserve, so the whole budget parks
  *  on the first row, where it stays reachable instead of stranded; and eleven
- *  independent roundings do not land on the budget, so the leftover goes to the
- *  largest row, where a tenth is least visible. */
+ *  independent roundings do not land on the budget, so the residual is
+ *  distributed across rows starting from the largest, where a tenth is least
+ *  visible — never clipped, ensuring the sum is always exactly `budget` on the
+ *  one-decimal grid (spec §7.2). */
 function spread(out: RowValues, rows: ScreenSubcategory[], budget: number): void {
   if (rows.length === 0) return;
   const total = rows.reduce((s, r) => s + val(out, r.id), 0);
@@ -160,8 +162,21 @@ function spread(out: RowValues, rows: ScreenSubcategory[], budget: number): void
   }
   const residual = round1(budget - sum);
   if (residual !== 0) {
-    const biggest = rows.reduce((a, b) => (val(out, b.id) > val(out, a.id) ? b : a));
-    out[biggest.id] = round1(Math.max(0, val(out, biggest.id) + residual));
+    // Distribute the residual across rows largest-first so adjustments are least
+    // visible. This is the only place that corrects rounding errors, so the sum
+    // must ALWAYS reach exactly budget, never clipped.
+    const rowIds = rows.map(r => r.id).sort((a, b) => val(out, b) - val(out, a));
+    let remaining = residual;
+    for (const id of rowIds) {
+      if (remaining === 0) break;
+      const current = val(out, id);
+      // Adjust as much of the remaining correction as this row can absorb without
+      // going negative. If the residual is negative (over-allocated), this takes
+      // from multiple rows if the first one is too small.
+      const adjustment = Math.max(-current, remaining);
+      out[id] = round1(current + adjustment);
+      remaining = round1(remaining - adjustment);
+    }
   }
 }
 
