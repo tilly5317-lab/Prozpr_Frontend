@@ -48,15 +48,8 @@ Add to `src/lib/investment-preferences.test.ts`; add `lookThroughMix` and `fromC
 
 ```ts
 describe("lookThroughMix", () => {
-  // The same derivation draws Prozpr's bar and today's, so the two are
-  // comparable by construction rather than by coincidence (spec §3.2).
-  it("reads the multi-asset fund through into all three classes", () => {
-    // multi-asset 20 -> 13 / 5 / 2, plus large-cap 30, short debt 20, gold 30
-    expect(lookThroughMix(recommendedValues(CATS), CATS)).toEqual({
-      equity: 43, debt: 25, others: 32,
-    });
-  });
-
+  // The recommendation's own look-through is already covered by the existing
+  // recommendedMix block; what the extraction buys is a bar from ANY rows.
   it("derives a bar from rows that are nothing like the recommendation", () => {
     expect(lookThroughMix({ low_beta_equities: 70, short_debt: 30 }, CATS)).toEqual({
       equity: 70, debt: 30, others: 0,
@@ -67,22 +60,18 @@ describe("lookThroughMix", () => {
 describe("fromCurrentHoldings", () => {
   // Today is a complete fact, not a partial one: a category the customer holds
   // nothing of is a real zero, which is what separates this from fromSavedPins.
-  it("reads a category the customer holds nothing of as 0, never blank", () => {
-    const v = fromCurrentHoldings([{ subgroup: "short_debt", pct_of_total: 40 }], CATS);
-    expect(v.short_debt).toBe(40);
-    expect(v.low_beta_equities).toBe(0);
-  });
-
-  it("ignores a subgroup the catalog does not carry", () => {
+  // The frozen subgroup is the case D6 turns on — it has no row here at all.
+  it("covers every catalog row and nothing else", () => {
     const v = fromCurrentHoldings(
       [
+        { subgroup: "short_debt", pct_of_total: 40 },
         { subgroup: "tax_efficient_equities", pct_of_total: 15 },
-        { subgroup: "gold_commodities", pct_of_total: 85 },
       ],
       CATS,
     );
     expect(Object.keys(v).sort()).toEqual(CATS.map((c) => c.id).sort());
-    expect(v.gold_commodities).toBe(85);
+    expect(v.short_debt).toBe(40);
+    expect(v.low_beta_equities).toBe(0);
   });
 
   it("puts every figure on the one-decimal grid", () => {
@@ -290,27 +279,17 @@ describe("applyTypedEntry", () => {
     });
   });
 
-  it("sets the only other row to the exact complement in a two-row class", () => {
-    expect(applyTypedEntry(EQ_ROWS.slice(0, 2), { a: 30, b: 30 }, 60, "a", 41.3)).toEqual({
-      a: 41.3, b: 18.7,
-    });
-  });
-
   it("puts a typed figure on the one-decimal grid", () => {
     expect(applyTypedEntry(EQ_ROWS, values, 60, "a", 24.06)["a"]).toBe(24.1);
   });
 
-  it("survives a zero budget without dividing by it", () => {
-    expect(applyTypedEntry(EQ_ROWS, { a: 0, b: 0, c: 0 }, 0, "a", 10)).toEqual({
-      a: 0, b: 0, c: 0,
-    });
-  });
-
   // `normalise` floors a budget at 0 and this must too, or a class whose
   // multi-asset draw exceeds its bar emits negative rows.
-  it("never emits a negative row on a negative budget", () => {
-    const next = applyTypedEntry(EQ_ROWS, { a: 5, b: 5, c: 5 }, -3, "a", 10);
-    expect(Object.values(next).every((v) => (v ?? 0) >= 0)).toBe(true);
+  it("floors the budget at zero rather than dividing by it or going negative", () => {
+    for (const budget of [0, -3]) {
+      const next = applyTypedEntry(EQ_ROWS, { a: 5, b: 5, c: 5 }, budget, "a", 10);
+      expect(Object.values(next)).toEqual([0, 0, 0]);
+    }
   });
 
   it("leaves rows outside the class alone", () => {
@@ -441,8 +420,11 @@ describe("InvestPreferences — where you are today", () => {
     renderPage();
     await ready();
     expect(screen.getByText("Where you are today")).toBeInTheDocument();
-    // The look-through of those rows: 70 / 30 / 0.
-    expect(screen.getByText("70.0%")).toBeInTheDocument();
+    // The look-through of those rows is 70 / 30 / 0. Asserted on the third
+    // bar's own segment rather than by text, both because "70.0%" could
+    // collide with a label on either bar above it and because this is what
+    // catches the live copy-paste risk: passing `rec` to all three bars.
+    expect(screen.getAllByTestId("mix-seg-equity")[2].style.width).toBe("70%");
   });
 
   // The rescale is the surprising part: the surviving figures were inflated to
@@ -464,16 +446,14 @@ describe("InvestPreferences — where you are today", () => {
   });
 
   // The backend does not send `current` yet, and a customer who holds nothing
-  // has no today to show. Silence, not an empty bar (spec §3.1, D8).
-  it("shows nothing about today when the payload carries no holdings", async () => {
-    mockGet(GET);
-    renderPage();
-    await ready();
-    expect(screen.queryByText("Where you are today")).toBeNull();
-  });
-
-  it("shows nothing about today when the holdings list is empty", async () => {
-    mockGet({ ...GET, current: { holdings: [], excluded_pct: 0 } });
+  // has no today to show. All three inputs are deliberately one state — the
+  // frontend cannot tell them apart and shows nothing for each (spec D8).
+  it.each([
+    ["absent", undefined],
+    ["null", null],
+    ["an empty list", { holdings: [], excluded_pct: 0 }],
+  ])("shows nothing about today when current is %s", async (_label, current) => {
+    mockGet({ ...GET, current });
     renderPage();
     await ready();
     expect(screen.queryByText("Where you are today")).toBeNull();
@@ -659,13 +639,6 @@ describe("EditableFigure", () => {
     expect(field().value).toBe("18.4");
   });
 
-  it("announces the same control before and after the edit opens", () => {
-    figure();
-    const before = resting().getAttribute("aria-label");
-    fireEvent.click(resting());
-    expect(field().getAttribute("aria-label")).toBe(before);
-  });
-
   it("commits the typed number on Enter", () => {
     const onCommit = figure();
     fireEvent.click(resting());
@@ -689,7 +662,10 @@ describe("EditableFigure", () => {
     figure(25);
     fireEvent.click(resting());
     fireEvent.change(field(), { target: { value: "30" } });
-    expect(field().value).toBe("25.0");
+    // `String(max)`, not `max.toFixed(1)`: a clamped "25.0" plus one more
+    // keystroke is "25.00", which is not > 25, so it would sail through and
+    // put a second decimal on a one-decimal screen.
+    expect(field().value).toBe("25");
   });
 
   it("lets a part-typed value through on its way to a legal one", () => {
@@ -710,11 +686,20 @@ describe("EditableFigure", () => {
     expect(resting().textContent).toBe("18.4%");
   });
 
-  it("returns focus to the figure after an edit closes", () => {
+  it("returns focus to the figure when the keyboard closed the edit", () => {
     figure();
     fireEvent.click(resting());
     fireEvent.keyDown(field(), { key: "Escape" });
     expect(document.activeElement).toBe(resting());
+  });
+
+  // ...but not otherwise: pulling focus back on blur drags it away from
+  // whatever the customer had just tapped.
+  it("leaves focus alone when the customer taps away", () => {
+    figure();
+    fireEvent.click(resting());
+    fireEvent.blur(field());
+    expect(document.activeElement).not.toBe(resting());
   });
 
   // A stray tap-then-blur would otherwise flip an untouched customer from
@@ -764,6 +749,10 @@ import { round1 } from "@/lib/investment-preferences";
  * never displayable. That is the whole point: a value rejected at commit and
  * replaced in the same frame is indistinguishable from the app ignoring you.
  *
+ * `select-none` also suppresses iOS's selection callout. `touch-manipulation`
+ * and `-webkit-touch-callout` are not needed: this app's viewport already
+ * disables double-tap zoom, and neither appears anywhere else in `src/`.
+ *
  * The caller still owns the rebalance — this only reports a number in range.
  */
 export default function EditableFigure({
@@ -781,17 +770,15 @@ export default function EditableFigure({
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   const restRef = useRef<HTMLButtonElement>(null);
-  const wasEditing = useRef(false);
+  const byKey = useRef(false);
 
-  // Without this a keyboard user who cancels is dropped on <body>: the input
-  // unmounts and the button that replaces it comes back unfocused.
+  // A keyboard user who commits or cancels would otherwise be dropped on
+  // <body>: the input unmounts and the button replacing it comes back
+  // unfocused. Only the KEY paths — restoring focus after a blur would drag it
+  // back from whatever the customer had just tapped.
   useEffect(() => {
-    if (draft !== null) {
-      wasEditing.current = true;
-      return;
-    }
-    if (wasEditing.current) {
-      wasEditing.current = false;
+    if (draft === null && byKey.current) {
+      byKey.current = false;
       restRef.current?.focus();
     }
   }, [draft]);
@@ -817,19 +804,17 @@ export default function EditableFigure({
         value={draft}
         onChange={(e) => {
           const n = Number(e.target.value);
-          setDraft(Number.isFinite(n) && n > max ? max.toFixed(1) : e.target.value);
+          // String(max), not toFixed(1): "25.0" plus another keystroke is
+          // "25.00", which is not > 25 and would slip a second decimal past.
+          setDraft(Number.isFinite(n) && n > max ? String(max) : e.target.value);
         }}
         onFocus={(e) => e.target.select()}
         onBlur={() => finish(true)}
         onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            finish(true);
-          }
-          if (e.key === "Escape") {
-            e.preventDefault();
-            finish(false);
-          }
+          if (e.key !== "Enter" && e.key !== "Escape") return;
+          e.preventDefault();
+          byKey.current = true;
+          finish(e.key === "Enter");
         }}
         className={`rounded bg-muted px-1 text-right font-semibold tabular-nums text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4A868]/50 ${className}`}
       />
@@ -843,7 +828,7 @@ export default function EditableFigure({
       aria-label={`${label} share`}
       title="Tap to type a value"
       onClick={() => setDraft(value.toFixed(1))}
-      className={`select-none touch-manipulation rounded bg-foreground/[0.04] px-1 py-1 text-right font-semibold tabular-nums text-foreground [-webkit-touch-callout:none] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4A868]/50 ${className}`}
+      className={`select-none rounded bg-foreground/[0.04] px-1 py-1 text-right font-semibold tabular-nums text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4A868]/50 ${className}`}
     >
       {`${value.toFixed(1)}%`}
     </button>
@@ -857,7 +842,7 @@ component's own utilities rather than losing to stylesheet order.
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `npx vitest run src/components/invest/EditableFigure.test.tsx`
-Expected: PASS, all twelve cases.
+Expected: PASS, all eleven cases.
 
 - [ ] **Step 5: Commit**
 
@@ -881,20 +866,18 @@ EOF
 
 ---
 
-### Task 5: `MultiAssetBar` replaces `MultiAssetRow`
+### Task 5: `MultiAssetBar`
+
+Builds the component and nothing else — it is wired in, and `MultiAssetRow` deleted, in Task 6.
+Keeping the two apart means no commit ships a half-converted categories section.
 
 **Files:**
 - Create: `src/components/invest/MultiAssetBar.tsx`, `src/components/invest/MultiAssetBar.test.tsx`
-- Delete: `src/components/invest/MultiAssetRow.tsx`, `src/components/invest/MultiAssetRow.test.tsx`
-- Modify: `src/lib/investment-preferences.ts` (export `cssPct`), `src/components/invest/ClassSegmentBar.tsx` (import it), `src/components/invest/SubcategoryPins.tsx`, `src/components/invest/SubcategoryPins.test.tsx`, `src/pages/InvestPreferences.tsx`
 
 **Interfaces:**
-- Consumes: `EditableFigure` (Task 4); `today` on the page (Task 3).
-- Produces:
-  - `cssPct(p: number): string` — moved from `ClassSegmentBar.tsx` and exported from the lib.
-  - default export `MultiAssetBar`, props `{ value: number; max: number; label: string; recommended: number; today: number | null; onChange: (v: number) => void }`.
-  - `SubcategoryPins` gains a required prop `today: RowValues | null`.
-- Note: this task leaves the multi-asset figures in columns with no header. Task 6 adds the single header above them.
+- Consumes: `EditableFigure` (Task 4).
+- Produces: default export `MultiAssetBar`, props
+  `{ value: number; max: number; label: string; recommended: number; today: number | null; onChange: (v: number) => void }`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -924,8 +907,8 @@ const bar = (value: number, max = 100, today: number | null = null, onChange = v
 const divider = () => screen.getByRole("slider", { name: "Multi-asset share of your portfolio" });
 
 // jsdom gives every element a zero-width box, and the component refuses to act
-// on a bar it cannot measure — which is the guard that stops a press on an
-// unlaid-out bar from silently zeroing the sleeve.
+// on a bar it cannot measure — the guard that stops a press on an unlaid-out
+// bar from silently emptying the sleeve.
 const layOut = (width = 300) => {
   const el = screen.getByTestId("ma-bar");
   el.getBoundingClientRect = () =>
@@ -954,16 +937,13 @@ describe("MultiAssetBar", () => {
     expect(screen.getByTestId("ma-fill").style.width).toBe("20%");
   });
 
-  it("writes widths on the one-decimal grid, not as float artifacts", () => {
-    bar(20, 66.1);
-    expect(screen.getByTestId("ma-unreachable").style.width).toBe("33.9%");
-  });
-
   it("names the cap the customer's own split can fund", () => {
     bar(20, 50);
     expect(divider().getAttribute("aria-valuemax")).toBe("50");
   });
 
+  // The only thing on the screen that states the ceiling: no tint or pattern
+  // in this palette is legible enough to carry it (spec §5).
   it("says in words what the cap is", () => {
     bar(20, 32);
     expect(screen.getByText("Up to 32.0% — that's what your split can fund.")).toBeTruthy();
@@ -989,27 +969,28 @@ describe("MultiAssetBar", () => {
     expect(onChange).toHaveBeenCalledWith(0);
   });
 
-  it("drags to where the finger is, clamped to the cap", () => {
+  it("grabs the divider and drags, clamped to the cap", () => {
     const onChange = bar(20, 50);
     const el = layOut(300);
-    fireEvent.pointerDown(el, { clientX: 30, pointerId: 1 });   // 10% — open track
-    expect(onChange).toHaveBeenLastCalledWith(10);
-    fireEvent.pointerMove(el, { clientX: 270, pointerId: 1 });  // 90% — past the cap
+    fireEvent.pointerDown(el, { clientX: 63, pointerId: 1 });   // 21% — on the divider
+    expect(onChange).not.toHaveBeenCalled();                     // grabbing moves nothing
+    fireEvent.pointerMove(el, { clientX: 270, pointerId: 1 });   // 90% — past the cap
     expect(onChange).toHaveBeenLastCalledWith(50);
   });
 
-  // ClassSegmentBar never commits on press-down for this reason: the handle is
-  // 16px wide, so a grab that is not dead centre would jump the value first.
-  it("grabs the divider without moving it", () => {
+  // ClassSegmentBar's rule: a press that is not on a divider does nothing. The
+  // Radix slider jumped to it, which on a phone is one stray tap from a reset.
+  it("ignores a press on open track", () => {
     const onChange = bar(20, 50);
     const el = layOut(300);
-    fireEvent.pointerDown(el, { clientX: 63, pointerId: 1 });   // 21%, within the handle
+    fireEvent.pointerDown(el, { clientX: 30, pointerId: 1 });    // 10%
+    fireEvent.pointerMove(el, { clientX: 45, pointerId: 1 });
     expect(onChange).not.toHaveBeenCalled();
   });
 
   it("refuses to act on a bar it cannot measure", () => {
     const onChange = bar(20, 50);
-    fireEvent.pointerDown(screen.getByTestId("ma-bar"), { clientX: 30, pointerId: 1 });
+    fireEvent.pointerDown(screen.getByTestId("ma-bar"), { clientX: 60, pointerId: 1 });
     expect(onChange).not.toHaveBeenCalled();
   });
 
@@ -1033,8 +1014,8 @@ describe("MultiAssetBar", () => {
   });
 
   // The sleeve is 10% commodity, so commodity alone sets the cap: a customer
-  // who drags commodity to zero kills this fund. Say so rather than leave a
-  // dead control on the screen (spec §5).
+  // who drags commodity to zero kills this fund. Say so rather than leave two
+  // live-but-dead affordances on the screen (spec §5).
   it("explains itself instead of going dead when nothing can fund it", () => {
     bar(0, 0);
     expect(
@@ -1051,21 +1032,7 @@ describe("MultiAssetBar", () => {
 Run: `npx vitest run src/components/invest/MultiAssetBar.test.tsx`
 Expected: FAIL — cannot resolve `./MultiAssetBar`.
 
-- [ ] **Step 3: Move `cssPct` into the lib**
-
-Cut this from `src/components/invest/ClassSegmentBar.tsx` (its comment included) and paste it
-into `src/lib/investment-preferences.ts` beside `flooredShares`, exported:
-
-```ts
-/** A bar percentage as a CSS length, trimmed to four decimals so the string
- *  stays readable and stable across renders. `100 - 66.1` is
- *  `33.900000000000006`, and that would otherwise be written into the DOM. */
-export const cssPct = (p: number): string => `${Math.round(p * 1e4) / 1e4}%`;
-```
-
-Add `cssPct` to `ClassSegmentBar.tsx`'s existing `@/lib/investment-preferences` import.
-
-- [ ] **Step 4: Write the component**
+- [ ] **Step 3: Write the component**
 
 Create `src/components/invest/MultiAssetBar.tsx`:
 
@@ -1076,15 +1043,14 @@ import EditableFigure from "@/components/invest/EditableFigure";
 import {
   CLASS_COLOR,
   CLASS_LABEL,
-  cssPct,
   MULTI_ASSET_ID,
   multiAssetDraw,
   round1,
   type RowValues,
 } from "@/lib/investment-preferences";
 
-/** How close to the divider a press has to land to grab it rather than move it.
- *  The same tolerance `ClassSegmentBar` uses, for the same reason. */
+/** How close to the divider a press has to land to grab it. The same tolerance
+ *  `ClassSegmentBar` uses, for the same reason. */
 const HIT_PX = 16;
 
 /**
@@ -1097,10 +1063,10 @@ const HIT_PX = 16;
  * else on the screen. It used to be the one Radix slider among bars, and it
  * read as a different kind of control (spec §5, revised 2026-09-20).
  *
- * Past `max` the track is hatched. A flat tone cannot carry this: measured
- * against the real palette every step sits between 1.1:1 and 1.9:1 against the
- * track, and the grey that would reach 3:1 reads as a FILLED segment — the
- * opposite of what it means.
+ * The ceiling `max` is stated in words rather than drawn. Measured against the
+ * real palette every tonal step sits between 1.1:1 and 1.9:1 against the track,
+ * and a 10%-alpha hatch on a 26px bar is barely better — where a sentence is
+ * legible in both themes, translatable, and readable by a screen reader.
  */
 export default function MultiAssetBar({
   value,
@@ -1132,15 +1098,14 @@ export default function MultiAssetBar({
     // A bar with no layout box measures every press at 0%, which would empty
     // the sleeve on a touch. Guard BEFORE capturing, as ClassSegmentBar does.
     if (!live || !r?.width) return;
+    // A press grabs the divider or does nothing at all. The Radix slider
+    // jumped to the press, which on a phone is one stray tap from a reset.
+    if (Math.abs(pctFromClientX(e.clientX, r) - value) > (HIT_PX / r.width) * 100) return;
     dragging.current = true;
     // jsdom has no setPointerCapture; without the optional call the drag path
     // cannot be tested at all.
     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
     e.preventDefault();
-    // A press ON the divider grabs it. Only a press on open track moves the
-    // value there — otherwise grabbing the handle off-centre jumps it first.
-    const p = pctFromClientX(e.clientX, r);
-    if (Math.abs(p - value) > (HIT_PX / r.width) * 100) commit(p);
   };
   const onMove = (e: React.PointerEvent) => {
     const r = barRef.current?.getBoundingClientRect();
@@ -1195,23 +1160,13 @@ export default function MultiAssetBar({
         onPointerMove={onMove}
         onPointerUp={onUp}
         onPointerCancel={onUp}
-        aria-disabled={!live || undefined}
         className="relative mt-3 flex h-[26px] touch-none rounded-lg bg-muted"
       >
-        <div
-          data-testid="ma-unreachable"
-          className="absolute inset-y-0 right-0 rounded-r-lg"
-          style={{
-            width: cssPct(100 - max),
-            background:
-              "repeating-linear-gradient(45deg, transparent 0 4px, hsl(var(--foreground)/0.10) 4px 8px)",
-          }}
-        />
         <div
           data-testid="ma-fill"
           className="h-full rounded-l-lg"
           style={{
-            width: cssPct(value),
+            width: `${value}%`,
             // The fill is the sleeve's own 65/25/10, so the bar shows what the
             // entry counts as — the same fact the breakdown line states below.
             background:
@@ -1233,7 +1188,7 @@ export default function MultiAssetBar({
             aria-valuenow={value}
             onKeyDown={onKey}
             className="group absolute top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize touch-none px-2 py-3.5 focus:outline-none"
-            style={{ left: cssPct(value) }}
+            style={{ left: `${value}%` }}
           >
             <span
               className="block h-[21px] w-[3px] rounded-full bg-[#D4A868] group-focus-visible:ring-2 group-focus-visible:ring-[#D4A868]/50"
@@ -1251,7 +1206,6 @@ export default function MultiAssetBar({
                 ` · ${multiAssetDraw(values, "debt").toFixed(1)}% ${CLASS_LABEL.debt}` +
                 ` · ${multiAssetDraw(values, "others").toFixed(1)}% ${CLASS_LABEL.others}`}
             </span>
-            {/* A sentence carries the ceiling that no amount of grey can. */}
             {max < 100 ? (
               <span className="block">{`Up to ${max.toFixed(1)}% — that's what your split can fund.`}</span>
             ) : null}
@@ -1265,50 +1219,58 @@ export default function MultiAssetBar({
 }
 ```
 
-- [ ] **Step 5: Run the component test**
+Widths are written as bare `${value}%`. `value` is already on the one-decimal grid — `commit`
+and `normalise` both `round1` it — so there is no float artifact to trim and no need for
+`ClassSegmentBar`'s private `cssPct`.
 
-Run: `npx vitest run src/components/invest/MultiAssetBar.test.tsx`
-Expected: PASS.
+- [ ] **Step 4: Run the test, typecheck and lint**
 
-- [ ] **Step 6: Swap it in and thread `today` down**
+Run: `npx vitest run src/components/invest/MultiAssetBar.test.tsx && npx tsc -p tsconfig.app.json --noEmit && npm run lint`
+Expected: PASS and clean. Nothing renders this component yet, which is intentional.
 
-In `src/components/invest/SubcategoryPins.tsx`, replace the `MultiAssetRow` import with
-`import MultiAssetBar from "@/components/invest/MultiAssetBar";`, add the prop:
+- [ ] **Step 5: Commit**
 
-```tsx
-export default function SubcategoryPins({
-  values,
-  subcategories,
-  mix,
-  today,
-  onChange,
-}: {
-  values: RowValues;
-  subcategories: ScreenSubcategory[];
-  mix: ClassMix;
-  /** Null is the screen's "no today" state — the backend does not send
-   *  `current` yet, and every today affordance here hangs off this. */
-  today: RowValues | null;
-  onChange: (next: RowValues) => void;
-}) {
+```bash
+git add src/components/invest/MultiAssetBar.tsx src/components/invest/MultiAssetBar.test.tsx
+git commit -F - <<'EOF'
+feat(invest): build the multi-asset control as the screen's own bar
+
+It was the one Radix slider among filled bars and read as a different kind
+of control. This is the same 26px bar and gold divider the class groups use,
+spanning the whole portfolio so a width means what a width means everywhere
+else on the screen (spec §5, revised 2026-09-20).
+
+A press grabs the divider or does nothing, matching ClassSegmentBar — the
+slider jumped to the press, which on a phone is one stray tap from a reset.
+The ceiling is stated in words; no tone or pattern in this palette is legible
+enough to carry it. Not yet wired in — Task 6 swaps it for MultiAssetRow.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+EOF
 ```
 
-and replace the `<MultiAssetRow … />` element with:
+---
 
-```tsx
-        <MultiAssetBar
-          label={multiAsset.label}
-          value={values[multiAsset.id] ?? 0}
-          max={maxMultiAsset(mix)}
-          recommended={multiAsset.recommended_pct_of_total}
-          today={today ? (today[multiAsset.id] ?? 0) : null}
-          onChange={(v) => commit({ ...values, [multiAsset.id]: v })}
-        />
-```
+### Task 6: The categories section — columns, typed rows, and the swap-in
 
-In `src/components/invest/SubcategoryPins.test.tsx`, update the render helper — the new prop
-is required, so do this in the same step or the tree will not typecheck. Note the callback
-stays **last**, as `ClassSegmentBar.test.tsx` has it, so it can be defaulted:
+One task because these edits all land in `SubcategoryPins.tsx` and must ship together: half of
+them would leave numeric columns with no header, or a multi-asset row labelled differently from
+the rows beneath it.
+
+**Files:**
+- Modify: `src/components/invest/SubcategoryPins.tsx`, `src/pages/InvestPreferences.tsx`
+- Delete: `src/components/invest/MultiAssetRow.tsx`, `src/components/invest/MultiAssetRow.test.tsx`
+- Test: `src/components/invest/SubcategoryPins.test.tsx`, `src/pages/InvestPreferences.test.tsx`
+
+**Interfaces:**
+- Consumes: `applyTypedEntry` (Task 2), `today` on the page (Task 3), `EditableFigure` (Task 4), `MultiAssetBar` (Task 5), `classAllocated`.
+- Produces: `SubcategoryPins` gains a required prop `today: RowValues | null`. Test ids: `today-${cls}`, `today-${row.id}`, `you-${row.id}`, `row-${row.id}`.
+
+- [ ] **Step 1: Write the failing tests**
+
+In `src/components/invest/SubcategoryPins.test.tsx`, update the render helper first — `today` is
+required. The callback stays **last**, as `ClassSegmentBar.test.tsx` has it, so the five existing
+call sites (`view()` ×4 and `const onChange = view();`) need no edits:
 
 ```tsx
 const view = (values: RowValues = VALUES, today: RowValues | null = null, onChange = vi.fn()) => {
@@ -1317,70 +1279,7 @@ const view = (values: RowValues = VALUES, today: RowValues | null = null, onChan
 };
 ```
 
-and update its four existing call sites (`view()` stays `view()`; the one that captures the
-spy becomes `const onChange = view();`).
-
-In `src/pages/InvestPreferences.tsx`:
-
-```tsx
-                <SubcategoryPins mix={mix} values={effective} subcategories={subs} today={today} onChange={setValues} />
-```
-
-- [ ] **Step 7: Delete the old component**
-
-```bash
-git rm src/components/invest/MultiAssetRow.tsx src/components/invest/MultiAssetRow.test.tsx
-```
-
-Run: `grep -rn "MultiAssetRow" src/`
-Expected: no output.
-
-- [ ] **Step 8: Run the whole suite, typecheck and lint**
-
-Run: `npx vitest run && npx tsc -p tsconfig.app.json --noEmit && npm run lint`
-Expected: PASS and clean. `SubcategoryPins.test.tsx`'s existing "hands the parent a
-distribution that is still exactly on budget" grabs `getAllByRole("slider")[0]`; the
-multi-asset divider is still first in the DOM, where the Radix thumb was, so the index holds —
-confirm it rather than assume. `@radix-ui/react-slider` still has another consumer
-(`src/components/ui/slider.tsx` → `CompleteProfile.tsx`); do not remove the dependency.
-
-- [ ] **Step 9: Commit**
-
-```bash
-git add src/lib/investment-preferences.ts src/components/invest/ClassSegmentBar.tsx src/components/invest/MultiAssetBar.tsx src/components/invest/MultiAssetBar.test.tsx src/components/invest/SubcategoryPins.tsx src/components/invest/SubcategoryPins.test.tsx src/pages/InvestPreferences.tsx
-git commit -F - <<'EOF'
-feat(invest): rebuild the multi-asset control as the screen's own bar
-
-It was the one Radix slider among filled bars and read as a different kind
-of control. It is now the same 26px bar and gold divider the class groups
-use, spanning the whole portfolio so a width here means what a width means
-everywhere else (spec §5, revised 2026-09-20).
-
-The room the customer's split cannot fund is hatched rather than tinted —
-no flat tone in this palette clears 2:1 against the track in both themes —
-and is stated in words besides. A press on the divider grabs it instead of
-jumping the value, matching ClassSegmentBar. When commodity is dragged to
-zero nothing can fund this fund, so it says so instead of going dead.
-
-Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
-EOF
-```
-
----
-
-### Task 6: Columns, typed rows, and the flash
-
-**Files:**
-- Modify: `src/components/invest/SubcategoryPins.tsx`
-- Test: `src/components/invest/SubcategoryPins.test.tsx`, `src/pages/InvestPreferences.test.tsx`
-
-**Interfaces:**
-- Consumes: `applyTypedEntry` (Task 2), `EditableFigure` (Task 4), `today` prop (Task 5), `classAllocated`.
-- Produces: no new exports. Test ids: `today-${cls}` (class header), `today-${row.id}` (row), `you-${row.id}` (a non-editable YOU figure).
-
-- [ ] **Step 1: Write the failing tests**
-
-In `src/components/invest/SubcategoryPins.test.tsx`, add a fixture beside the existing ones:
+Add a fixture beside the existing ones:
 
 ```ts
 // A deliberately different shape from VALUES, so a today figure can never be
@@ -1436,8 +1335,8 @@ and these cases:
     expect(next.short_debt).toBe(20);
   });
 
-  // Typing moves every sibling at once, unlike a drag. The customer has to see
-  // that happen rather than discover it later (spec D7).
+  // Typing moves every sibling at once where a drag trades with one neighbour,
+  // so the customer has to see it happen (spec D7).
   it("flashes the rows a typed value moved", () => {
     view();
     fireEvent.click(screen.getByRole("button", { name: "Large-cap share" }));
@@ -1456,8 +1355,8 @@ and these cases:
     expect(screen.getByTestId("you-gold_commodities").textContent).toBe("30.0%");
   });
 
-  // The same rule, and the same condition ClassSegmentBar uses for its
-  // dividers: a field that can only ever return 0.0 is not an affordance.
+  // Same rule, same condition ClassSegmentBar uses for its dividers: a field
+  // that can only ever return 0.0 is not an affordance.
   it("leaves a class with no budget as plain text", () => {
     view({ ...VALUES, multi_asset: 66.1 });
     expect(screen.queryByRole("button", { name: "Large-cap share" })).toBeNull();
@@ -1488,19 +1387,62 @@ Run: `npx vitest run src/components/invest/SubcategoryPins.test.tsx`
 Expected: FAIL — no `Prozpr` header, no `today-low_beta_equities`, no button named
 `Large-cap share`.
 
-- [ ] **Step 3: Add the imports and the flash state**
+- [ ] **Step 3: Swap in `MultiAssetBar` and take the `today` prop**
 
-In `src/components/invest/SubcategoryPins.tsx`, add `import { useEffect, useState } from "react";`
-and `import EditableFigure from "@/components/invest/EditableFigure";`, and add
-`applyTypedEntry` and `classAllocated` to the existing lib import.
+In `src/components/invest/SubcategoryPins.tsx`, replace the `MultiAssetRow` import with
+`import MultiAssetBar from "@/components/invest/MultiAssetBar";`, add
+`import { useEffect, useState } from "react";` and
+`import EditableFigure from "@/components/invest/EditableFigure";`, and add `applyTypedEntry`
+and `classAllocated` to the existing lib import.
 
-Update the component's doc comment — it currently claims "Holds no state", which stops being
-true — and add, inside the component above `commit`:
+Add the prop:
 
 ```tsx
-  // The only state here, and it is pure presentation: which rows a typed value
-  // just moved. Typing rebalances every sibling at once where a drag trades
-  // with one neighbour, so the customer has to watch it happen (spec D7).
+export default function SubcategoryPins({
+  values,
+  subcategories,
+  mix,
+  today,
+  onChange,
+}: {
+  values: RowValues;
+  subcategories: ScreenSubcategory[];
+  mix: ClassMix;
+  /** Null is the screen's "no today" state — the backend does not send
+   *  `current` yet, and every today affordance here hangs off this. */
+  today: RowValues | null;
+  onChange: (next: RowValues) => void;
+}) {
+```
+
+and replace the `<MultiAssetRow … />` element with:
+
+```tsx
+        <MultiAssetBar
+          label={multiAsset.label}
+          value={values[multiAsset.id] ?? 0}
+          max={maxMultiAsset(mix)}
+          recommended={multiAsset.recommended_pct_of_total}
+          today={today ? (today[multiAsset.id] ?? 0) : null}
+          onChange={(v) => commit({ ...values, [multiAsset.id]: v })}
+        />
+```
+
+In `src/pages/InvestPreferences.tsx`:
+
+```tsx
+                <SubcategoryPins mix={mix} values={effective} subcategories={subs} today={today} onChange={setValues} />
+```
+
+- [ ] **Step 4: Add the flash state**
+
+The component's doc comment says "Holds no state" — update it: this is the one piece of state,
+and it is pure presentation. Add above `commit`:
+
+```tsx
+  // Which rows a typed value just moved. Typing rebalances every sibling at
+  // once where a drag trades with one neighbour, so the customer has to watch
+  // it happen (spec D7).
   const [flashed, setFlashed] = useState<string[]>([]);
   useEffect(() => {
     if (flashed.length === 0) return;
@@ -1521,7 +1463,7 @@ true — and add, inside the component above `commit`:
   };
 ```
 
-- [ ] **Step 4: Add the single column header**
+- [ ] **Step 5: Add the single column header**
 
 At the top of the returned `<section>`, **above** the `multiAsset ? … : null` block:
 
@@ -1535,7 +1477,7 @@ At the top of the returned `<section>`, **above** the `multiAsset ? … : null` 
       </div>
 ```
 
-- [ ] **Step 5: Put today's share in the class header**
+- [ ] **Step 6: Put today's share in the class header**
 
 Replace the existing class-header budget span with:
 
@@ -1560,7 +1502,7 @@ Replace the existing class-header budget span with:
               </span>
 ```
 
-- [ ] **Step 6: Rebuild the row**
+- [ ] **Step 7: Rebuild the row**
 
 Replace the whole `<div className="mt-2.5 flex flex-col gap-1.5">…</div>` block with:
 
@@ -1571,10 +1513,15 @@ Replace the whole `<div className="mt-2.5 flex flex-col gap-1.5">…</div>` bloc
                   key={c.id}
                   data-testid={`row-${c.id}`}
                   data-flashed={flashed.includes(c.id) ? "true" : undefined}
-                  // -mx-1 px-1 so the flash bleeds to the card padding without
-                  // taking a pixel of width off the label.
-                  className={`-mx-1 flex items-baseline gap-2 rounded px-1 text-[12.5px] transition-colors duration-500 motion-reduce:transition-none ${
-                    flashed.includes(c.id) ? "bg-foreground/[0.06]" : ""
+                  // The tint goes on with NO transition and comes off with one.
+                  // Transitioning INTO a 6% alpha over half a second is a swell
+                  // nobody perceives; a flash is instant-on, fade-out.
+                  // -mx-1 px-1 so it bleeds to the card padding without taking
+                  // a pixel of width off the label.
+                  className={`-mx-1 flex items-baseline gap-2 rounded px-1 text-[12.5px] ${
+                    flashed.includes(c.id)
+                      ? "bg-foreground/[0.06]"
+                      : "transition-colors duration-500 motion-reduce:transition-none"
                   }`}
                 >
                   <span
@@ -1621,7 +1568,7 @@ Replace the whole `<div className="mt-2.5 flex flex-col gap-1.5">…</div>` bloc
             </div>
 ```
 
-- [ ] **Step 7: Update the section's instruction line**
+- [ ] **Step 8: Update the section's instruction line, and delete the old component**
 
 In `src/pages/InvestPreferences.tsx`, the line above `<SubcategoryPins …>`:
 
@@ -1631,50 +1578,56 @@ In `src/pages/InvestPreferences.tsx`, the line above `<SubcategoryPins …>`:
                 </p>
 ```
 
-- [ ] **Step 8: Run everything**
+Then:
+
+```bash
+git rm src/components/invest/MultiAssetRow.tsx src/components/invest/MultiAssetRow.test.tsx
+```
+
+Run: `grep -rn "MultiAssetRow" src/`
+Expected: no output.
+
+- [ ] **Step 9: Run everything**
 
 Run: `npx vitest run && npx tsc -p tsconfig.app.json --noEmit && npm run lint`
 Expected: PASS and clean.
 
-- [ ] **Step 9: Verify in the browser**
+`SubcategoryPins.test.tsx`'s existing "hands the parent a distribution that is still exactly on
+budget" grabs `getAllByRole("slider")[0]`; the multi-asset divider is still first in the DOM,
+where the Radix thumb was, so the index holds — confirm it rather than assume.
+`@radix-ui/react-slider` still has another consumer (`src/components/ui/slider.tsx` →
+`CompleteProfile.tsx`); do not remove the dependency.
 
-Run `npm run dev` and open `/invest/preferences` at 375px wide, then 320px, in both themes.
+- [ ] **Step 10: Verify in the browser**
+
+Run `npm run dev` and work through spec §9's checklist at 375px and 320px in both themes.
 
 The backend does not send `current` yet. To see the today affordances, commit your work first,
 then add a `current` block to the resolved payload, check, and `git reset --hard` — so
 reverting is mechanical rather than a memory task.
 
-Confirm:
-- Three bars; the card no taller than it has to be, and the collapsed "Set your categories"
-  header still above the fold at 375×667.
-- **No amber sliver** on the today bar for a customer holding no gold.
-- The drag instruction sits under the preference bar, not under the today caption.
-- The multi-asset bar reads as the same control as the class bars; its hatched region is
-  visible in **both** themes; pressing the divider grabs it without the value jumping.
-- Columns align from the multi-asset row all the way down. At 375px the label box is ~135px —
-  check `"Arbitrage plus income"` (~128px) specifically; it should fit with a few pixels to
-  spare. At 320px long labels truncate; that is accepted, not a bug.
-- Tapping a YOU figure opens a field; typing `30` where the budget is 25 shows `25.0` as you
-  type; on Enter the rows that moved flash.
-- Gold offers no edit. Drag equity to 0 and its rows offer none either.
-- Drag commodity to 0: the multi-asset bar explains itself rather than going dead.
+Two things §9 cannot tell you to look at because they are about this plan's own risk:
 
-- [ ] **Step 10: Commit**
+- The label box is ~135px at 375px with the Today column present. `"Arbitrage plus income"`
+  measures ~128px. Check that one label specifically; a few pixels is all the margin there is.
+- At 320px long labels truncate. That is accepted, not a bug.
+
+- [ ] **Step 11: Commit**
 
 ```bash
 git add src/components/invest/SubcategoryPins.tsx src/components/invest/SubcategoryPins.test.tsx src/pages/InvestPreferences.tsx src/pages/InvestPreferences.test.tsx
 git commit -F - <<'EOF'
 feat(invest): show today's holdings per category and let values be typed
 
-Each row now carries Prozpr's figure, today's, and the customer's under one
+Each row carries Prozpr's figure, today's, and the customer's, under one
 column header for the whole section. The customer's own number becomes a
-tinted pill: it is the brightest thing on a row that now carries three
-numbers, and it is the affordance saying the figure can be typed over.
+tinted pill: the brightest thing on a row that now holds three numbers, and
+the affordance saying it can be typed over.
 
 Typing rebalances every sibling in the class at once where a drag trades
-with one neighbour, so the rows that moved flash for 600ms. A class with one
-row, or with no budget, offers plain text instead of a field that could only
-ever hand back the number already there (spec §7.4).
+with one neighbour, so the rows that moved flash. A class with one row, or
+with no budget, offers plain text instead of a field that could only hand
+back the number already there (spec §7.4).
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 EOF

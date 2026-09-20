@@ -48,10 +48,13 @@ overturned, recorded so they are not re-litigated:
   `ClassSegmentBar` and did the opposite: that component requires a press within 16px of a
   divider and ignores it otherwise. Unconditional jump means a stray tap sets multi-asset to
   80%, and grabbing the divider off-centre moves the value before any drag.
-- **The unreachable region is a hatch, not a tone** (§5). Measured against the real tokens,
-  every tonal step is between 1.1:1 and 1.9:1 against the track in both themes; reaching 3:1
-  needs a mid-grey that reads as a *filled* segment. The concept cannot be expressed tonally
-  in this palette.
+- **The multi-asset ceiling is a sentence, not a shaded region** (§5). Measured against the
+  real tokens every tonal step sits between 1.1:1 and 1.9:1 against the track, and the first
+  revision's 10%-alpha hatch on a 26px bar was barely better. A sentence is legible in both
+  themes, translatable, and readable by a screen reader.
+- **A press on the multi-asset bar never moves the value** (§5). The first revision fixed only
+  half of this: it stopped a press near the handle from jumping, and still let a press on open
+  track set the sleeve to whatever was tapped.
 - **One column header, always columns** (§6). The first draft kept the old inline `Prozpr 12.0`
   form alive alongside the new column form, branching on `today` in seven places across two
   files — and shipped a bug where the multi-asset row lost its "Prozpr" label in the no-today
@@ -187,14 +190,11 @@ The Radix slider leaves this component. (`@radix-ui/react-slider` stays in the p
 the portfolio**, so a width here means what a width means everywhere else on the screen.
 
 - `0 → value%`: the existing 65/25/10 gradient, so the entry still reads as a blended fund.
-- `value% → max%`: `bg-muted`, the room the customer's split can still fund.
-- `max% → 100%`: a 45° hatch,
-  `repeating-linear-gradient(45deg, transparent 0 4px, hsl(var(--foreground)/0.10) 4px 8px)`.
-  A pattern reads at any luminance in both themes, where no flat tone in this palette does.
+- `value% → 100%`: `bg-muted`. The ceiling is carried by the sentence below and by the divider
+  refusing to travel past it — not by a tint or a pattern, neither of which survives this
+  palette at a legible contrast.
 - One gold divider at `value%` — the 3px `ClassSegmentBar` lozenge, since this bar lives among
   the class bars.
-- Widths go through `cssPct`, as `ClassSegmentBar`'s do: `100 - 66.1` is `33.900000000000006`
-  and would otherwise be written into the DOM.
 
 **Interaction.** Pointer handlers sit on the bar, as `ClassSegmentBar`'s do, and follow its
 rules exactly:
@@ -203,21 +203,22 @@ rules exactly:
   a press on a bar with no box commits `onChange(0)` and silently empties the sleeve.
 - `setPointerCapture?.()` — the optional call. jsdom does not implement it, and without the
   optional call the drag path cannot be tested at all.
-- **No unconditional jump.** A press within 16px of the divider grabs it and commits nothing;
-  only a press on open track moves the value there.
+- **A press never moves the value.** It grabs the divider, or it does nothing — exactly
+  `ClassSegmentBar`'s rule (`if (cands.length === 0) return;`). The Radix slider jumped to the
+  press, which on a phone means one stray tap on open track resets the sleeve.
 - Arrow keys step 0.5. `role="slider"`, `aria-valuemin={0}`, `aria-valuemax={max}`,
   `aria-valuenow={value}`, `aria-label="Multi-asset share of your portfolio"`.
 - Everything clamps to `[0, max]` where `max = maxMultiAsset(mix)`.
 
 **When `max === 0`.** Reachable, and reachable easily: the sleeve is 10% commodity, so dragging
-commodity to zero — a reasonable thing to want — kills it. The bar then renders fully hatched
-with no divider and `aria-disabled`, the figure renders as plain text, and the breakdown line
-is replaced by the reason:
+commodity to zero — a reasonable thing to want — kills it. The bar then renders empty with
+no divider, the figure renders as plain text, and the breakdown line is replaced by the reason:
 
 > **"This fund is 10% commodity. Give commodity some room and you can hold it."**
 
 **When `max < 100`,** a second line follows the breakdown: **"Up to 32.0% — that's what your
-split can fund."** A sentence carries the ceiling that no amount of grey can.
+split can fund."** This is the only thing on the screen that states the ceiling, which is why
+§2.1 dropped the shaded region rather than the sentence.
 
 **Unchanged.** The header line's label and the `Counts as X% Equity · …` line, `ma-breakdown`
 included. `MultiAssetBar` renders **no** column header — §6's single header sits above it.
@@ -263,7 +264,7 @@ the selection callout instead.
 
 The figure is a real `<button type="button">` — this codebase uses one everywhere it is not
 structurally blocked — so Enter and Space come free with no hand-rolled key handler. It carries
-`select-none touch-manipulation [-webkit-touch-callout:none]`, and is styled as a tinted pill
+`select-none`, which also suppresses iOS's selection callout, and is styled as a tinted pill
 (`rounded bg-foreground/[0.04] px-1.5 py-1 -mx-1.5 -my-1`, `font-semibold`). The pill does
 three jobs at once: it signals the figure is editable, it makes the customer's own number the
 brightest thing on a row carrying three, and it grows a 46×16 target to ~46×28.
@@ -274,8 +275,9 @@ identical across the state change, matching `"Multi-asset share of your portfoli
 supplementary hover text. The first draft's label restated the value (which `aria-label`
 overrides, so it was announced twice) and named a gesture that is wrong for the keyboard path.
 
-Enter or blur commits; Escape cancels. Either way focus returns to the button, so a keyboard
-user who cancels is not dumped to `<body>`.
+Enter or blur commits; Escape cancels. Focus returns to the button after the **keyboard** paths
+only: a keyboard user who cancels must not be dumped on `<body>`, but restoring focus after a
+blur would drag it back from wherever the customer had just tapped.
 
 Input is `type="text" inputMode="decimal"` — `type="number"` brings spinners and a
 locale-dependent separator into a 46px cell. It carries `bg-muted` and a focus ring rather than
@@ -325,9 +327,10 @@ than dragging, and it is the one with no feedback during the act. Hence:
    the first draft's claim that the value "snaps visibly" on commit — it does not; the input
    unmounts and the span remounts in the same frame, which is indistinguishable from being
    ignored.
-2. **Every row that moved flashes** for 600ms after commit (`bg-foreground/[0.06]`,
-   `transition-colors`, `motion-reduce:transition-none`). The customer watches five rows change
-   rather than discovering it later.
+2. **Every row that moved flashes** — tinted the instant the commit lands, then fading out over
+   500ms. The tint goes on with no transition and comes off with one: transitioning *into* a 6%
+   alpha over half a second is a swell nobody perceives, which is what the first revision
+   specified.
 3. **A no-op never commits.** The first draft fired `onCommit` even when the value was
    unchanged, so a stray tap-then-blur would flip an untouched customer from "Following
    Prozpr's suggestion" to "Your own split" and enable Save — changing the saved meaning from
@@ -366,8 +369,8 @@ return zero — the exact thing §7.4 was written to avoid.
 ## 9. Verification
 
 Unit tests per task (see the plan). In the browser at 375px and at 320px, in both themes:
-three bars; the multi-asset bar reading as the same control as the class bars with its hatched
-region visible; columns aligned down the whole card with `"Arbitrage plus income"` intact at
+three bars; the multi-asset bar reading as the same control as the class bars, its ceiling
+stated in words and its divider unmoved by a press on open track; columns aligned down the whole card with `"Arbitrage plus income"` intact at
 375px; tap-to-edit opening a field; an over-budget number unable to be typed; the rows that
 moved flashing; Gold and a zero-budget class offering no edit; commodity dragged to 0 producing
 the explained multi-asset state; the accordion header still above the fold.
