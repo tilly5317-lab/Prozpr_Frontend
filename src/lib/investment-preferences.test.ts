@@ -6,7 +6,7 @@ import {
   classAllocated, classBudget, fromSavedPins,
   isEngaged, multiAssetDraw, recommendedMix, lookThroughMix, fromCurrentHoldings,
   round1, roundMix, sameMix, samePins, toSavePins, type RowValues,
-  applySegmentDrag, maxMultiAsset, normalise, shortLabel, CLASSES, MULTI_ASSET_ID, recommendedValues,
+  applySegmentDrag, applyTypedEntry, maxMultiAsset, normalise, shortLabel, CLASSES, MULTI_ASSET_ID, recommendedValues,
   barPosToValue, segmentLayout,
 } from "@/lib/investment-preferences";
 
@@ -301,6 +301,56 @@ describe("applySegmentDrag", () => {
     const collapsed: RowValues = { a: 30, b: 0, c: 30 };
     expect(applySegmentDrag(EQ_ROWS, collapsed, 60, 1, 40).b).toBe(6); // left divider moves left
     expect(applySegmentDrag(EQ_ROWS, collapsed, 60, 2, 60).b).toBe(6); // right divider moves right
+  });
+});
+
+describe("applyTypedEntry", () => {
+  const values: RowValues = { a: 30, b: 20, c: 10 };
+
+  it("shrinks the siblings in proportion, not equally", () => {
+    // b:20 and c:10 share the remaining 36 in a 2:1 ratio
+    expect(applyTypedEntry(EQ_ROWS, values, 60, "a", 24)).toEqual({ a: 24, b: 24, c: 12 });
+  });
+
+  it("clamps above the budget and empties the siblings", () => {
+    expect(applyTypedEntry(EQ_ROWS, values, 60, "a", 95)).toEqual({ a: 60, b: 0, c: 0 });
+  });
+
+  it("clamps a negative to zero", () => {
+    expect(applyTypedEntry(EQ_ROWS, values, 60, "a", -5)["a"]).toBe(0);
+  });
+
+  // The whole point of D3: the class total is untouched, so the bar above it
+  // cannot move no matter what is typed.
+  it("leaves the class total exactly on budget in every case", () => {
+    for (const typed of [0, 7.3, 24, 59.9, 60, 120, -3]) {
+      const next = applyTypedEntry(EQ_ROWS, values, 60, "a", typed);
+      expect(classAllocated(next, EQ_ROWS, "equity")).toBe(60);
+    }
+  });
+
+  it("parks the remainder on the first sibling when every sibling is at zero", () => {
+    expect(applyTypedEntry(EQ_ROWS, { a: 60, b: 0, c: 0 }, 60, "a", 10)).toEqual({
+      a: 10, b: 50, c: 0,
+    });
+  });
+
+  it("puts a typed figure on the one-decimal grid", () => {
+    expect(applyTypedEntry(EQ_ROWS, values, 60, "a", 24.06)["a"]).toBe(24.1);
+  });
+
+  // `normalise` floors a budget at 0 and this must too, or a class whose
+  // multi-asset draw exceeds its bar emits negative rows.
+  it("floors the budget at zero rather than dividing by it or going negative", () => {
+    for (const budget of [0, -3]) {
+      const next = applyTypedEntry(EQ_ROWS, { a: 5, b: 5, c: 5 }, budget, "a", 10);
+      expect(Object.values(next)).toEqual([0, 0, 0]);
+    }
+  });
+
+  it("leaves rows outside the class alone", () => {
+    const next = applyTypedEntry(EQ_ROWS, { ...values, gold_commodities: 40 }, 60, "a", 24);
+    expect(next.gold_commodities).toBe(40);
   });
 });
 

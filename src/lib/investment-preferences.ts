@@ -280,6 +280,30 @@ export function applySegmentDrag(
   };
 }
 
+/** A typed value for one row, with its SIBLINGS in the same class rescaled in
+ *  proportion to absorb the difference. Clamped to `[0, budget]`, so the class
+ *  total — and therefore the bar above it — is unchanged by construction
+ *  (spec §7.2, revised 2026-09-20). Typing is a second way to reach the value a
+ *  drag reaches, never a way to spend one class's budget on another.
+ *
+ *  It is a far LARGER gesture than a drag, which only ever trades with the
+ *  immediate neighbour: typing 24 into a six-row class with a 25 budget
+ *  collapses the other five. That is why the field clamps as the customer types
+ *  and the rows that moved flash (spec D7) — the maths here is the easy half. */
+export function applyTypedEntry(
+  rows: ScreenSubcategory[],
+  values: RowValues,
+  budget: number,
+  rowId: string,
+  typed: number,
+): RowValues {
+  const cap = Math.max(0, budget);
+  const v = round1(Math.max(0, Math.min(cap, typed)));
+  const out: RowValues = { ...values, [rowId]: v };
+  spread(out, rows.filter((r) => r.id !== rowId), round1(cap - v));
+  return out;
+}
+
 
 /** Engaged = the customer has entered at least one value. A zero counts: it is a
  *  deliberate "none of this", not an absence (spec §4.3). */
