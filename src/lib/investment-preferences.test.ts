@@ -4,7 +4,7 @@ import type { ClassMix, ScreenSubcategory } from "@/lib/api";
 import {
   applyDividerDrag,
   classAllocated, classBudget, fromSavedPins,
-  isEngaged, multiAssetDraw, recommendedMix,
+  isEngaged, multiAssetDraw, recommendedMix, lookThroughMix, fromCurrentHoldings,
   round1, roundMix, sameMix, samePins, toSavePins, type RowValues,
   applySegmentDrag, maxMultiAsset, normalise, shortLabel, CLASSES, MULTI_ASSET_ID, recommendedValues,
   barPosToValue, segmentLayout,
@@ -367,5 +367,38 @@ describe("barPosToValue", () => {
       expect(v).toBeGreaterThanOrEqual(prev);
       prev = v;
     }
+  });
+});
+
+describe("lookThroughMix", () => {
+  // The recommendation's own look-through is already covered by the existing
+  // recommendedMix block; what the extraction buys is a bar from ANY rows.
+  it("derives a bar from rows that are nothing like the recommendation", () => {
+    expect(lookThroughMix({ low_beta_equities: 70, short_debt: 30 }, CATS)).toEqual({
+      equity: 70, debt: 30, others: 0,
+    });
+  });
+});
+
+describe("fromCurrentHoldings", () => {
+  // Today is a complete fact, not a partial one: a category the customer holds
+  // nothing of is a real zero, which is what separates this from fromSavedPins.
+  // The frozen subgroup is the case D6 turns on — it has no row here at all.
+  it("covers every catalog row and nothing else", () => {
+    const v = fromCurrentHoldings(
+      [
+        { subgroup: "short_debt", pct_of_total: 40 },
+        { subgroup: "tax_efficient_equities", pct_of_total: 15 },
+      ],
+      CATS,
+    );
+    expect(Object.keys(v).sort()).toEqual(CATS.map((c) => c.id).sort());
+    expect(v.short_debt).toBe(40);
+    expect(v.low_beta_equities).toBe(0);
+  });
+
+  it("puts every figure on the one-decimal grid", () => {
+    const v = fromCurrentHoldings([{ subgroup: "short_debt", pct_of_total: 21.63 }], CATS);
+    expect(v.short_debt).toBe(21.6);
   });
 });

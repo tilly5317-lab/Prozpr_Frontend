@@ -2848,6 +2848,12 @@ export interface ScreenSaved {
   saved_at?: string | null;
 }
 
+/** One settable subcategory's share of what the customer holds TODAY. */
+export interface ScreenCurrentHolding {
+  subgroup: string;
+  pct_of_total: number;
+}
+
 export interface ScreenPreferenceGetResponse {
   saved: ScreenSaved | null;
   recommendation: { class_mix: ClassMix };
@@ -2856,6 +2862,13 @@ export interface ScreenPreferenceGetResponse {
    *  distribution would switch off (backend spec 9.1). Optional: the backend
    *  does not send it yet, and the screen shows nothing until it does. */
   carve_outs_at_risk?: ("emergency_fund" | "near_term_goals" | "liability_offset")[];
+  /** Where the customer sits today, across the categories this screen can set.
+   *  Frozen holdings (ELSS, direct stock) have no row here, so the backend
+   *  drops them and rescales the rest — `holdings` sums to 100 and
+   *  `excluded_pct` is what was dropped, as a share of the whole portfolio.
+   *  Optional: the backend does not send it yet, and absent, null and an empty
+   *  list all read as "nothing to show" (spec §3.1, D8). */
+  current?: { holdings: ScreenCurrentHolding[]; excluded_pct: number } | null;
 }
 
 export interface ScreenSaveResponse {

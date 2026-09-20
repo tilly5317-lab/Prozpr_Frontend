@@ -1,6 +1,6 @@
 /** S4 percentage preferences — pure bar math + validation. No React, no I/O.
  *  Every value is a share of the WHOLE portfolio; the backend owns %-of-class. */
-import type { ClassMix, ScreenSubcategory, SubcategoryPin } from "@/lib/api";
+import type { ClassMix, ScreenSubcategory, SubcategoryPin, ScreenCurrentHolding } from "@/lib/api";
 
 export type Cls = "equity" | "debt" | "others";
 export const CLASSES: Cls[] = ["equity", "debt", "others"];
@@ -135,6 +135,36 @@ export function classAllocated(values: RowValues, cats: ScreenSubcategory[], cls
   );
 }
 
+/** Spread `budget` across `rows` in proportion to what they hold now, writing
+ *  into `out`.
+ *
+ *  This is the one place the screen knows how to divide a budget. A set that is
+ *  entirely zero has no proportions left to preserve, so the whole budget parks
+ *  on the first row, where it stays reachable instead of stranded; and eleven
+ *  independent roundings do not land on the budget, so the leftover goes to the
+ *  largest row, where a tenth is least visible. */
+function spread(out: RowValues, rows: ScreenSubcategory[], budget: number): void {
+  if (rows.length === 0) return;
+  const total = rows.reduce((s, r) => s + val(out, r.id), 0);
+  if (total <= 0) {
+    rows.forEach((r, i) => {
+      out[r.id] = i === 0 ? budget : 0;
+    });
+    return;
+  }
+
+  let sum = 0;
+  for (const r of rows) {
+    out[r.id] = round1((val(out, r.id) / total) * budget);
+    sum = round1(sum + val(out, r.id));
+  }
+  const residual = round1(budget - sum);
+  if (residual !== 0) {
+    const biggest = rows.reduce((a, b) => (val(out, b.id) > val(out, a.id) ? b : a));
+    out[biggest.id] = round1(Math.max(0, val(out, biggest.id) + residual));
+  }
+}
+
 /** Put the distribution back on the bar. Every class's rows are rescaled — in
  *  proportion, so the shape the customer chose survives — to sum EXACTLY to that
  *  class's budget, and multi-asset is clamped to what the bar can fund.
@@ -149,32 +179,9 @@ export function normalise(mix: ClassMix, values: RowValues, cats: ScreenSubcateg
   if (out[MULTI_ASSET_ID] != null) {
     out[MULTI_ASSET_ID] = Math.min(round1(out[MULTI_ASSET_ID]), maxMultiAsset(mix));
   }
-
   for (const cls of CLASSES) {
     const rows = cats.filter((c) => c.id !== MULTI_ASSET_ID && c.class === cls);
-    if (rows.length === 0) continue;
-    const budget = Math.max(0, classBudget(mix, out, cls));
-    const total = rows.reduce((s, r) => s + val(out, r.id), 0);
-
-    // A class dragged flat has no proportions left to preserve. Park the whole
-    // budget on the first row so it stays reachable instead of stranding it.
-    if (total <= 0) {
-      rows.forEach((r, i) => { out[r.id] = i === 0 ? budget : 0; });
-      continue;
-    }
-
-    let sum = 0;
-    for (const r of rows) {
-      out[r.id] = round1((val(out, r.id) / total) * budget);
-      sum = round1(sum + val(out, r.id));
-    }
-    // Eleven independent roundings do not land on the budget; the leftover goes
-    // to the largest row, where a tenth is least visible.
-    const residual = round1(budget - sum);
-    if (residual !== 0) {
-      const biggest = rows.reduce((a, b) => (val(out, b.id) > val(out, a.id) ? b : a));
-      out[biggest.id] = round1(Math.max(0, val(out, biggest.id) + residual));
-    }
+    spread(out, rows, Math.max(0, classBudget(mix, out, cls)));
   }
   return out;
 }
@@ -288,15 +295,35 @@ export function recommendedValues(cats: ScreenSubcategory[]): RowValues {
   return out;
 }
 
-/** The class bar that matches those rows — the look-through of the
- *  recommendation, with the multi-asset fund split 65/25/10. Deriving the bar
- *  FROM the rows is what lets Reset land balanced instead of accusing Prozpr's
- *  own recommendation of overdrawing the bar. */
-export function recommendedMix(cats: ScreenSubcategory[]): ClassMix {
-  const values = recommendedValues(cats);
+/** The class bar a complete set of row values implies — the look-through, with
+ *  the multi-asset fund split 65/25/10. Deriving a bar FROM its rows is what
+ *  lets Reset land balanced instead of accusing Prozpr's own recommendation of
+ *  overdrawing the bar, and it is what makes "today" comparable with the other
+ *  two bars: one function draws all three (spec §3.2). */
+export function lookThroughMix(values: RowValues, cats: ScreenSubcategory[]): ClassMix {
   const equity = round1(multiAssetDraw(values, "equity") + classAllocated(values, cats, "equity"));
   const debt = round1(multiAssetDraw(values, "debt") + classAllocated(values, cats, "debt"));
   return { equity, debt, others: round1(100 - equity - debt) };
+}
+
+/** Prozpr's rows as a bar. Kept as its own name because Reset and the reference
+ *  bar both ask for exactly this one, and neither should have to know that "the
+ *  recommendation" is just another set of row values. */
+export function recommendedMix(cats: ScreenSubcategory[]): ClassMix {
+  return lookThroughMix(recommendedValues(cats), cats);
+}
+
+/** Today's holdings as row values. Every settable category is present and one
+ *  the customer holds nothing of reads 0 — today is a complete fact, which is
+ *  exactly what `fromSavedPins`'s nullable blank is not. */
+export function fromCurrentHoldings(
+  holdings: ScreenCurrentHolding[],
+  cats: ScreenSubcategory[],
+): RowValues {
+  const by = new Map(holdings.map((h) => [h.subgroup, h.pct_of_total]));
+  const out: RowValues = {};
+  for (const c of cats) out[c.id] = round1(by.get(c.id) ?? 0);
+  return out;
 }
 
 export function sameMix(a: ClassMix, b: ClassMix): boolean {
