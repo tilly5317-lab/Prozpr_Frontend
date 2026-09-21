@@ -484,21 +484,82 @@ describe("fromCurrentHoldings", () => {
   // Today is a complete fact, not a partial one: a category the customer holds
   // nothing of is a real zero, which is what separates this from fromSavedPins.
   // The frozen subgroup is the case D6 turns on — it has no row here at all.
+  //
+  // The payload here sums to 100 across the settable ids — spec §3.1's actual
+  // contract — so this test is free to check what it always meant to check
+  // (every catalog id present, an untouched one reading 0, the frozen id
+  // dropped) without also tripping the normalise-to-100 step below.
   it("covers every catalog row and nothing else", () => {
     const v = fromCurrentHoldings(
       [
         { subgroup: "short_debt", pct_of_total: 40 },
+        { subgroup: "low_beta_equities", pct_of_total: 60 },
         { subgroup: "tax_efficient_equities", pct_of_total: 15 },
       ],
       CATS,
     );
     expect(Object.keys(v).sort()).toEqual(CATS.map((c) => c.id).sort());
     expect(v.short_debt).toBe(40);
-    expect(v.low_beta_equities).toBe(0);
+    expect(v.gold_commodities).toBe(0);
+    expect(Object.keys(v)).not.toContain("tax_efficient_equities");
   });
 
+  // Same reason the payload above sums to 100: this checks rounding to a
+  // tenth, not the normalise step, so the second entry takes the remainder
+  // rather than leaving the set short.
   it("puts every figure on the one-decimal grid", () => {
-    const v = fromCurrentHoldings([{ subgroup: "short_debt", pct_of_total: 21.63 }], CATS);
+    const v = fromCurrentHoldings(
+      [
+        { subgroup: "short_debt", pct_of_total: 21.63 },
+        { subgroup: "low_beta_equities", pct_of_total: 78.37 },
+      ],
+      CATS,
+    );
     expect(v.short_debt).toBe(21.6);
+  });
+
+  // The set can be short of or over 100 in two ways: eleven independent
+  // roundings each nudging by a few hundredths, or a backend that (contrary
+  // to spec §3.1) simply forgot to rescale before sending. Either way,
+  // lookThroughMix draws the shortfall on the today bar as Commodity, since
+  // that is the class it derives as `100 - equity - debt` — so the sum must
+  // land on exactly 100 regardless of which way the input drifted.
+  it("rounds badly but still sums to exactly 100, leaving an untouched row at 0", () => {
+    const v = fromCurrentHoldings(
+      [
+        { subgroup: "low_beta_equities", pct_of_total: 33.33 },
+        { subgroup: "short_debt", pct_of_total: 33.33 },
+        { subgroup: "arbitrage", pct_of_total: 33.34 },
+      ],
+      CATS,
+    );
+    expect(round1(Object.values(v).reduce((s, x) => s + (x ?? 0), 0))).toBe(100);
+    expect(v.gold_commodities).toBe(0); // holds none of it — stays 0, not scaled up
+  });
+
+  it("rescales a backend payload that forgot to sum to 100", () => {
+    const v = fromCurrentHoldings(
+      [
+        { subgroup: "low_beta_equities", pct_of_total: 50 },
+        { subgroup: "short_debt", pct_of_total: 31.6 },
+      ],
+      CATS,
+    );
+    expect(round1(Object.values(v).reduce((s, x) => s + (x ?? 0), 0))).toBe(100);
+  });
+
+  // An all-zero payload is a customer holding nothing, not a set `spread`
+  // should treat as "nothing to preserve, so give it all to the first row" —
+  // that reading exists for the interactive rows, where an empty class must
+  // still be reachable, and is exactly wrong for a factual reading of today.
+  it("leaves an all-zero payload all zero rather than parking 100 on the first row", () => {
+    const v = fromCurrentHoldings(
+      [
+        { subgroup: "short_debt", pct_of_total: 0 },
+        { subgroup: "low_beta_equities", pct_of_total: 0 },
+      ],
+      CATS,
+    );
+    for (const c of CATS) expect(v[c.id]).toBe(0);
   });
 });

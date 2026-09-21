@@ -354,7 +354,22 @@ export function recommendedMix(cats: ScreenSubcategory[]): ClassMix {
 
 /** Today's holdings as row values. Every settable category is present and one
  *  the customer holds nothing of reads 0 — today is a complete fact, which is
- *  exactly what `fromSavedPins`'s nullable blank is not. */
+ *  exactly what `fromSavedPins`'s nullable blank is not.
+ *
+ *  Rounding each holding to a tenth independently — the same thing `roundMix`
+ *  does for the recommendation — can leave the set a few tenths short of or
+ *  over 100. `lookThroughMix` makes Commodity the derived residual (`100 -
+ *  equity - debt`), so any drift in this set is drawn on the today bar as
+ *  gold the customer does not hold — the same phantom-sliver failure §4
+ *  removed from reference bars, arriving through a different door. `spread`
+ *  puts the set back on exactly 100 (spec §3.1 says holdings already sum to
+ *  100, but this is the wire boundary; it should not assume the promise
+ *  held rather than rescale toward it, which is the meaning D6 already gives
+ *  an unrescaled payload).
+ *
+ *  Guarded on a positive total: `spread` parks its whole budget on the first
+ *  row when every row is zero, which would turn "holds nothing" into "100% in
+ *  the first category" — the opposite of what an all-zero payload means. */
 export function fromCurrentHoldings(
   holdings: ScreenCurrentHolding[],
   cats: ScreenSubcategory[],
@@ -362,6 +377,8 @@ export function fromCurrentHoldings(
   const by = new Map(holdings.map((h) => [h.subgroup, h.pct_of_total]));
   const out: RowValues = {};
   for (const c of cats) out[c.id] = round1(by.get(c.id) ?? 0);
+  const total = cats.reduce((s, c) => s + (out[c.id] ?? 0), 0);
+  if (total > 0) spread(out, cats, 100);
   return out;
 }
 
