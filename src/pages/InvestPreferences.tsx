@@ -92,8 +92,16 @@ export default function InvestPreferences() {
         setCarveOuts(data.carve_outs_at_risk ?? []);
         // Absent, null and empty all read the same: the backend does not send
         // this yet, and a customer holding nothing has no today either (D8).
+        // A payload that is present but every figure in it 0 is the same state
+        // again, not a fourth one: `lookThroughMix` reads a set of zeros as
+        // 0 equity / 0 debt / 100 Commodity, since Commodity is its derived
+        // residual — a set of zeros cannot be drawn as a distribution, so
+        // `holdings.length` is the wrong question. Whether ANY figure is
+        // positive is the right one (spec §3.1).
         const holdings = data.current?.holdings ?? [];
-        setToday(holdings.length ? fromCurrentHoldings(holdings, data.subcategories) : null);
+        const todayValues = fromCurrentHoldings(holdings, data.subcategories);
+        const hasToday = Object.values(todayValues).some((v) => (v ?? 0) > 0);
+        setToday(hasToday ? todayValues : null);
         setExcludedPct(data.current?.excluded_pct ?? 0);
         setLoad("loaded");
       })

@@ -216,12 +216,18 @@ describe("InvestPreferences — where you are today", () => {
   });
 
   // The backend does not send `current` yet, and a customer who holds nothing
-  // has no today to show. All three inputs are deliberately one state — the
-  // frontend cannot tell them apart and shows nothing for each (spec D8).
+  // has no today to show. All four inputs are deliberately one state — the
+  // frontend cannot tell them apart and shows nothing for each (spec D8). A
+  // payload present but all-zero is not a fourth state either — it's the same
+  // "nothing to show" fact, since a set of zeros can't be drawn as a bar
+  // (lookThroughMix would read it as 100% Commodity, the derived residual).
   it.each([
     ["absent", undefined],
     ["null", null],
     ["an empty list", { holdings: [], excluded_pct: 0 }],
+    ["a non-empty list that is all zero", {
+      holdings: [{ subgroup: "short_debt", pct_of_total: 0 }], excluded_pct: 0,
+    }],
   ])("shows nothing about today when current is %s", async (_label, current) => {
     mockGet({ ...GET, current });
     renderPage();
