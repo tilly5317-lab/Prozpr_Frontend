@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import type { ClassMix, ScreenSubcategory } from "@/lib/api";
 import ClassSegmentBar from "@/components/invest/ClassSegmentBar";
 import EditableFigure from "@/components/invest/EditableFigure";
+import { COL_REF, COL_YOU } from "@/components/invest/columns";
 import MultiAssetBar from "@/components/invest/MultiAssetBar";
 import {
   applyTypedEntry,
@@ -74,9 +75,9 @@ export default function SubcategoryPins({
       {/* Once for the whole section: the columns are identical all the way
           down, and a header per class group is four copies of the same line. */}
       <div className="mb-1.5 flex items-baseline gap-2 text-[10.5px] text-muted-foreground">
-        <span className="ml-auto w-[40px] shrink-0 text-right">Prozpr</span>
-        {today ? <span className="w-[40px] shrink-0 text-right">Today</span> : null}
-        <span className="w-[46px] shrink-0 text-right">You</span>
+        <span className={`ml-auto ${COL_REF}`}>Prozpr</span>
+        {today ? <span className={COL_REF}>Today</span> : null}
+        <span className={`${COL_YOU} text-right`}>You</span>
       </div>
 
       {multiAsset ? (
@@ -96,7 +97,7 @@ export default function SubcategoryPins({
         const budget = classBudget(mix, values, cls);
 
         return (
-          <div key={cls} data-testid={`group-${cls}`} className="mt-5">
+          <div key={cls} className="mt-5">
             <div className="flex items-center gap-2">
               <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: CLASS_COLOR[cls] }} />
               <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground">
@@ -159,13 +160,13 @@ export default function SubcategoryPins({
                     }}
                   />
                   <span className="min-w-0 truncate text-foreground">{shortLabel(c)}</span>
-                  <span className="ml-auto w-[40px] shrink-0 text-right text-[10.5px] tabular-nums text-muted-foreground">
+                  <span className={`ml-auto ${COL_REF} text-[10.5px] tabular-nums text-muted-foreground`}>
                     {c.recommended_pct_of_total.toFixed(1)}
                   </span>
                   {today ? (
                     <span
                       data-testid={`today-${c.id}`}
-                      className="w-[40px] shrink-0 text-right text-[10.5px] tabular-nums text-muted-foreground"
+                      className={`${COL_REF} text-[10.5px] tabular-nums text-muted-foreground`}
                     >
                       {(today[c.id] ?? 0).toFixed(1)}
                     </span>
@@ -180,12 +181,12 @@ export default function SubcategoryPins({
                       max={budget}
                       label={shortLabel(c)}
                       onCommit={(v) => commitTyped(rows, budget, c.id, v)}
-                      className="w-[46px] shrink-0 text-[10.5px]"
+                      className={`${COL_YOU} text-[10.5px]`}
                     />
                   ) : (
                     <span
                       data-testid={`you-${c.id}`}
-                      className="w-[46px] shrink-0 text-right text-[10.5px] font-semibold tabular-nums text-foreground"
+                      className={`${COL_YOU} text-right text-[10.5px] font-semibold tabular-nums text-foreground`}
                     >
                       {`${(values[c.id] ?? 0).toFixed(1)}%`}
                     </span>

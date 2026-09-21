@@ -13,6 +13,9 @@ import {
   type ScreenSubcategory,
 } from "@/lib/api";
 import {
+  CLASS_COLOR,
+  CLASS_LABEL,
+  CLASSES,
   fromCurrentHoldings,
   fromSavedPins,
   isEngaged,
@@ -34,11 +37,9 @@ const BOTTOM_NAV_H = 72;
 /** The footer is now a fixed two-button row — h-11 buttons inside py-3. */
 const FOOTER_H = 68;
 
-const LEGEND: { c: string; label: string }[] = [
-  { c: "hsl(var(--bucket-equity))", label: "Equity" },
-  { c: "hsl(var(--bucket-debt))", label: "Debt" },
-  { c: "hsl(var(--wealth-amber))", label: "Commodity" },
-];
+// Derived, not restated: CLASS_COLOR calls itself the single source app-wide,
+// and a hand-copied legend is what makes that claim quietly false.
+const LEGEND = CLASSES.map((c) => ({ c: CLASS_COLOR[c], label: CLASS_LABEL[c] }));
 
 /**
  * Standing investment-preferences screen (`/invest/preferences`). The customer

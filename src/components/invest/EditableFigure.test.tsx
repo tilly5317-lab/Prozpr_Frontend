@@ -48,16 +48,6 @@ describe("EditableFigure", () => {
 
   // An over-budget figure is never displayable, so nothing has to be silently
   // rejected on commit — which is what "it ignored me" used to look like.
-  it("clamps to max while the customer is still typing", () => {
-    figure(25);
-    fireEvent.click(resting());
-    fireEvent.change(field(), { target: { value: "30" } });
-    // `String(max)`, not `max.toFixed(1)`: a clamped "25.0" plus one more
-    // keystroke is "25.00", which is not > 25, so it would sail through and
-    // put a second decimal on a one-decimal screen.
-    expect(field().value).toBe("25");
-  });
-
   it("lets a part-typed value through on its way to a legal one", () => {
     figure(25);
     fireEvent.click(resting());
@@ -132,11 +122,18 @@ describe("EditableFigure", () => {
       ["-", ""],
       ["-5", "5"],
       ["1e3", "13"],
+      // `String(max)`, not `max.toFixed(1)`: a clamped "25.0" plus one more
+      // keystroke is "25.00", which is not > 25, so it would sail through and
+      // put a second decimal on a one-decimal screen.
       ["30", "25"],
       ["999", "25"],
       ["abc", ""],
       // The second-decimal-point branch: none of the rows above reach it.
       ["1.2.3", "1.2"],
+      // The row that actually proves the second-dot strip: without it the
+      // later truncation does not fire here (dot+2 === length), so "1.."
+      // would reach the field and Number("1..") is NaN — uncommittable.
+      ["1..", "1."],
     ];
     for (const [typed, expected] of cases) {
       fireEvent.change(field(), { target: { value: typed } });

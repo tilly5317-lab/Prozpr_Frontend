@@ -1,6 +1,7 @@
 import { useRef } from "react";
 
 import EditableFigure from "@/components/invest/EditableFigure";
+import { COL_REF, COL_YOU } from "@/components/invest/columns";
 import {
   CLASS_COLOR,
   CLASS_LABEL,
@@ -88,13 +89,13 @@ export default function MultiAssetBar({
         <div className="min-w-0 truncate text-[13.5px] font-medium text-foreground">
           {label.charAt(0).toUpperCase() + label.slice(1)}
         </div>
-        <div className="ml-auto w-[40px] shrink-0 text-right text-[10.5px] tabular-nums text-muted-foreground">
+        <div className={`ml-auto ${COL_REF} text-[10.5px] tabular-nums text-muted-foreground`}>
           {recommended.toFixed(1)}
         </div>
         {today != null ? (
           <div
             data-testid="ma-today"
-            className="w-[40px] shrink-0 text-right text-[10.5px] tabular-nums text-muted-foreground"
+            className={`${COL_REF} text-[10.5px] tabular-nums text-muted-foreground`}
           >
             {today.toFixed(1)}
           </div>
@@ -105,10 +106,10 @@ export default function MultiAssetBar({
             max={max}
             label="Multi-asset"
             onCommit={commit}
-            className="w-[46px] shrink-0 text-[10.5px]"
+            className={`${COL_YOU} text-[10.5px]`}
           />
         ) : (
-          <span className="w-[46px] shrink-0 text-right text-[10.5px] font-semibold tabular-nums text-foreground">
+          <span className={`${COL_YOU} text-right text-[10.5px] font-semibold tabular-nums text-foreground`}>
             {`${value.toFixed(1)}%`}
           </span>
         )}
