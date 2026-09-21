@@ -102,9 +102,15 @@ describe("MultiAssetBar", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it("refuses to act on a bar it cannot measure", () => {
+  // A press alone never commits — that's the grab-only rule every other test
+  // here relies on — so a down-only test would pass even with the width guard
+  // deleted from onDown. Only a drag (down THEN move) reaches the commit path
+  // and actually exercises the guard that stops an unmeasurable bar from
+  // jamming the fund to whatever `pctFromClientX` makes of a zero-width box.
+  it("never commits a drag on a bar it cannot measure", () => {
     const onChange = bar(20, 50);
     fireEvent.pointerDown(screen.getByTestId("ma-bar"), { clientX: 60, pointerId: 1 });
+    fireEvent.pointerMove(screen.getByTestId("ma-bar"), { clientX: 60, pointerId: 1 });
     expect(onChange).not.toHaveBeenCalled();
   });
 
