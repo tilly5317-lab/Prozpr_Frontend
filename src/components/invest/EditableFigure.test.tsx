@@ -110,4 +110,37 @@ describe("EditableFigure", () => {
     expect(onCommit).not.toHaveBeenCalled();
     expect(resting().textContent).toBe("18.4%");
   });
+
+  // A hand-checked table protects nothing past the moment someone edits the
+  // sanitiser: two defects on this plan (a residual-clipping bug in `spread`,
+  // and this component's own missing input floor) already got through
+  // review because their behaviour lived in a table a person read once, not
+  // in an assertion the suite re-runs. Encoding every row here means a
+  // future change that drops, say, the decimal truncation fails CI instead
+  // of waiting for the next human to reread the table.
+  it("keeps the field on the one-decimal grid and inside the budget, whatever is typed", () => {
+    figure(25);
+    fireEvent.click(resting());
+    const cases: [string, string][] = [
+      ["", ""],
+      [".", "."],
+      ["18", "18"],
+      ["18.", "18."],
+      ["18.4", "18.4"],
+      ["18.44", "18.4"],
+      ["25.00", "25.0"],
+      ["-", ""],
+      ["-5", "5"],
+      ["1e3", "13"],
+      ["30", "25"],
+      ["999", "25"],
+      ["abc", ""],
+      // The second-decimal-point branch: none of the rows above reach it.
+      ["1.2.3", "1.2"],
+    ];
+    for (const [typed, expected] of cases) {
+      fireEvent.change(field(), { target: { value: typed } });
+      expect(field().value).toBe(expected);
+    }
+  });
 });
