@@ -134,3 +134,45 @@ describe("SubcategoryPins", () => {
     expect(screen.queryByRole("button", { name: "Large-cap share" })).toBeNull();
   });
 });
+
+// The shared fixtures above cap every class at two settable rows, so a typed
+// row's ONLY sibling always absorbs the whole redistribution and always
+// flashes — the "did this row actually move" half of the filter is never
+// exercised there. A three-row class is the smallest catalog where one
+// sibling can move while another, holding nothing before and after, must not.
+describe("SubcategoryPins — flash follows the value, not just sibling-hood", () => {
+  const CATS_3ROW: ScreenSubcategory[] = [
+    { id: "r1", class: "equity", label: "row one",   recommended_pct_of_total: 20 },
+    { id: "r2", class: "equity", label: "row two",   recommended_pct_of_total: 20 },
+    { id: "r3", class: "equity", label: "row three", recommended_pct_of_total: 20 },
+  ];
+  const MIX_3ROW: ClassMix = { equity: 60, debt: 40, others: 0 };
+  const VALUES_3ROW: RowValues = { r1: 30, r2: 30, r3: 0 };
+
+  it("does not flash a sibling that held nothing and receives nothing", () => {
+    render(
+      <SubcategoryPins
+        mix={MIX_3ROW}
+        values={VALUES_3ROW}
+        subcategories={CATS_3ROW}
+        today={null}
+        onChange={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Row one share" }));
+    const box = screen.getByRole("textbox", { name: "Row one share" });
+    fireEvent.change(box, { target: { value: "20" } });
+    fireEvent.keyDown(box, { key: "Enter" });
+
+    // r1 drops 30 -> 20, releasing 40 into its siblings' shared budget. r2 is
+    // the only one holding anything, so it absorbs all of it: 30 -> 40. Moved.
+    expect(screen.getByTestId("row-r2").dataset.flashed).toBe("true");
+    // r3 held 0 and a zero share of the redistribution is still 0: it did not
+    // move. This is the assertion this block exists for — every other
+    // fixture on this branch has at most one sibling, so it always moves and
+    // this case was never reachable before.
+    expect(screen.getByTestId("row-r3").dataset.flashed).toBeUndefined();
+    // The typed row itself is excluded from the flash set by construction.
+    expect(screen.getByTestId("row-r1").dataset.flashed).toBeUndefined();
+  });
+});
