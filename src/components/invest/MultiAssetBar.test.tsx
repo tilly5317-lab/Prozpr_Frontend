@@ -63,6 +63,13 @@ describe("MultiAssetBar", () => {
     expect(screen.getByText("Up to 32.0% — that's what your split can fund.")).toBeTruthy();
   });
 
+  // Without this, the `max < 100` condition could be deleted and every other
+  // test would stay green — nothing else asserts the caption is ever ABSENT.
+  it("hides the cap caption when the split can fund the whole thing", () => {
+    bar(20, 100);
+    expect(screen.queryByText("Up to 100.0% — that's what your split can fund.")).toBeNull();
+  });
+
   it("nudges by a half point with the arrow keys", () => {
     const onChange = bar(20, 50);
     fireEvent.keyDown(divider(), { key: "ArrowRight" });
@@ -131,6 +138,29 @@ describe("MultiAssetBar", () => {
     fireEvent.change(box, { target: { value: "40" } });
     fireEvent.keyDown(box, { key: "Enter" });
     expect(onChange).toHaveBeenCalledWith(40);
+  });
+
+  // The case above never reaches the clamp — 40 is under the cap of 50, so it
+  // only proves the type -> onChange wire. This guards the `max` PASSED DOWN
+  // to EditableFigure: if that wiring were ever dropped or hardcoded to 100,
+  // a customer could type a share their own split cannot fund, and nothing
+  // else on this branch would notice — EditableFigure's own tests only see a
+  // standalone component with whatever `max` they hand it directly.
+  //
+  // The assertion is on the DRAFT, not just the eventual commit: MultiAssetBar's
+  // own `commit` re-clamps to `max` regardless of what EditableFigure passes it,
+  // so typing "80" lands on onChange(50) whether or not `max` ever reached
+  // EditableFigure — that clamp alone can't tell wired-correctly from
+  // wired-wrong-but-caught-downstream. Only the draft, checked before Enter, can
+  // see whether EditableFigure itself clamped as the customer typed.
+  it("clamps a typed figure to what the split can fund", () => {
+    const onChange = bar(20, 50);
+    fireEvent.click(screen.getByRole("button", { name: "Multi-asset share" }));
+    const box = screen.getByRole("textbox", { name: "Multi-asset share" }) as HTMLInputElement;
+    fireEvent.change(box, { target: { value: "80" } });
+    expect(box.value).toBe("50");
+    fireEvent.keyDown(box, { key: "Enter" });
+    expect(onChange).toHaveBeenCalledWith(50);
   });
 
   // The sleeve is 10% commodity, so commodity alone sets the cap: a customer
