@@ -251,9 +251,9 @@ export default function InvestPreferences() {
             {openCats ? (
               <>
                 <p className="mt-2.5 text-[11.5px] leading-relaxed text-muted-foreground">
-                  {"Drag a divider to shift share between categories."}
+                  {"Drag a divider to shift share between categories — or tap a number to type it."}
                 </p>
-                <SubcategoryPins mix={mix} values={effective} subcategories={subs} onChange={setValues} />
+                <SubcategoryPins mix={mix} values={effective} subcategories={subs} today={today} onChange={setValues} />
               </>
             ) : null}
           </section>

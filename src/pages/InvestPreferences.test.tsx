@@ -224,4 +224,18 @@ describe("InvestPreferences — where you are today", () => {
     await ready();
     expect(screen.queryByText("Where you are today")).toBeNull();
   });
+
+  it("types a category value without moving the class bar", async () => {
+    mockGet(GET_WITH_TODAY);
+    renderPage();
+    await ready();
+    openCats();
+    const before = screen.getByTestId("budget-debt").textContent;
+    fireEvent.click(screen.getByRole("button", { name: "Short-duration share" }));
+    const box = screen.getByRole("textbox", { name: "Short-duration share" });
+    fireEvent.change(box, { target: { value: "5" } });
+    fireEvent.keyDown(box, { key: "Enter" });
+    expect(screen.getByTestId("budget-debt").textContent).toBe(before);
+    expect(saveBtn()).toBeEnabled();
+  });
 });
