@@ -27,6 +27,18 @@ const GET = {
   recommendation: { class_mix: { equity: 43, debt: 25, others: 32 } },
   subcategories: CATS,
 };
+// Today is deliberately a different shape from the recommendation, so the bars
+// cannot be confused: 70 equity / 30 debt / 0 commodity.
+const GET_WITH_TODAY = {
+  ...GET,
+  current: {
+    holdings: [
+      { subgroup: "low_beta_equities", pct_of_total: 70 },
+      { subgroup: "short_debt", pct_of_total: 30 },
+    ],
+    excluded_pct: 18.4,
+  },
+};
 const SAVED_COMPLETE = {
   class_mix: { equity: 43, debt: 25, others: 32 },
   pins: [
@@ -165,5 +177,51 @@ describe("InvestPreferences — scope notice", () => {
   it("never says near-term goals stop being planned for", async () => {
     mockGet({ ...GET, carve_outs_at_risk: ["near_term_goals"] }); renderPage(); await ready();
     expect(screen.queryByText(/stop being planned for/i)).not.toBeInTheDocument();
+  });
+});
+
+describe("InvestPreferences — where you are today", () => {
+  it("draws a third bar from the customer's holdings", async () => {
+    mockGet(GET_WITH_TODAY);
+    renderPage();
+    await ready();
+    expect(screen.getByText("Where you are today")).toBeInTheDocument();
+    // The look-through of those rows is 70 / 30 / 0. Asserted on the third
+    // bar's own segment rather than by text, both because "70.0%" could
+    // collide with a label on either bar above it and because this is what
+    // catches the live copy-paste risk: passing `rec` to all three bars.
+    expect(screen.getAllByTestId("mix-seg-equity")[2].style.width).toBe("70%");
+  });
+
+  // The rescale is the surprising part: the surviving figures were inflated to
+  // fill the gap, not merely shown without it.
+  it("names what was excluded and that the rest was rescaled", async () => {
+    mockGet(GET_WITH_TODAY);
+    renderPage();
+    await ready();
+    expect(
+      screen.getByText("Excludes the 18.4% you hold in ELSS and direct stocks. The rest is scaled to 100%."),
+    ).toBeInTheDocument();
+  });
+
+  it("says only where the customer is when nothing was excluded", async () => {
+    mockGet({ ...GET_WITH_TODAY, current: { ...GET_WITH_TODAY.current, excluded_pct: 0 } });
+    renderPage();
+    await ready();
+    expect(screen.getByText("Across the categories you set here.")).toBeInTheDocument();
+  });
+
+  // The backend does not send `current` yet, and a customer who holds nothing
+  // has no today to show. All three inputs are deliberately one state — the
+  // frontend cannot tell them apart and shows nothing for each (spec D8).
+  it.each([
+    ["absent", undefined],
+    ["null", null],
+    ["an empty list", { holdings: [], excluded_pct: 0 }],
+  ])("shows nothing about today when current is %s", async (_label, current) => {
+    mockGet({ ...GET, current });
+    renderPage();
+    await ready();
+    expect(screen.queryByText("Where you are today")).toBeNull();
   });
 });

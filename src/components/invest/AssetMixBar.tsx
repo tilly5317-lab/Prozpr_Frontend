@@ -26,10 +26,15 @@ export default function AssetMixBar({
   mixRef.current = mix; // always the latest split for in-flight drags
   const dragging = useRef(false);
 
-  // Drawn widths, floored so a class squeezed to nothing still shows a sliver:
-  // without it the two dividers land on the same pixel (and, at either end, on
-  // the bar's own edge) exactly as they did on the class bars.
-  const widths = flooredShares([mix.equity, mix.debt, mix.others], 100);
+  // Drawn widths. The floor keeps a class squeezed to nothing from putting its
+  // two dividers on the same pixel — but only the interactive bar HAS dividers,
+  // so flooring a reference bar would invent a visible sliver of a class the
+  // customer does not hold, with its label suppressed by labelMin so nothing
+  // explains it (spec §4, revised 2026-09-20).
+  const widths =
+    mode === "interactive"
+      ? flooredShares([mix.equity, mix.debt, mix.others], 100)
+      : [mix.equity, mix.debt, mix.others];
   const shares = () => [mixRef.current.equity, mixRef.current.debt, mixRef.current.others];
 
   /** Pointer position → a position in VALUE space, inverting the floor. */
@@ -88,13 +93,14 @@ export default function AssetMixBar({
   return (
     <div
       ref={barRef}
-      className={`relative flex h-[30px] rounded-lg bg-muted ${
-        mode === "interactive" ? "overflow-visible" : "overflow-hidden"
+      className={`relative flex rounded-lg bg-muted ${
+        mode === "interactive" ? "h-[30px] overflow-visible" : "h-[22px] overflow-hidden"
       }`}
     >
       {CLASSES.map((k, i) => (
         <div
           key={k}
+          data-testid={`mix-seg-${k}`}
           className={`flex h-full items-center justify-center overflow-hidden whitespace-nowrap ${
             i === 0 ? "rounded-l-lg" : ""
           } ${i === CLASSES.length - 1 ? "rounded-r-lg" : ""}`}

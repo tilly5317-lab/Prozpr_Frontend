@@ -46,3 +46,20 @@ describe("AssetMixBar handle separation", () => {
     expect(screen.getByText("28.0%")).toBeTruthy();
   });
 });
+
+// The floor exists so two dividers cannot stack on one pixel. A reference bar
+// has no dividers, so flooring it only invents a class the customer does not
+// hold — and labelMin hides its label, leaving nothing to explain the sliver.
+describe("AssetMixBar reference bars draw true shares", () => {
+  it("draws nothing at all for a class at zero", () => {
+    render(<AssetMixBar mode="reference" mix={{ equity: 70, debt: 30, others: 0 }} />);
+    expect(screen.getByTestId("mix-seg-others").style.width).toBe("0%");
+  });
+
+  it("still floors the interactive bar, where the dividers live", () => {
+    render(
+      <AssetMixBar mode="interactive" mix={{ equity: 70, debt: 30, others: 0 }} onChange={vi.fn()} />,
+    );
+    expect(parseFloat(screen.getByTestId("mix-seg-others").style.width)).toBeGreaterThan(0);
+  });
+});

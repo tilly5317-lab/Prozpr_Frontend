@@ -13,8 +13,10 @@ import {
   type ScreenSubcategory,
 } from "@/lib/api";
 import {
+  fromCurrentHoldings,
   fromSavedPins,
   isEngaged,
+  lookThroughMix,
   normalise,
   recommendedMix,
   recommendedValues,
@@ -59,6 +61,8 @@ export default function InvestPreferences() {
   const [rec, setRec] = useState<ClassMix>(FALLBACK);
   const [subs, setSubs] = useState<ScreenSubcategory[]>([]);
   const [carveOuts, setCarveOuts] = useState<CarveOutKey[]>([]);
+  const [today, setToday] = useState<RowValues | null>(null);
+  const [excludedPct, setExcludedPct] = useState(0);
   const [saving, setSaving] = useState(false);
   const [openCats, setOpenCats] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
@@ -86,6 +90,11 @@ export default function InvestPreferences() {
         setRec(recMix);
         setSubs(data.subcategories);
         setCarveOuts(data.carve_outs_at_risk ?? []);
+        // Absent, null and empty all read the same: the backend does not send
+        // this yet, and a customer holding nothing has no today either (D8).
+        const holdings = data.current?.holdings ?? [];
+        setToday(holdings.length ? fromCurrentHoldings(holdings, data.subcategories) : null);
+        setExcludedPct(data.current?.excluded_pct ?? 0);
         setLoad("loaded");
       })
       .catch(() => {
@@ -180,15 +189,32 @@ export default function InvestPreferences() {
               Your preference
             </p>
             <AssetMixBar mode="interactive" mix={mix} onChange={changeMix} />
+            {/* Directly under the bar it describes: with three bars in the card
+                it otherwise reads as a note about the today bar. */}
+            <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+              {"Drag the gold handles to set your split — it always totals 100%."}
+            </p>
 
             <p className="mb-2 mt-4 text-[10.5px] uppercase tracking-[0.14em] text-muted-foreground">
               Prozpr recommends
             </p>
             <AssetMixBar mode="reference" mix={rec} />
 
-            <p className="mt-3.5 text-[11px] leading-relaxed text-muted-foreground">
-              {"Drag the gold handles to set your split — it always totals 100%."}
-            </p>
+            {today ? (
+              <>
+                <p className="mb-2 mt-4 text-[10.5px] uppercase tracking-[0.14em] text-muted-foreground">
+                  Where you are today
+                </p>
+                <AssetMixBar mode="reference" mix={lookThroughMix(today, subs)} />
+                {/* The rescale is the surprising part, not the omission: these
+                    figures were inflated to fill the gap ELSS left (spec §3.4). */}
+                <p className="mt-1.5 text-[10.5px] leading-relaxed text-muted-foreground">
+                  {excludedPct > 0
+                    ? `Excludes the ${excludedPct.toFixed(1)}% you hold in ELSS and direct stocks. The rest is scaled to 100%.`
+                    : "Across the categories you set here."}
+                </p>
+              </>
+            ) : null}
           </section>
 
           {/* Most customers are happy with our categories, so the detail stays
