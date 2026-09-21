@@ -133,6 +133,31 @@ describe("SubcategoryPins", () => {
     view({ ...VALUES, multi_asset: 66.1 });
     expect(screen.queryByRole("button", { name: "Large-cap share" })).toBeNull();
   });
+
+  // `applyTypedEntry` re-clamps everything on commit, so an assertion made
+  // AFTER Enter cannot tell "the row was wired to its own budget" from "it was
+  // wired to 100 and only caught downstream" — both land on the same committed
+  // number. Only the DRAFT, read before Enter, can see what `max` the field
+  // itself was actually given. Same technique as MultiAssetBar.test.tsx's
+  // "clamps a typed figure to what the split can fund".
+  it("clamps the field itself to the row's own budget, not to 100", () => {
+    view();
+    fireEvent.click(screen.getByRole("button", { name: "Large-cap share" }));
+    const box = screen.getByRole("textbox", { name: "Large-cap share" }) as HTMLInputElement;
+    fireEvent.change(box, { target: { value: "45" } });
+    // Equity's budget here is 30 (43 on the bar, less multi-asset's 13-point
+    // draw) — well under 100, so a field wired to 100 would still show "45".
+    expect(box.value).toBe(String(classBudget(MIX, VALUES, "equity")));
+  });
+
+  // A customer who holds no multi-asset fund at all — the common case — has
+  // today[multi_asset] === 0, a real entry and not an absence. The row that
+  // heads the whole section must still print it, or every column beneath it
+  // misaligns against a header that promised three.
+  it("still prints today's multi-asset figure when it is zero", () => {
+    view(VALUES, { ...TODAY, multi_asset: 0 });
+    expect(screen.getByTestId("ma-today").textContent).toBe("0.0");
+  });
 });
 
 // The shared fixtures above cap every class at two settable rows, so a typed

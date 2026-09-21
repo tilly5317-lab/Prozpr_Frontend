@@ -12,9 +12,13 @@ vi.mock("sonner", () => ({
 }));
 
 import { getInvestmentPreferences, saveInvestmentPreferences } from "@/lib/api";
+import type { ScreenSubcategory } from "@/lib/api";
+import {
+  classAllocated, CLASSES, fromCurrentHoldings, multiAssetDraw, round1,
+} from "@/lib/investment-preferences";
 import InvestPreferences from "./InvestPreferences";
 
-const CATS = [
+const CATS: ScreenSubcategory[] = [
   { id: "multi_asset",       class: "equity", label: "multi-asset funds", recommended_pct_of_total: 20 },
   { id: "low_beta_equities", class: "equity", label: "large-cap equity",  recommended_pct_of_total: 30 },
   { id: "short_debt",        class: "debt",   label: "short-duration debt", recommended_pct_of_total: 20 },
@@ -223,6 +227,30 @@ describe("InvestPreferences — where you are today", () => {
     renderPage();
     await ready();
     expect(screen.queryByText("Where you are today")).toBeNull();
+  });
+
+  // The page fixture above is degenerate — 70/30/0, no multi-asset, no gold —
+  // so a bar and its columns could disagree on either of those and nothing
+  // would catch it. A richer holdings set exercises both draws at once and
+  // derives its expectation from the same helpers the columns use, rather
+  // than a hand-copied literal, so the two can never drift apart unnoticed.
+  it("draws the today bar's segments exactly as the today columns imply", async () => {
+    const holdings = [
+      { subgroup: "multi_asset", pct_of_total: 20 },
+      { subgroup: "low_beta_equities", pct_of_total: 30 },
+      { subgroup: "short_debt", pct_of_total: 20 },
+      { subgroup: "arbitrage", pct_of_total: 10 },
+      { subgroup: "gold_commodities", pct_of_total: 20 },
+    ];
+    mockGet({ ...GET, current: { holdings, excluded_pct: 0 } });
+    renderPage();
+    await ready();
+
+    const today = fromCurrentHoldings(holdings, CATS);
+    for (const cls of CLASSES) {
+      const expected = round1(classAllocated(today, CATS, cls) + multiAssetDraw(today, cls));
+      expect(screen.getAllByTestId(`mix-seg-${cls}`)[2].style.width).toBe(`${expected}%`);
+    }
   });
 
   it("types a category value without moving the class bar", async () => {

@@ -10,7 +10,8 @@ import {
  * two draggable gold-lozenge dividers (drag or ←/→) that trade between
  * neighbours and always total 100%; `reference` mode is Prozpr's static bar.
  * A segment's % label hides on a narrow segment so it never collides with a
- * handle, and every segment is floored to a visible sliver (see `widths`).
+ * handle, and in interactive mode every segment is floored to a visible
+ * sliver — reference bars draw true shares instead (see `widths`).
  */
 export default function AssetMixBar({
   mode,
