@@ -141,7 +141,9 @@
     /* Dark surfaces — keep Equity as the single brand accent and let Debt / Hybrid
        sit as quiet, low-saturation neutrals so the page doesn't feel over-coloured. */
     --bucket-equity: 221 83% 53%;  /* #2563EB — equity */
-    --bucket-debt: 220 14% 64%;    /* muted blue-grey, near muted-foreground */
+    --bucket-debt: 188 52% 41%;    /* teal — the same debt colour CurrentAllocationCard,
+                                      driftRows and RebalanceExplanation hardcode, so the
+                                      class reads identically on every screen in dark. */
     --bucket-hybrid: 38 22% 62%;   /* warm tan-grey, gently distinct from debt */
 
     --warning: 38 70% 65%;

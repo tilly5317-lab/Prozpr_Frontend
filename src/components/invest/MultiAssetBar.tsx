@@ -105,10 +105,10 @@ export default function MultiAssetBar({
             max={max}
             label="Multi-asset"
             onCommit={commit}
-            className="w-[46px] shrink-0 text-[13.5px]"
+            className="w-[46px] shrink-0 text-[10.5px]"
           />
         ) : (
-          <span className="w-[46px] shrink-0 text-right text-[13.5px] font-semibold tabular-nums text-foreground">
+          <span className="w-[46px] shrink-0 text-right text-[10.5px] font-semibold tabular-nums text-foreground">
             {`${value.toFixed(1)}%`}
           </span>
         )}

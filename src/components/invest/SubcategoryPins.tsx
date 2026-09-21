@@ -180,12 +180,12 @@ export default function SubcategoryPins({
                       max={budget}
                       label={shortLabel(c)}
                       onCommit={(v) => commitTyped(rows, budget, c.id, v)}
-                      className="w-[46px] shrink-0"
+                      className="w-[46px] shrink-0 text-[10.5px]"
                     />
                   ) : (
                     <span
                       data-testid={`you-${c.id}`}
-                      className="w-[46px] shrink-0 text-right font-semibold tabular-nums text-foreground"
+                      className="w-[46px] shrink-0 text-right text-[10.5px] font-semibold tabular-nums text-foreground"
                     >
                       {`${(values[c.id] ?? 0).toFixed(1)}%`}
                     </span>
