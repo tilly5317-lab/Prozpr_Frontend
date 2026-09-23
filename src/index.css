@@ -79,6 +79,46 @@
     /* Semantic warning (amber) — used for "X% remaining" / neutral cautions. */
     --warning: 38 80% 40%;
     --warning-foreground: 0 0% 100%;
+ 
+    /* ── Fund page (v3) ────────────────────────────────────────────────────
+       The warm cream/ink system the redesigned mutual-fund and comparison
+       screens are drawn in. Kept as its own token set rather than folded into
+       the app's blue-grey scale: this is a distinct surface, and overwriting
+       --background here would repaint every other screen.
+
+       Every value has a dark counterpart below, so the page follows the
+       app-wide theme rather than being the one screen stuck in light. */
+    --fund-canvas: 40 32% 91%;
+    --fund-panel: 38 41% 95%;
+    --fund-panel-alt: 41 35% 91%;
+    --fund-card: 0 0% 100%;
+    --fund-card-border: 44 32% 87%;
+    --fund-ink: 240 6% 7%;
+    --fund-ink-soft: 240 4% 19%;
+    --fund-body: 34 10% 26%;
+    --fund-muted: 37 8% 50%;
+    --fund-faint: 41 13% 67%;
+    --fund-hairline: 40 32% 91%;
+    --fund-hairline-soft: 42 33% 92%;
+    --fund-footnote: 41 16% 73%;
+    --fund-line-ghost: 41 22% 80%;
+    /* Four-step verdict scale — behind / below / above / ahead. */
+    --fund-behind: 7 73% 45%;
+    --fund-below: 37 65% 57%;
+    --fund-above: 152 24% 58%;
+    --fund-ahead: 159 59% 30%;
+    --fund-tint: 16 65% 97%;
+    --fund-tax: 214 59% 29%;
+    /* The pinned CTA reads as ink; on dark it inverts to the page's own ink. */
+    --fund-cta: 240 6% 7%;
+    --fund-cta-fg: 38 41% 95%;
+    --fund-cta-hover: 240 4% 19%;
+    /* Comparison slot palette, assigned by position. Five funds, five colours. */
+    --fund-slot-1: 240 6% 7%;
+    --fund-slot-2: 40 64% 42%;
+    --fund-slot-3: 211 48% 45%;
+    --fund-slot-4: 159 59% 30%;
+    --fund-slot-5: 270 39% 54%;
   }
 
   .dark {
@@ -146,6 +186,43 @@
 
     --warning: 38 70% 65%;
     --warning-foreground: 0 0% 8%;
+
+    /* ── Fund page (v3), dark ──────────────────────────────────────────────
+       Same roles, rebuilt on the app's warm charcoal rather than inverted
+       mechanically: the cream surfaces become warm greys, and the four
+       verdict tones are lifted in lightness so they still separate against a
+       dark ground (the light-mode ahead/behind greens and reds go muddy at
+       30% lightness on charcoal). Slot 1 flips from ink to off-white, since
+       "the darkest colour" is the wrong idea in a dark theme. */
+    --fund-canvas: 0 0% 8%;
+    --fund-panel: 60 3% 13%;
+    --fund-panel-alt: 45 4% 16%;
+    --fund-card: 60 2% 11%;
+    --fund-card-border: 45 5% 20%;
+    --fund-ink: 48 18% 93%;
+    --fund-ink-soft: 45 12% 86%;
+    --fund-body: 42 10% 74%;
+    --fund-muted: 40 7% 58%;
+    --fund-faint: 40 6% 44%;
+    --fund-hairline: 45 5% 19%;
+    --fund-hairline-soft: 48 4% 16%;
+    --fund-footnote: 40 6% 40%;
+    --fund-line-ghost: 45 6% 32%;
+    --fund-behind: 6 72% 61%;
+    --fund-below: 37 72% 62%;
+    --fund-above: 152 30% 60%;
+    --fund-ahead: 159 45% 50%;
+    --fund-tint: 6 30% 15%;
+    --fund-tax: 214 58% 68%;
+    --fund-cta: 48 18% 93%;
+    --fund-cta-fg: 0 0% 8%;
+    --fund-cta-hover: 45 12% 86%;
+    --fund-slot-1: 48 18% 93%;
+    --fund-slot-2: 40 62% 60%;
+    --fund-slot-3: 211 55% 65%;
+    --fund-slot-4: 159 45% 50%;
+    --fund-slot-5: 270 50% 72%;
+
   }
 }
 
@@ -331,4 +408,77 @@
 }
 .alloc-slider::-moz-range-thumb {
   border-color: var(--slider-fill, #1A3A6B) !important;
+}
+
+/* ── Moment dots on the portfolio chart ──────────────────────────────────
+   A ring that expands out of the dot and fades. Two iterations of one second,
+   so it draws the eye for two seconds when a range loads and then leaves the
+   chart alone — an indefinite pulse on a page you sit with reads as an alert.
+
+   `transform-box: fill-box` scales the circle about its own centre rather than
+   the SVG's origin, which is what makes this work inside recharts' coordinate
+   space without knowing where the dot landed. */
+@keyframes moment-dot-pulse {
+  0%   { transform: scale(0.6); opacity: 0.5; }
+  70%  { transform: scale(2.1); opacity: 0; }
+  100% { transform: scale(2.1); opacity: 0; }
+}
+
+.moment-dot-halo {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: moment-dot-pulse 1s ease-out 2 both;
+}
+
+/* The dot is already legible without the flourish; motion is the part that
+   isn't universally welcome. */
+@media (prefers-reduced-motion: reduce) {
+  .moment-dot-halo {
+    animation: none;
+    opacity: 0;
+  }
+}
+
+/* ── Goal-plan asset-mix track ───────────────────────────────────────────
+   The range input is an invisible overlay: the painted 8px bar underneath is
+   what you see, and only the thumb shows through. The input itself stays 30px
+   tall so the thumb keeps a real touch target on a phone — the bar reads as a
+   slim rule without costing anything to grab. */
+.mix-range {
+  -webkit-appearance: none;
+  appearance: none;
+}
+.mix-range::-webkit-slider-runnable-track {
+  background: transparent;
+  height: 10px;
+}
+.mix-range::-moz-range-track {
+  background: transparent;
+  height: 30px;
+}
+.mix-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 20px;
+  width: 20px;
+  /* WebKit seats the thumb on the track's top edge, so pull it back by half
+     the overhang — (10px track − 20px thumb) / 2 — to centre it on the bar. */
+  margin-top: -5px;
+  border-radius: 9999px;
+  background: #ffffff;
+  border: 2px solid #D4A868;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.16);
+  cursor: grab;
+}
+.mix-range:active::-webkit-slider-thumb {
+  cursor: grabbing;
+}
+.mix-range::-moz-range-thumb {
+  height: 20px;
+  width: 20px;
+  border-radius: 9999px;
+  background: #ffffff;
+  border: 2px solid #D4A868;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.16);
+  cursor: grab;
 }
