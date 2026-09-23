@@ -168,9 +168,10 @@ export default function GoalPlanStats({
                   active || stat.gold ? "" : "text-foreground"
                 }`}
                 style={{
-                  borderBottom: `1px ${active ? "solid" : "dashed"} ${
-                    active ? GOLD : "hsl(var(--border))"
-                  }`,
+                  // Only the open stat is underlined. The dashed rule that used
+                  // to sit under every number was the "tappable" hint before the
+                  // chevrons arrived, and reads as noise alongside them.
+                  borderBottom: active ? `1px solid ${GOLD}` : "1px solid transparent",
                   ...(active || stat.gold ? { color: GOLD } : {}),
                 }}
               >

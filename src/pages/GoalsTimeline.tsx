@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { formatMoneyInput } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
@@ -16,6 +16,7 @@ import {
 import {
   BriefcaseBusiness,
   Car,
+  ChevronDown,
   ChevronLeft,
   Download,
   GraduationCap,
@@ -126,6 +127,12 @@ function dragClientY(e: MouseEvent | TouchEvent | PointerEvent): number {
   if ("clientY" in e) return e.clientY;
   const t = e.changedTouches?.[0] ?? e.touches?.[0];
   return t ? t.clientY : 0;
+}
+
+function dragClientX(e: MouseEvent | TouchEvent | PointerEvent): number {
+  if ("clientX" in e) return e.clientX;
+  const t = e.changedTouches?.[0] ?? e.touches?.[0];
+  return t ? t.clientX : 0;
 }
 
 /** Birth year parsed from an ISO date string (YYYY-MM-DD); null if unparseable. */
@@ -357,11 +364,20 @@ interface AddGoalSheetProps {
   maxYear: number;
   editingGoal: TimelineGoal | null;
   saving: boolean;
+  /** Birth year, so the target year can be shown as an age. Null if no DOB. */
+  birthYear: number | null;
   /** Year the user is projected to retire — used to prefill the Retirement goal. */
   retirementYear: number;
   onClose: () => void;
   onSubmit: (goal: Omit<TimelineGoal, "id">, editingId?: string) => void | Promise<void>;
 }
+
+/* Native <option> elements ignore Tailwind classes and paint from the OS, so the
+   dropdown list needs explicit themed colours or it is unreadable in dark mode. */
+const OPTION_STYLE: CSSProperties = {
+  backgroundColor: "hsl(var(--popover))",
+  color: "hsl(var(--popover-foreground))",
+};
 
 // Quick-pick goal categories shown as the first step of the add-goal sheet.
 // "Retirement" prefills its target year from the user's profile retirement age.
@@ -383,6 +399,7 @@ function AddGoalSheet({
   editingGoal,
   saving,
   retirementYear,
+  birthYear,
   onClose,
   onSubmit,
 }: AddGoalSheetProps) {
@@ -526,7 +543,13 @@ function AddGoalSheet({
                     {isEdit ? "Edit goal" : "New goal"}
                   </p>
                   <h2 className="text-base font-semibold text-foreground truncate">
-                    {isEdit ? editingGoal!.name : `Plan for ${year}`}
+                    {isEdit
+                      ? editingGoal!.name
+                      : `Plan for ${year}${
+                          birthYear != null && year - birthYear >= 0
+                            ? ` (${year - birthYear} years old)`
+                            : ""
+                        }`}
                   </h2>
                 </div>
                 <button
@@ -542,38 +565,52 @@ function AddGoalSheet({
               <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
                 <div>
                   <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">
-                    Goal category
+                    Goals
                   </p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {GOAL_CATEGORIES.map((c) => {
-                      const Icon = c.icon;
-                      const active = category === c.id;
+                  {/* A dropdown rather than a grid of tiles — seven categories
+                      cost four rows of the sheet, and the amount and year below
+                      are what people are actually here to fill in. */}
+                  <div className="relative">
+                    {(() => {
+                      const Icon =
+                        GOAL_CATEGORIES.find((c) => c.id === category)?.icon ?? Plus;
                       return (
-                        <button
-                          key={c.id}
-                          type="button"
-                          onClick={() => {
-                            setCategory(c.id);
-                            // Prefill the retirement goal's target year from the profile.
-                            if (c.id === "retirement") {
-                              setYear(Math.min(maxYear, Math.max(currentYear, retirementYear)));
-                            }
-                          }}
-                          className={`flex items-center gap-2 rounded-xl px-3 py-2 text-left transition-colors ${
-                            active
-                              ? "border-foreground/30 bg-muted/60 text-foreground"
-                              : "bg-card text-muted-foreground hover:bg-muted/40"
-                          }`}
-                          style={{
-                            border: `1px solid ${active ? "hsl(var(--foreground) / 0.30)" : "hsl(var(--border))"}`,
-                          }}
-                          aria-pressed={active}
-                        >
-                          <Icon className="h-3.5 w-3.5 shrink-0" />
-                          <span className="text-[11.5px] font-semibold">{c.label}</span>
-                        </button>
+                        <Icon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                       );
-                    })}
+                    })()}
+                    <select
+                      id="timeline-goal-category"
+                      value={category}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        setCategory(next);
+                        // Prefill the retirement goal's target year from the profile.
+                        if (next === "retirement") {
+                          setYear(Math.min(maxYear, Math.max(currentYear, retirementYear)));
+                        }
+                      }}
+                      className={`w-full appearance-none rounded-lg py-2 pl-9 pr-9 text-[13px] font-semibold focus:outline-none focus:ring-1 focus:ring-foreground/30 ${
+                        category ? "text-foreground" : "text-muted-foreground"
+                      }`}
+                      style={{
+                        border: "1px solid hsl(var(--border))",
+                        backgroundColor: "hsl(var(--muted))",
+                      }}
+                      aria-label="Goal category"
+                    >
+                      {/* Without this the browser shows the first category
+                          while the state is still empty — it looks chosen, but
+                          Save stays disabled until one really is. */}
+                      <option value="" disabled style={OPTION_STYLE}>
+                        Choose category
+                      </option>
+                      {GOAL_CATEGORIES.map((c) => (
+                        <option key={c.id} value={c.id} style={OPTION_STYLE}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   </div>
                   {isCustom && (
                     <input
@@ -1608,7 +1645,23 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
 
   // DOM refs per year row — used to hit-test where a goal is dropped.
   const rowRefs = useRef<Map<number, HTMLLIElement | null>>(new Map());
-  const findYearAtClientY = (clientY: number): number | null => {
+  /** Year buttons inside the open lens, so a goal can be dropped on one. */
+  const lensYearRefs = useRef(new Map<number, HTMLElement>());
+
+  const findYearAtClientY = (clientY: number, clientX?: number): number | null => {
+    if (clientX != null) {
+      for (const [year, el] of lensYearRefs.current) {
+        const rect = el.getBoundingClientRect();
+        if (
+          clientY >= rect.top &&
+          clientY <= rect.bottom &&
+          clientX >= rect.left &&
+          clientX <= rect.right
+        ) {
+          return year;
+        }
+      }
+    }
     for (const [year, el] of rowRefs.current) {
       if (!el) continue;
       const rect = el.getBoundingClientRect();
@@ -1897,6 +1950,14 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
    */
   const [lensGap, setLensGap] = useState<[number, number] | null>(null);
 
+  /** The next listed year after `y` when the axis skipped some, else null. */
+  const gapAfterYear = useCallback((y: number): number | null => {
+    const i = visibleYearsRef.current.indexOf(y);
+    if (i < 0) return null;
+    const next = visibleYearsRef.current[i + 1];
+    return next != null && next > y + 1 ? next : null;
+  }, []);
+
   const lensYears = useMemo(() => {
     if (!lensGap) return [] as number[];
     const out: number[] = [];
@@ -1916,6 +1977,8 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   }, [isTornado, years, goalsByYear, birthYear]);
 
   // Kept fresh for the drag handlers so they never read stale values.
+  const visibleYearsRef = useRef(visibleYears);
+  visibleYearsRef.current = visibleYears;
   const capYearRef = useRef(capYear);
   capYearRef.current = capYear;
   const displayEndYearRef = useRef(displayEndYear);
@@ -2420,7 +2483,11 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                     setHoveredYear((h) => (h === y ? null : h))
                   }
                   className="group relative w-full text-left flex items-stretch gap-3 px-2 transition-colors hover:bg-muted/20 focus:outline-none focus-visible:ring-1 focus-visible:ring-foreground/40 rounded-lg"
-                  style={{ minHeight: hasGoals ? (isTornado ? 36 : 48) : isTornado ? 12 : 18 }}
+                  // One rhythm for every year. A goal year is taller only by
+                  // the height of its own card, which hangs below the bar —
+                  // the bar itself sits at the same offset on every row, so
+                  // 22-23 and 26-30 are spaced identically.
+                  style={{ minHeight: hasGoals ? (isTornado ? 19 : 24) : isTornado ? 19 : 24 }}
                   aria-label={`Show ${y} projected corpus`}
                 >
                   {/* Full-width background chart — gold curve in line mode, tornado bar in tornado mode */}
@@ -2490,38 +2557,6 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
 
                     {isTornado && (
                       <>
-                        <defs>
-                          <linearGradient
-                            id={`tornadoBar-${y}`}
-                            x1="0"
-                            y1="0"
-                            x2="1"
-                            y2="0"
-                          >
-                            {/* Hovered rows drop the fade and sit at the deep end
-                                of their own hue, so the row under the cursor is
-                                a solid red or green rather than a new colour. */}
-                            <stop
-                              offset="0%"
-                              stopColor={`rgb(${
-                                isHovered || !tornadoIsPositive
-                                  ? tornadoDeepHue
-                                  : tornadoBaseHue
-                              })`}
-                              stopOpacity={isHovered || !tornadoIsPositive ? 1 : 0.3}
-                            />
-                            <stop
-                              offset="100%"
-                              stopColor={`rgb(${
-                                isHovered || tornadoIsPositive
-                                  ? tornadoDeepHue
-                                  : tornadoBaseHue
-                              })`}
-                              stopOpacity={isHovered || tornadoIsPositive ? 1 : 0.3}
-                            />
-                          </linearGradient>
-                        </defs>
-
                         {/* Zero axis — corpus_closing bars extend left (negative)
                             or right (positive). Full height on every row so the
                             rows join into one continuous line with no stub
@@ -2537,35 +2572,53 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                           vectorEffect="non-scaling-stroke"
                         />
 
-                        {/* The hovered bar grows vertically as well as
-                            darkening — two cues for the same row. */}
-                        {hasTornadoBar && tornadoX2 > tornadoX1 && (
-                          <rect
-                            x={tornadoX1}
-                            y={isHovered ? 6 : 17.5}
-                            width={Math.max(0, tornadoX2 - tornadoX1)}
-                            height={isHovered ? 88 : 65}
-                            fill={`url(#tornadoBar-${y})`}
-                            fillOpacity={tornadoFillOpacity}
-                          />
-                        )}
                       </>
                     )}
                   </svg>
+
+                  {/* Fixed-height bar: a year with a goal is a taller row, and
+                      the bar must not grow with it. Hover still thickens it.
+
+                      Pinned to the year label's own line rather than centred in
+                      the row: a row holding goal cards runs far taller than its
+                      label, and centring left the bar floating well below the
+                      year it belongs to. The offsets track the label's padding
+                      (pt-2 when goals are present) plus half its line box. */}
+                  {isTornado && hasTornadoBar && tornadoX2 > tornadoX1 && (
+                    <div
+                      className="pointer-events-none absolute -translate-y-1/2 rounded-[1px] transition-[height]"
+                      style={{
+                        top: 7.5,
+                        left: `${tornadoX1}%`,
+                        width: `${Math.max(0, tornadoX2 - tornadoX1)}%`,
+                        height: isHovered ? 20 : 12,
+                        opacity: tornadoFillOpacity,
+                        background: `linear-gradient(to right, rgb(${
+                          isHovered || !tornadoIsPositive ? tornadoDeepHue : tornadoBaseHue
+                        }) 0%, rgb(${
+                          isHovered || tornadoIsPositive ? tornadoDeepHue : tornadoBaseHue
+                        }) 100%)`,
+                      }}
+                      aria-hidden="true"
+                    />
+                  )}
 
 
                   {isHovered && (!isTornado || hasTornadoBar) && (
                     <div
                       className="pointer-events-none absolute z-20"
                       style={{
+                        // Same line as the year label and the bar, centred on
+                        // it — it used to be lifted clear of the row, which read
+                        // as floating above the year it describes.
                         left: `${Math.min(95, Math.max(5, xBottom))}%`,
-                        top: "50%",
+                        top: 7.5,
                         transform:
                           xBottom > 75
-                            ? "translate(-100%, -120%)"
+                            ? "translate(-100%, -50%)"
                             : xBottom < 25
-                              ? "translate(0, -120%)"
-                              : "translate(-50%, -120%)",
+                              ? "translate(0, -50%)"
+                              : "translate(-50%, -50%)",
                       }}
                     >
                       <div
@@ -2620,13 +2673,13 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                   {/* The user's age that year. Hover shows the calendar year.
                       Falls back to the year when we have no date of birth. */}
                   <div
-                    className={`relative z-10 w-[48px] shrink-0 flex flex-col items-start leading-tight ${hasGoals ? "pt-2" : "pt-0"}`}
+                    className="relative z-10 flex w-[48px] shrink-0 flex-col items-start leading-tight"
                   >
                     <span
                       title={ageAtYear != null && ageAtYear >= 0 ? `Year ${y}` : undefined}
                       // Only the row under the cursor is bold. Everything else
                       // stays quiet, so the eye has one place to land.
-                      className={`text-[12px] tabular-nums transition-colors ${
+                      className={`text-[13px] tabular-nums transition-colors ${
                         isHovered
                           ? "font-bold text-foreground"
                           : hasGoals
@@ -2640,7 +2693,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
 
                   {/* Right side: NAV figure + goal cards (empty years stay as a thin tick) */}
                   <div
-                    className={`relative z-10 min-w-0 flex-1 ${hasGoals ? "py-1.5" : "py-0"}`}
+                    className="relative z-10 min-w-0 flex-1 py-0"
                   >
                     {/* Milestone badge — floats above the row, doesn't push layout */}
                     <AnimatePresence>
@@ -2671,23 +2724,11 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                       )}
                     </AnimatePresence>
 
-                    {hasGoals && (!isTornado || hasTornadoBar) && (
-                      <div className="flex items-center justify-between gap-2">
-                        <span
-                          className="text-[11px] tabular-nums text-muted-foreground"
-                          style={{
-                            fontFamily:
-                              "ui-monospace, SFMono-Regular, Menlo, monospace",
-                          }}
-                        >
-                          {isTornado ? "Close " : ""}
-                          {formatINRCompact(corpusClosing)}
-                        </span>
-                      </div>
-                    )}
-
+                    {/* Starts at the bar's centre line rather than below it, so
+                        the first card overlaps its own bar and reads as attached
+                        to that year instead of floating under it. */}
                     {hasGoals && (
-                      <div className="mt-1.5 flex flex-col gap-1.5">
+                      <div className="mb-1.5 mt-[8px] flex flex-col gap-1">
                         {yearGoals.map((g) => {
                           const chip = priorityChipStyle(g.priority);
                           const yearsAway = Math.max(0, g.year - currentYear);
@@ -2726,13 +2767,20 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                               }}
                               onDrag={(e) => {
                                 const y = dragClientY(e);
+                                const x = dragClientX(e);
                                 dragPointerYRef.current = y;
-                                const yr = findYearAtClientY(y);
-                                if (yr != null) setDropTargetYear(yr);
+                                const yr = findYearAtClientY(y, x);
+                                if (yr != null) {
+                                  setDropTargetYear(yr);
+                                  // Keep the lens out over a thinned stretch so
+                                  // its years can be dropped on.
+                                  const gap = gapAfterYear(yr);
+                                  if (gap != null) setLensGap([yr, gap]);
+                                }
                               }}
                               onDragEnd={(e) => {
                                 stopAutoScroll();
-                                const yr = findYearAtClientY(dragClientY(e));
+                                const yr = findYearAtClientY(dragClientY(e), dragClientX(e));
                                 if (yr != null) {
                                   // Clamp to the valid window: never into the past
                                   // (minGoalYear), never past the currentYear + 100
@@ -2767,31 +2815,33 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                               }}
                               aria-expanded={isExpanded}
                               aria-label={`${g.name} — tap to expand, drag to change year`}
-                              className="relative touch-none cursor-grab rounded-xl border border-border bg-card/95 backdrop-blur-[1px] px-3 py-1.5 transition-colors hover:bg-card focus:outline-none focus-visible:ring-1 focus-visible:ring-foreground/40 active:cursor-grabbing"
+                              // hover:bg-muted is solid on purpose: a translucent
+                              // hover let the chart bar show through the card.
+                              className="relative mr-6 max-w-[80%] touch-none cursor-grab rounded-xl border border-border bg-card px-3 py-1 transition-colors hover:border-foreground/25 hover:bg-muted focus:outline-none focus-visible:ring-1 focus-visible:ring-foreground/40 active:cursor-grabbing"
                             >
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="flex min-w-0 items-center gap-2">
-                                  <span
-                                    className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
-                                    style={{
-                                      backgroundColor: chip.bg,
-                                      color: chip.fg,
-                                      border: `1px solid ${chip.border}`,
-                                    }}
-                                    aria-hidden="true"
-                                  >
-                                    <GoalIcon className="h-3.5 w-3.5" strokeWidth={2} />
-                                  </span>
-                                  <p className="min-w-0 truncate text-[13px] font-semibold text-foreground">
-                                    {g.name}
-                                  </p>
-                                </div>
+                              <div className="flex items-center gap-2.5">
                                 <span
-                                  className="shrink-0 text-[11px] font-semibold tabular-nums"
-                                  style={{ color: "rgb(239,68,68)" }}
-                                  title="Drawn from portfolio at target year"
+                                  className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
+                                  style={{
+                                    backgroundColor: chip.bg,
+                                    color: chip.fg,
+                                    border: `1px solid ${chip.border}`,
+                                  }}
+                                  aria-hidden="true"
                                 >
-                                  {formatINRCompact(fv)} drawn in {g.year}
+                                  <GoalIcon className="h-3.5 w-3.5" strokeWidth={2} />
+                                </span>
+                                <p className="min-w-0 flex-1 truncate text-[13px] font-semibold leading-tight text-foreground">
+                                  {g.name}
+                                </p>
+                                {/* Just the amount. The card already sits on its
+                                    own year, so "drawn in 2039" repeated the row
+                                    it was in and crowded the name on a phone. */}
+                                <span
+                                  className="shrink-0 text-[12px] font-semibold tabular-nums text-muted-foreground"
+                                  title={`${formatINR(fv)} drawn from your portfolio in ${g.year}`}
+                                >
+                                  −{formatINRCompact(fv)}
                                 </span>
                               </div>
                               <AnimatePresence initial={false}>
@@ -2883,6 +2933,10 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                       <button
                         key={gy}
                         type="button"
+                        ref={(el: HTMLButtonElement | null) => {
+                          if (el) lensYearRefs.current.set(gy, el);
+                          else lensYearRefs.current.delete(gy);
+                        }}
                         onClick={() => setAddYear(gy)}
                         className="rounded-md px-2 py-[1px] text-[13px] font-semibold tabular-nums text-muted-foreground transition-colors hover:bg-[#D4A868]/15 hover:text-[#D4A868]"
                         title={
@@ -2904,7 +2958,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
 
         <p className="px-1 text-[10px] leading-snug text-muted-foreground/70">
           {isTornado
-            ? "Each bar = total value at the end of that year. Green = positive net worth (you still have money). Red = negative net worth (goals outpaced what is saved). Directional guide only."
+            ? "Each bar = total value at the end of that year. Directional guide only."
             : "Gold spine = projected NAV (today's portfolio, ₹2L/mo, 9% p.a.). Red ticks = goal-draw years."}
           {/* The tornado copy carries its own caveat, so this only rides along
               with the line variant. */}
@@ -2921,6 +2975,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
         open={goalSheetOpen}
         initialYear={goalSheetYear}
         maxYear={capYear}
+        birthYear={birthYear}
         editingGoal={editGoal}
         saving={goalSaving}
         retirementYear={retirementYear}
