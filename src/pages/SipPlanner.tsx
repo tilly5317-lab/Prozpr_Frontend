@@ -6,17 +6,14 @@ import {
   getMySipPlan,
   createSipPlan,
   getOnboardingProfile,
-  getRebalancingRunDetail,
   getSipBuildProgress,
-  listRebalancingRuns,
-  type RebalancingSubgroupSummary,
   type SipPlanResponse,
 } from "@/lib/api";
 import { useComputeProgress } from "@/hooks/useComputeProgress";
 import { ComputeProgressSteps } from "@/components/invest/ComputeProgressSteps";
 import { CurrentVsTargetChart } from "@/components/invest/CurrentVsTargetChart";
-import { buildSipTargetRows, type DriftRow } from "@/lib/driftRows";
-import { formatInr0, formatMoneyInput } from "@/lib/utils";
+import { driftRowsFromBreakdown, type DriftRow } from "@/lib/driftRows";
+import { formatInr0, formatMoneyInput, plainName } from "@/lib/utils";
 
 /** Shown when the SIP fetch fails or returns nothing — renders the set-up prompt. */
 const EMPTY_SIP: SipPlanResponse = {
@@ -31,6 +28,7 @@ const EMPTY_SIP: SipPlanResponse = {
   buys: [],
   goal_plan_monthly_investment_inr: null,
   goal_plan_in_sync: true,
+  asset_class_breakdown: null,
 };
 
 /** Plain-English horizon the SIP leans toward (never surface the raw label). */
@@ -39,15 +37,6 @@ const SIP_BUCKET_LABEL: Record<NonNullable<SipPlanResponse["target_bucket"]>, st
   medium_term: "Weighted toward your medium-term goals",
   long_term: "Building your long-term growth",
 };
-
-/** Fund/scheme name tidy-up for display. */
-function plainName(raw: string): string {
-  return raw
-    .replace(/\s*·\s*Folio.*$/i, "")
-    .replace(/\s*[-–]\s*(Direct|Regular)\s+Plan\b.*$/i, "")
-    .replace(/\s+Growth(?:\s+Option)?$/i, "")
-    .trim() || raw;
-}
 
 /** Rupee amount → the grouped string the amount input expects. */
 const toInput = (inr: number) => formatMoneyInput(String(Math.round(inr)));
@@ -135,7 +124,7 @@ function SipPlanCard({
           </p>
         </div>
         <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
-          How much do you want to invest each month? Pi splits it across the right funds for your goals.
+          How much do you want to invest each month? Prozpr splits it across the right funds for your goals.
         </p>
         {!hasPlan && canonicalSip != null && canonicalSip > 0 && (
           <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
@@ -216,11 +205,6 @@ function SipPlanCard({
 
   // ── Existing plan ──
   const bucketLabel = sip.target_bucket ? SIP_BUCKET_LABEL[sip.target_bucket] : null;
-  // What share of monthly income this SIP represents (savings rate).
-  const savingsPct =
-    monthlyIncome && monthlyIncome > 0
-      ? Math.round((sip.monthly_amount_inr / monthlyIncome) * 100)
-      : null;
 
   return (
     <>
@@ -245,11 +229,6 @@ function SipPlanCard({
             Edit
           </button>
         </div>
-        {savingsPct != null && (
-          <p className="mt-1 text-[14px] font-semibold text-wealth-green">
-            {savingsPct}% of savings
-          </p>
-        )}
         {bucketLabel && (
           <p className="mt-1 text-[11px] leading-snug text-muted-foreground">{bucketLabel}</p>
         )}
@@ -334,7 +313,6 @@ function SipPlanCard({
 const SipPlanner = () => {
   const [sip, setSip] = useState<SipPlanResponse | null>(null);
   const [building, setBuilding] = useState(false);
-  const [subgroupSummaries, setSubgroupSummaries] = useState<RebalancingSubgroupSummary[]>([]);
   const [monthlyIncome, setMonthlyIncome] = useState<number | null>(null);
   // Real engine stage + % while the auto-build runs — visible only when we are
   // actually calculating (a plain read renders instantly with no progress UI).
@@ -378,27 +356,7 @@ const SipPlanner = () => {
     return () => { cancelled = true; };
   }, []);
 
-  // Latest rebalancing run's subgroup summaries — used only as a backend
-  // asset_subgroup → asset_class map to classify the SIP's own buys (the amounts
-  // are the SIP's, not the rebalancing numbers). Read-only; empty if no run.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const run = (await listRebalancingRuns())[0];
-        if (!run) return;
-        const detail = await getRebalancingRunDetail(run.id);
-        if (!cancelled) setSubgroupSummaries(detail.subgroup_summaries ?? []);
-      } catch {
-        /* no run — the chart just stays hidden */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Monthly income → the SIP's savings rate (% of income).
+  // Monthly income → the over-income guard on the SIP amount input.
   useEffect(() => {
     let cancelled = false;
     getOnboardingProfile()
@@ -416,19 +374,20 @@ const SipPlanner = () => {
   };
 
   const hasPlan = !!sip?.has_plan && (sip?.buys.length ?? 0) > 0;
-  // The SIP's recommended allocation (Equity / Debt / Others), classified from
-  // the backend subgroup map and summed from the SIP's own monthly buys.
+  // The SIP's recommended Equity / Debt / Commodity split — the backend's
+  // look-through breakdown of the deployment (same rollup as rebalancing).
   const driftRows = useMemo(
-    () => buildSipTargetRows(sip?.buys ?? [], subgroupSummaries),
-    [sip, subgroupSummaries],
+    () =>
+      sip?.asset_class_breakdown ? driftRowsFromBreakdown(sip.asset_class_breakdown) : [],
+    [sip],
   );
 
   return (
     <div className="mobile-container bg-background min-h-screen pb-24">
       <div className="px-5 pt-2">
         <p className="mb-3 text-[11px] leading-snug text-muted-foreground">
-          Deploy fresh money every month. Enter an amount and Pi&apos;s engine splits it
-          across the right funds for your goals — the same plan you&apos;d get in chat.
+          Deploy fresh money every month. Enter an amount and Prozpr&apos;s engine splits it
+          across the right funds for your goals.
         </p>
         {building ? (
           <div

@@ -92,6 +92,7 @@ import Chat from "./pages/Chat";
 import GoalsTimeline from "./pages/GoalsTimeline";
 import SipPlanner from "./pages/SipPlanner";
 import LumpSumPlanner from "./pages/LumpSumPlanner";
+import InvestPreferences from "./pages/InvestPreferences";
 import InvestLayout from "@/components/invest/InvestLayout";
 import RebalanceExplanation from "./pages/RebalanceExplanation";
 import Discovery from "./pages/Discovery";
@@ -162,6 +163,7 @@ const App = () => (
               <Route path="rebalance-explanation" element={<RebalanceExplanation />} />
               <Route path="sip" element={<SipPlanner />} />
               <Route path="lumpsum" element={<LumpSumPlanner />} />
+              <Route path="preferences" element={<InvestPreferences />} />
             </Route>
             {/* Back-compat: old flat rebalancing/execute URLs redirect into the invest section */}
             <Route path="/execute" element={<Navigate to="/invest/rebalance-explanation" replace />} />

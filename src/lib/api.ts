@@ -949,6 +949,10 @@ export interface CashflowAnnualBarPayload {
 
 export type ChatChartPayload = CashflowAnnualBarPayload | Record<string, unknown>;
 
+/** The controls a chat reply can offer. Server vocabulary — keep in sync with
+ *  CTA_PREFERENCES / CTA_ADD_CAMS in app/domains/chat/models/chat.py. */
+export type ChatCta = "preferences" | "add_cams";
+
 export interface ChatMessageInfo {
   id: string;
   role: string;
@@ -958,6 +962,15 @@ export interface ChatMessageInfo {
   intent_reasoning: string | null;
   chart_payloads: ChatChartPayload[] | null;
   created_at: string;
+  /** Which control this reply offered, or null for none. Persisted with the
+   *  message, so a reopened session re-renders it; the live turn reads the same
+   *  fact off ChatSendResponse's own flags. A turn raises at most one, which is
+   *  why this is a value and not a flag per control.
+   *
+   *  It names the CONTROL, never a destination — where each one leads (a route,
+   *  a modal) is the client's business, so a route rename never orphans a
+   *  stored row. Mirrors CTA_* in app/domains/chat/models/chat.py. */
+  cta?: ChatCta | null;
   /** The rebalancing run this turn produced. Backend adds this to chat history;
    *  absent until that ships (frontend degrades gracefully). */
   ideal_allocation_rebalancing_id?: string | null;
@@ -971,11 +984,31 @@ export interface ChatSendResponse {
   /** Present when chat persisted an ideal allocation — use for CTA to `/invest/rebalance-explanation`. */
   ideal_allocation_rebalancing_id?: string | null;
   ideal_allocation_snapshot_id?: string | null;
+  /** Present when a chat additional-investment run was persisted on a preference
+   *  what-if turn — enables the "Save preference" pill → POST
+   *  /additional-investment/{id}/save-preference. The backend sends it ONLY on
+   *  what-if turns (not ordinary deploys), so the pill self-gates to what-ifs. */
+  additional_investment_run_id?: string | null;
+  /** Backend `Cadence` of that additional-investment run ("sip_monthly" |
+   *  "lumpsum") — lets the chat route "View plan" to the SIP vs Lump sum tab. */
+  additional_investment_cadence?: string | null;
+  /** True when this turn produced a savable candidate preference (a "what-if").
+   *  RETIRED 2026-09-17: chat runs no preference what-ifs, so the backend never
+   *  sets this now. Kept as the matching seam for when chat-side preference
+   *  changes ship; use `show_preferences_pill` for today's behaviour. */
+  has_candidate_preference?: boolean | null;
   /**
    * The question needed the user's holdings and none are imported yet. Pi's
    * reply says so; the client pairs it with an "Add CAMS statement" CTA.
    */
   portfolio_data_missing?: boolean;
+  /**
+   * The turn was about the customer's saved investment preferences — reading
+   * them, changing them, or asking for more/less of a class or category. Chat
+   * does not answer those (ruling 2026-09-17): Pi points at the preferences
+   * page and this renders the link that makes the pointer actionable.
+   */
+  show_preferences_pill?: boolean;
   /**
    * The session's title after this turn. Only changes on the first turn, when
    * the backend's auto-titler replaces the "New Chat" placeholder with a name
@@ -1612,6 +1645,12 @@ export interface SipPlanResponse {
    * longer add up to it. Offer to recompute at `goal_plan_monthly_investment_inr`.
    */
   goal_plan_in_sync: boolean;
+  /**
+   * Look-through Equity/Debt/Commodity split of the monthly deployment, for the
+   * "Proposed Target" bar. Same shape + rollup as the rebalancing breakdown;
+   * null when there is no plan / no buys.
+   */
+  asset_class_breakdown: RebalancingAssetClassBreakdown | null;
 }
 
 /**
@@ -1621,6 +1660,20 @@ export interface SipPlanResponse {
  */
 export async function getMySipPlan(): Promise<SipPlanResponse> {
   return request<SipPlanResponse>("/additional-investment/sip");
+}
+
+/**
+ * One specific additional-investment run's plan, by id. Used by the chat "View
+ * plan" popup to open a what-if draft that the latest-plan reads (getMySipPlan /
+ * getMyLumpSumPlan) firewall out. Returns the SIP or lump-sum shape by the run's
+ * cadence; the caller picks the matching view by the cadence it already holds.
+ */
+export async function getAdditionalInvestmentPlan(
+  runId: string,
+): Promise<SipPlanResponse | LumpSumPlanResponse> {
+  return request<SipPlanResponse | LumpSumPlanResponse>(
+    `/additional-investment/run/${encodeURIComponent(runId)}`,
+  );
 }
 
 /**
@@ -1652,24 +1705,6 @@ export interface LumpSumFundBuy {
   reason: string;
 }
 
-/** One part of the portfolio the lump sum was measured against — the
- * current-vs-ideal gap the deployment fills (the "why these funds" section). */
-export interface LumpSumAlignmentRow {
-  subgroup: string;
-  /** Customer-facing label, e.g. "large-cap equity". */
-  label: string;
-  /** Equity / Debt / Others. */
-  asset_class: string;
-  /** Goal-based ideal for this part of the portfolio. */
-  ideal_inr: number;
-  /** What the customer holds there today. */
-  current_inr: number;
-  /** Shortfall this deploy is filling (max(0, ideal - current)). */
-  gap_inr: number;
-  /** How much of this lump sum goes here. */
-  deploy_inr: number;
-}
-
 /** Latest one-time lump-sum deployment plan — mirrors backend `LumpsumPlanResponse`. */
 export interface LumpSumPlanResponse {
   has_plan: boolean;
@@ -1684,10 +1719,12 @@ export interface LumpSumPlanResponse {
   target_bucket: "short_term" | "medium_term" | "long_term" | null;
   fund_count: number;
   buys: LumpSumFundBuy[];
-  /** Per-part current-vs-ideal alignment behind the plan (may be empty). */
-  alignment_rows: LumpSumAlignmentRow[];
-  /** One-line summary of the whole deployment in goal terms. */
-  headline_reason: string | null;
+  /**
+   * Look-through Equity/Debt/Commodity split of the deployment, for the "Proposed
+   * Target" bar. Same shape + rollup as the rebalancing breakdown; null when
+   * there is no plan / no buys.
+   */
+  asset_class_breakdown: RebalancingAssetClassBreakdown | null;
 }
 
 /** Empty lump-sum plan — rendered as the set-up prompt when none exists. */
@@ -1701,8 +1738,7 @@ export const EMPTY_LUMPSUM_PLAN: LumpSumPlanResponse = {
   target_bucket: null,
   fund_count: 0,
   buys: [],
-  alignment_rows: [],
-  headline_reason: null,
+  asset_class_breakdown: null,
 };
 
 /**
@@ -1712,6 +1748,30 @@ export const EMPTY_LUMPSUM_PLAN: LumpSumPlanResponse = {
  */
 export async function getMyLumpSumPlan(): Promise<LumpSumPlanResponse> {
   return request<LumpSumPlanResponse>("/additional-investment/lumpsum");
+}
+
+/**
+ * Cadence ("sip_monthly" | "lumpsum") of the latest additional-investment run in
+ * a chat session, or null. The chat restores a SIP / lump-sum "View plan" on the
+ * matching turn from this — the AINV mirror of `getCurrentRebalancingRun`.
+ */
+/** Session-scoped restore data for the chat additional-investment pills:
+ *  `cadence` restores "View plan", `savePreferenceRunId` restores the "Save
+ *  preference" pill (non-null only while the session's latest run has an unsaved
+ *  what-if candidate). Both null when the session made no such run. */
+export async function getSessionAdditionalInvestmentCurrent(
+  sessionId: string,
+): Promise<{ cadence: string | null; savePreferenceRunId: string | null }> {
+  // no session → no session-scoped plan to restore
+  if (!sessionId) return { cadence: null, savePreferenceRunId: null };
+  const resp = await request<{
+    cadence: string | null;
+    save_preference_run_id: string | null;
+  }>(`/additional-investment/current?session_id=${encodeURIComponent(sessionId)}`);
+  return {
+    cadence: resp.cadence,
+    savePreferenceRunId: resp.save_preference_run_id ?? null,
+  };
 }
 
 /** Whether a lump-sum plan deploys fresh money (``add``) or raises cash by
@@ -2794,6 +2854,96 @@ export async function saveRebalancingRun(runId: string): Promise<RebalancingRunL
  *  callers treat that as "no plan yet" (see RebalanceExplanation.loadData). */
 export async function getCurrentRebalancingRun(): Promise<RebalancingRunDetail> {
   return request<RebalancingRunDetail>("/rebalancing/current");
+}
+
+// ── Investment preferences (standing) ─────────────────────
+// S4 percentage screen (spec 2026-09-10-investment-preferences-s4-pct-screen).
+// Everything is a share of the WHOLE portfolio; the backend owns %-of-class.
+export interface ClassMix {
+  equity: number;
+  debt: number;
+  others: number;
+}
+
+export interface SubcategoryPin {
+  subgroup: string;
+  pct_of_total: number;
+}
+
+export interface ScreenSubcategory {
+  id: string;
+  class: "equity" | "debt" | "others";
+  label: string;
+  recommended_pct_of_total: number;
+}
+
+export interface ScreenSaved {
+  class_mix: ClassMix;
+  pins: SubcategoryPin[];
+  saved_at?: string | null;
+}
+
+/** One settable subcategory's share of what the customer holds TODAY. */
+export interface ScreenCurrentHolding {
+  subgroup: string;
+  pct_of_total: number;
+}
+
+export interface ScreenPreferenceGetResponse {
+  saved: ScreenSaved | null;
+  recommendation: { class_mix: ClassMix };
+  subcategories: ScreenSubcategory[];
+  /** Planning the engine currently does for this customer that a saved
+   *  distribution would switch off (backend spec 9.1). Optional: the backend
+   *  does not send it yet, and the screen shows nothing until it does. */
+  carve_outs_at_risk?: ("emergency_fund" | "near_term_goals" | "liability_offset")[];
+  /** Where the customer sits today, across the categories this screen can set.
+   *  Frozen holdings (ELSS, direct stock) have no row here, so the backend
+   *  drops them and rescales the rest — `holdings` sums to 100 and
+   *  `excluded_pct` is what was dropped, as a share of the whole portfolio.
+   *  Optional: the backend does not send it yet, and absent, null and an empty
+   *  list all read as "nothing to show" (spec §3.1, D8). */
+  current?: { holdings: ScreenCurrentHolding[]; excluded_pct: number } | null;
+}
+
+export interface ScreenSaveResponse {
+  ok: boolean;
+  saved_at?: string | null;
+  blocked?: string | null;
+  no_op?: boolean;
+}
+
+export interface PreferenceActivationResponse {
+  activated: boolean;
+}
+
+/** The customer's saved split (or null), Prozpr's class-level recommendation,
+ *  and the settable-subcategory catalog. */
+export async function getInvestmentPreferences(): Promise<ScreenPreferenceGetResponse> {
+  return request<ScreenPreferenceGetResponse>("/profile/investment-preferences");
+}
+
+/** Save the customer's split — an explicit Equity/Debt/Commodity mix (% of
+ *  total, sums to 100) plus optional subcategory pins (% of total). */
+export async function saveInvestmentPreferences(
+  body: { class_mix: ClassMix; pins: SubcategoryPin[] },
+): Promise<ScreenSaveResponse> {
+  return request<ScreenSaveResponse>("/profile/investment-preferences", {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+/** Activate the candidate investment preference a chat AINV what-if run was
+ *  computed under (mirrors saveRebalancingRun). Returns { activated:false }
+ *  gracefully when the run had no candidate (an ordinary deploy). */
+export async function saveAdditionalInvestmentPreference(
+  runId: string,
+): Promise<PreferenceActivationResponse> {
+  return request<PreferenceActivationResponse>(
+    `/additional-investment/${runId}/save-preference`,
+    { method: "POST" },
+  );
 }
 
 // ── Rebalancing readiness / unlock gate ─────────────────

@@ -35,7 +35,9 @@ const BUCKET_ORDER: Bucket[] = ["equity", "debt", "others"];
 const BUCKET_META: Record<Bucket, { label: string; color: string }> = {
   equity: { label: "Equity", color: "#2563EB" },
   debt: { label: "Debt", color: "hsl(188 52% 41%)" },
-  others: { label: "Others", color: "hsl(38 64% 47%)" },
+  // Backend asset_class "Others" is surfaced to customers as "Commodity"
+  // (gold-dominated), consistent with the SIP / lump-sum bars and preferences page.
+  others: { label: "Commodity", color: "hsl(38 64% 47%)" },
 };
 
 // Normalize the backend's canonical asset_class ("Equity" / "Debt" / "Others")
