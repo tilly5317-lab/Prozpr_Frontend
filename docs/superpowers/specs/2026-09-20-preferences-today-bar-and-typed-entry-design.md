@@ -28,7 +28,7 @@ already knows the number they want.
 | D3 | What gives when a typed number doesn't fit? | **Nothing above it.** Clamped to its class budget; only siblings in that class move. The Equity/Debt/Commodity bar never moves. |
 | D4 | Multi-asset control | Rebuilt as the same filled bar + gold divider the class groups use. |
 | D5 | Row layout for three figures | Three right-aligned numeric columns under one `Prozpr · Today · You` header. |
-| D6 | ELSS / direct stock (frozen, unsettable) | **Excluded**, remaining rows rescaled to 100. |
+| D6 | Holdings outside the 11 settable rows (frozen ELSS / direct stock, categories the screen cannot set, bank deposits, unclassified) | **Excluded**, remaining rows rescaled to 100. Widened from the frozen rows alone by the backend decision of 2026-09-26. |
 | D7 | The destructive typed edit (§7.2) | Clamp **in the field, as they type**, and **flash the rows that moved**. No undo affordance. |
 | D8 | Extra contract fields | `excluded_pct` **yes**. An `as_of` date, and distinguishing "holds nothing" from "not shipped yet", **no** — absent, null and empty all collapse to silence. |
 
@@ -85,12 +85,15 @@ overturned, recorded so they are not re-litigated:
 
 - `holdings`: one entry per **settable** subgroup (the same 11 ids the `subcategories` catalog
   carries), summing to **100**.
-- Frozen subgroups (`tax_efficient_equities`, `non_mf_equities`) are dropped from the rollup
-  and the remainder rescaled to 100 — D6.
-- `excluded_pct`: what those frozen holdings were worth, as a share of the customer's whole
-  portfolio **before** the rescale. `0` when they hold none. This is the number §3.4's caption
-  needs: the surprising fact is not that ELSS is missing but that everything else was inflated
-  to fill its place, and no caption can say that without this figure.
+- Everything outside those 11 rows is dropped from the rollup and the remainder rescaled to
+  100 — D6. That is the frozen subgroups (`tax_efficient_equities`, `non_mf_equities`), held
+  categories this screen cannot set (corporate-bond / high-risk debt, dividend yield, silver,
+  China), bank deposits held in `portfolio_holdings`, and holdings whose metadata never
+  classified (backend decision 2026-09-26; originally the frozen rows alone).
+- `excluded_pct`: what all of that was worth, as a share of the customer's whole portfolio
+  **before** the rescale. `0` when they hold none. This is the number §3.4's caption needs:
+  the surprising fact is not that some holdings are missing but that everything else was
+  inflated to fill their place, and no caption can say that without this figure.
 - `current` absent, `null`, or `holdings` empty ⇒ every "today" affordance disappears and the
   screen renders as it does today. Per **D8** these three are deliberately not distinguished:
   the frontend cannot tell "the backend has not shipped this" from "this customer holds
@@ -137,16 +140,20 @@ state; every today affordance is conditional on it.
 
 ### 3.4 The caption, and the divergence it discloses
 
-Today excludes frozen holdings and rescales, so this screen's bar will not match the Invest
-page's "Current" bar for any customer holding ELSS or direct stock. The caption under the
-today bar therefore names both the exclusion and the rescale:
+Today excludes everything outside the settable rows and rescales, so this screen's bar will
+not match the Invest page's "Current" bar for any customer holding ELSS, direct stock, or a
+category this screen cannot set. The caption under the today bar therefore names both the
+exclusion and the rescale:
 
-- `excluded_pct > 0` → **"Excludes the 18.4% you hold in ELSS and direct stocks. The rest is scaled to 100%."**
+- `excluded_pct > 0` → **"Excludes the 18.4% you hold outside the categories you set here, such as ELSS and direct stocks. The rest is scaled to 100%."**
 - `excluded_pct === 0` → **"Across the categories you set here."**
 
-Naming the two frozen categories in frontend copy is a deliberate, narrow coupling: the frozen
-set is `FROZEN_SUBGROUPS` on the backend and has been stable. If it ever grows, this copy must
-follow.
+ELSS and direct stock are named as examples, not as the whole of what was excluded: since the
+backend decision of 2026-09-26, `excluded_pct` counts everything outside the 11 settable rows
+(§3.1). On the dev smoke account that is 60.2%, of which only 35% is direct stock, so the copy
+says "outside the categories you set here" and offers the two frozen rows as illustrations.
+The only coupling left is that those examples stay real frozen rows (`FROZEN_SUBGROUPS` on
+the backend); the copy no longer has to follow that set if it grows.
 
 The Invest page additionally renders whole-number percentages and sources its colours from
 `driftRows.BUCKET_META` rather than `CLASS_COLOR`, so in dark mode Debt is a different colour
@@ -156,9 +163,11 @@ there. Both are pre-existing and are **out of scope here** — tracked separatel
 
 Three changes to `AssetMixBar`:
 
-1. **Only `mode="reference"` shrinks.** Reference bars go `h-[30px]` → `h-[22px]`. The
-   interactive bar and its `h-[22px]` lozenge are untouched: the customer's height concern was
-   about the card, and the drag control should not pay for it.
+1. **All three bars share one height.** Both modes are `h-[30px]` (revised 2026-09-26 so the
+   three top-card bars read as one control group). An earlier revision shrank the reference
+   bars to `h-[22px]`; that is reverted. Only the drag handles and the flooring below them still
+   set the interactive bar apart, not its weight on the page. The card also gives all three
+   labels the same semibold/foreground treatment `"Your preference"` already had.
 2. **Reference bars draw true shares.** `flooredShares` applies only in interactive mode:
 
    ```ts
@@ -206,17 +215,24 @@ rules exactly:
 - **A press never moves the value.** It grabs the divider, or it does nothing — exactly
   `ClassSegmentBar`'s rule (`if (cands.length === 0) return;`). The Radix slider jumped to the
   press, which on a phone means one stray tap on open track resets the sleeve.
-- Arrow keys step 0.5. `role="slider"`, `aria-valuemin={0}`, `aria-valuemax={max}`,
+- Arrow keys step 1. `role="slider"`, `aria-valuemin={0}`, `aria-valuemax={max}`,
   `aria-valuenow={value}`, `aria-label="Multi-asset share of your portfolio"`.
 - Everything clamps to `[0, max]` where `max = maxMultiAsset(mix)`.
 
-**When `max === 0`.** Reachable, and reachable easily: the sleeve is 10% commodity, so dragging
-commodity to zero — a reasonable thing to want — kills it. The bar then renders empty with
-no divider, the figure renders as plain text, and the breakdown line is replaced by the reason:
+**When `max === 0`.** Reachable, and reachable easily: the sleeve draws on all three classes,
+so dragging any one of them to zero — commodity most plausibly, at 10% of the sleeve — kills
+it. The bar then renders empty with no divider, the figure renders as plain text, and the
+breakdown line is replaced by the reason, naming whichever class or classes sit at zero
+(revised 2026-09-26; it used to blame commodity whatever the customer had starved):
 
-> **"This fund is 10% commodity. Give commodity some room and you can hold it."**
+- **"This fund is 10% commodity. Give commodity some room and you can hold it."**
+- **"This fund is 25% debt. Give debt some room and you can hold it."**
+- **"This fund is 65% equity and 10% commodity. Give them some room and you can hold it."**
 
-**When `max < 100`,** a second line follows the breakdown: **"Up to 32.0% — that's what your
+`MultiAssetBar` takes the class `mix` and derives the cap itself, so the sentence and the cap
+can never disagree about which class is empty.
+
+**When `max < 100`,** a second line follows the breakdown: **"Up to 32% — that's what your
 split can fund."** This is the only thing on the screen that states the ceiling, which is why
 §2.1 dropped the shaded region rather than the sentence.
 
@@ -231,14 +247,16 @@ they align down the whole card:
 
 ```
                             Prozpr  Today     You
-Multi-asset funds             12.0    6.4   [ 8.0% ]
+Multi-asset funds               12      6   [  8% ]
 ████████▐░░░░░░░░░╱╱╱╱╱╱
-Counts as 5.2% Equity · 2.0% Debt · 0.8% Commodity
+Counts as 5% Equity · 2% Debt · 1% Commodity
 ────────────────────────────────────────────────
-● EQUITY                        Today 44.0 · 25.0%
+● EQUITY                        30     44     25%
 ██████████▐██████▐████▐██
-▪ Large cap                   12.0    9.2   [18.4%]
-▪ Mid cap                      8.0   21.6   [14.7%]
+▪ Large cap                     12      9   [ 18% ]
+▪ Mid cap                        8     22   [ 15% ]
+──────────────────────────────────────────────── ← same hairline between every group
+● DEBT                           8      0     20%
 ```
 
 - Columns: `w-[40px]` for Prozpr and Today with no gap between them (right-aligned columns
@@ -247,11 +265,17 @@ Counts as 5.2% Equity · 2.0% Debt · 0.8% Commodity
   columns left 127px and truncated it. Below ~340px long labels still truncate; accepted.
 - Header text is `text-[10.5px]`, **sentence case**, no tracking. The first draft's 9.5px
   uppercase is below both platform minimums and is a type step this screen does not have.
-- The class header gains `Today 44.0 · ` before its budget — `classAllocated(today, cats, cls)`,
-  the class's **own rows**, since the budget beside it is also net of multi-asset.
-- **When `today === null`** the Today column and the class-header figure are omitted; the
-  header reads `Prozpr · You` and everything else is identical. Two branches, not seven, and
-  no row can lose its Prozpr label while its neighbours keep theirs.
+- The class header carries the full **Prozpr / Today / You** trio in the same three columns as
+  the multi-asset row and the rows below (revised 2026-09-26; it previously showed only a
+  `Today 44.0 · ` prefix before the budget and omitted Prozpr). Prozpr is
+  `classAllocated(recommendedValues, cats, cls)`, Today is `classAllocated(today, cats, cls)`
+  — both the class's **own rows**, net of multi-asset, so all three compare with the budget.
+- Each class group is parted from the next by the same `border-b` hairline the multi-asset row
+  carries above the first group — but **not after the last group**, where it would float above
+  the card's own padding (added 2026-09-26).
+- **When `today === null`** the Today column is omitted from the header and every row; each
+  header then reads `Prozpr · You` and everything else is identical. Two branches, not seven,
+  and no row can lose its Prozpr figure while its neighbours keep theirs.
 
 ## 7. Typed entry
 
@@ -317,8 +341,8 @@ invariant in one place as intended.
 `budget` is floored at 0 inside `applyTypedEntry`, as `normalise` already floors it — otherwise
 a negative budget produces negative row values.
 
-**Why this needs D7.** On a six-row equity group with a 25.0 budget, typing `24` into one row
-is entirely legal, and collapses the other five to 0.4 / 0.3 / 0.2 / 0.1 / 0.0. Dragging to the
+**Why this needs D7.** On a six-row equity group with a 25 budget, typing `24` into one row
+is entirely legal, and collapses the other five to 1 / 0 / 0 / 0 / 0. Dragging to the
 same place trades only with the immediate neighbour. Typing is therefore a far larger gesture
 than dragging, and it is the one with no feedback during the act. Hence:
 
@@ -332,9 +356,9 @@ than dragging, and it is the one with no feedback during the act. Hence:
    alpha over half a second is a swell nobody perceives, which is what the first revision
    specified.
 3. **A no-op never commits.** The first draft fired `onCommit` even when the value was
-   unchanged, so a stray tap-then-blur would flip an untouched customer from "Following
-   Prozpr's suggestion" to "Your own split" and enable Save — changing the saved meaning from
-   *engine decides* to *pinned distribution* with no edit having occurred.
+   unchanged, so a stray tap-then-blur would flip an untouched customer from *engine decides* to
+   a *pinned distribution* and enable Save — the saved meaning changing with no edit having
+   occurred.
 
 ### 7.3 Commit — multi-asset
 

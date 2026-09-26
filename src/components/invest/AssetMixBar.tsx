@@ -95,7 +95,7 @@ export default function AssetMixBar({
     <div
       ref={barRef}
       className={`relative flex rounded-lg bg-muted ${
-        mode === "interactive" ? "h-[30px] overflow-visible" : "h-[22px] overflow-hidden"
+        mode === "interactive" ? "h-[30px] overflow-visible" : "h-[30px] overflow-hidden"
       }`}
     >
       {CLASSES.map((k, i) => (
@@ -109,7 +109,7 @@ export default function AssetMixBar({
         >
           {widths[i] >= labelMin && (
             <span className="text-[9px] font-semibold tabular-nums text-white/95">
-              {mix[k].toFixed(1)}%
+              {mix[k].toFixed(0)}%
             </span>
           )}
         </div>

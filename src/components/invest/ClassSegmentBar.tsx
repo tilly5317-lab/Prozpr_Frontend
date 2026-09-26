@@ -5,7 +5,7 @@ import {
   applySegmentDrag,
   barPosToValue,
   CLASS_COLOR,
-  round1,
+  roundPct,
   segmentLayout,
   shortLabel,
   type Cls,
@@ -58,7 +58,7 @@ export default function ClassSegmentBar({
   valuesRef.current = values;
   const drag = useRef<{ cands: number[]; handle: number | null; startX: number } | null>(null);
 
-  const cum = (k: number) => round1(rows.slice(0, k).reduce((s, r) => s + (values[r.id] ?? 0), 0));
+  const cum = (k: number) => roundPct(rows.slice(0, k).reduce((s, r) => s + (values[r.id] ?? 0), 0));
   // Drawn widths, not raw shares: a 0% row is floored to a visible sliver, so
   // where a divider SITS and what it is WORTH are no longer the same number.
   const widths = segmentLayout(rows, values, budget);
@@ -109,7 +109,7 @@ export default function ClassSegmentBar({
   };
 
   const onKey = (k: number) => (e: React.KeyboardEvent) => {
-    const step = e.key === "ArrowRight" ? 0.5 : e.key === "ArrowLeft" ? -0.5 : 0;
+    const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
     if (!step) return;
     e.preventDefault();
     onChange(applySegmentDrag(rows, values, budget, k, ((cum(k) + step) / budget) * 100));
@@ -128,7 +128,7 @@ export default function ClassSegmentBar({
         <div
           key={r.id}
           data-testid={`seg-${r.id}`}
-          title={`${shortLabel(r)} ${(values[r.id] ?? 0).toFixed(1)}%`}
+          title={`${shortLabel(r)} ${(values[r.id] ?? 0).toFixed(0)}%`}
           className={`h-full ${i === 0 ? "rounded-l-lg" : ""} ${
             i === rows.length - 1 ? "rounded-r-lg" : ""
           }`}

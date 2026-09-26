@@ -12,9 +12,9 @@ import {
   CLASSES,
   classAllocated,
   classBudget,
-  maxMultiAsset,
   MULTI_ASSET_ID,
   normalise,
+  recommendedValues,
   shortLabel,
   type RowValues,
 } from "@/lib/investment-preferences";
@@ -47,6 +47,15 @@ export default function SubcategoryPins({
 }) {
   const multiAsset = subcategories.find((c) => c.id === MULTI_ASSET_ID);
   const commit = (next: RowValues) => onChange(normalise(mix, next, subcategories));
+  // Prozpr's own-rows total for a class — the aggregate of the per-row Prozpr
+  // figures below, net of multi-asset, so it lines up with the class's budget.
+  const recValues = recommendedValues(subcategories);
+  // Only the classes that actually have settable rows get a group. Knowing them
+  // up front lets each group but the last carry the same hairline the
+  // multi-asset row draws above the first one.
+  const shownClasses = CLASSES.filter((cls) =>
+    subcategories.some((c) => c.class === cls && c.id !== MULTI_ASSET_ID),
+  );
 
   // Which rows a typed value just moved. Typing rebalances every sibling in
   // the class at once where a drag trades with one neighbour, so the customer
@@ -84,42 +93,50 @@ export default function SubcategoryPins({
         <MultiAssetBar
           label={multiAsset.label}
           value={values[multiAsset.id] ?? 0}
-          max={maxMultiAsset(mix)}
-          recommended={multiAsset.recommended_pct_of_total}
+          mix={mix}
+          recommended={recValues[multiAsset.id] ?? 0}
           today={today ? (today[multiAsset.id] ?? 0) : null}
           onChange={(v) => commit({ ...values, [multiAsset.id]: v })}
         />
       ) : null}
 
-      {CLASSES.map((cls) => {
+      {shownClasses.map((cls, gi) => {
         const rows = subcategories.filter((c) => c.class === cls && c.id !== MULTI_ASSET_ID);
-        if (rows.length === 0) return null;
         const budget = classBudget(mix, values, cls);
 
         return (
-          <div key={cls} className="mt-5">
+          <div
+            key={cls}
+            data-testid={`group-${cls}`}
+            className={`mt-5 ${gi < shownClasses.length - 1 ? "border-b border-border pb-4" : ""}`}
+          >
+            {/* The class summary carries Prozpr / Today / You in the same three
+                columns as the multi-asset row above and the rows below, so every
+                figure on the card lines up. All three are net of multi-asset. */}
             <div className="flex items-center gap-2">
               <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: CLASS_COLOR[cls] }} />
-              <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground">
+              <span className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground">
                 {CLASS_LABEL[cls]}
               </span>
-              <span className="ml-auto flex items-baseline gap-1.5">
-                {/* The class's OWN rows today, net of multi-asset — the budget
-                    beside it is net of multi-asset too, so the two compare. */}
-                {today ? (
-                  <span
-                    data-testid={`today-${cls}`}
-                    className="text-[10.5px] tabular-nums text-muted-foreground"
-                  >
-                    {`Today ${classAllocated(today, subcategories, cls).toFixed(1)} ·`}
-                  </span>
-                ) : null}
+              <span
+                data-testid={`prozpr-${cls}`}
+                className={`ml-auto ${COL_REF} text-[10.5px] tabular-nums text-muted-foreground`}
+              >
+                {classAllocated(recValues, subcategories, cls).toFixed(0)}
+              </span>
+              {today ? (
                 <span
-                  data-testid={`budget-${cls}`}
-                  className="text-[11.5px] font-semibold tabular-nums text-foreground"
+                  data-testid={`today-${cls}`}
+                  className={`${COL_REF} text-[10.5px] tabular-nums text-muted-foreground`}
                 >
-                  {`${budget.toFixed(1)}%`}
+                  {classAllocated(today, subcategories, cls).toFixed(0)}
                 </span>
+              ) : null}
+              <span
+                data-testid={`budget-${cls}`}
+                className={`${COL_YOU} text-right text-[10.5px] font-semibold tabular-nums text-foreground`}
+              >
+                {`${budget.toFixed(0)}%`}
               </span>
             </div>
 
@@ -161,14 +178,14 @@ export default function SubcategoryPins({
                   />
                   <span className="min-w-0 truncate text-foreground">{shortLabel(c)}</span>
                   <span className={`ml-auto ${COL_REF} text-[10.5px] tabular-nums text-muted-foreground`}>
-                    {c.recommended_pct_of_total.toFixed(1)}
+                    {(recValues[c.id] ?? 0).toFixed(0)}
                   </span>
                   {today ? (
                     <span
                       data-testid={`today-${c.id}`}
                       className={`${COL_REF} text-[10.5px] tabular-nums text-muted-foreground`}
                     >
-                      {(today[c.id] ?? 0).toFixed(1)}
+                      {(today[c.id] ?? 0).toFixed(0)}
                     </span>
                   ) : null}
                   {/* A single-row class IS its budget, and a class at budget 0
@@ -188,7 +205,7 @@ export default function SubcategoryPins({
                       data-testid={`you-${c.id}`}
                       className={`${COL_YOU} text-right text-[10.5px] font-semibold tabular-nums text-foreground`}
                     >
-                      {`${(values[c.id] ?? 0).toFixed(1)}%`}
+                      {`${(values[c.id] ?? 0).toFixed(0)}%`}
                     </span>
                   )}
                 </div>

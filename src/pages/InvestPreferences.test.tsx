@@ -14,7 +14,7 @@ vi.mock("sonner", () => ({
 import { getInvestmentPreferences, saveInvestmentPreferences } from "@/lib/api";
 import type { ScreenSubcategory } from "@/lib/api";
 import {
-  classAllocated, CLASSES, fromCurrentHoldings, multiAssetDraw, round1,
+  classAllocated, CLASSES, fromCurrentHoldings, multiAssetDraw, roundPct,
 } from "@/lib/investment-preferences";
 import InvestPreferences from "./InvestPreferences";
 
@@ -84,7 +84,7 @@ describe("InvestPreferences (percentage screen)", () => {
   it("renders the headline and both bars from the recommendation", async () => {
     mockGet(GET);
     renderPage();
-    await waitFor(() => expect(screen.getByText("How you want to invest")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Decide your own Asset Class Mix")).toBeInTheDocument());
     expect(screen.getByText("Your preference")).toBeInTheDocument();
     expect(screen.getByText("Prozpr recommends")).toBeInTheDocument();
   });
@@ -204,7 +204,7 @@ describe("InvestPreferences — where you are today", () => {
     renderPage();
     await ready();
     expect(
-      screen.getByText("Excludes the 18.4% you hold in ELSS and direct stocks. The rest is scaled to 100%."),
+      screen.getByText("Excludes the 18% you hold outside the categories you set here, such as ELSS and direct stocks. The rest is scaled to 100%."),
     ).toBeInTheDocument();
   });
 
@@ -254,7 +254,7 @@ describe("InvestPreferences — where you are today", () => {
 
     const today = fromCurrentHoldings(holdings, CATS);
     for (const cls of CLASSES) {
-      const expected = round1(classAllocated(today, CATS, cls) + multiAssetDraw(today, cls));
+      const expected = roundPct(classAllocated(today, CATS, cls) + multiAssetDraw(today, cls));
       expect(screen.getAllByTestId(`mix-seg-${cls}`)[2].style.width).toBe(`${expected}%`);
     }
   });

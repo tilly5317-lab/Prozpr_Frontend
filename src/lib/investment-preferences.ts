@@ -42,33 +42,45 @@ const clamp = (v: number) => Math.max(0, Math.min(100, v));
  *  (trades commodity↔debt, equity fixed). Integer %s, always summing to 100. */
 export function applyDividerDrag(mix: ClassMix, handle: 1 | 2, posPct: number): ClassMix {
   const x = Math.round(clamp(posPct));
-  // Every result is snapped with round1. The mix arrives on the one-decimal grid
-  // (a recommendation is 62.1 / 28 / 9.9), and debt is the derived residual on
-  // BOTH handles — so a bare subtraction returns 29.099999999999994 and puts
-  // that on the screen and on the wire.
+  // Every result is snapped with roundPct. Debt is the derived residual on BOTH
+  // handles, so a bare subtraction can return 29.999999999999996 and would put
+  // that on the screen and on the wire; the snap makes it a clean whole percent.
   if (handle === 1) {
-    const cap = round1(mix.equity + mix.debt); // the second divider — handle 1 can't cross it
-    const equity = round1(Math.min(x, cap));
-    return { equity, debt: round1(cap - equity), others: mix.others };
+    const cap = roundPct(mix.equity + mix.debt); // the second divider — handle 1 can't cross it
+    const equity = roundPct(Math.min(x, cap));
+    return { equity, debt: roundPct(cap - equity), others: mix.others };
   }
   const floor = mix.equity; // the first divider — handle 2 can't cross it
-  const cum = round1(Math.max(x, floor)); // equity + debt cumulative
-  return { equity: mix.equity, debt: round1(cum - floor), others: round1(100 - cum) };
+  const cum = roundPct(Math.max(x, floor)); // equity + debt cumulative
+  return { equity: mix.equity, debt: roundPct(cum - floor), others: roundPct(100 - cum) };
 }
 
-/** One decimal place is this screen's unit of precision: it is what the customer
- *  can type, what every figure is printed to, and what validation compares. Two
- *  percentages are only ever compared after both are on this grid — never with a
- *  raw epsilon, which is how a header can end up reading "12.8 of 12.8% · over". */
-export const round1 = (x: number): number => Math.round(x * 10) / 10;
+/** Whole percents are this screen's unit of precision (revised 2026-09-26 from
+ *  tenths): what the customer can type, what every figure is printed to, and what
+ *  validation compares. Two percentages are only ever compared after both are on
+ *  this grid — never with a raw epsilon. */
+export const roundPct = (x: number): number => Math.round(x);
+
+/** Round a set of numbers to whole numbers that still sum to `target`, giving the
+ *  spare units to the largest fractional parts (largest-remainder). Its inputs
+ *  already sum to ~`target`, so it only ever spreads a unit or two. */
+function roundToSum(values: number[], target: number): number[] {
+  const out = values.map((v) => Math.floor(v));
+  let residual = Math.round(target - out.reduce((s, x) => s + x, 0));
+  const byFrac = values
+    .map((v, i) => ({ i, frac: v - Math.floor(v) }))
+    .sort((a, b) => b.frac - a.frac);
+  for (let k = 0; residual > 0 && byFrac.length; k++, residual--) out[byFrac[k % byFrac.length].i]++;
+  return out;
+}
 
 /** Round the engine's float recommendation to tenths, letting the residual class
  *  (others) absorb the rounding error so it always sums to 100 — the same
  *  convention as applyDividerDrag's second handle. */
 export function roundMix(m: ClassMix): ClassMix {
-  const equity = round1(m.equity);
-  const debt = round1(m.debt);
-  return { equity, debt, others: round1(100 - equity - debt) };
+  const equity = roundPct(m.equity);
+  const debt = roundPct(m.debt);
+  return { equity, debt, others: roundPct(100 - equity - debt) };
 }
 
 export const MULTI_ASSET_ID = "multi_asset";
@@ -76,7 +88,7 @@ export const MULTI_ASSET_ID = "multi_asset";
 /** The multi-asset fund's fixed internal split. One entry the customer types
  *  draws on all three class budgets at once — real maths, not a label
  *  (frontend spec §6, backend spec §5). */
-const MULTI_ASSET_SPLIT: Record<Cls, number> = { equity: 0.65, debt: 0.25, others: 0.1 };
+export const MULTI_ASSET_SPLIT: Record<Cls, number> = { equity: 0.65, debt: 0.25, others: 0.1 };
 
 /** Row inputs keyed by subgroup id. `null` = the field is blank. This is the ONE
  *  shape the maths speaks; `SubcategoryPin[]` appears only at the wire boundary
@@ -93,11 +105,11 @@ const val = (values: RowValues, id: string): number => values[id] ?? 0;
  *  (5.0 -> 3.2 / 1.3 / 0.5, not 3.3 / 1.3 / 0.5 = 5.1). */
 export function multiAssetDraw(values: RowValues, cls: Cls): number {
   const ma = val(values, MULTI_ASSET_ID);
-  const debt = round1(ma * MULTI_ASSET_SPLIT.debt);
-  const others = round1(ma * MULTI_ASSET_SPLIT.others);
+  const debt = roundPct(ma * MULTI_ASSET_SPLIT.debt);
+  const others = roundPct(ma * MULTI_ASSET_SPLIT.others);
   if (cls === "debt") return debt;
   if (cls === "others") return others;
-  return round1(ma - debt - others);
+  return roundPct(ma - debt - others);
 }
 
 /** The largest multi-asset entry the bar can actually fund. The sleeve draws
@@ -107,12 +119,12 @@ export function maxMultiAsset(mix: ClassMix): number {
   const ratio = Math.min(
     ...CLASSES.map((c) => mix[c] / MULTI_ASSET_SPLIT[c]),
   );
-  let cap = Math.min(100, Math.floor(ratio * 10) / 10);
+  let cap = Math.min(100, Math.floor(ratio));
   // The exact ratio is not enough: multiAssetDraw rounds debt and commodity to a
-  // tenth and hands equity the residual, so the cap can still overdraw a class
-  // by a tenth. Step down until every class is fundable at the published cap.
+  // whole percent and hands equity the residual, so the cap can still overdraw a
+  // class by one. Step down until every class is fundable at the published cap.
   while (cap > 0 && CLASSES.some((c) => classBudget(mix, { [MULTI_ASSET_ID]: cap }, c) < 0)) {
-    cap = round1(cap - 0.1);
+    cap = cap - 1;
   }
   return cap;
 }
@@ -122,13 +134,13 @@ export function maxMultiAsset(mix: ClassMix): number {
  *  whatever multi-asset already draws from it. Rounded — this IS the number the
  *  header prints, so typing it always balances the class. */
 export function classBudget(mix: ClassMix, values: RowValues, cls: Cls): number {
-  return round1(mix[cls] - multiAssetDraw(values, cls));
+  return roundPct(mix[cls] - multiAssetDraw(values, cls));
 }
 
 /** What the customer put in a class's own rows. Multi-asset is excluded — it is
  *  accounted for by classBudget, so counting it here would double-count. */
 export function classAllocated(values: RowValues, cats: ScreenSubcategory[], cls: Cls): number {
-  return round1(
+  return roundPct(
     cats
       .filter((c) => c.id !== MULTI_ASSET_ID && c.class === cls)
       .reduce((s, c) => s + val(values, c.id), 0),
@@ -144,7 +156,7 @@ export function classAllocated(values: RowValues, cats: ScreenSubcategory[], cls
  *  independent roundings do not land on the budget, so the residual is
  *  distributed across rows starting from the largest, where a tenth is least
  *  visible — never clipped, ensuring the sum is always exactly `budget` on the
- *  one-decimal grid (spec §7.2). */
+ *  whole-percent grid (spec §7.2). */
 function spread(out: RowValues, rows: ScreenSubcategory[], budget: number): void {
   if (rows.length === 0) return;
   const total = rows.reduce((s, r) => s + val(out, r.id), 0);
@@ -157,10 +169,10 @@ function spread(out: RowValues, rows: ScreenSubcategory[], budget: number): void
 
   let sum = 0;
   for (const r of rows) {
-    out[r.id] = round1((val(out, r.id) / total) * budget);
-    sum = round1(sum + val(out, r.id));
+    out[r.id] = roundPct((val(out, r.id) / total) * budget);
+    sum = roundPct(sum + val(out, r.id));
   }
-  const residual = round1(budget - sum);
+  const residual = roundPct(budget - sum);
   if (residual !== 0) {
     // Distribute the residual across rows largest-first so adjustments are least
     // visible. This is the only place that corrects rounding errors, so the sum
@@ -174,8 +186,8 @@ function spread(out: RowValues, rows: ScreenSubcategory[], budget: number): void
       // going negative. If the residual is negative (over-allocated), this takes
       // from multiple rows if the first one is too small.
       const adjustment = Math.max(-current, remaining);
-      out[id] = round1(current + adjustment);
-      remaining = round1(remaining - adjustment);
+      out[id] = roundPct(current + adjustment);
+      remaining = roundPct(remaining - adjustment);
     }
   }
 }
@@ -192,7 +204,7 @@ function spread(out: RowValues, rows: ScreenSubcategory[], budget: number): void
 export function normalise(mix: ClassMix, values: RowValues, cats: ScreenSubcategory[]): RowValues {
   const out: RowValues = { ...values };
   if (out[MULTI_ASSET_ID] != null) {
-    out[MULTI_ASSET_ID] = Math.min(round1(out[MULTI_ASSET_ID]), maxMultiAsset(mix));
+    out[MULTI_ASSET_ID] = Math.min(roundPct(out[MULTI_ASSET_ID]), maxMultiAsset(mix));
   }
   for (const cls of CLASSES) {
     const rows = cats.filter((c) => c.id !== MULTI_ASSET_ID && c.class === cls);
@@ -260,7 +272,7 @@ export function sharePosToValue(values: number[], total: number, displayPct: num
   for (let i = 0; i < values.length; i++) {
     const w = widths[i];
     if (p <= accDisplay + w) {
-      return round1(accValue + (w > 0 ? ((p - accDisplay) / w) * values[i] : 0));
+      return roundPct(accValue + (w > 0 ? ((p - accDisplay) / w) * values[i] : 0));
     }
     accDisplay += w;
     accValue += values[i];
@@ -283,15 +295,15 @@ export function barPosToValue(
 export function applySegmentDrag(
   rows: ScreenSubcategory[], values: RowValues, budget: number, handle: number, posPct: number,
 ): RowValues {
-  const cum = (k: number) => round1(rows.slice(0, k).reduce((s, r) => s + val(values, r.id), 0));
+  const cum = (k: number) => roundPct(rows.slice(0, k).reduce((s, r) => s + val(values, r.id), 0));
   const floor = cum(handle - 1);
   const ceiling = cum(handle + 1);
-  const target = round1((Math.max(0, Math.min(100, posPct)) / 100) * budget);
+  const target = roundPct((Math.max(0, Math.min(100, posPct)) / 100) * budget);
   const at = Math.max(floor, Math.min(ceiling, target));
   return {
     ...values,
-    [rows[handle - 1].id]: round1(at - floor),
-    [rows[handle].id]: round1(ceiling - at),
+    [rows[handle - 1].id]: roundPct(at - floor),
+    [rows[handle].id]: roundPct(ceiling - at),
   };
 }
 
@@ -313,9 +325,9 @@ export function applyTypedEntry(
   typed: number,
 ): RowValues {
   const cap = Math.max(0, budget);
-  const v = round1(Math.max(0, Math.min(cap, typed)));
+  const v = roundPct(Math.max(0, Math.min(cap, typed)));
   const out: RowValues = { ...values, [rowId]: v };
-  spread(out, rows.filter((r) => r.id !== rowId), round1(cap - v));
+  spread(out, rows.filter((r) => r.id !== rowId), roundPct(cap - v));
   return out;
 }
 
@@ -326,11 +338,14 @@ export function isEngaged(values: RowValues): boolean {
   return Object.values(values).some((v) => v != null);
 }
 
-/** Prozpr's recommendation as row values. The backend already rounds each figure
- *  to one decimal, so this is a straight read. */
+/** Prozpr's recommendation as row values. The backend sends each figure on the
+ *  tenth grid; this screen is whole-percent, so the set is rounded to integers
+ *  summing to 100 (largest-remainder). One rounded source keeps the per-row Prozpr
+ *  figures and their class totals adding up to the same numbers on screen. */
 export function recommendedValues(cats: ScreenSubcategory[]): RowValues {
+  const rounded = roundToSum(cats.map((c) => c.recommended_pct_of_total), 100);
   const out: RowValues = {};
-  for (const c of cats) out[c.id] = c.recommended_pct_of_total;
+  cats.forEach((c, i) => { out[c.id] = rounded[i]; });
   return out;
 }
 
@@ -340,9 +355,9 @@ export function recommendedValues(cats: ScreenSubcategory[]): RowValues {
  *  overdrawing the bar, and it is what makes "today" comparable with the other
  *  two bars: one function draws all three (spec §3.2). */
 export function lookThroughMix(values: RowValues, cats: ScreenSubcategory[]): ClassMix {
-  const equity = round1(multiAssetDraw(values, "equity") + classAllocated(values, cats, "equity"));
-  const debt = round1(multiAssetDraw(values, "debt") + classAllocated(values, cats, "debt"));
-  return { equity, debt, others: round1(100 - equity - debt) };
+  const equity = roundPct(multiAssetDraw(values, "equity") + classAllocated(values, cats, "equity"));
+  const debt = roundPct(multiAssetDraw(values, "debt") + classAllocated(values, cats, "debt"));
+  return { equity, debt, others: roundPct(100 - equity - debt) };
 }
 
 /** Prozpr's rows as a bar. Kept as its own name because Reset and the reference
@@ -376,7 +391,7 @@ export function fromCurrentHoldings(
 ): RowValues {
   const by = new Map(holdings.map((h) => [h.subgroup, h.pct_of_total]));
   const out: RowValues = {};
-  for (const c of cats) out[c.id] = round1(by.get(c.id) ?? 0);
+  for (const c of cats) out[c.id] = roundPct(by.get(c.id) ?? 0);
   const total = cats.reduce((s, c) => s + (out[c.id] ?? 0), 0);
   if (total > 0) spread(out, cats, 100);
   return out;

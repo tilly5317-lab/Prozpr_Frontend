@@ -160,10 +160,7 @@ export default function InvestPreferences() {
       style={{ paddingBottom: FOOTER_H + BOTTOM_NAV_H + 16 }}
     >
       <div className="px-5 pt-4">
-        <h1 className="font-display text-[28px] leading-tight text-foreground">How you want to invest</h1>
-        <p className="mt-1.5 max-w-[40ch] text-[12.5px] leading-relaxed text-muted-foreground">
-          {"Where you want your whole portfolio to sit over time."}
-        </p>
+        <h1 className="font-display text-[28px] leading-tight text-foreground">Decide your own Asset Class Mix</h1>
       </div>
 
       {load === "loading" ? (
@@ -204,22 +201,22 @@ export default function InvestPreferences() {
               {"Drag the gold handles to set your split — it always totals 100%."}
             </p>
 
-            <p className="mb-2 mt-4 text-[10.5px] uppercase tracking-[0.14em] text-muted-foreground">
+            <p className="mb-2 mt-4 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-foreground">
               Prozpr recommends
             </p>
             <AssetMixBar mode="reference" mix={rec} />
 
             {today ? (
               <>
-                <p className="mb-2 mt-4 text-[10.5px] uppercase tracking-[0.14em] text-muted-foreground">
+                <p className="mb-2 mt-4 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-foreground">
                   Where you are today
                 </p>
                 <AssetMixBar mode="reference" mix={lookThroughMix(today, subs)} />
                 {/* The rescale is the surprising part, not the omission: these
-                    figures were inflated to fill the gap ELSS left (spec §3.4). */}
+                    figures were inflated to fill the gap the excluded holdings left (spec §3.4). */}
                 <p className="mt-1.5 text-[10.5px] leading-relaxed text-muted-foreground">
                   {excludedPct > 0
-                    ? `Excludes the ${excludedPct.toFixed(1)}% you hold in ELSS and direct stocks. The rest is scaled to 100%.`
+                    ? `Excludes the ${excludedPct.toFixed(0)}% you hold outside the categories you set here, such as ELSS and direct stocks. The rest is scaled to 100%.`
                     : "Across the categories you set here."}
                 </p>
               </>
@@ -243,11 +240,6 @@ export default function InvestPreferences() {
                   <span className="block text-[15px] font-semibold text-foreground">
                     Set your categories
                   </span>
-                  {!openCats ? (
-                    <span className="mt-1 block text-[11.5px] leading-relaxed text-muted-foreground">
-                      {engaged ? "Your own split" : "Following Prozpr's suggestion"}
-                    </span>
-                  ) : null}
                 </span>
                 <ChevronDown
                   className={`ml-auto h-4 w-4 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none ${

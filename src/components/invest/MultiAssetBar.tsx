@@ -2,12 +2,17 @@ import { useRef } from "react";
 
 import EditableFigure from "@/components/invest/EditableFigure";
 import { COL_REF, COL_YOU } from "@/components/invest/columns";
+import type { ClassMix } from "@/lib/api";
 import {
+  CLASSES,
   CLASS_COLOR,
   CLASS_LABEL,
   MULTI_ASSET_ID,
+  MULTI_ASSET_SPLIT,
+  maxMultiAsset,
   multiAssetDraw,
-  round1,
+  roundPct,
+  type Cls,
   type RowValues,
 } from "@/lib/investment-preferences";
 
@@ -32,14 +37,14 @@ const HIT_PX = 16;
  */
 export default function MultiAssetBar({
   value,
-  max,
+  mix,
   label,
   recommended,
   today,
   onChange,
 }: {
   value: number;
-  max: number;
+  mix: ClassMix;
   label: string;
   recommended: number;
   today: number | null;
@@ -48,11 +53,21 @@ export default function MultiAssetBar({
   const barRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
   const values: RowValues = { [MULTI_ASSET_ID]: value };
-  // Commodity alone sets the cap — the sleeve is 10% of it — so a customer who
-  // drags commodity to nothing leaves this fund unfundable.
+  // The sleeve draws on all three classes, so any class the customer has taken
+  // to nothing leaves this fund unfundable. On the one-decimal grid that is the
+  // ONLY way the cap reaches zero — the smallest positive share still funds a
+  // 0.1 sleeve — so the classes at zero are exactly the reason to name. Two is
+  // the most there can be: the third then holds everything.
+  const max = maxMultiAsset(mix);
   const live = max > 0;
+  const starved = CLASSES.filter((c) => mix[c] <= 0);
+  const lower = (c: Cls) => CLASS_LABEL[c].toLowerCase();
+  const reason = live
+    ? null
+    : `This fund is ${starved.map((c) => `${Math.round(MULTI_ASSET_SPLIT[c] * 100)}% ${lower(c)}`).join(" and ")}. ` +
+      `Give ${starved.length > 1 ? "them" : lower(starved[0])} some room and you can hold it.`;
 
-  const commit = (pct: number) => onChange(round1(Math.max(0, Math.min(max, pct))));
+  const commit = (pct: number) => onChange(roundPct(Math.max(0, Math.min(max, pct))));
   const pctFromClientX = (clientX: number, r: DOMRect): number => ((clientX - r.left) / r.width) * 100;
 
   const onDown = (e: React.PointerEvent) => {
@@ -77,7 +92,7 @@ export default function MultiAssetBar({
     dragging.current = false;
   };
   const onKey = (e: React.KeyboardEvent) => {
-    const step = e.key === "ArrowRight" ? 0.5 : e.key === "ArrowLeft" ? -0.5 : 0;
+    const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
     if (!step) return;
     e.preventDefault();
     commit(value + step);
@@ -90,14 +105,14 @@ export default function MultiAssetBar({
           {label.charAt(0).toUpperCase() + label.slice(1)}
         </div>
         <div className={`ml-auto ${COL_REF} text-[10.5px] tabular-nums text-muted-foreground`}>
-          {recommended.toFixed(1)}
+          {recommended.toFixed(0)}
         </div>
         {today != null ? (
           <div
             data-testid="ma-today"
             className={`${COL_REF} text-[10.5px] tabular-nums text-muted-foreground`}
           >
-            {today.toFixed(1)}
+            {today.toFixed(0)}
           </div>
         ) : null}
         {live ? (
@@ -110,7 +125,7 @@ export default function MultiAssetBar({
           />
         ) : (
           <span className={`${COL_YOU} text-right text-[10.5px] font-semibold tabular-nums text-foreground`}>
-            {`${value.toFixed(1)}%`}
+            {`${value.toFixed(0)}%`}
           </span>
         )}
       </div>
@@ -164,16 +179,16 @@ export default function MultiAssetBar({
         {live ? (
           <>
             <span data-testid="ma-breakdown">
-              {`Counts as ${multiAssetDraw(values, "equity").toFixed(1)}% ${CLASS_LABEL.equity}` +
-                ` · ${multiAssetDraw(values, "debt").toFixed(1)}% ${CLASS_LABEL.debt}` +
-                ` · ${multiAssetDraw(values, "others").toFixed(1)}% ${CLASS_LABEL.others}`}
+              {`Counts as ${multiAssetDraw(values, "equity").toFixed(0)}% ${CLASS_LABEL.equity}` +
+                ` · ${multiAssetDraw(values, "debt").toFixed(0)}% ${CLASS_LABEL.debt}` +
+                ` · ${multiAssetDraw(values, "others").toFixed(0)}% ${CLASS_LABEL.others}`}
             </span>
             {max < 100 ? (
-              <span className="block">{`Up to ${max.toFixed(1)}% — that's what your split can fund.`}</span>
+              <span className="block">{`Up to ${max.toFixed(0)}% — that's what your split can fund.`}</span>
             ) : null}
           </>
         ) : (
-          <span>{"This fund is 10% commodity. Give commodity some room and you can hold it."}</span>
+          <span>{reason}</span>
         )}
       </div>
     </div>

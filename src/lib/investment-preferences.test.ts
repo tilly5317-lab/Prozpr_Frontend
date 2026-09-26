@@ -5,7 +5,7 @@ import {
   applyDividerDrag,
   classAllocated, classBudget, fromSavedPins,
   isEngaged, multiAssetDraw, recommendedMix, lookThroughMix, fromCurrentHoldings,
-  round1, roundMix, sameMix, samePins, toSavePins, type RowValues,
+  roundPct, roundMix, sameMix, samePins, toSavePins, type RowValues,
   applySegmentDrag, applyTypedEntry, maxMultiAsset, normalise, shortLabel, CLASSES, MULTI_ASSET_ID, recommendedValues,
   barPosToValue, segmentLayout,
 } from "@/lib/investment-preferences";
@@ -39,37 +39,36 @@ describe("applyDividerDrag", () => {
     expect(m.equity + m.debt + m.others).toBe(100);
   });
 
-  // The recommendation arrives on the one-decimal grid (62.1 / 28 / 9.9), and
-  // debt is the derived residual on BOTH handles — so a raw subtraction handed
-  // the bar 29.099999999999994 to print.
-  it("keeps every class on the one-decimal grid from a one-decimal start", () => {
-    expect(applyDividerDrag({ equity: 62.1, debt: 28, others: 9.9 }, 1, 61))
-      .toEqual({ equity: 61, debt: 29.1, others: 9.9 });
-    expect(applyDividerDrag({ equity: 62.1, debt: 28, others: 9.9 }, 2, 80))
-      .toEqual({ equity: 62.1, debt: 17.9, others: 20 });
+  // Debt is the derived residual on BOTH handles, so a raw subtraction can hand
+  // the bar 29.999999999999996 to print; roundPct snaps it to a whole percent.
+  it("keeps every class a whole number, and on 100, from a whole-number start", () => {
+    expect(applyDividerDrag({ equity: 62, debt: 28, others: 10 }, 1, 61))
+      .toEqual({ equity: 61, debt: 29, others: 10 });
+    expect(applyDividerDrag({ equity: 62, debt: 28, others: 10 }, 2, 80))
+      .toEqual({ equity: 62, debt: 18, others: 20 });
   });
 
   it("never drifts off the grid or off 100, wherever it is dragged", () => {
-    for (const start of [{ equity: 62.1, debt: 28, others: 9.9 }, { equity: 33.3, debt: 33.3, others: 33.4 }]) {
+    for (const start of [{ equity: 62, debt: 28, others: 10 }, { equity: 33, debt: 33, others: 34 }]) {
       for (const pos of [-10, 0, 13, 47, 61, 88, 100, 130]) {
         for (const h of [1, 2] as const) {
           const m = applyDividerDrag(start, h, pos);
           expect(m.equity + m.debt + m.others).toBe(100);
-          for (const v of [m.equity, m.debt, m.others]) expect(v).toBe(round1(v));
+          for (const v of [m.equity, m.debt, m.others]) expect(v).toBe(roundPct(v));
         }
       }
     }
   });
 });
 
-describe("roundMix now keeps one decimal", () => {
-  it("rounds to a tenth and lets others absorb the residual", () => {
+describe("roundMix now keeps whole numbers", () => {
+  it("rounds to a whole percent and lets others absorb the residual", () => {
     expect(roundMix({ equity: 72.02, debt: 21.36, others: 6.61 }))
-      .toEqual({ equity: 72, debt: 21.4, others: 6.6 });
+      .toEqual({ equity: 72, debt: 21, others: 7 });
   });
   it("always sums to 100", () => {
     const m = roundMix({ equity: 72.44, debt: 21.34, others: 6.22 });
-    expect(round1(m.equity + m.debt + m.others)).toBe(100);
+    expect(roundPct(m.equity + m.debt + m.others)).toBe(100);
   });
   it("leaves an already-whole mix unchanged", () => {
     expect(roundMix({ equity: 72, debt: 18, others: 10 }))
@@ -86,13 +85,13 @@ describe("multiAssetDraw", () => {
   });
 
   it("keeps the three draws adding back to what was typed", () => {
-    // 5.0 splits to 3.25 / 1.25 / 0.50 — equity carries the rounding residual
-    // so the three printed figures still total 5.0 and not 5.1.
+    // 5% splits to 3.25 / 1.25 / 0.5 — rounded to 3 / 1 / 1, equity carrying the
+    // residual so the three printed figures still total 5 and not 6.
     const v: RowValues = { multi_asset: 5 };
-    expect(multiAssetDraw(v, "debt")).toBe(1.3);
-    expect(multiAssetDraw(v, "others")).toBe(0.5);
-    expect(multiAssetDraw(v, "equity")).toBe(3.2);
-    expect(round1(3.2 + 1.3 + 0.5)).toBe(5);
+    expect(multiAssetDraw(v, "debt")).toBe(1);
+    expect(multiAssetDraw(v, "others")).toBe(1);
+    expect(multiAssetDraw(v, "equity")).toBe(3);
+    expect(multiAssetDraw(v, "equity") + multiAssetDraw(v, "debt") + multiAssetDraw(v, "others")).toBe(5);
   });
 
   it("is zero when multi-asset is blank", () => {
@@ -132,19 +131,32 @@ describe("isEngaged", () => {
 describe("Reset to Prozpr lands balanced by construction", () => {
   const withTotal = (nudge: number): ScreenSubcategory[] =>
     CATS.map((c) => c.id === "low_beta_equities"
-      ? { ...c, recommended_pct_of_total: round1(c.recommended_pct_of_total + nudge) } : c);
+      ? { ...c, recommended_pct_of_total: roundPct(c.recommended_pct_of_total + nudge) } : c);
 
   // The backend rounds each row to one decimal INDEPENDENTLY, so the catalog
   // can sum to 99.9 or 100.1. Reset has to balance in all three cases.
   it.each([-0.1, 0, 0.1])("balances when the catalog is nudged by %s", (nudge) => {
     const cats = withTotal(nudge);
     const mix = recommendedMix(cats);
-    expect(round1(mix.equity + mix.debt + mix.others)).toBe(100);
+    expect(roundPct(mix.equity + mix.debt + mix.others)).toBe(100);
     const out = normalise(mix, recommendedValues(cats), cats);
     for (const c of CLASSES) {
       if (!cats.some((x) => x.id !== MULTI_ASSET_ID && x.class === c)) continue;
       expect(classAllocated(out, cats, c)).toBe(classBudget(mix, out, c));
     }
+  });
+});
+
+describe("recommendedValues", () => {
+  it("rounds the recommendation to whole numbers that still sum to 100", () => {
+    const cats: ScreenSubcategory[] = [
+      { id: "a", class: "equity", label: "A", recommended_pct_of_total: 33.3 },
+      { id: "b", class: "debt",   label: "B", recommended_pct_of_total: 33.3 },
+      { id: "c", class: "others", label: "C", recommended_pct_of_total: 33.4 },
+    ];
+    const rec = recommendedValues(cats);
+    for (const id of ["a", "b", "c"]) expect(Number.isInteger(rec[id])).toBe(true);
+    expect((rec.a ?? 0) + (rec.b ?? 0) + (rec.c ?? 0)).toBe(100);
   });
 });
 
@@ -369,10 +381,10 @@ describe("applyTypedEntry", () => {
         for (const shape of shapes) {
           // Every typed value on the tenth grid (0.0, 0.1, 0.2, ..., budget, ..., budget + 0.5)
           for (let tenths = 0; tenths <= (budget + 0.5) * 10; tenths += 1) {
-            const typed = round1(tenths / 10);
+            const typed = roundPct(tenths / 10);
             const next = applyTypedEntry(rows, shape, budget, "r0", typed);
             const allocated = classAllocated(next, rows, "equity");
-            expect(allocated).toBe(round1(budget));
+            expect(allocated).toBe(roundPct(budget));
           }
         }
       }
@@ -385,8 +397,8 @@ describe("applyTypedEntry", () => {
     });
   });
 
-  it("puts a typed figure on the one-decimal grid", () => {
-    expect(applyTypedEntry(EQ_ROWS, values, 60, "a", 24.06)["a"]).toBe(24.1);
+  it("puts a typed figure on the whole-percent grid", () => {
+    expect(applyTypedEntry(EQ_ROWS, values, 60, "a", 24.4)["a"]).toBe(24);
   });
 
   // `normalise` floors a budget at 0 and this must too, or a class whose
@@ -414,7 +426,7 @@ describe("segmentLayout", () => {
 
   it("always fills the bar exactly", () => {
     for (const v of [{ a: 30, b: 20, c: 10 }, { a: 60, b: 0, c: 0 }, { a: 0, b: 0, c: 60 }]) {
-      expect(round1(widths(v, 60).reduce((s, x) => s + x, 0))).toBe(100);
+      expect(roundPct(widths(v, 60).reduce((s, x) => s + x, 0))).toBe(100);
     }
   });
 
@@ -436,7 +448,7 @@ describe("segmentLayout", () => {
       id: `r${i}`, class: "equity" as const, label: `R${i}`, recommended_pct_of_total: 0,
     }));
     const out = segmentLayout(many, { r0: 60 }, 60);
-    expect(round1(out.reduce((s, x) => s + x, 0))).toBe(100);
+    expect(roundPct(out.reduce((s, x) => s + x, 0))).toBe(100);
     expect(out[1]).toBe(1);            // 12 / 12 rows, not the 1.5 default
   });
 
@@ -504,10 +516,10 @@ describe("fromCurrentHoldings", () => {
     expect(Object.keys(v)).not.toContain("tax_efficient_equities");
   });
 
-  // Same reason the payload above sums to 100: this checks rounding to a
-  // tenth, not the normalise step, so the second entry takes the remainder
+  // Same reason the payload above sums to 100: this checks rounding to a whole
+  // percent, not the normalise step, so the second entry takes the remainder
   // rather than leaving the set short.
-  it("puts every figure on the one-decimal grid", () => {
+  it("puts every figure on the whole-percent grid", () => {
     const v = fromCurrentHoldings(
       [
         { subgroup: "short_debt", pct_of_total: 21.63 },
@@ -515,7 +527,7 @@ describe("fromCurrentHoldings", () => {
       ],
       CATS,
     );
-    expect(v.short_debt).toBe(21.6);
+    expect(v.short_debt).toBe(22);
   });
 
   // The set can be short of or over 100 in two ways: eleven independent
@@ -533,7 +545,7 @@ describe("fromCurrentHoldings", () => {
       ],
       CATS,
     );
-    expect(round1(Object.values(v).reduce((s, x) => s + (x ?? 0), 0))).toBe(100);
+    expect(roundPct(Object.values(v).reduce((s, x) => s + (x ?? 0), 0))).toBe(100);
     expect(v.gold_commodities).toBe(0); // holds none of it — stays 0, not scaled up
   });
 
@@ -545,7 +557,7 @@ describe("fromCurrentHoldings", () => {
       ],
       CATS,
     );
-    expect(round1(Object.values(v).reduce((s, x) => s + (x ?? 0), 0))).toBe(100);
+    expect(roundPct(Object.values(v).reduce((s, x) => s + (x ?? 0), 0))).toBe(100);
   });
 
   // An all-zero payload is a customer holding nothing, not a set `spread`

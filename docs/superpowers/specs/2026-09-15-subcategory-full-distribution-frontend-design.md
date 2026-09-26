@@ -199,7 +199,7 @@ screen keeps its Prozpr twin — there it compares three segments, not eleven.
 ### 5.3 The interaction
 
 Dragging divider *k* trades rows *k−1* and *k*, clamped by the dividers on
-either side. Arrow keys nudge by 0.5pp. Nothing else in the class moves, so the
+either side. Arrow keys nudge by 1pp. Nothing else in the class moves, so the
 total cannot drift.
 
 **Stacked dividers.** A row squeezed to 0% leaves its two dividers on one point.
@@ -239,20 +239,24 @@ commodity flat and one sits on the bar's edge — so `flooredShares` /
 `sharePosToValue` are the shared primitives and `segmentLayout` /
 `barPosToValue` are thin wrappers over them for a class's rows.
 
-### 5.7 The bar must stay on the one-decimal grid
+### 5.7 The bar must stay on the whole-percent grid
 
-`applyDividerDrag` snaps every class it returns with `round1`.
+*Revised 2026-09-27: the grid is whole percents, not tenths. `roundPct` (formerly
+`round1`) rounds to integers, every figure prints `toFixed(0)`, arrow keys step 1,
+typed entry takes digits only, and the values sent on the wire are therefore whole
+numbers. The float-artifact reasoning below is unchanged — only the quantum is.*
 
-A recommendation arrives as 62.1 / 28 / 9.9, and **debt is the derived residual
-on both handles** (`cap − equity`, `cum − floor`). Subtracting floats therefore
-returned values like `29.099999999999994`, and `AssetMixBar` printed the raw
-number — so the customer saw fifteen decimal places on the debt segment. Two
-faults compounding: one that left the grid, and one that had no formatter to
-catch it.
+`applyDividerDrag` snaps every class it returns with `roundPct`.
+
+**Debt is the derived residual on both handles** (`cap − equity`, `cum − floor`).
+Subtracting floats therefore returned values like `29.999999999999996`, and
+`AssetMixBar` printed the raw number — so the customer saw fifteen decimal places
+on the debt segment. Two faults compounding: one that left the grid, and one that
+had no formatter to catch it.
 
 Both are fixed, and both rules matter independently — the value goes on the wire
 and into every class budget, so it has to be on the grid whether or not anything
-prints it. Segment labels are `toFixed(1)`.
+prints it. Segment labels are `toFixed(0)`.
 
 ### 5.5 The sticky footer
 
@@ -367,13 +371,10 @@ of the button.
 
 ## 8. Copy
 
-**Page intro**, under the headline:
-
-> Where you want your whole portfolio to sit over time.
-
-*(Cut 2026-09-16 from three sentences. The instruction to tweak it was redundant
-with "Drag the gold handles to set your split" directly below, and the screen was
-reading as a wall of text.)*
+**Page intro.** None since 2026-09-26 — the headline carries it: **"Decide your own
+Asset Class Mix"** (renamed 2026-09-26 from "How you want to invest over time", which
+had itself just absorbed a one-line intro, "Where you want your whole portfolio to sit
+over time.", cut 2026-09-16 from three sentences reading as a wall of text).
 
 **Section intro** (shown when the section is expanded):
 
@@ -388,8 +389,10 @@ money goes to whatever is furthest from target. It is being dropped because the
 deficit-fill logic it describes is itself changing — better silent than stale.
 
 **The collapsed-section summary** (`Following Prozpr's suggestion` / `Your own
-split`) describes what is folded away, so it is **hidden once the section is
-open**, where the content speaks for itself.
+split`) — a one-line status under the header while the section was collapsed — was
+**removed entirely on 2026-09-26**. The header stands on its own, and the top card's
+Your-preference and Prozpr-recommends bars already show whether the customer differs
+from the recommendation.
 
 **Scope notice** — a panel above the footer, not a modal. **It always renders**,
 because it carries the directional promise, which is true of every saved split.

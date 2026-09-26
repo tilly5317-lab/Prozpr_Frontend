@@ -40,7 +40,7 @@ describe("ClassSegmentBar", () => {
     const onChange = bar();
     fireEvent.keyDown(screen.getAllByRole("slider")[0], { key: "ArrowRight" });
     const next = onChange.mock.calls[0][0] as RowValues;
-    expect(next).toMatchObject({ a: 30.5, b: 19.5, c: 10 });
+    expect(next).toMatchObject({ a: 31, b: 19, c: 10 });
     expect(classAllocated(next, ROWS, "equity")).toBe(60);
   });
 

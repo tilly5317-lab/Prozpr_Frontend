@@ -33,7 +33,7 @@ describe("SubcategoryPins", () => {
   it("heads each class with the budget its rows divide up", () => {
     view();
     expect(screen.getByTestId("budget-equity").textContent).toBe(
-      `${classBudget(MIX, VALUES, "equity").toFixed(1)}%`,
+      `${classBudget(MIX, VALUES, "equity").toFixed(0)}%`,
     );
   });
 
@@ -42,6 +42,15 @@ describe("SubcategoryPins", () => {
     expect(screen.getByText("Large-cap")).toBeTruthy();
     expect(screen.getByText("Short-duration")).toBeTruthy();
     expect(screen.queryByText(/large-cap equity/i)).toBeNull();
+  });
+
+  // The hairline under the multi-asset row is repeated between the class groups,
+  // so every section on the card is parted the same way — but not after the last
+  // group, where it would just float above the card's own padding.
+  it("parts the class groups with a divider, but draws none after the last", () => {
+    view();
+    expect(screen.getByTestId("group-equity").className).toContain("border-b");
+    expect(screen.getByTestId("group-others").className).not.toContain("border-b");
   });
 
   it("gives a class with two or more rows a bar to divide", () => {
@@ -73,17 +82,27 @@ describe("SubcategoryPins", () => {
     expect(screen.getAllByText("You")).toHaveLength(1);
   });
 
+  // The class summary line carries Prozpr / Today / You in the same three
+  // columns as the multi-asset row above it — before, it showed only Today and
+  // the budget, and omitted Prozpr entirely.
+  it("heads each class with Prozpr's recommended total for its own rows", () => {
+    view();
+    // equity: large-cap 18 + small-cap 12, multi-asset excluded
+    expect(screen.getByTestId("prozpr-equity").textContent).toBe("30");
+    expect(screen.getByTestId("prozpr-debt").textContent).toBe("20");
+  });
+
   it("gives each row its own today figure", () => {
     view(VALUES, TODAY);
-    expect(screen.getByTestId("today-low_beta_equities").textContent).toBe("40.0");
-    expect(screen.getByTestId("today-high_beta_equities").textContent).toBe("4.0");
+    expect(screen.getByTestId("today-low_beta_equities").textContent).toBe("40");
+    expect(screen.getByTestId("today-high_beta_equities").textContent).toBe("4");
   });
 
   // Compared like with like: the budget beside it is also net of multi-asset,
   // so this figure counts the class's own rows and nothing else.
   it("heads a class with today's share of its own rows, net of multi-asset", () => {
     view(VALUES, TODAY);
-    expect(screen.getByTestId("today-equity").textContent).toContain("44.0");
+    expect(screen.getByTestId("today-equity").textContent).toBe("44");
   });
 
   it("drops the today column, and nothing else, when there is no today", () => {
@@ -124,13 +143,13 @@ describe("SubcategoryPins", () => {
   it("leaves a single-row class as plain text", () => {
     view(VALUES, TODAY);
     expect(screen.queryByRole("button", { name: "Gold share" })).toBeNull();
-    expect(screen.getByTestId("you-gold_commodities").textContent).toBe("30.0%");
+    expect(screen.getByTestId("you-gold_commodities").textContent).toBe("30%");
   });
 
   // Same rule, same condition ClassSegmentBar uses for its dividers: a field
   // that can only ever return 0.0 is not an affordance.
   it("leaves a class with no budget as plain text", () => {
-    view({ ...VALUES, multi_asset: 66.1 });
+    view({ ...VALUES, multi_asset: 67 });
     expect(screen.queryByRole("button", { name: "Large-cap share" })).toBeNull();
   });
 
@@ -156,7 +175,7 @@ describe("SubcategoryPins", () => {
   // misaligns against a header that promised three.
   it("still prints today's multi-asset figure when it is zero", () => {
     view(VALUES, { ...TODAY, multi_asset: 0 });
-    expect(screen.getByTestId("ma-today").textContent).toBe("0.0");
+    expect(screen.getByTestId("ma-today").textContent).toBe("0");
   });
 });
 

@@ -41,9 +41,9 @@ describe("AssetMixBar handle separation", () => {
     }
   });
 
-  it("prints each class on the one-decimal grid, never a float artifact", () => {
-    render(<AssetMixBar mode="reference" mix={{ equity: 62.1, debt: 28, others: 9.9 }} />);
-    expect(screen.getByText("28.0%")).toBeTruthy();
+  it("prints each class as a whole percent, never a float artifact", () => {
+    render(<AssetMixBar mode="reference" mix={{ equity: 62, debt: 28, others: 10 }} />);
+    expect(screen.getByText("28%")).toBeTruthy();
   });
 });
 
@@ -61,5 +61,19 @@ describe("AssetMixBar reference bars draw true shares", () => {
       <AssetMixBar mode="interactive" mix={{ equity: 70, debt: 30, others: 0 }} onChange={vi.fn()} />,
     );
     expect(parseFloat(screen.getByTestId("mix-seg-others").style.width)).toBeGreaterThan(0);
+  });
+});
+
+// The three bars in the top card read as one control group, so the reference
+// bars carry the same height as the interactive one — only the drag handles
+// and the flooring below them differ, not the bar's weight on the page.
+describe("AssetMixBar bar height", () => {
+  const heightOf = (el: Element) => (el as HTMLElement).className.match(/h-\[(\d+)px\]/)?.[1];
+
+  it("draws reference and interactive bars at the same height", () => {
+    const mix = { equity: 60, debt: 30, others: 10 };
+    const { container: iC } = render(<AssetMixBar mode="interactive" mix={mix} onChange={vi.fn()} />);
+    const { container: rC } = render(<AssetMixBar mode="reference" mix={mix} />);
+    expect(heightOf(rC.firstChild as Element)).toBe(heightOf(iC.firstChild as Element));
   });
 });

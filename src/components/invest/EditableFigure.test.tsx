@@ -5,7 +5,7 @@ import EditableFigure from "./EditableFigure";
 
 afterEach(cleanup);
 
-const figure = (max = 25, onCommit = vi.fn(), value = 18.4) => {
+const figure = (max = 25, onCommit = vi.fn(), value = 18) => {
   render(
     <EditableFigure value={value} max={max} label="Large-cap" onCommit={onCommit} className="w-[46px]" />,
   );
@@ -17,7 +17,7 @@ const field = () => screen.getByRole("textbox", { name: "Large-cap share" }) as 
 describe("EditableFigure", () => {
   it("rests as a figure, not a form", () => {
     figure();
-    expect(resting().textContent).toBe("18.4%");
+    expect(resting().textContent).toBe("18%");
     expect(screen.queryByRole("textbox")).toBeNull();
   });
 
@@ -26,7 +26,7 @@ describe("EditableFigure", () => {
   it("opens on a single click, seeded with the current figure", () => {
     figure();
     fireEvent.click(resting());
-    expect(field().value).toBe("18.4");
+    expect(field().value).toBe("18");
   });
 
   it("commits the typed number on Enter", () => {
@@ -41,9 +41,9 @@ describe("EditableFigure", () => {
   it("commits on blur", () => {
     const onCommit = figure();
     fireEvent.click(resting());
-    fireEvent.change(field(), { target: { value: "7.5" } });
+    fireEvent.change(field(), { target: { value: "8" } });
     fireEvent.blur(field());
-    expect(onCommit).toHaveBeenCalledWith(7.5);
+    expect(onCommit).toHaveBeenCalledWith(8);
   });
 
   // An over-budget figure is never displayable, so nothing has to be silently
@@ -63,7 +63,7 @@ describe("EditableFigure", () => {
     fireEvent.change(field(), { target: { value: "12" } });
     fireEvent.keyDown(field(), { key: "Escape" });
     expect(onCommit).not.toHaveBeenCalled();
-    expect(resting().textContent).toBe("18.4%");
+    expect(resting().textContent).toBe("18%");
   });
 
   it("returns focus to the figure when the keyboard closed the edit", () => {
@@ -82,9 +82,9 @@ describe("EditableFigure", () => {
     expect(document.activeElement).not.toBe(resting());
   });
 
-  // A stray tap-then-blur would otherwise flip an untouched customer from
-  // "Following Prozpr's suggestion" to "Your own split" and enable Save,
-  // changing what a save MEANS with no edit having happened (spec §7.2).
+  // A stray tap-then-blur would otherwise engage the customer's own distribution
+  // — turning "engine decides" into a pin — and enable Save, changing what a save
+  // MEANS with no edit having happened (spec §7.2).
   it("commits nothing when the value did not change", () => {
     const onCommit = figure();
     fireEvent.click(resting());
@@ -98,7 +98,7 @@ describe("EditableFigure", () => {
     fireEvent.change(field(), { target: { value: "abc" } });
     fireEvent.keyDown(field(), { key: "Enter" });
     expect(onCommit).not.toHaveBeenCalled();
-    expect(resting().textContent).toBe("18.4%");
+    expect(resting().textContent).toBe("18%");
   });
 
   // A hand-checked table protects nothing past the moment someone edits the
@@ -108,32 +108,21 @@ describe("EditableFigure", () => {
   // in an assertion the suite re-runs. Encoding every row here means a
   // future change that drops, say, the decimal truncation fails CI instead
   // of waiting for the next human to reread the table.
-  it("keeps the field on the one-decimal grid and inside the budget, whatever is typed", () => {
+  it("keeps the field a whole number inside the budget, whatever is typed", () => {
     figure(25);
     fireEvent.click(resting());
     const cases: [string, string][] = [
       ["", ""],
-      [".", "."],
       ["18", "18"],
-      ["18.", "18."],
-      ["18.4", "18.4"],
-      ["18.44", "18.4"],
-      ["25.00", "25.0"],
+      [".", ""],          // a decimal point is stripped — whole percents only
+      ["2.5", "25"],      // the dot drops out, leaving "25", which is within budget
       ["-", ""],
       ["-5", "5"],
-      ["1e3", "13"],
-      // `String(max)`, not `max.toFixed(1)`: a clamped "25.0" plus one more
-      // keystroke is "25.00", which is not > 25, so it would sail through and
-      // put a second decimal on a one-decimal screen.
-      ["30", "25"],
-      ["999", "25"],
+      ["1e3", "13"],      // the exponent character is stripped, leaving "13"
+      ["25", "25"],
+      ["30", "25"],       // clamped to max
+      ["999", "25"],      // clamped to max
       ["abc", ""],
-      // The second-decimal-point branch: none of the rows above reach it.
-      ["1.2.3", "1.2"],
-      // The row that actually proves the second-dot strip: without it the
-      // later truncation does not fire here (dot+2 === length), so "1.."
-      // would reach the field and Number("1..") is NaN — uncommittable.
-      ["1..", "1."],
     ];
     for (const [typed, expected] of cases) {
       fireEvent.change(field(), { target: { value: typed } });

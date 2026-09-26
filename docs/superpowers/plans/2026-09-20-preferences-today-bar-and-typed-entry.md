@@ -20,7 +20,7 @@
 - **Type scale is fixed:** 9 / 10.5 / 11 / 11.5 / 12.5 / 13.5 / 15 / 28 px. Tracking is 0.1em / 0.14em / 0.16em. Do not introduce a new step.
 - **Comments explain WHY a rule exists**, never what a line does, and cite spec sections as `(spec §N)` or `(spec §N, revised 2026-09-20)`. `src/lib/investment-preferences.ts` is the reference voice.
 - **Commits** carry a `type(scope): subject` line, a body explaining the why, and `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`. Subjects say what the customer gets, not which symbol was added. Stage files explicitly — never `git add -A`.
-- **Exact copy:** bar label `Where you are today`; captions `Excludes the N% you hold in ELSS and direct stocks. The rest is scaled to 100%.` and `Across the categories you set here.`; column headers `Prozpr` / `Today` / `You` (sentence case); class header prefix `Today N · `.
+- **Exact copy:** bar label `Where you are today`; captions `Excludes the N% you hold outside the categories you set here, such as ELSS and direct stocks. The rest is scaled to 100%.` and `Across the categories you set here.`; column headers `Prozpr` / `Today` / `You` (sentence case); the class header carries that same `Prozpr` / `Today` / `You` trio (revised 2026-09-26 from a `Today N · ` prefix).
 - **Do not touch** the save payload, `toSavePins`, `fromSavedPins`, or the Invest page's Current-vs-target chart.
 
 ---
@@ -434,7 +434,7 @@ describe("InvestPreferences — where you are today", () => {
     renderPage();
     await ready();
     expect(
-      screen.getByText("Excludes the 18.4% you hold in ELSS and direct stocks. The rest is scaled to 100%."),
+      screen.getByText("Excludes the 18.4% you hold outside the categories you set here, such as ELSS and direct stocks. The rest is scaled to 100%."),
     ).toBeInTheDocument();
   });
 
@@ -549,10 +549,10 @@ In the asset-mix `<section>`, the block from "Your preference" to the closing hi
                 </p>
                 <AssetMixBar mode="reference" mix={lookThroughMix(today, subs)} />
                 {/* The rescale is the surprising part, not the omission: these
-                    figures were inflated to fill the gap ELSS left (spec §3.4). */}
+                    figures were inflated to fill the gap the excluded holdings left (spec §3.4). */}
                 <p className="mt-1.5 text-[10.5px] leading-relaxed text-muted-foreground">
                   {excludedPct > 0
-                    ? `Excludes the ${excludedPct.toFixed(1)}% you hold in ELSS and direct stocks. The rest is scaled to 100%.`
+                    ? `Excludes the ${excludedPct.toFixed(1)}% you hold outside the categories you set here, such as ELSS and direct stocks. The rest is scaled to 100%.`
                     : "Across the categories you set here."}
                 </p>
               </>
