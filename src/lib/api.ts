@@ -2775,15 +2775,38 @@ export interface AssetClassBreakdownRow {
   asset_class: string; // "Equity" | "Debt" | "Others"
   current_inr: number;
   target_inr: number;
+  /** What the customer's goals, risk profile and saved preference call for — NOT
+   *  where the plan lands. 0 on runs with no subgroup summaries, and absent on
+   *  older runs that predate the field. */
+  goal_inr?: number;
+}
+
+/** Why a plan's target mix differs from the customer's goal mix. `question` is the
+ *  one amber line shown collapsed — it carries both percentages, so it answers
+ *  *what* on its own; tapping it reveals the rest, which answers *why*. */
+export interface RebalancingPlanGap {
+  question: string;
+  summary: string;
+  points: string[];
+  footnote?: string | null;
 }
 
 /** Multi-asset-aware asset-class split for the Invest "Current vs Target" view.
  *  Blended funds are split per-category on the backend, so the frontend renders
- *  these numbers directly without any client-side classification. */
+ *  these numbers directly without any client-side classification.
+ *
+ *  THREE mixes, not two: `target_*` is where THIS PLAN lands, `goal_*` is the mix
+ *  the customer asked for. They legitimately differ — a rebalance is cash-neutral
+ *  and cannot sell short-term units — so `gap` carries the why, and is null when
+ *  the plan effectively reaches the goal. */
 export interface RebalancingAssetClassBreakdown {
   rows: AssetClassBreakdownRow[];
   current_total_inr: number;
   target_total_inr: number;
+  goal_total_inr?: number;
+  /** ₹ the plan wanted to sell but could not, because the units are short-term. */
+  short_term_locked_inr?: number;
+  gap?: RebalancingPlanGap | null;
 }
 
 export interface RebalancingRunDetail extends RebalancingRunListItem {
