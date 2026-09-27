@@ -1044,6 +1044,9 @@ export interface MfcImportResponse {
    * `data` is still populated in that case. */
   ingest: MfcIngestSummary | null;
   rejection: string | null;
+  /** Set when MF Central is still GENERATING the statement. Not a failure: the
+   * QR is unconsumed and the SAME one can be submitted again in a moment. */
+  pending: string | null;
   data: MfcStatementData;
   message: string;
 }

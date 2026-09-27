@@ -9,6 +9,7 @@ import {
   FolderSearch,
   Lock,
   Loader2,
+  MonitorSmartphone,
   QrCode,
   RefreshCw,
   ShieldCheck,
@@ -99,6 +100,10 @@ const MfcCasFlow = ({
   // body-supplied one when the account has none — asking for it here is the
   // difference between starting the flow and a 400 that reads like a bug.
   const [pan, setPan] = useState("");
+  // When a PAN is on file we show it masked and request against it by default;
+  // this opens an input to send the request under a DIFFERENT PAN instead
+  // (a family PAN, or a UAT test PAN against the sandbox).
+  const [useDifferentPan, setUseDifferentPan] = useState(false);
   // The contact registered with the FUND HOUSES, which routinely differs from
   // the Prozpr login. Left collapsed: the account's own is right often enough
   // that surfacing two more fields by default would cost every user a decision
@@ -126,6 +131,11 @@ const MfcCasFlow = ({
   const [validating, setValidating] = useState(false);
   const [qrError, setQrError] = useState<string | null>(null);
   const [result, setResult] = useState<MfcImportResponse | null>(null);
+  // MFC generates the CAS asynchronously; validateQRCode can answer "still
+  // generating" for the same (unconsumed) QR. We keep the QR bytes so the user
+  // can retry without re-downloading, and `pendingNote` drives that UI.
+  const [pendingNote, setPendingNote] = useState<string | null>(null);
+  const lastQrRef = useRef<{ base64: string; label: string } | null>(null);
 
   // Downloads-folder pickup. `scanSupported` is Chromium-only; everywhere else
   // the file input below is the whole story, and none of this renders.
@@ -147,6 +157,10 @@ const MfcCasFlow = ({
   const [frameLoaded, setFrameLoaded] = useState(false);
 
   const popupRef = useRef<Window | null>(null);
+  // Poll handle for watching whether the investor closed the MFC window before
+  // finishing — the one signal we get without a postMessage.
+  const popupWatchRef = useRef<number | null>(null);
+  const [popupClosed, setPopupClosed] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -218,6 +232,25 @@ const MfcCasFlow = ({
     }
   })();
 
+  // MFC's own guides name three different consent hosts (cas-oauth.,
+  // cas., mfc-cas-uat.mfcentral.com) and the completion postMessage can arrive
+  // from any of them, so pinning a single configured origin silently drops real
+  // messages. Trust the configured origin (this covers the mock's localhost)
+  // OR any mfcentral.com host — only MFC controls that domain, so the guarantee
+  // the origin check exists to give is intact.
+  const isTrustedMfcOrigin = useCallback(
+    (origin: string) => {
+      if (mfcOrigin && origin === mfcOrigin) return true;
+      try {
+        const host = new URL(origin).hostname.toLowerCase();
+        return host === "mfcentral.com" || host.endsWith(".mfcentral.com");
+      } catch {
+        return false;
+      }
+    },
+    [mfcOrigin],
+  );
+
   const mode = config?.integration_mode ?? "popup";
   // Our OTP screen exists only where a code can be checked — see the note on
   // MfcConfig.otp_capture. On "mfc" this is false, the step never renders, and
@@ -225,11 +258,13 @@ const MfcCasFlow = ({
   const captureOtpHere = config?.otp_capture === "app";
   const otpValue = otpDigits.join("");
 
-  // The account's PAN wins when there is one; ours is only accepted when there
-  // is not (the backend enforces the same rule, and rejects a contradiction).
+  // The account's PAN is used by default when one is on file; the "use a
+  // different PAN" toggle sends the typed one instead. With no PAN on file the
+  // input is the only source, so it is always shown.
   const panOnFile = me?.pan_set === true;
   const panValue = pan.trim().toUpperCase();
-  const panReady = panOnFile || PAN_RE.test(panValue);
+  const usingTypedPan = !panOnFile || useDifferentPan;
+  const panReady = usingTypedPan ? PAN_RE.test(panValue) : true;
   const contactReady =
     !useOtherContact ||
     /\d{10}/.test(contactMobile.replace(/\D/g, "")) ||
@@ -244,6 +279,20 @@ const MfcCasFlow = ({
    * Split out because it now has two callers: straight after /start when MFC
    * collects the OTP, and after OUR OTP screen clears when we do.
    */
+  /** Poll the consent pop-up so a window the investor closes early flips the
+   * consent step into its "closed — reopen" state instead of waiting forever
+   * for a postMessage that can no longer come. */
+  const watchPopup = useCallback(() => {
+    if (popupWatchRef.current) window.clearInterval(popupWatchRef.current);
+    popupWatchRef.current = window.setInterval(() => {
+      if (popupRef.current && popupRef.current.closed) {
+        window.clearInterval(popupWatchRef.current!);
+        popupWatchRef.current = null;
+        setPopupClosed(true);
+      }
+    }, 800);
+  }, []);
+
   const openConsentWindow = useCallback(
     (redirectUrl: string) => {
       if (mode === "redirect") {
@@ -254,33 +303,71 @@ const MfcCasFlow = ({
       }
       if (mode !== "popup") return; // iframe mode renders it inline instead.
 
-      // Opened from inside a click handler's async continuation, which some
-      // browsers treat as un-gestured. If it is blocked we fall back to the
-      // explicit link on the consent step rather than failing the flow.
-      popupRef.current = window.open(
-        redirectUrl,
-        "mfc-cas",
-        "width=520,height=760",
-      );
+      setPopupClosed(false);
+      // Reuse the blank window opened synchronously on the click (see
+      // handleStart) — a browser treats navigating a window it already gave us
+      // as gestured, where a fresh window.open in an async continuation is the
+      // thing pop-up blockers stop. Only open cold if that pre-open did not run
+      // (the OTP-first mock path, or a reopen from the consent screen's button,
+      // both of which are themselves inside a live click).
+      if (popupRef.current && !popupRef.current.closed) {
+        popupRef.current.location.href = redirectUrl;
+      } else {
+        popupRef.current = window.open(
+          redirectUrl,
+          "mfc-cas",
+          "width=520,height=760",
+        );
+      }
       if (!popupRef.current) {
+        setPopupClosed(true);
         toast({
           title: "Pop-up blocked",
-          description: "Use the button on the next screen to open MF Central.",
+          description: "Use the button on the consent screen to open MF Central.",
         });
+        return;
       }
+      popupRef.current.focus?.();
+      watchPopup();
     },
-    [mode],
+    [mode, watchPopup],
   );
 
   const handleStart = useCallback(async () => {
     if (starting) return;
     setStarting(true);
     setStartError(null);
+
+    // Open the pop-up NOW, inside the click, so the browser sees a gestured
+    // window.open and lets it through — then park it on a tiny holding page
+    // until /start returns and openConsentWindow navigates it to MFC. Skipped
+    // when our own OTP screen comes first (the mock): there the window is
+    // opened later from the Verify click, which is its own gesture, and a
+    // window sitting open behind the OTP box would only confuse.
+    if (mode === "popup" && !captureOtpHere) {
+      popupRef.current = window.open("about:blank", "mfc-cas", "width=520,height=760");
+      if (popupRef.current) {
+        try {
+          popupRef.current.document.write(
+            '<!doctype html><meta charset="utf-8"><title>MF Central</title>' +
+              '<body style="font:15px/1.5 system-ui,sans-serif;display:grid;' +
+              'place-items:center;height:100vh;margin:0;color:#475569;' +
+              'background:#fff">Connecting to MF Central…</body>',
+          );
+        } catch {
+          // Cross-origin once navigated; the holding page is a nicety only.
+        }
+      }
+    }
+
     try {
       const mobile = useOtherContact ? contactMobile.trim() : "";
       const email = useOtherContact ? contactEmail.trim() : "";
       const res = await startMfcCasRequest({
-        pan_no: panOnFile ? null : panValue,
+        // Send the typed PAN whenever the input is in play — either no PAN is on
+        // file, or the user chose "use a different PAN". Null means "use my
+        // account's PAN", which the backend resolves.
+        pan_no: usingTypedPan ? panValue : null,
         // Exactly one, never both — MFC documents passing both as a rejection,
         // and mobile is preferred because the OTP is an SMS.
         mobile: mobile || null,
@@ -305,6 +392,11 @@ const MfcCasFlow = ({
       setStep("consent");
       openConsentWindow(res.redirect_url);
     } catch (err: unknown) {
+      // The holding-page pop-up was opened before the call; if the call failed
+      // there is nothing to navigate it to, so close it rather than leave a
+      // blank window stranded.
+      popupRef.current?.close();
+      popupRef.current = null;
       setStartError(
         err instanceof BackendOfflineError
           ? "Backend is unreachable. Please try again in a moment."
@@ -317,9 +409,10 @@ const MfcCasFlow = ({
     }
   }, [
     starting,
+    mode,
     captureOtpHere,
     openConsentWindow,
-    panOnFile,
+    usingTypedPan,
     panValue,
     useOtherContact,
     contactMobile,
@@ -419,16 +512,33 @@ const MfcCasFlow = ({
     async (base64: string, label: string) => {
       if (validating) return;
       setQrError(null);
+      setPendingNote(null);
       setQrFileName(label);
       setValidating(true);
+      // Remember the QR so a "still generating" answer can be retried without
+      // asking the user to fetch it again — it is not consumed in that state.
+      lastQrRef.current = { base64, label };
       try {
         const res = await validateMfcQr({
           qr_code: base64,
           request_id: request?.request_id ?? null,
           req_id: request?.req_id ?? null,
         });
+        if (res.pending) {
+          // MFC is still assembling the statement. Stay on the QR step and let
+          // the user retry the same QR in a moment — not a failure, not done.
+          setPendingNote(res.pending);
+          return;
+        }
         setResult(res);
         setStep("done");
+        // The statement is in — the consent window (if any is still open) has
+        // nothing left to do, and the close watch would keep polling it.
+        if (popupWatchRef.current) {
+          window.clearInterval(popupWatchRef.current);
+          popupWatchRef.current = null;
+        }
+        popupRef.current?.close();
         if (res.ingest) onImported?.(res);
       } catch (err: unknown) {
         setQrError(
@@ -605,9 +715,16 @@ const MfcCasFlow = ({
    * because the message carries a reqId, not the image.
    */
   useEffect(() => {
-    if ((step !== "consent" && step !== "qr") || !mfcOrigin) return;
+    if (step !== "consent" && step !== "qr") return;
+    const stopWatch = () => {
+      if (popupWatchRef.current) {
+        window.clearInterval(popupWatchRef.current);
+        popupWatchRef.current = null;
+      }
+      setPopupClosed(false);
+    };
     const onMessage = (event: MessageEvent) => {
-      if (event.origin !== mfcOrigin) return;
+      if (!isTrustedMfcOrigin(event.origin)) return;
       const payload = event.data as
         | {
             type?: string;
@@ -627,6 +744,7 @@ const MfcCasFlow = ({
       if (payload?.type === "mfc-cas-download") {
         const base64 = payload.data?.base64;
         if (!base64) return;
+        stopWatch();
         popupRef.current?.close();
         setStep("qr");
         void redeemQr(base64, payload.data?.filename ?? "cas-request-qr.png");
@@ -635,6 +753,7 @@ const MfcCasFlow = ({
 
       if (payload?.type !== "mfc-cas-complete") return;
 
+      stopWatch();
       if (payload.data?.status === "success") {
         // Already redeeming from an `mfc-cas-download` that arrived first —
         // completion is then just noise, and re-entering the QR step would
@@ -663,8 +782,23 @@ const MfcCasFlow = ({
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [step, mfcOrigin, folderRemembered, rescan, redeemQr, validating, result]);
+  }, [
+    step,
+    isTrustedMfcOrigin,
+    folderRemembered,
+    rescan,
+    redeemQr,
+    validating,
+    result,
+  ]);
   const restart = () => {
+    if (popupWatchRef.current) {
+      window.clearInterval(popupWatchRef.current);
+      popupWatchRef.current = null;
+    }
+    popupRef.current?.close();
+    popupRef.current = null;
+    setPopupClosed(false);
     setRequest(null);
     setResult(null);
     setQrError(null);
@@ -674,8 +808,21 @@ const MfcCasFlow = ({
     setStartedAt(0);
     setOtpDigits(Array(6).fill(""));
     setOtpError(null);
+    setUseDifferentPan(false);
+    setPan("");
+    setPendingNote(null);
+    lastQrRef.current = null;
     setStep("intro");
   };
+
+  // The pop-up watch is a bare interval; a mid-flow unmount (navigating away)
+  // would otherwise leave it ticking against a window that is gone.
+  useEffect(
+    () => () => {
+      if (popupWatchRef.current) window.clearInterval(popupWatchRef.current);
+    },
+    [],
+  );
 
   // ------------------------------------------------------------------ gating
 
@@ -819,7 +966,7 @@ const MfcCasFlow = ({
             </div>
 
             <div className="mt-5 space-y-3 rounded-2xl border border-border bg-card p-4">
-              {panOnFile ? (
+              {panOnFile && !useDifferentPan ? (
                 <div>
                   <p className="text-[11px] text-muted-foreground">
                     Statement will be requested for
@@ -827,12 +974,18 @@ const MfcCasFlow = ({
                   <p className="mt-0.5 font-mono text-[13px] text-foreground">
                     {me?.pan_masked ?? "your PAN"}
                   </p>
-
+                  <button
+                    type="button"
+                    onClick={() => setUseDifferentPan(true)}
+                    className="mt-1.5 text-left text-[11px] leading-relaxed text-muted-foreground underline decoration-dotted underline-offset-2 transition-colors hover:text-foreground"
+                  >
+                    Use a different PAN
+                  </button>
                 </div>
               ) : (
                 <label className="block">
                   <span className="text-[12px] font-medium text-foreground">
-                    Your PAN
+                    {panOnFile ? "Request for a different PAN" : "Your PAN"}
                   </span>
                   <input
                     type="text"
@@ -842,12 +995,25 @@ const MfcCasFlow = ({
                     value={pan}
                     onChange={(e) => setPan(e.target.value.toUpperCase())}
                     placeholder="ABCDE1234F"
+                    autoFocus={panOnFile}
                     className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2.5 font-mono text-[13px] uppercase tracking-wide text-foreground outline-none transition-colors focus:border-primary"
                   />
                   {pan && !PAN_RE.test(panValue) && (
                     <span className="mt-1 block text-[11px] text-muted-foreground">
                       Five letters, four digits, one letter.
                     </span>
+                  )}
+                  {panOnFile && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUseDifferentPan(false);
+                        setPan("");
+                      }}
+                      className="mt-1.5 text-left text-[11px] text-muted-foreground underline decoration-dotted underline-offset-2 transition-colors hover:text-foreground"
+                    >
+                      Use my account PAN ({me?.pan_masked ?? "on file"})
+                    </button>
                   )}
                 </label>
               )}
@@ -925,6 +1091,31 @@ const MfcCasFlow = ({
               )}
             </button>
 
+            {/* Skip the pop-up entirely and hand over a QR the investor already
+                downloaded (from a consent they started earlier, or one that got
+                interrupted). validateQRCode needs a reqId, and the backend falls
+                back to this user's most recent request when the frontend has
+                none — so this works even after the tab that ran /start is gone.
+                No PAN/contact needed here: the QR carries the consent. */}
+            <div className="mt-4 flex items-center gap-3">
+              <span className="h-px flex-1 bg-border" />
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                or
+              </span>
+              <span className="h-px flex-1 bg-border" />
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setQrError(null);
+                setPendingNote(null);
+                setStep("qr");
+              }}
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-background py-3 text-[13px] font-medium text-foreground transition-colors hover:bg-accent/40"
+            >
+              <UploadCloud className="h-4 w-4" />
+              I already have my QR code — upload it
+            </button>
           </motion.div>
         )}
 
@@ -1041,54 +1232,139 @@ const MfcCasFlow = ({
             {...stepMotion}
             className={mode === "iframe" ? "" : "mt-4"}
           >
-            {/* In iframe mode this line is rendered above the frame instead. */}
+            {/* In iframe mode MFC's page is embedded above (outside
+                AnimatePresence); this pane is only the popup/redirect story. */}
             {mode !== "iframe" && (
-              <p className="text-[13px] leading-relaxed text-muted-foreground">
-                {captureOtpHere
-                  ? "MF Central is open in a new window."
-                  : `OTP sent to ${request.otp_destination}.`}{" "}
-                Choose <strong className="text-foreground">Detailed</strong>,
-                then download the QR.
-              </p>
-            )}
+              <>
+                {/* A live status card. OTP, Summary/Detailed and the QR download
+                    all happen on MFC's own page, which we cannot see into — so
+                    the honest state is "waiting", and the statement returns on
+                    MFC's postMessage with no upload needed in the happy path.
+                    The pulsing dot is the visible promise that we are still
+                    listening; it stops when the window is closed. */}
+                <div className="rounded-2xl border border-border bg-card p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-secondary">
+                      <MonitorSmartphone className="h-4 w-4 text-foreground" />
+                      {!popupClosed && (
+                        <span className="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5">
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60" />
+                          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
+                        </span>
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[13px] font-semibold text-foreground">
+                        {popupClosed
+                          ? "MF Central window closed"
+                          : "Finish in the MF Central window"}
+                      </p>
+                      <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                        {popupClosed
+                          ? "Reopen it to finish — or upload the QR if you already have it."
+                          : "Your statement comes back here automatically when you're done."}
+                      </p>
+                    </div>
+                  </div>
 
-            {mode !== "iframe" && (
-              <a
-                href={request.redirect_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-background py-3 text-[13px] font-medium text-foreground transition-colors hover:bg-accent/40"
-              >
-                <ExternalLink className="h-4 w-4" />
-                Open MF Central
-              </a>
-            )}
+                  <ol className="mt-3.5 space-y-2 border-t border-border pt-3.5">
+                    {!captureOtpHere && (
+                      <ConsentTask>
+                        Enter the OTP MF Central sent to{" "}
+                        <strong className="text-foreground">
+                          {request.otp_destination}
+                        </strong>
+                      </ConsentTask>
+                    )}
+                    <ConsentTask>
+                      Choose the{" "}
+                      <strong className="text-foreground">Detailed</strong>{" "}
+                      statement
+                    </ConsentTask>
+                    <ConsentTask>
+                      <strong className="text-foreground">Download</strong> the
+                      QR code
+                    </ConsentTask>
+                  </ol>
+                </div>
 
-            <button
-              type="button"
-              onClick={() => void handleDownloadedClick()}
-              className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-foreground py-3.5 text-[13px] font-semibold text-background transition-all active:scale-[0.98]"
-            >
-              {scanSupported ? <FolderSearch className="h-4 w-4" /> : null}
-              I&apos;ve downloaded the QR code
-              {scanSupported ? null : <ArrowRight className="h-4 w-4" />}
-            </button>
+                <button
+                  type="button"
+                  onClick={() => openConsentWindow(request.redirect_url)}
+                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-background py-3 text-[13px] font-medium text-foreground transition-colors hover:bg-accent/40"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  {popupClosed ? "Reopen MF Central" : "Reopen the window"}
+                </button>
 
-            {scanSupported && !folderRemembered && (
-              <p className="mt-2 text-center text-[11px] leading-relaxed text-muted-foreground">
-                Your browser will ask for your Downloads folder. We only read
-                images saved since this request started.
-              </p>
+                {/* Fallback path. MFC returns the QR to us over postMessage in
+                    popup mode, but if that is blocked — or the browser saved the
+                    QR to disk instead — the investor hands it over here. This is
+                    also the whole story in redirect mode and on non-Chromium
+                    browsers, where no automatic hand-back exists. */}
+                <div className="mt-4 rounded-xl border border-dashed border-border p-3">
+                  <p className="text-[11px] leading-relaxed text-muted-foreground">
+                    Didn&apos;t come back on its own?
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void handleDownloadedClick()}
+                    className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-foreground py-2.5 text-[12px] font-semibold text-background transition-all active:scale-[0.98]"
+                  >
+                    {scanSupported ? (
+                      <FolderSearch className="h-3.5 w-3.5" />
+                    ) : (
+                      <UploadCloud className="h-3.5 w-3.5" />
+                    )}
+                    I&apos;ve downloaded the QR code
+                  </button>
+                  {scanSupported && !folderRemembered && (
+                    <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">
+                      Your browser will ask for your Downloads folder. We only
+                      read images saved since this request started.
+                    </p>
+                  )}
+                </div>
+              </>
             )}
           </motion.div>
         )}
 
         {step === "qr" && (
           <motion.div key="qr" {...stepMotion} className="mt-4">
-            {!scanning && (
+            {!scanning && !pendingNote && (
               <p className="text-[13px] leading-relaxed text-muted-foreground">
                 The QR is single-use and tied to this request.
               </p>
+            )}
+
+            {/* MFC is still building the statement. The same QR is still valid,
+                so this is a wait-and-retry, not a failure — no "start again". */}
+            {pendingNote && !validating && (
+              <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/5 px-3.5 py-3">
+                <Loader2 className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[12px] font-medium text-foreground">
+                    MF Central is still generating your statement
+                  </p>
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                    {pendingNote} Your QR is still valid — no need to download it
+                    again.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const q = lastQrRef.current;
+                      if (q) void redeemQr(q.base64, q.label);
+                    }}
+                    disabled={!lastQrRef.current}
+                    className="mt-2.5 flex items-center justify-center gap-2 rounded-lg bg-foreground px-4 py-2 text-[12px] font-semibold text-background transition-all active:scale-[0.98] disabled:opacity-40"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    Try the QR again
+                  </button>
+                </div>
+              </div>
             )}
 
             {scanning && (
@@ -1214,13 +1490,21 @@ const MfcCasFlow = ({
             {qrError && (
               <div className="mt-4">
                 <Notice tone="error" title="That didn't work" body={qrError} />
+                {/* The most common cause of a validate failure is an expired or
+                    already-used QR — they are short-lived — so the recovery is a
+                    fresh consent, uploaded promptly, not another go at this one. */}
+                <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+                  MF Central QR codes expire quickly and can be used once. If it
+                  has been more than a few minutes, start again and upload the
+                  new QR straight away.
+                </p>
                 <button
                   type="button"
                   onClick={restart}
-                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-border py-3 text-[13px] font-medium text-foreground transition-colors hover:bg-accent/40"
+                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-foreground py-3 text-[13px] font-semibold text-background transition-all active:scale-[0.98]"
                 >
                   <RefreshCw className="h-3.5 w-3.5" />
-                  Start again
+                  Start a fresh request
                 </button>
               </div>
             )}
@@ -1228,10 +1512,13 @@ const MfcCasFlow = ({
             {!qrError && !validating && (
               <button
                 type="button"
-                onClick={() => setStep("consent")}
+                // Direct-upload arrivals never ran the consent step (no
+                // `request`), so send them back to the start rather than a pane
+                // that would render blank.
+                onClick={() => setStep(request ? "consent" : "intro")}
                 className="mt-4 w-full text-center text-[12px] text-muted-foreground transition-colors hover:text-foreground"
               >
-                Back — I still need to get the QR
+                {request ? "Back — I still need to get the QR" : "Back"}
               </button>
             )}
           </motion.div>
@@ -1347,6 +1634,18 @@ const IntroPoint = ({
       </p>
     </div>
   </div>
+);
+
+/** One line of the "what to do on MF Central's page" checklist shown while the
+ * consent window is open. A plain bullet, not a numbered step of our own rail —
+ * these happen on their site, in their order, and we only describe them. */
+const ConsentTask = ({ children }: { children: React.ReactNode }) => (
+  <li className="flex items-start gap-2.5">
+    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/50" />
+    <span className="text-[11px] leading-relaxed text-muted-foreground">
+      {children}
+    </span>
+  </li>
 );
 
 const Notice = ({
