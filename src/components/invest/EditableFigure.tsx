@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 
-import { roundPct } from "@/lib/investment-preferences";
-
 // The customer can paste or hold a key down, so anything can land in the
 // field in one event. Truncating rather than rejecting matters: a field that
 // stops responding to a keystroke reads as broken, not as validating.
@@ -13,35 +11,33 @@ function sanitiseDigits(raw: string): string {
 }
 
 /**
- * A percentage the customer can tap to type over.
+ * The number in the middle of a stepper, which the customer can tap to type
+ * over: 32px to look at, 44px tall to tap, in the standard text colour.
  *
- * It rests as a tinted pill rather than bare text, which does three jobs at
- * once: it says the figure is editable, it makes the customer's OWN number the
- * brightest thing on a row that carries three, and it grows a 46×16 target to
- * something a thumb can hit (spec §7.1).
- *
- * The field clamps to `max` on every keystroke, so an over-budget figure is
+ * The field clamps to `max` on every keystroke, so an out-of-range figure is
  * never displayable. That is the whole point: a value rejected at commit and
  * replaced in the same frame is indistinguishable from the app ignoring you.
+ *
+ * At rest its accessible name carries the value ("Large-cap percentage, 11%"):
+ * the name replaces the visible text, and a figure a screen reader cannot hear
+ * is no figure at all.
  *
  * `select-none` also suppresses iOS's selection callout. `touch-manipulation`
  * and `-webkit-touch-callout` are not needed: this app's viewport already
  * disables double-tap zoom, and neither appears anywhere else in `src/`.
  *
- * The caller still owns the rebalance — this only reports a number in range.
+ * The caller still owns what a new value means — this only reports one in range.
  */
 export default function EditableFigure({
   value,
   max,
   label,
   onCommit,
-  className,
 }: {
   value: number;
   max: number;
   label: string;
   onCommit: (v: number) => void;
-  className: string;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   const restRef = useRef<HTMLButtonElement>(null);
@@ -60,27 +56,28 @@ export default function EditableFigure({
 
   const finish = (commit: boolean) => {
     if (draft === null) return;
-    const n = roundPct(Number(draft));
     // An unchanged value must not commit: it would engage the customer's own
-    // distribution — turning "engine decides" into a pin — with no edit.
-    if (commit && draft.trim() !== "" && Number.isFinite(n) && n !== value) onCommit(n);
+    // numbers — turning "engine decides" into a pin — with no edit.
+    if (commit && draft !== "" && Number(draft) !== value) onCommit(Number(draft));
     setDraft(null);
   };
+
+  const look =
+    "h-8 w-10 rounded text-center text-[14px] font-semibold tabular-nums text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4A868]/50";
 
   if (draft !== null) {
     return (
       <input
         autoFocus
         // type="number" brings spinners and a locale-dependent separator into a
-        // 46px cell; the parse in `finish` is the only validation needed.
+        // 40px cell; the parse in `finish` is the only validation needed.
         type="text"
         inputMode="numeric"
-        aria-label={`${label} share`}
+        aria-label={`${label} percentage`}
         value={draft}
         onChange={(e) => {
           const sanitised = sanitiseDigits(e.target.value);
-          const n = Number(sanitised);
-          setDraft(Number.isFinite(n) && n > max ? String(max) : sanitised);
+          setDraft(Number(sanitised) > max ? String(max) : sanitised);
         }}
         onFocus={(e) => e.target.select()}
         onBlur={() => finish(true)}
@@ -90,7 +87,7 @@ export default function EditableFigure({
           byKey.current = true;
           finish(e.key === "Enter");
         }}
-        className={`rounded bg-muted px-1 text-right font-semibold tabular-nums text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4A868]/50 ${className}`}
+        className={`bg-muted ${look}`}
       />
     );
   }
@@ -99,12 +96,13 @@ export default function EditableFigure({
     <button
       ref={restRef}
       type="button"
-      aria-label={`${label} share`}
+      aria-label={`${label} percentage, ${value}%`}
       title="Tap to type a value"
-      onClick={() => setDraft(value.toFixed(0))}
-      className={`select-none rounded bg-foreground/[0.04] px-1 py-1 text-right font-semibold tabular-nums text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4A868]/50 ${className}`}
+      onClick={() => setDraft(String(value))}
+      // 32px to see, 44px tall to tap: the ::after pad reaches past the box.
+      className={`relative select-none bg-transparent after:absolute after:inset-x-0 after:-inset-y-1.5 after:content-[''] ${look}`}
     >
-      {`${value.toFixed(0)}%`}
+      {`${value}%`}
     </button>
   );
 }

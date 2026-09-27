@@ -2840,6 +2840,10 @@ export interface ScreenSubcategory {
   class: "equity" | "debt" | "others";
   label: string;
   recommended_pct_of_total: number;
+  /** This category's share (0-1) of its class's own categories in Prozpr's
+   *  plan — or, where the plan puts nothing there, of the engine's default
+   *  split. Null on multi-asset, which belongs to no single class. */
+  weight_in_class: number | null;
 }
 
 export interface ScreenSaved {
@@ -2858,6 +2862,8 @@ export interface ScreenPreferenceGetResponse {
   saved: ScreenSaved | null;
   recommendation: { class_mix: ClassMix };
   subcategories: ScreenSubcategory[];
+  /** The multi-asset fund's make-up, as percents (e.g. 65 / 25 / 10). */
+  multi_asset_composition: ClassMix;
   /** Planning the engine currently does for this customer that a saved
    *  distribution would switch off (backend spec 9.1). Optional: the backend
    *  does not send it yet, and the screen shows nothing until it does. */

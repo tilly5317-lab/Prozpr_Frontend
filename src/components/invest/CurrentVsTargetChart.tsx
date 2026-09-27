@@ -89,7 +89,7 @@ export function CurrentVsTargetChart({
   }));
 
   return (
-    <section style={cardStyle} className="px-4 py-4">
+    <section style={cardStyle} className="px-3 py-3">
       <p className="text-[11px] tracking-[0.16em] uppercase text-muted-foreground">
         {title}
       </p>
@@ -105,7 +105,7 @@ export function CurrentVsTargetChart({
       </div>
 
       <TooltipProvider delayDuration={100}>
-        <div className="mt-4 space-y-2.5">
+        <div className="mt-2 space-y-2.5">
           {barDefs.map(({ which, label }, bi) => (
             <div key={which} className="flex items-center gap-2.5">
               <span className="w-14 shrink-0 text-[12px] text-muted-foreground">{label}</span>

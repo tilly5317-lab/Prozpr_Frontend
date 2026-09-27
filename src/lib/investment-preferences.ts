@@ -1,5 +1,5 @@
-/** S4 percentage preferences — pure bar math + validation. No React, no I/O.
- *  Every value is a share of the WHOLE portfolio; the backend owns %-of-class. */
+/** Preferences screen maths — pure, no React, no I/O.
+ *  Every value is a share of the WHOLE portfolio, on whole percents. */
 import type { ClassMix, ScreenSubcategory, SubcategoryPin, ScreenCurrentHolding } from "@/lib/api";
 
 export type Cls = "equity" | "debt" | "others";
@@ -9,6 +9,8 @@ export const CLASS_LABEL: Record<Cls, string> = {
   debt: "Debt",
   others: "Commodity",
 };
+/** A class's name mid-sentence: "your 10% in debt". */
+export const classWord = (cls: Cls): string => CLASS_LABEL[cls].toLowerCase();
 
 /** Canonical asset-class colours (single source app-wide). */
 export const CLASS_COLOR: Record<Cls, string> = {
@@ -34,27 +36,6 @@ export function shortLabel(cat: ScreenSubcategory): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-
-const clamp = (v: number) => Math.max(0, Math.min(100, v));
-
-/** Drag a divider inside the bar. Handle 1 = the equity|debt boundary (trades
- *  equity↔debt, commodity fixed); handle 2 = the debt|commodity boundary
- *  (trades commodity↔debt, equity fixed). Integer %s, always summing to 100. */
-export function applyDividerDrag(mix: ClassMix, handle: 1 | 2, posPct: number): ClassMix {
-  const x = Math.round(clamp(posPct));
-  // Every result is snapped with roundPct. Debt is the derived residual on BOTH
-  // handles, so a bare subtraction can return 29.999999999999996 and would put
-  // that on the screen and on the wire; the snap makes it a clean whole percent.
-  if (handle === 1) {
-    const cap = roundPct(mix.equity + mix.debt); // the second divider — handle 1 can't cross it
-    const equity = roundPct(Math.min(x, cap));
-    return { equity, debt: roundPct(cap - equity), others: mix.others };
-  }
-  const floor = mix.equity; // the first divider — handle 2 can't cross it
-  const cum = roundPct(Math.max(x, floor)); // equity + debt cumulative
-  return { equity: mix.equity, debt: roundPct(cum - floor), others: roundPct(100 - cum) };
-}
-
 /** Whole percents are this screen's unit of precision (revised 2026-09-26 from
  *  tenths): what the customer can type, what every figure is printed to, and what
  *  validation compares. Two percentages are only ever compared after both are on
@@ -74,9 +55,8 @@ function roundToSum(values: number[], target: number): number[] {
   return out;
 }
 
-/** Round the engine's float recommendation to tenths, letting the residual class
- *  (others) absorb the rounding error so it always sums to 100 — the same
- *  convention as applyDividerDrag's second handle. */
+/** Round a class mix to whole percents, letting the residual class (others)
+ *  absorb the rounding error so it always sums to 100. */
 export function roundMix(m: ClassMix): ClassMix {
   const equity = roundPct(m.equity);
   const debt = roundPct(m.debt);
@@ -85,263 +65,177 @@ export function roundMix(m: ClassMix): ClassMix {
 
 export const MULTI_ASSET_ID = "multi_asset";
 
-/** The multi-asset fund's fixed internal split. One entry the customer types
- *  draws on all three class budgets at once — real maths, not a label
- *  (frontend spec §6, backend spec §5). */
-export const MULTI_ASSET_SPLIT: Record<Cls, number> = { equity: 0.65, debt: 0.25, others: 0.1 };
-
-/** Row inputs keyed by subgroup id. `null` = the field is blank. This is the ONE
- *  shape the maths speaks; `SubcategoryPin[]` appears only at the wire boundary
- *  (Task 2). */
+/** Row inputs keyed by subgroup id. `null` = blank: a class whose rows are all
+ *  blank follows Prozpr's split, and a blank multi-asset follows Prozpr's pick.
+ *  This is the ONE shape the maths speaks; `SubcategoryPin[]` appears only at
+ *  the wire boundary. */
 export type RowValues = Record<string, number | null>;
 
-/** Blank reads as 0 once engaged (spec §4.3). Every read of RowValues goes
- *  through here so that rule lives in exactly one place. */
+/** What the screen needs from the backend beyond the customer's own numbers:
+ *  the category catalog (with Prozpr's within-class weights) and the
+ *  multi-asset fund's make-up, as percents. Neither is hardcoded here. */
+export interface Catalog {
+  cats: ScreenSubcategory[];
+  comp: ClassMix;
+}
+
 const val = (values: RowValues, id: string): number => values[id] ?? 0;
 
-/** What a multi-asset entry contributes to one class, as % of total.
- *  Debt and commodity round to a tenth; equity carries the residual, so the
- *  three figures the customer sees always add back to the one they typed
- *  (5.0 -> 3.2 / 1.3 / 0.5, not 3.3 / 1.3 / 0.5 = 5.1). */
-export function multiAssetDraw(values: RowValues, cls: Cls): number {
-  const ma = val(values, MULTI_ASSET_ID);
-  const debt = roundPct(ma * MULTI_ASSET_SPLIT.debt);
-  const others = roundPct(ma * MULTI_ASSET_SPLIT.others);
-  if (cls === "debt") return debt;
-  if (cls === "others") return others;
-  return roundPct(ma - debt - others);
+/** A class's own categories — everything but the multi-asset fund. */
+export function classRows(cats: ScreenSubcategory[], cls: Cls): ScreenSubcategory[] {
+  return cats.filter((c) => c.class === cls && c.id !== MULTI_ASSET_ID);
 }
 
-/** The largest multi-asset entry the bar can actually fund. The sleeve draws
- *  65/25/10, so the scarcest class sets the ceiling — capping the slider here is
- *  what makes an overdrawn class impossible rather than an error to report. */
-export function maxMultiAsset(mix: ClassMix): number {
-  const ratio = Math.min(
-    ...CLASSES.map((c) => mix[c] / MULTI_ASSET_SPLIT[c]),
-  );
-  let cap = Math.min(100, Math.floor(ratio));
-  // The exact ratio is not enough: multiAssetDraw rounds debt and commodity to a
-  // whole percent and hands equity the residual, so the cap can still overdraw a
-  // class by one. Step down until every class is fundable at the published cap.
-  while (cap > 0 && CLASSES.some((c) => classBudget(mix, { [MULTI_ASSET_ID]: cap }, c) < 0)) {
-    cap = cap - 1;
-  }
-  return cap;
+/** What a multi-asset amount counts as in each class. Debt and commodity round
+ *  to a whole percent; equity takes the rest, so the three always add back to
+ *  the amount itself. */
+export function multiAssetParts(amount: number, comp: ClassMix): ClassMix {
+  const debt = roundPct((amount * comp.debt) / 100);
+  const others = roundPct((amount * comp.others) / 100);
+  return { equity: amount - debt - others, debt, others };
 }
 
+/** Whether `amount` in the fund takes class `c` past the customer's share of
+ *  it. Zero means zero: any amount of the fund carries some of every class it
+ *  holds, which whole percents can hide (1% of it is 0.25% debt → 0) — and the
+ *  engine builds no fund at all for a mix with none of debt (`_sleeve_size`). */
+const overflows = (c: Cls, amount: number, parts: ClassMix, mix: ClassMix, comp: ClassMix): boolean =>
+  parts[c] > mix[c] || (amount > 0 && mix[c] === 0 && comp[c] > 0);
 
-/** The budget a class group's own rows must fill: its share on the bar, minus
- *  whatever multi-asset already draws from it. Rounded — this IS the number the
- *  header prints, so typing it always balances the class. */
-export function classBudget(mix: ClassMix, values: RowValues, cls: Cls): number {
-  return roundPct(mix[cls] - multiAssetDraw(values, cls));
+const fits = (amount: number, mix: ClassMix, comp: ClassMix): boolean => {
+  const parts = multiAssetParts(amount, comp);
+  return CLASSES.every((c) => !overflows(c, amount, parts, mix, comp));
+};
+
+/** The most multi-asset the mix can hold: the largest whole amount whose every
+ *  part fits inside the customer's share of that class. */
+export function maxMultiAsset(mix: ClassMix, comp: ClassMix): number {
+  let amount = 100;
+  while (amount > 0 && !fits(amount, mix, comp)) amount--;
+  return amount;
 }
 
-/** What the customer put in a class's own rows. Multi-asset is excluded — it is
- *  accounted for by classBudget, so counting it here would double-count. */
-export function classAllocated(values: RowValues, cats: ScreenSubcategory[], cls: Cls): number {
-  return roundPct(
-    cats
-      .filter((c) => c.id !== MULTI_ASSET_ID && c.class === cls)
-      .reduce((s, c) => s + val(values, c.id), 0),
-  );
+/** The class whose share stops multi-asset going past `maxMultiAsset`, or null
+ *  when nothing does (the fund fits at 100%). */
+export function limitingClass(mix: ClassMix, comp: ClassMix): Cls | null {
+  const max = maxMultiAsset(mix, comp);
+  if (max >= 100) return null;
+  const over = multiAssetParts(max + 1, comp);
+  return CLASSES.find((c) => overflows(c, max + 1, over, mix, comp)) ?? null;
 }
 
-/** Spread `budget` across `rows` in proportion to what they hold now, writing
- *  into `out`.
- *
- *  This is the one place the screen knows how to divide a budget. A set that is
- *  entirely zero has no proportions left to preserve, so the whole budget parks
- *  on the first row, where it stays reachable instead of stranded; and eleven
- *  independent roundings do not land on the budget, so the residual is
- *  distributed across rows starting from the largest, where a tenth is least
- *  visible — never clipped, ensuring the sum is always exactly `budget` on the
- *  whole-percent grid (spec §7.2). */
-function spread(out: RowValues, rows: ScreenSubcategory[], budget: number): void {
-  if (rows.length === 0) return;
-  const total = rows.reduce((s, r) => s + val(out, r.id), 0);
-  if (total <= 0) {
-    rows.forEach((r, i) => {
-      out[r.id] = i === 0 ? budget : 0;
-    });
-    return;
-  }
-
-  let sum = 0;
-  for (const r of rows) {
-    out[r.id] = roundPct((val(out, r.id) / total) * budget);
-    sum = roundPct(sum + val(out, r.id));
-  }
-  const residual = roundPct(budget - sum);
-  if (residual !== 0) {
-    // Distribute the residual across rows largest-first so adjustments are least
-    // visible. This is the only place that corrects rounding errors, so the sum
-    // must ALWAYS reach exactly budget, never clipped.
-    const rowIds = rows.map(r => r.id).sort((a, b) => val(out, b) - val(out, a));
-    let remaining = residual;
-    for (const id of rowIds) {
-      if (remaining === 0) break;
-      const current = val(out, id);
-      // Adjust as much of the remaining correction as this row can absorb without
-      // going negative. If the residual is negative (over-allocated), this takes
-      // from multiple rows if the first one is too small.
-      const adjustment = Math.max(-current, remaining);
-      out[id] = roundPct(current + adjustment);
-      remaining = roundPct(remaining - adjustment);
-    }
-  }
+/** Divide `total` across `rows` in proportion to `weights`, on whole percents
+ *  that add up to exactly `total` (largest remainder). With nothing to go by —
+ *  every weight 0 — the rows share it evenly. */
+function divide(rows: ScreenSubcategory[], weights: number[], total: number): RowValues {
+  const sum = weights.reduce((s, w) => s + w, 0);
+  const shares = sum > 0 ? weights.map((w) => (w / sum) * total) : rows.map(() => total / rows.length);
+  const whole = roundToSum(shares, total);
+  const out: RowValues = {};
+  rows.forEach((r, i) => { out[r.id] = whole[i]; });
+  return out;
 }
 
-/** Put the distribution back on the bar. Every class's rows are rescaled — in
- *  proportion, so the shape the customer chose survives — to sum EXACTLY to that
- *  class's budget, and multi-asset is clamped to what the bar can fund.
- *
- *  This is the invariant's single home. The class bars can only ever trade
- *  within a budget, so the only things that can break the sum are the two that
- *  move a budget: dragging the top bar, and moving the multi-asset slider. Both
- *  run through here, which is why no screen state for "over" or "under" exists.
- */
-export function normalise(mix: ClassMix, values: RowValues, cats: ScreenSubcategory[]): RowValues {
-  const out: RowValues = { ...values };
-  if (out[MULTI_ASSET_ID] != null) {
-    out[MULTI_ASSET_ID] = Math.min(roundPct(out[MULTI_ASSET_ID]), maxMultiAsset(mix));
-  }
+/** Prozpr's split of `total` across a class's rows: our within-class weights
+ *  applied to what the customer has left in that class. */
+export function prozprSplit(rows: ScreenSubcategory[], total: number): RowValues {
+  return divide(rows, rows.map((r) => r.weight_in_class ?? 0), total);
+}
+
+/** A class the customer has set: any of its rows holds a number. A zero counts
+ *  — stepped down to on purpose — so a group whose every row reaches 0 stays
+ *  the customer's instead of jumping back to Prozpr's split. */
+function isSet(rows: ScreenSubcategory[], values: RowValues): boolean {
+  return rows.some((r) => values[r.id] != null);
+}
+
+/** Everything the screen shows, derived from what the customer set. */
+export interface Resolved {
+  /** The most multi-asset the mix can hold. */
+  limit: number;
+  /** Multi-asset as held: the customer's pick (or Prozpr's), capped at `limit`. */
+  multiAsset: number;
+  /** Prozpr's pick, capped at `limit`. */
+  prozprMultiAsset: number;
+  /** What `multiAsset` counts as in each class. */
+  parts: ClassMix;
+  /** Each class's share left for its own categories: mix − parts. */
+  remainder: ClassMix;
+  /** Every category's value, multi-asset included — complete, never blank. */
+  rows: RowValues;
+  /** Prozpr's split of each class's remainder. */
+  prozprRows: RowValues;
+  /** Classes the customer set whose rows no longer add up to their remainder. */
+  unbalanced: Cls[];
+}
+
+/** The single derivation behind every screen: cap multi-asset at what the mix
+ *  can hold, then fill each class's categories. A class the customer has not
+ *  set follows Prozpr's split of what is left. A class they have set keeps
+ *  their numbers exactly — nothing is rescaled to fit, so when its share moves
+ *  it can stop adding up, and is listed in `unbalanced` for the customer to
+ *  fix. */
+export function resolve(mix: ClassMix, values: RowValues, catalog: Catalog): Resolved {
+  const { cats, comp } = catalog;
+  const limit = maxMultiAsset(mix, comp);
+  const prozprMultiAsset = Math.min(recommendedValues(cats)[MULTI_ASSET_ID] ?? 0, limit);
+  const own = values[MULTI_ASSET_ID];
+  const multiAsset = own == null ? prozprMultiAsset : Math.min(own, limit);
+  const parts = multiAssetParts(multiAsset, comp);
+  const remainder = {} as ClassMix;
+  const rows: RowValues = { [MULTI_ASSET_ID]: multiAsset };
+  const prozprRows: RowValues = { [MULTI_ASSET_ID]: prozprMultiAsset };
+  const unbalanced: Cls[] = [];
   for (const cls of CLASSES) {
-    const rows = cats.filter((c) => c.id !== MULTI_ASSET_ID && c.class === cls);
-    spread(out, rows, Math.max(0, classBudget(mix, out, cls)));
-  }
-  return out;
-}
-
-/** Every segment gets at least this share of the bar, so a 0% row still renders
- *  a grabbable sliver instead of nothing — otherwise its two dividers stack on
- *  one pixel and, at either end of a class, sit on the bar's own edge where they
- *  read as end caps. Capped in aggregate so a long class list cannot distort the
- *  bar: with more than eight rows the floor shrinks instead. */
-const MIN_SEGMENT_SHARE = 1.5;
-const MAX_FLOOR_BUDGET = 12;
-
-/** Display widths for one class's segments, as percentages of the bar summing to
- *  100. Rows below the floor are lifted to it and the shortfall is taken from
- *  the rows above it, in proportion — so the big segments stay within a point or
- *  two of their true share and only the invisible ones are distorted.
- *
- *  This is the ONE place a bar stops being literally proportional. The printed
- *  numbers remain the truth; `sharePosToValue` inverts this so a drag still
- *  lands on the value the customer sees under their finger.
- *
- *  Shared by both bars on the screen: the class bars (via `segmentLayout`) and
- *  the Equity/Debt/Commodity bar at the top, which had the same handles-on-top
- *  -of-each-other problem. */
-export function flooredShares(values: number[], total: number): number[] {
-  const n = values.length;
-  if (n === 0) return [];
-  // A bar funded with nothing draws an empty track. Equal slivers would read as
-  // an even split, which is the opposite of what is true.
-  if (total <= 0) return values.map(() => 0);
-
-  const floor = Math.min(MIN_SEGMENT_SHARE, MAX_FLOOR_BUDGET / n);
-  const shares = values.map((v) => (v / total) * 100);
-  const need = shares.reduce((s, x) => s + Math.max(0, floor - x), 0);
-  const pool = shares.reduce((s, x) => s + (x > floor ? x : 0), 0);
-  // Guard, not a normal path: a balanced set always has entries above the floor.
-  // Without it an all-zero set at a positive total divides by zero.
-  if (pool <= need) return values.map(() => 100 / n);
-
-  const scale = (pool - need) / pool;
-  return shares.map((x) => (x > floor ? x * scale : floor));
-}
-
-/** `flooredShares` for a class's rows. */
-export function segmentLayout(
-  rows: ScreenSubcategory[], values: RowValues, budget: number,
-): number[] {
-  return flooredShares(rows.map((r) => val(values, r.id)), budget);
-}
-
-/** A position along a bar (0-100) back to a position in value space, walking
- *  the same segments `flooredShares` drew. Piecewise-linear and monotonic, so a
- *  boundary maps to exactly that row's cumulative value and a drag never jumps
- *  backwards. A floored row is a flat step: its sliver of bar carries no value,
- *  which is precisely what makes it safe to draw. */
-export function sharePosToValue(values: number[], total: number, displayPct: number): number {
-  const widths = flooredShares(values, total);
-  const p = Math.max(0, Math.min(100, displayPct));
-  let accDisplay = 0;
-  let accValue = 0;
-  for (let i = 0; i < values.length; i++) {
-    const w = widths[i];
-    if (p <= accDisplay + w) {
-      return roundPct(accValue + (w > 0 ? ((p - accDisplay) / w) * values[i] : 0));
+    remainder[cls] = mix[cls] - parts[cls];
+    const cr = classRows(cats, cls);
+    const split = prozprSplit(cr, remainder[cls]);
+    Object.assign(prozprRows, split);
+    if (isSet(cr, values)) {
+      cr.forEach((r) => { rows[r.id] = val(values, r.id); });
+      if (cr.reduce((sum, r) => sum + val(values, r.id), 0) !== remainder[cls]) unbalanced.push(cls);
+    } else {
+      Object.assign(rows, split);
     }
-    accDisplay += w;
-    accValue += values[i];
   }
-  return total;
+  return { limit, multiAsset, prozprMultiAsset, parts, remainder, rows, prozprRows, unbalanced };
 }
 
-/** `sharePosToValue` for a class's rows. */
-export function barPosToValue(
-  rows: ScreenSubcategory[], values: RowValues, budget: number, displayPct: number,
-): number {
-  return sharePosToValue(rows.map((r) => val(values, r.id)), budget, displayPct);
+/** Whether `list`'s categories sit exactly on Prozpr's split. */
+export function matchesProzpr(rows: RowValues, prozprRows: RowValues, list: ScreenSubcategory[]): boolean {
+  return list.every((r) => rows[r.id] === prozprRows[r.id]);
 }
 
-
-/** Drag the divider that sits after `rows[handle - 1]`. It trades those two
- *  neighbours and nothing else, clamped by the dividers on either side — so the
- *  class total is untouched by construction, exactly like applyDividerDrag on
- *  the bar above. `posPct` is a position along the bar, which spans `budget`. */
-export function applySegmentDrag(
-  rows: ScreenSubcategory[], values: RowValues, budget: number, handle: number, posPct: number,
-): RowValues {
-  const cum = (k: number) => roundPct(rows.slice(0, k).reduce((s, r) => s + val(values, r.id), 0));
-  const floor = cum(handle - 1);
-  const ceiling = cum(handle + 1);
-  const target = roundPct((Math.max(0, Math.min(100, posPct)) / 100) * budget);
-  const at = Math.max(floor, Math.min(ceiling, target));
-  return {
-    ...values,
-    [rows[handle - 1].id]: roundPct(at - floor),
-    [rows[handle].id]: roundPct(ceiling - at),
-  };
-}
-
-/** A typed value for one row, with its SIBLINGS in the same class rescaled in
- *  proportion to absorb the difference. Clamped to `[0, budget]`, so the class
- *  total — and therefore the bar above it — is unchanged by construction
- *  (spec §7.2, revised 2026-09-20). Typing is a second way to reach the value a
- *  drag reaches, never a way to spend one class's budget on another.
+/** Hand back to Prozpr whatever already equals Prozpr's numbers, so it follows
+ *  Prozpr exactly from then on.
  *
- *  It is a far LARGER gesture than a drag, which only ever trades with the
- *  immediate neighbour: typing 24 into a six-row class with a 25 budget
- *  collapses the other five. That is why the field clamps as the customer types
- *  and the rows that moved flash (spec D7) — the maths here is the easy half. */
-export function applyTypedEntry(
-  rows: ScreenSubcategory[],
-  values: RowValues,
-  budget: number,
-  rowId: string,
-  typed: number,
+ *  A class (of `classes`) on Prozpr's split is blanked: rescaling the same
+ *  numbers as "the customer's" would round a point away from Prozpr's the next
+ *  time the mix moves. A fund pick equal to Prozpr's own recommendation is
+ *  blanked too — the limit caps both alike, so nothing on screen changes, but
+ *  a pick stepped away and back no longer counts as a change to save. */
+export function followProzprWhereMatching(
+  mix: ClassMix, values: RowValues, catalog: Catalog, classes: Cls[] = CLASSES,
 ): RowValues {
-  const cap = Math.max(0, budget);
-  const v = roundPct(Math.max(0, Math.min(cap, typed)));
-  const out: RowValues = { ...values, [rowId]: v };
-  spread(out, rows.filter((r) => r.id !== rowId), roundPct(cap - v));
+  const res = resolve(mix, values, catalog);
+  const out: RowValues = { ...values };
+  if (out[MULTI_ASSET_ID] === recommendedValues(catalog.cats)[MULTI_ASSET_ID]) out[MULTI_ASSET_ID] = null;
+  for (const cls of classes) {
+    const cr = classRows(catalog.cats, cls);
+    if (matchesProzpr(res.rows, res.prozprRows, cr)) cr.forEach((r) => { out[r.id] = null; });
+  }
   return out;
 }
 
-
-/** Engaged = the customer has entered at least one value. A zero counts: it is a
- *  deliberate "none of this", not an absence (spec §4.3). */
+/** Engaged = the customer has set at least one value. A zero counts: it is a
+ *  deliberate "none of this", not an absence. */
 export function isEngaged(values: RowValues): boolean {
   return Object.values(values).some((v) => v != null);
 }
 
 /** Prozpr's recommendation as row values. The backend sends each figure on the
  *  tenth grid; this screen is whole-percent, so the set is rounded to integers
- *  summing to 100 (largest-remainder). One rounded source keeps the per-row Prozpr
- *  figures and their class totals adding up to the same numbers on screen. */
+ *  summing to 100 (largest-remainder). */
 export function recommendedValues(cats: ScreenSubcategory[]): RowValues {
   const rounded = roundToSum(cats.map((c) => c.recommended_pct_of_total), 100);
   const out: RowValues = {};
@@ -349,52 +243,37 @@ export function recommendedValues(cats: ScreenSubcategory[]): RowValues {
   return out;
 }
 
-/** The class bar a complete set of row values implies — the look-through, with
- *  the multi-asset fund split 65/25/10. Deriving a bar FROM its rows is what
- *  lets Reset land balanced instead of accusing Prozpr's own recommendation of
- *  overdrawing the bar, and it is what makes "today" comparable with the other
- *  two bars: one function draws all three (spec §3.2). */
-export function lookThroughMix(values: RowValues, cats: ScreenSubcategory[]): ClassMix {
-  const equity = roundPct(multiAssetDraw(values, "equity") + classAllocated(values, cats, "equity"));
-  const debt = roundPct(multiAssetDraw(values, "debt") + classAllocated(values, cats, "debt"));
-  return { equity, debt, others: roundPct(100 - equity - debt) };
+/** The class mix a complete set of row values implies — the look-through, with
+ *  the multi-asset fund split by its make-up. One function draws Prozpr's bar
+ *  and the today bar, so the two stay comparable. Its callers pass whole
+ *  numbers summing to 100, so the result does too. */
+export function lookThroughMix(values: RowValues, catalog: Catalog): ClassMix {
+  const parts = multiAssetParts(val(values, MULTI_ASSET_ID), catalog.comp);
+  const own = (cls: Cls) => classRows(catalog.cats, cls).reduce((s, r) => s + val(values, r.id), 0);
+  return { equity: parts.equity + own("equity"), debt: parts.debt + own("debt"), others: parts.others + own("others") };
 }
 
-/** Prozpr's rows as a bar. Kept as its own name because Reset and the reference
- *  bar both ask for exactly this one, and neither should have to know that "the
- *  recommendation" is just another set of row values. */
-export function recommendedMix(cats: ScreenSubcategory[]): ClassMix {
-  return lookThroughMix(recommendedValues(cats), cats);
+/** Prozpr's rows as a class mix — what Reset to Prozpr sets. */
+export function recommendedMix(catalog: Catalog): ClassMix {
+  return lookThroughMix(recommendedValues(catalog.cats), catalog);
 }
 
-/** Today's holdings as row values. Every settable category is present and one
- *  the customer holds nothing of reads 0 — today is a complete fact, which is
+/** Today's holdings as row values, or null when the customer holds nothing
+ *  here — absent, empty and all-zero payloads alike, since a set of zeros
+ *  cannot be drawn as a distribution. Every settable category is present and
+ *  one the customer holds none of reads 0: today is a complete fact, which is
  *  exactly what `fromSavedPins`'s nullable blank is not.
  *
- *  Rounding each holding to a tenth independently — the same thing `roundMix`
- *  does for the recommendation — can leave the set a few tenths short of or
- *  over 100. `lookThroughMix` makes Commodity the derived residual (`100 -
- *  equity - debt`), so any drift in this set is drawn on the today bar as
- *  gold the customer does not hold — the same phantom-sliver failure §4
- *  removed from reference bars, arriving through a different door. `spread`
- *  puts the set back on exactly 100 (spec §3.1 says holdings already sum to
- *  100, but this is the wire boundary; it should not assume the promise
- *  held rather than rescale toward it, which is the meaning D6 already gives
- *  an unrescaled payload).
- *
- *  Guarded on a positive total: `spread` parks its whole budget on the first
- *  row when every row is zero, which would turn "holds nothing" into "100% in
- *  the first category" — the opposite of what an all-zero payload means. */
+ *  Rounding each holding independently can leave the set a point short of or
+ *  over 100, which the today bar would draw as a gap or an overflow, so the
+ *  set is put back on exactly 100, in proportion. */
 export function fromCurrentHoldings(
   holdings: ScreenCurrentHolding[],
   cats: ScreenSubcategory[],
-): RowValues {
+): RowValues | null {
   const by = new Map(holdings.map((h) => [h.subgroup, h.pct_of_total]));
-  const out: RowValues = {};
-  for (const c of cats) out[c.id] = roundPct(by.get(c.id) ?? 0);
-  const total = cats.reduce((s, c) => s + (out[c.id] ?? 0), 0);
-  if (total > 0) spread(out, cats, 100);
-  return out;
+  const raw = cats.map((c) => by.get(c.id) ?? 0);
+  return raw.some((v) => v > 0) ? divide(cats, raw, 100) : null;
 }
 
 export function sameMix(a: ClassMix, b: ClassMix): boolean {
@@ -408,19 +287,19 @@ export function samePins(a: SubcategoryPin[], b: SubcategoryPin[]): boolean {
   return a.every((p) => bs.has(key(p)));
 }
 
-/** The save payload. Either EMPTY (untouched, or cleared back to engine-decides)
- *  or COMPLETE — one entry per settable category, blanks as explicit zeros. An
- *  omitted row would read to the engine as "you decide" (spec §9). */
-export function toSavePins(values: RowValues, cats: ScreenSubcategory[]): SubcategoryPin[] {
+/** The save payload. EMPTY while the customer has set nothing (engine
+ *  decides); otherwise COMPLETE — every category at the number shown (`rows`,
+ *  from `resolve`). An omitted row would read to the engine as "you decide". */
+export function toSavePins(values: RowValues, rows: RowValues, cats: ScreenSubcategory[]): SubcategoryPin[] {
   if (!isEngaged(values)) return [];
-  return cats.map((c) => ({ subgroup: c.id, pct_of_total: val(values, c.id) }));
+  return cats.map((c) => ({ subgroup: c.id, pct_of_total: val(rows, c.id) }));
 }
 
-/** Saved pins back into row values. A stored 0 is a real entry and stays 0;
- *  a category missing from the payload is blank. */
+/** Saved pins back into row values, on the whole-percent grid. A stored 0 is a
+ *  real entry and stays 0; a category missing from the payload is blank. */
 export function fromSavedPins(pins: SubcategoryPin[], cats: ScreenSubcategory[]): RowValues {
   const by = new Map(pins.map((p) => [p.subgroup, p.pct_of_total]));
   const out: RowValues = {};
-  for (const c of cats) out[c.id] = by.has(c.id) ? (by.get(c.id) as number) : null;
+  for (const c of cats) out[c.id] = by.has(c.id) ? roundPct(by.get(c.id) as number) : null;
   return out;
 }

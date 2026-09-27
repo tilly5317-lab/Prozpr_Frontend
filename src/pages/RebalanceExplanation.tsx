@@ -798,7 +798,7 @@ const RebalanceExplanation = () => {
             </div>
 
             <motion.section
-              className="relative px-4 py-5 overflow-hidden"
+              className="relative px-3 py-3 overflow-hidden"
               style={{
                 background:
                   "linear-gradient(135deg, rgba(212,168,104,0.22) 0%, hsl(var(--card)) 70%, hsl(var(--card)) 100%)",
@@ -839,7 +839,7 @@ const RebalanceExplanation = () => {
                   Prozpr insight
                 </span>
               </div>
-              <h1 className="mt-3 text-[21px] leading-tight font-semibold tracking-tight text-foreground">
+              <h1 className="mt-2 text-[21px] leading-tight font-semibold tracking-tight text-foreground">
                 {summaryToShow.title}
               </h1>
               {summaryToShow.reason && (
@@ -857,7 +857,7 @@ const RebalanceExplanation = () => {
             <CurrentVsTargetChart rows={driftRows} />
 
             {/* Proposed trades — the real BUY / SELL actions grouped by bucket. */}
-            <section style={cardStyle} className="px-4 py-4">
+            <section style={cardStyle} className="px-3 py-3">
               <div className="flex items-center justify-between">
                 <p className="text-[11px] tracking-[0.16em] uppercase text-muted-foreground">
                   Proposed trades
@@ -869,13 +869,13 @@ const RebalanceExplanation = () => {
                   No trades needed — your portfolio is already aligned with the plan.
                 </p>
               ) : (
-                <div className="mt-3 space-y-5">
+                <div className="mt-3 space-y-3">
                   {tradeGroups.map(({ label, color, trades }) => (
                       <div key={label}>
                         {/* Headings are neutral by default; a flagged group (e.g.
                             "Not on recommended list") gets a crisp accent so it
                             pops, without the glow/clutter from before. */}
-                        <div className="flex items-center gap-2 pb-2">
+                        <div className="flex items-center gap-2 pb-1.5">
                           <p
                             className="text-[11px] font-bold tracking-[0.14em] uppercase truncate"
                             style={{ color: color ?? "hsl(var(--muted-foreground))" }}
@@ -894,7 +894,7 @@ const RebalanceExplanation = () => {
                           </span>
                           <div className="h-px flex-1" style={{ backgroundColor: color ? `${color}55` : "hsl(var(--border))" }} />
                         </div>
-                        <div className="space-y-1.5">
+                        <div className="space-y-1">
                           {trades.map((trade) => {
                             const isSell = trade.type === "SELL";
                             const tone = isSell ? TRADE_ORANGE : BUY_GREEN;
@@ -903,7 +903,7 @@ const RebalanceExplanation = () => {
                                 key={trade.id}
                                 type="button"
                                 onClick={() => openTrade(trade)}
-                                className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-left flex items-center gap-3 transition-colors hover:bg-muted/40"
+                                className="w-full min-h-[44px] rounded-xl border border-border bg-card px-3 py-2 text-left flex items-center gap-3 transition-colors hover:bg-muted/40"
                               >
                                 <span
                                   className="w-11 shrink-0 rounded-md py-1 text-center text-[11px] font-bold tracking-wide"
@@ -933,7 +933,7 @@ const RebalanceExplanation = () => {
                 old "Funds you're keeping" heading was wrong: a fund the plan
                 trims is also still kept, just not left alone. */}
             {tradedResolved && untouchedFunds.length > 0 && (
-              <section className="px-4 py-4" style={cardStyle}>
+              <section className="px-3 py-3" style={cardStyle}>
                 <p className="text-[11px] tracking-[0.16em] uppercase" style={{ color: "hsl(var(--muted-foreground))" }}>
                   No action needed
                 </p>
@@ -949,7 +949,7 @@ const RebalanceExplanation = () => {
                       type="button"
                       onClick={() => openUntouchedFund(f)}
                       disabled={!f.isin}
-                      className="w-full flex items-center gap-3 py-2.5 text-left -mx-1 px-1 rounded-lg transition-colors enabled:hover:bg-muted/40 disabled:cursor-default"
+                      className="w-full flex items-center gap-3 py-2 text-left -mx-1 px-1 rounded-lg transition-colors enabled:hover:bg-muted/40 disabled:cursor-default"
                     >
                       <span
                         className="w-[52px] shrink-0 px-2 py-1 rounded-md text-[11px] font-semibold tracking-wide leading-tight text-center"

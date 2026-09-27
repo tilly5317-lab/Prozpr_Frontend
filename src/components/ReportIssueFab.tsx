@@ -28,6 +28,11 @@ const positionForPath = (pathname: string): string => {
   if (pathname === "/goal-planner" || pathname.startsWith("/goal-planner/timeline"))
     return "bottom-20 left-3";
 
+  // Investment preferences: the Prozpr Recommendation / Save Preferences bar
+  // sits on the nav and grows a line when Save is waiting — park the bug
+  // button above both (nav 72 + bar 68 + that line 28 + 8 clear).
+  if (pathname === "/invest/preferences") return "bottom-[176px] right-3";
+
   return DEFAULT_POSITION;
 };
 
