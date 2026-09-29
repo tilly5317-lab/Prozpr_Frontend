@@ -9,8 +9,8 @@ import {
   type LumpSumPlanResponse,
 } from "@/lib/api";
 import { CurrentVsTargetChart } from "@/components/invest/CurrentVsTargetChart";
-import { buildLumpSumTargetRows } from "@/lib/driftRows";
-import { formatInr0, formatMoneyInput } from "@/lib/utils";
+import { driftRowsFromBreakdown } from "@/lib/driftRows";
+import { formatInr0, formatMoneyInput, plainName } from "@/lib/utils";
 
 /** Plain-English horizon the plan leans toward (never surface the raw label). */
 const BUCKET_LABEL: Record<NonNullable<LumpSumPlanResponse["target_bucket"]>, string> = {
@@ -18,17 +18,6 @@ const BUCKET_LABEL: Record<NonNullable<LumpSumPlanResponse["target_bucket"]>, st
   medium_term: "Weighted toward your medium-term goals",
   long_term: "Building your long-term growth",
 };
-
-/** Fund/scheme name tidy-up for display. */
-function plainName(raw: string): string {
-  return (
-    raw
-      .replace(/\s*·\s*Folio.*$/i, "")
-      .replace(/\s*[-–]\s*(Direct|Regular)\s+Plan\b.*$/i, "")
-      .replace(/\s+Growth(?:\s+Option)?$/i, "")
-      .trim() || raw
-  );
-}
 
 /** Rupee amount → the grouped string the amount input expects. */
 const toInput = (inr: number) => formatMoneyInput(String(Math.round(inr)));
@@ -52,8 +41,12 @@ function LumpSumCard({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Proposed Equity / Debt / Others split of the suggested funds.
-  const splitRows = useMemo(() => buildLumpSumTargetRows(plan.alignment_rows), [plan.alignment_rows]);
+  // Proposed Equity / Debt / Commodity split of the deployment — the backend's
+  // look-through breakdown (same rollup as rebalancing).
+  const splitRows = useMemo(
+    () => (plan.asset_class_breakdown ? driftRowsFromBreakdown(plan.asset_class_breakdown) : []),
+    [plan.asset_class_breakdown],
+  );
 
   const parsed = Number(amount.replace(/,/g, ""));
   const valid = Number.isFinite(parsed) && parsed > 0;
@@ -78,7 +71,7 @@ function LumpSumCard({
   // ── Set-up / adjust form ──
   if (editing) {
     return (
-      <div className="mb-3 rounded-2xl border border-border bg-card p-4">
+      <div className="mb-3 rounded-2xl border border-border bg-card p-3">
         <div className="flex items-center gap-1.5">
           <Coins className="h-3.5 w-3.5 text-[hsl(var(--wealth-navy))]" />
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
@@ -86,7 +79,7 @@ function LumpSumCard({
           </p>
         </div>
         <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
-          How much do you want to invest as a one-time lump sum? Pi splits it across the right funds
+          How much do you want to invest as a one-time lump sum? Prozpr splits it across the right funds
           for your goals.
         </p>
 
@@ -147,7 +140,7 @@ function LumpSumCard({
   return (
     <>
       {/* Amount card — the Edit control sits to the RIGHT of the amount */}
-      <div className="mb-3 rounded-2xl border border-border bg-card p-4">
+      <div className="mb-3 rounded-2xl border border-border bg-card p-3">
         <div className="flex items-center gap-1.5">
           <Coins className="h-3.5 w-3.5 text-[hsl(var(--wealth-navy))]" />
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Your lump sum</p>
@@ -173,15 +166,15 @@ function LumpSumCard({
         {bucketLabel && <p className="mt-1 text-[11px] leading-snug text-muted-foreground">{bucketLabel}</p>}
       </div>
 
-      {/* Proposed Split — the Equity / Debt / Others split of the suggested funds. */}
+      {/* Proposed Target — the Equity / Debt / Commodity split of the deployment. */}
       {splitRows.length > 0 && (
         <div className="mb-3">
-          <CurrentVsTargetChart rows={splitRows} bars={["target"]} title="Proposed Split" />
+          <CurrentVsTargetChart rows={splitRows} bars={["target"]} title="Proposed Target" />
         </div>
       )}
 
       {/* Funds card — each row opens that fund's detail page */}
-      <div className="mb-3 rounded-2xl border border-border bg-card p-4">
+      <div className="mb-3 rounded-2xl border border-border bg-card p-3">
         <div className="flex items-center justify-between">
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Suggested funds</p>
           <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
@@ -189,13 +182,13 @@ function LumpSumCard({
           </span>
         </div>
 
-        <div className="mt-2.5 space-y-1.5">
+        <div className="mt-2 space-y-1">
           {plan.buys.map((b) => (
             <button
               key={`${b.recommended_fund}-${b.asset_subgroup}`}
               type="button"
               onClick={() => navigate(`/discovery/mf/${encodeURIComponent(b.scheme_code)}`)}
-              className="flex w-full items-center justify-between gap-2 rounded-lg bg-muted/40 px-2.5 py-2 text-left transition-colors hover:bg-muted"
+              className="flex w-full items-center justify-between gap-2 rounded-lg bg-muted/40 px-2.5 py-1.5 text-left transition-colors hover:bg-muted"
             >
               <div className="min-w-0">
                 <p className="truncate text-[12px] font-medium text-foreground">{plainName(b.recommended_fund)}</p>
@@ -268,11 +261,6 @@ const LumpSumPlanner = () => {
             </span>
           </button>
         </div>
-
-        <p className="mb-3 text-[11px] leading-snug text-muted-foreground">
-          Deploy a one-time lump sum. Enter an amount and Pi's engine splits it across the right funds
-          for your goals — the same plan you'd get in chat.
-        </p>
 
         {plan ? (
           <LumpSumCard plan={shownPlan} onCreated={setPlan} />

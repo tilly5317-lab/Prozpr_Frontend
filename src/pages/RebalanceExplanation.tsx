@@ -10,6 +10,13 @@ import { ComputeProgressSteps } from "@/components/invest/ComputeProgressSteps";
 import TradeFundDetailView from "@/components/fund/TradeFundDetailView";
 import { useComputeProgress } from "@/hooks/useComputeProgress";
 import {
+  buildDriftRows,
+  driftRowsFromBreakdown,
+  hasGoalMix,
+  toBucket,
+  type Bucket,
+} from "@/lib/driftRows";
+import {
   getCurrentRebalancingRun,
   getMyPortfolio,
   getRebalanceComputeProgress,
@@ -18,44 +25,11 @@ import {
   runRebalancing,
   searchMfFunds,
   type PortfolioDetail,
-  type RebalancingAssetClassBreakdown,
   type RebalancingReadiness,
   type RebalancingRunDetail,
   type RebalancingSubgroupSummary,
   type RebalancingTrade,
 } from "@/lib/api";
-
-/* ── Buckets — the drift section groups the engine's asset_subgroups into three
-   asset classes (Equity / Debt / Others). The asset_class is computed by the
-   backend (scheme_classification.asset_class_for_subgroup) and shipped on each
-   subgroup_summary / trade, so there is no client-side classification. ── */
-type Bucket = "equity" | "debt" | "others";
-
-const BUCKET_ORDER: Bucket[] = ["equity", "debt", "others"];
-const BUCKET_META: Record<Bucket, { label: string; color: string }> = {
-  equity: { label: "Equity", color: "#2563EB" },
-  debt: { label: "Debt", color: "hsl(188 52% 41%)" },
-  others: { label: "Others", color: "hsl(38 64% 47%)" },
-};
-
-// Normalize the backend's canonical asset_class ("Equity" / "Debt" / "Others")
-// to our internal lowercase Bucket key. Unknown / null → "others".
-function toBucket(assetClass: string | null | undefined): Bucket {
-  const v = (assetClass ?? "").toLowerCase();
-  if (v === "equity" || v === "debt" || v === "others") return v;
-  return "others";
-}
-
-type DriftRow = {
-  key: Bucket;
-  label: string;
-  color: string;
-  current: number; // %
-  target: number; // %
-  currentInr: number; // ₹ held today
-  targetInr: number; // ₹ the plan targets
-  amountText: string;
-};
 
 type UITrade = {
   id: string;
@@ -91,97 +65,6 @@ const REASON_GROUPS: { codes: string[]; label: string; color?: string }[] = [
 ];
 
 const fmtINR = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
-
-function compactINR(n: number): string {
-  const a = Math.abs(n);
-  const sign = n < 0 ? "-" : "+";
-  if (a >= 1e7) return `${sign}₹${(a / 1e7).toFixed(a >= 1e8 ? 0 : 1)}Cr`;
-  if (a >= 1e5) return `${sign}₹${(a / 1e5).toFixed(1)}L`;
-  if (a >= 1e3) return `${sign}₹${Math.round(a / 1e3)}K`;
-  return `${sign}₹${Math.round(a)}`;
-}
-
-function buildDriftRows(
-  subs: RebalancingSubgroupSummary[],
-  holdings: PortfolioDetail["holdings"] = [],
-): DriftRow[] {
-  if (!subs.length && !holdings.length) return [];
-  const agg: Record<Bucket, { current: number; target: number; inSubs: boolean }> = {
-    equity: { current: 0, target: 0, inSubs: false },
-    debt: { current: 0, target: 0, inSubs: false },
-    others: { current: 0, target: 0, inSubs: false },
-  };
-  for (const s of subs) {
-    const b = toBucket(s.asset_class);
-    agg[b].current += s.current_holding_inr || 0;
-    // "Target" here = where THIS PLAN lands (suggested_final_holding_inr), not the
-    // unconstrained goal ideal (goal_target_inr). This keeps the bars consistent
-    // with the trades: a class the plan sells reads as overweight (current > target).
-    agg[b].target += s.suggested_final_holding_inr || 0;
-    agg[b].inSubs = true;
-  }
-  // Show every asset class the user actually holds — even ones the rebalancing
-  // run didn't touch (no recommendation). Those fill from the live portfolio with
-  // target = current so the row reads "On target".
-  const heldByBucket: Record<Bucket, number> = { equity: 0, debt: 0, others: 0 };
-  for (const h of holdings) heldByBucket[toBucket(h.asset_class)] += h.current_value || 0;
-  for (const b of BUCKET_ORDER) {
-    if (!agg[b].inSubs && heldByBucket[b] > 0) {
-      agg[b].current = heldByBucket[b];
-      agg[b].target = heldByBucket[b];
-    }
-  }
-  return formatDriftRows(agg);
-}
-
-/* Shared formatter: turn per-bucket current/target ₹ into rendered DriftRows
-   (percentages + overweight/underweight caption). Used by both the backend
-   breakdown path and the legacy subgroup-rollup fallback. */
-function formatDriftRows(agg: Record<Bucket, { current: number; target: number }>): DriftRow[] {
-  const totalCur = BUCKET_ORDER.reduce((sum, b) => sum + agg[b].current, 0);
-  const totalTgt = BUCKET_ORDER.reduce((sum, b) => sum + agg[b].target, 0);
-
-  return BUCKET_ORDER.filter((b) => agg[b].current > 0 || agg[b].target > 0).map((b) => {
-    const currentPct = totalCur > 0 ? (agg[b].current / totalCur) * 100 : 0;
-    const targetPct = totalTgt > 0 ? (agg[b].target / totalTgt) * 100 : 0;
-    const drift = currentPct - targetPct;
-    // Signed by the action the plan takes: overweight → selling (negative),
-    // underweight → buying (positive). i.e. target − current, the change to make —
-    // not current − target (the excess), which carries the opposite sign.
-    const diffInr = agg[b].target - agg[b].current;
-    const amountText =
-      Math.abs(drift) < 0.5
-        ? "On target"
-        : `${Math.abs(drift).toFixed(0)}% ${drift > 0 ? "overweight" : "underweight"} · ${compactINR(diffInr)}`;
-    return {
-      key: b,
-      label: BUCKET_META[b].label,
-      color: BUCKET_META[b].color,
-      current: Math.round(currentPct),
-      target: Math.round(targetPct),
-      currentInr: agg[b].current,
-      targetInr: agg[b].target,
-      amountText,
-    };
-  });
-}
-
-/* Preferred path: render the backend's multi-asset-aware breakdown directly.
-   Blended funds are already split per-category server-side, so there's no
-   client-side classification here — just a bucket key + ₹ passthrough. */
-function driftRowsFromBreakdown(breakdown: RebalancingAssetClassBreakdown): DriftRow[] {
-  const agg: Record<Bucket, { current: number; target: number }> = {
-    equity: { current: 0, target: 0 },
-    debt: { current: 0, target: 0 },
-    others: { current: 0, target: 0 },
-  };
-  for (const row of breakdown.rows) {
-    const b = toBucket(row.asset_class);
-    agg[b].current += row.current_inr || 0;
-    agg[b].target += row.target_inr || 0;
-  }
-  return formatDriftRows(agg);
-}
 
 /** Unsigned compact ₹ for axis ticks (e.g. ₹2L, ₹4.5L, ₹1.2Cr). */
 function axisINR(n: number): string {
@@ -563,6 +446,12 @@ const RebalanceExplanation = () => {
     }
     return buildDriftRows(detail?.subgroup_summaries ?? [], portfolio?.holdings ?? []);
   }, [detail, portfolio]);
+  // A run that ships a goal mix is compared against it (title + amber line);
+  // runs that predate it, and the target-only AINV breakdowns, carry none.
+  const hasGoal = useMemo(
+    () => hasGoalMix(detail?.asset_class_breakdown),
+    [detail],
+  );
   const uiTrades = useMemo(() => (detail?.trades ?? []).map(mapTrade), [detail]);
   const tradeGroups = useMemo(() => groupTradesByReason(uiTrades), [uiTrades]);
   // Trade ISINs (sells AND top-up buys) resolved to AMFI scheme codes + metadata
@@ -796,7 +685,7 @@ const RebalanceExplanation = () => {
             </div>
 
             <motion.section
-              className="relative px-4 py-5 overflow-hidden"
+              className="relative px-3 py-3 overflow-hidden"
               style={{
                 background:
                   "linear-gradient(135deg, rgba(212,168,104,0.22) 0%, hsl(var(--card)) 70%, hsl(var(--card)) 100%)",
@@ -837,7 +726,7 @@ const RebalanceExplanation = () => {
                   Prozpr insight
                 </span>
               </div>
-              <h1 className="mt-3 text-[21px] leading-tight font-semibold tracking-tight text-foreground">
+              <h1 className="mt-2 text-[21px] leading-tight font-semibold tracking-tight text-foreground">
                 {summaryToShow.title}
               </h1>
               {summaryToShow.reason && (
@@ -850,12 +739,24 @@ const RebalanceExplanation = () => {
               </p>
             </motion.section>
 
-            {/* Current vs target — combined Current / Target stacked ₹ bars
-                (shared component; also used on the SIP tab). */}
-            <CurrentVsTargetChart rows={driftRows} />
+            {/* Current / After plan — two stacked ₹ bars (shared component; also
+                used on the SIP tab). "Target" here means where THIS PLAN lands,
+                which a customer who saved an explicit preference reads as that
+                preference. A rebalance is cash-neutral and cannot sell short-term
+                units, so the two legitimately differ — `gap` is the tappable amber
+                line ("This plan reaches X% equity, not your Y%. Why?") whose
+                question AND answer are built per run on the backend
+                (services/plan_gap.py). The goal itself is stated in that line, so
+                no third bar is drawn. */}
+            <CurrentVsTargetChart
+              rows={driftRows}
+              bars={["current", "target"]}
+              title={hasGoal ? "Where this plan takes you" : "Current vs target"}
+              gap={detail?.asset_class_breakdown?.gap ?? null}
+            />
 
             {/* Proposed trades — the real BUY / SELL actions grouped by bucket. */}
-            <section style={cardStyle} className="px-4 py-4">
+            <section style={cardStyle} className="px-3 py-3">
               <div className="flex items-center justify-between">
                 <p className="text-[11px] tracking-[0.16em] uppercase text-muted-foreground">
                   Proposed trades
@@ -867,13 +768,13 @@ const RebalanceExplanation = () => {
                   No trades needed — your portfolio is already aligned with the plan.
                 </p>
               ) : (
-                <div className="mt-3 space-y-5">
+                <div className="mt-3 space-y-3">
                   {tradeGroups.map(({ label, color, trades }) => (
                       <div key={label}>
                         {/* Headings are neutral by default; a flagged group (e.g.
                             "Not on recommended list") gets a crisp accent so it
                             pops, without the glow/clutter from before. */}
-                        <div className="flex items-center gap-2 pb-2">
+                        <div className="flex items-center gap-2 pb-1.5">
                           <p
                             className="text-[11px] font-bold tracking-[0.14em] uppercase truncate"
                             style={{ color: color ?? "hsl(var(--muted-foreground))" }}
@@ -892,7 +793,7 @@ const RebalanceExplanation = () => {
                           </span>
                           <div className="h-px flex-1" style={{ backgroundColor: color ? `${color}55` : "hsl(var(--border))" }} />
                         </div>
-                        <div className="space-y-1.5">
+                        <div className="space-y-1">
                           {trades.map((trade) => {
                             const isSell = trade.type === "SELL";
                             const tone = isSell ? TRADE_ORANGE : BUY_GREEN;
@@ -901,7 +802,7 @@ const RebalanceExplanation = () => {
                                 key={trade.id}
                                 type="button"
                                 onClick={() => openTrade(trade)}
-                                className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-left flex items-center gap-3 transition-colors hover:bg-muted/40"
+                                className="w-full min-h-[44px] rounded-xl border border-border bg-card px-3 py-2 text-left flex items-center gap-3 transition-colors hover:bg-muted/40"
                               >
                                 <span
                                   className="w-11 shrink-0 rounded-md py-1 text-center text-[11px] font-bold tracking-wide"
@@ -931,7 +832,7 @@ const RebalanceExplanation = () => {
                 old "Funds you're keeping" heading was wrong: a fund the plan
                 trims is also still kept, just not left alone. */}
             {tradedResolved && untouchedFunds.length > 0 && (
-              <section className="px-4 py-4" style={cardStyle}>
+              <section className="px-3 py-3" style={cardStyle}>
                 <p className="text-[11px] tracking-[0.16em] uppercase" style={{ color: "hsl(var(--muted-foreground))" }}>
                   No action needed
                 </p>
@@ -947,7 +848,7 @@ const RebalanceExplanation = () => {
                       type="button"
                       onClick={() => openUntouchedFund(f)}
                       disabled={!f.isin}
-                      className="w-full flex items-center gap-3 py-2.5 text-left -mx-1 px-1 rounded-lg transition-colors enabled:hover:bg-muted/40 disabled:cursor-default"
+                      className="w-full flex items-center gap-3 py-2 text-left -mx-1 px-1 rounded-lg transition-colors enabled:hover:bg-muted/40 disabled:cursor-default"
                     >
                       <span
                         className="w-[52px] shrink-0 px-2 py-1 rounded-md text-[11px] font-semibold tracking-wide leading-tight text-center"

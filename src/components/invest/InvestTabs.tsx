@@ -15,16 +15,19 @@ const InvestTabs = () => {
     ? "sip"
     : pathname.startsWith("/invest/lumpsum")
       ? "lumpsum"
-      : "rebalance-explanation";
+      : pathname.startsWith("/invest/preferences")
+        ? "preferences"
+        : "rebalance-explanation";
 
   const tabs = [
+    { key: "preferences", label: "Preferences" },
     { key: "rebalance-explanation", label: "Rebalancing" },
     { key: "sip", label: "SIP" },
     { key: "lumpsum", label: "Lump sum" },
   ] as const;
 
   return (
-    <div className="px-5 pt-10 pb-1.5">
+    <div className="px-5 pt-10">
       <div className="relative flex rounded-full border border-[#D4A868]/25 bg-card p-0.5">
         {tabs.map((t) => {
           const active = t.key === activeKey;
@@ -33,7 +36,7 @@ const InvestTabs = () => {
               key={t.key}
               type="button"
               onClick={() => navigate(`/invest/${t.key}`)}
-              className="relative z-10 flex-1 rounded-full py-1.5 text-[12.5px] font-semibold"
+              className="relative z-10 flex-1 whitespace-nowrap rounded-full py-1.5 text-[11.5px] font-semibold"
             >
               {active && (
                 <motion.span

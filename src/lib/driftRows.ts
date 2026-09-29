@@ -16,10 +16,13 @@ import type {
 export type Bucket = "equity" | "debt" | "others";
 
 export const BUCKET_ORDER: Bucket[] = ["equity", "debt", "others"];
+// The backend asset_class vocabulary is Equity / Debt / Others; the third class
+// (gold-dominated) is surfaced to customers as "Commodity", matching the
+// preferences page. The internal key stays "others".
 export const BUCKET_META: Record<Bucket, { label: string; color: string }> = {
   equity: { label: "Equity", color: "#2563EB" },
   debt: { label: "Debt", color: "hsl(188 52% 41%)" },
-  others: { label: "Others", color: "hsl(38 64% 47%)" },
+  others: { label: "Commodity", color: "hsl(38 64% 47%)" },
 };
 
 // Normalize the backend's canonical asset_class ("Equity" / "Debt" / "Others")
@@ -36,8 +39,12 @@ export type DriftRow = {
   color: string;
   current: number; // %
   target: number; // %
+  /** % the customer's goals + risk profile + saved preference call for. 0 when the
+   *  backend ships no goal mix (older runs, and the target-only AINV breakdowns). */
+  goal: number;
   currentInr: number; // ₹ held today
   targetInr: number; // ₹ the plan targets
+  goalInr: number; // ₹ the goal mix calls for
   amountText: string;
 };
 
@@ -50,15 +57,22 @@ function compactINR(n: number): string {
   return `${sign}₹${Math.round(a)}`;
 }
 
-/* Shared formatter: turn per-bucket current/target ₹ into rendered DriftRows
+type Agg = { current: number; target: number; goal?: number };
+
+/* Shared formatter: turn per-bucket current/target/goal ₹ into rendered DriftRows
    (percentages + overweight/underweight caption). */
-function formatDriftRows(agg: Record<Bucket, { current: number; target: number }>): DriftRow[] {
+function formatDriftRows(agg: Record<Bucket, Agg>): DriftRow[] {
   const totalCur = BUCKET_ORDER.reduce((sum, b) => sum + agg[b].current, 0);
   const totalTgt = BUCKET_ORDER.reduce((sum, b) => sum + agg[b].target, 0);
+  const totalGoal = BUCKET_ORDER.reduce((sum, b) => sum + (agg[b].goal ?? 0), 0);
 
-  return BUCKET_ORDER.filter((b) => agg[b].current > 0 || agg[b].target > 0).map((b) => {
+  return BUCKET_ORDER.filter(
+    (b) => agg[b].current > 0 || agg[b].target > 0 || (agg[b].goal ?? 0) > 0,
+  ).map((b) => {
     const currentPct = totalCur > 0 ? (agg[b].current / totalCur) * 100 : 0;
     const targetPct = totalTgt > 0 ? (agg[b].target / totalTgt) * 100 : 0;
+    const goalInr = agg[b].goal ?? 0;
+    const goalPct = totalGoal > 0 ? (goalInr / totalGoal) * 100 : 0;
     const drift = currentPct - targetPct;
     // Signed by the action the plan takes: overweight → selling, underweight → buying.
     const diffInr = agg[b].target - agg[b].current;
@@ -72,8 +86,10 @@ function formatDriftRows(agg: Record<Bucket, { current: number; target: number }
       color: BUCKET_META[b].color,
       current: Math.round(currentPct),
       target: Math.round(targetPct),
+      goal: Math.round(goalPct),
       currentInr: agg[b].current,
       targetInr: agg[b].target,
+      goalInr,
       amountText,
     };
   });
@@ -85,14 +101,15 @@ export function buildDriftRows(
   holdings: PortfolioDetail["holdings"] = [],
 ): DriftRow[] {
   if (!subs.length && !holdings.length) return [];
-  const agg: Record<Bucket, { current: number; target: number; inSubs: boolean }> = {
-    equity: { current: 0, target: 0, inSubs: false },
-    debt: { current: 0, target: 0, inSubs: false },
-    others: { current: 0, target: 0, inSubs: false },
+  const agg: Record<Bucket, Agg & { inSubs: boolean }> = {
+    equity: { current: 0, target: 0, goal: 0, inSubs: false },
+    debt: { current: 0, target: 0, goal: 0, inSubs: false },
+    others: { current: 0, target: 0, goal: 0, inSubs: false },
   };
   for (const s of subs) {
     const b = toBucket(s.asset_class);
     agg[b].current += s.current_holding_inr || 0;
+    agg[b].goal = (agg[b].goal ?? 0) + (s.goal_target_inr || 0);
     // "Target" = where THIS PLAN lands (suggested_final_holding_inr), not the
     // unconstrained goal ideal, so the bars stay consistent with the trades.
     agg[b].target += s.suggested_final_holding_inr || 0;
@@ -111,82 +128,27 @@ export function buildDriftRows(
   return formatDriftRows(agg);
 }
 
-/* SIP tab: the recommended monthly allocation split across Equity / Debt /
-   Others, from the SIP's own per-fund buys. Asset class comes from the
-   rebalancing subgroup→class map (backend classification); the amounts are the
-   SIP's. Returns [] when the class map is unavailable so callers hide the chart
-   rather than mis-bucket everything as Others. Rows carry only the target
-   (current* = 0) — the SIP chart shows a single Target bar. */
-export function buildSipTargetRows(
-  buys: { asset_subgroup: string; monthly_amount_inr: number }[],
-  subgroupSummaries: { asset_subgroup: string; asset_class: string }[] = [],
-): DriftRow[] {
-  if (!buys.length || !subgroupSummaries.length) return [];
-  const classBySubgroup = new Map<string, string>();
-  for (const s of subgroupSummaries) classBySubgroup.set(s.asset_subgroup, s.asset_class);
-  const agg: Record<Bucket, number> = { equity: 0, debt: 0, others: 0 };
-  for (const b of buys) {
-    agg[toBucket(classBySubgroup.get(b.asset_subgroup))] += b.monthly_amount_inr || 0;
-  }
-  const total = BUCKET_ORDER.reduce((sum, b) => sum + agg[b], 0);
-  if (total <= 0) return [];
-  return BUCKET_ORDER.filter((b) => agg[b] > 0).map((b) => {
-    const pct = Math.round((agg[b] / total) * 100);
-    return {
-      key: b,
-      label: BUCKET_META[b].label,
-      color: BUCKET_META[b].color,
-      current: 0,
-      target: pct,
-      currentInr: 0,
-      targetInr: agg[b],
-      amountText: `${pct}% · ${compactINR(agg[b])}/mo`,
-    };
-  });
-}
-
-/* Lump-sum tab: the recommended one-time deployment split across Equity / Debt /
-   Others, from the plan's own alignment rows (each already carries the backend
-   asset_class, so there is no client-side classification and no rebalancing-run
-   fetch needed). Rows carry only the target (current* = 0) — a single Target bar,
-   mirroring the SIP tab's Proposed Target. Returns [] when there are no rows so
-   callers hide the chart. */
-export function buildLumpSumTargetRows(
-  alignmentRows: { asset_class: string; deploy_inr: number }[],
-): DriftRow[] {
-  if (!alignmentRows.length) return [];
-  const agg: Record<Bucket, number> = { equity: 0, debt: 0, others: 0 };
-  for (const r of alignmentRows) {
-    agg[toBucket(r.asset_class)] += r.deploy_inr || 0;
-  }
-  const total = BUCKET_ORDER.reduce((sum, b) => sum + agg[b], 0);
-  if (total <= 0) return [];
-  return BUCKET_ORDER.filter((b) => agg[b] > 0).map((b) => {
-    const pct = Math.round((agg[b] / total) * 100);
-    return {
-      key: b,
-      label: BUCKET_META[b].label,
-      color: BUCKET_META[b].color,
-      current: 0,
-      target: pct,
-      currentInr: 0,
-      targetInr: agg[b],
-      amountText: `${pct}% · ${compactINR(agg[b])}`,
-    };
-  });
-}
-
-/* Preferred path: render the backend's multi-asset-aware breakdown directly. */
+/* Preferred path: render the backend's multi-asset-aware breakdown directly.
+   Used by the rebalancing Current-vs-Target bars AND the additional-investment
+   SIP / lump-sum "Proposed Target" bars (deployment breakdowns are target-only,
+   so their rows carry current* = 0). */
 export function driftRowsFromBreakdown(breakdown: RebalancingAssetClassBreakdown): DriftRow[] {
-  const agg: Record<Bucket, { current: number; target: number }> = {
-    equity: { current: 0, target: 0 },
-    debt: { current: 0, target: 0 },
-    others: { current: 0, target: 0 },
+  const agg: Record<Bucket, Agg> = {
+    equity: { current: 0, target: 0, goal: 0 },
+    debt: { current: 0, target: 0, goal: 0 },
+    others: { current: 0, target: 0, goal: 0 },
   };
   for (const row of breakdown.rows) {
     const b = toBucket(row.asset_class);
     agg[b].current += row.current_inr || 0;
     agg[b].target += row.target_inr || 0;
+    agg[b].goal = (agg[b].goal ?? 0) + (row.goal_inr || 0);
   }
   return formatDriftRows(agg);
+}
+
+/** True when the breakdown carries a goal mix worth rendering as its own bar.
+ *  AINV deployment breakdowns and pre-2026-09-27 runs ship none. */
+export function hasGoalMix(breakdown: RebalancingAssetClassBreakdown | null | undefined): boolean {
+  return (breakdown?.goal_total_inr ?? 0) > 0;
 }
