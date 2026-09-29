@@ -7,18 +7,25 @@ afterEach(cleanup);
 
 const figure = (max = 25, onCommit = vi.fn(), value = 18) => {
   render(
-    <EditableFigure value={value} max={max} label="Large-cap" onCommit={onCommit} className="w-[46px]" />,
+    <EditableFigure value={value} max={max} label="Large-cap" onCommit={onCommit} />,
   );
   return onCommit;
 };
-const resting = () => screen.getByRole("button", { name: "Large-cap share" });
-const field = () => screen.getByRole("textbox", { name: "Large-cap share" }) as HTMLInputElement;
+const resting = () => screen.getByRole("button", { name: /^Large-cap percentage/ });
+const field = () => screen.getByRole("textbox", { name: "Large-cap percentage" }) as HTMLInputElement;
 
 describe("EditableFigure", () => {
   it("rests as a figure, not a form", () => {
     figure();
     expect(resting().textContent).toBe("18%");
     expect(screen.queryByRole("textbox")).toBeNull();
+  });
+
+  // The name replaces the visible text for a screen reader, so it has to
+  // carry the value or the figure is silent.
+  it("names its value for screen readers", () => {
+    figure();
+    expect(resting()).toHaveAccessibleName("Large-cap percentage, 18%");
   });
 
   // Single tap, not double: this is a touch-first app, and on iOS a double-tap
@@ -102,10 +109,9 @@ describe("EditableFigure", () => {
   });
 
   // A hand-checked table protects nothing past the moment someone edits the
-  // sanitiser: two defects on this plan (a residual-clipping bug in `spread`,
-  // and this component's own missing input floor) already got through
-  // review because their behaviour lived in a table a person read once, not
-  // in an assertion the suite re-runs. Encoding every row here means a
+  // sanitiser: defects here have got through review before because their
+  // behaviour lived in a table a person read once, not in an assertion the
+  // suite re-runs. Encoding every row here means a
   // future change that drops, say, the decimal truncation fails CI instead
   // of waiting for the next human to reread the table.
   it("keeps the field a whole number inside the budget, whatever is typed", () => {

@@ -116,7 +116,7 @@ function SipPlanCard({
   // ── Set-up / adjust form ──
   if (editing) {
     return (
-      <div className="mb-3 rounded-2xl border border-border bg-card p-4">
+      <div className="mb-3 rounded-2xl border border-border bg-card p-3">
         <div className="flex items-center gap-1.5">
           <Repeat className="h-3.5 w-3.5 text-[hsl(var(--wealth-navy))]" />
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
@@ -209,7 +209,7 @@ function SipPlanCard({
   return (
     <>
       {/* Amount card — the Edit control sits to the RIGHT of the amount */}
-      <div className="mb-3 rounded-2xl border border-border bg-card p-4">
+      <div className="mb-3 rounded-2xl border border-border bg-card p-3">
         <div className="flex items-center gap-1.5">
           <Repeat className="h-3.5 w-3.5 text-[hsl(var(--wealth-navy))]" />
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Your monthly SIP</p>
@@ -261,7 +261,7 @@ function SipPlanCard({
       )}
 
       {/* Suggested funds card — each row opens that fund's detail page */}
-      <div className="mb-3 rounded-2xl border border-border bg-card p-4">
+      <div className="mb-3 rounded-2xl border border-border bg-card p-3">
         <div className="flex items-center justify-between">
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Suggested funds</p>
           <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
@@ -269,13 +269,13 @@ function SipPlanCard({
           </span>
         </div>
 
-        <div className="mt-2.5 space-y-1.5">
+        <div className="mt-2 space-y-1">
           {sip.buys.map((b) => (
             <button
               key={`${b.recommended_fund}-${b.asset_subgroup}`}
               type="button"
               onClick={() => navigate(`/discovery/mf/${encodeURIComponent(b.scheme_code)}`)}
-              className="flex w-full items-center justify-between gap-2 rounded-lg bg-muted/40 px-2.5 py-2 text-left transition-colors hover:bg-muted"
+              className="flex w-full items-center justify-between gap-2 rounded-lg bg-muted/40 px-2.5 py-1.5 text-left transition-colors hover:bg-muted"
             >
               <div className="min-w-0">
                 <p className="truncate text-[12px] font-medium text-foreground">{plainName(b.recommended_fund)}</p>
@@ -385,10 +385,6 @@ const SipPlanner = () => {
   return (
     <div className="mobile-container bg-background min-h-screen pb-24">
       <div className="px-5 pt-2">
-        <p className="mb-3 text-[11px] leading-snug text-muted-foreground">
-          Deploy fresh money every month. Enter an amount and Prozpr&apos;s engine splits it
-          across the right funds for your goals.
-        </p>
         {building ? (
           <div
             className="flex justify-center pt-12"

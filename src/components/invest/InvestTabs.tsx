@@ -27,7 +27,7 @@ const InvestTabs = () => {
   ] as const;
 
   return (
-    <div className="px-5 pt-10 pb-1.5">
+    <div className="px-5 pt-10">
       <div className="relative flex rounded-full border border-[#D4A868]/25 bg-card p-0.5">
         {tabs.map((t) => {
           const active = t.key === activeKey;

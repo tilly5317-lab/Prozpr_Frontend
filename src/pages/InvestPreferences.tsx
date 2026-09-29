@@ -1,71 +1,69 @@
 import { useCallback, useEffect, useState } from "react";
-import { ChevronDown, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import BottomNav from "@/components/BottomNav";
-import AssetMixBar from "@/components/invest/AssetMixBar";
-import PreferenceScopeNotice, { type CarveOutKey } from "@/components/invest/PreferenceScopeNotice";
-import SubcategoryPins from "@/components/invest/SubcategoryPins";
+import AssetMixCard from "@/components/invest/AssetMixCard";
+import CategoriesCard, { type Editor } from "@/components/invest/CategoriesCard";
+import ClassCategoriesPanel from "@/components/invest/ClassCategoriesPanel";
+import MultiAssetPanel from "@/components/invest/MultiAssetPanel";
+import PreferenceScopeNotice from "@/components/invest/PreferenceScopeNotice";
+import PreferencesFooter, { FOOTER_CLEARANCE, FOOTER_NOTE_CLEARANCE } from "@/components/invest/PreferencesFooter";
 import {
   getInvestmentPreferences,
   saveInvestmentPreferences,
   type ClassMix,
-  type ScreenSubcategory,
+  type SubcategoryPin,
 } from "@/lib/api";
 import {
-  CLASS_COLOR,
   CLASS_LABEL,
   CLASSES,
+  classRows,
+  followProzprWhereMatching,
   fromCurrentHoldings,
   fromSavedPins,
-  isEngaged,
   lookThroughMix,
-  normalise,
+  matchesProzpr,
+  MULTI_ASSET_ID,
   recommendedMix,
-  recommendedValues,
+  resolve,
   roundMix,
   sameMix,
   samePins,
   toSavePins,
+  type Catalog,
+  type Cls,
   type RowValues,
 } from "@/lib/investment-preferences";
 
 const FALLBACK: ClassMix = { equity: 60, debt: 35, others: 5 }; // pre-load only; render gates on "loaded"
-
-/** Height of the app-wide BottomNav the sticky footer sits above. */
-const BOTTOM_NAV_H = 72;
-/** The footer is now a fixed two-button row — h-11 buttons inside py-3. */
-const FOOTER_H = 68;
-
-// Derived, not restated: CLASS_COLOR calls itself the single source app-wide,
-// and a hand-copied legend is what makes that claim quietly false.
-const LEGEND = CLASSES.map((c) => ({ c: CLASS_COLOR[c], label: CLASS_LABEL[c] }));
+const NO_CATALOG: Catalog = { cats: [], comp: { equity: 0, debt: 0, others: 0 } }; // pre-load only
+const SAVE_NOTE_ID = "save-note";
 
 /**
  * Standing investment-preferences screen (`/invest/preferences`). The customer
- * sets an exact Equity / Debt / Commodity split on a draggable bar (against
- * Prozpr's bar) plus a complete subcategory distribution — all as a share of
- * total. Saving persists it and refreshes the customer's plans (backend eager
- * refresh).
+ * sets an Equity / Debt / Commodity split, how much sits in the multi-asset
+ * fund, and how each class divides across its categories — all as a share of
+ * the whole portfolio. "Save Preferences" saves all of it at once and refreshes the
+ * customer's plans (backend eager refresh).
  *
- * The composition root: it owns `mix` and `values`. Both are kept on the bar by
- * `normalise` at the two places a class budget can move — the bar itself and
- * the multi-asset slider — which is why the screen has no validity state, no
- * save gate beyond "something changed", and no error copy.
+ * The composition root: it owns what the customer set (`mix`, `values`) and
+ * derives everything shown from it with `resolve` on every render, so moving
+ * the mix away and back always comes back exactly. The fund and each class's
+ * categories open as dropdowns in the Categories card — one at a time, all on
+ * this one screen.
  */
 export default function InvestPreferences() {
   const [load, setLoad] = useState<"loading" | "error" | "loaded">("loading");
+  const [catalog, setCatalog] = useState<Catalog>(NO_CATALOG);
   const [mix, setMix] = useState<ClassMix>(FALLBACK);
   const [values, setValues] = useState<RowValues>({});
+  const [open, setOpen] = useState<Editor | null>(null);
   const [initialMix, setInitialMix] = useState<ClassMix>(FALLBACK);
-  const [initialValues, setInitialValues] = useState<RowValues>({});
-  const [rec, setRec] = useState<ClassMix>(FALLBACK);
-  const [subs, setSubs] = useState<ScreenSubcategory[]>([]);
-  const [carveOuts, setCarveOuts] = useState<CarveOutKey[]>([]);
+  const [initialPins, setInitialPins] = useState<SubcategoryPin[]>([]);
   const [today, setToday] = useState<RowValues | null>(null);
   const [excludedPct, setExcludedPct] = useState(0);
   const [saving, setSaving] = useState(false);
-  const [openCats, setOpenCats] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
@@ -74,35 +72,23 @@ export default function InvestPreferences() {
     getInvestmentPreferences()
       .then((data) => {
         if (cancelled) return;
-        // The reference bar is the look-through of the catalog's own rows, not
-        // the engine's separate class figure — that is what lets Reset to
-        // Prozpr land balanced instead of overdrawing its own recommendation.
-        const recMix = recommendedMix(data.subcategories);
-        const startMix = data.saved?.class_mix ? roundMix(data.saved.class_mix) : recMix;
-        const saved = fromSavedPins(data.saved?.pins ?? [], data.subcategories);
-        // A saved distribution was stored against the bar of the day; a later
-        // catalog or rounding change can leave it a tenth off. Put it back on
-        // the bar before anyone looks at it.
-        const startValues = isEngaged(saved) ? normalise(startMix, saved, data.subcategories) : saved;
+        const cat: Catalog = { cats: data.subcategories, comp: data.multi_asset_composition };
+        // Prozpr's bar is the look-through of the catalog's own rows, not the
+        // engine's separate class figure — so Reset lands exactly on the plan.
+        const startMix = data.saved?.class_mix ? roundMix(data.saved.class_mix) : recommendedMix(cat);
+        // A class saved on Prozpr's exact numbers follows Prozpr from here on,
+        // so a later change to the mix cannot round it a point away.
+        const startValues = followProzprWhereMatching(
+          startMix, fromSavedPins(data.saved?.pins ?? [], data.subcategories), cat,
+        );
+        setCatalog(cat);
         setMix(startMix);
         setInitialMix(startMix);
         setValues(startValues);
-        setInitialValues(startValues);
-        setRec(recMix);
-        setSubs(data.subcategories);
-        setCarveOuts(data.carve_outs_at_risk ?? []);
-        // Absent, null and empty all read the same: the backend does not send
-        // this yet, and a customer holding nothing has no today either (D8).
-        // A payload that is present but every figure in it 0 is the same state
-        // again, not a fourth one: `lookThroughMix` reads a set of zeros as
-        // 0 equity / 0 debt / 100 Commodity, since Commodity is its derived
-        // residual — a set of zeros cannot be drawn as a distribution, so
-        // `holdings.length` is the wrong question. Whether ANY figure is
-        // positive is the right one (spec §3.1).
-        const holdings = data.current?.holdings ?? [];
-        const todayValues = fromCurrentHoldings(holdings, data.subcategories);
-        const hasToday = Object.values(todayValues).some((v) => (v ?? 0) > 0);
-        setToday(hasToday ? todayValues : null);
+        setInitialPins(toSavePins(startValues, resolve(startMix, startValues, cat).rows, cat.cats));
+        setOpen(null);
+        // Absent, null, empty and all-zero all read the same: nothing to show.
+        setToday(fromCurrentHoldings(data.current?.holdings ?? [], data.subcategories));
         setExcludedPct(data.current?.excluded_pct ?? 0);
         setLoad("loaded");
       })
@@ -114,33 +100,57 @@ export default function InvestPreferences() {
     };
   }, [reloadKey]);
 
+  // The screen opens at its top, with focus on its title.
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+    document.querySelector<HTMLElement>("h1")?.focus({ preventScroll: true });
+  }, [load]);
+
   const refetch = useCallback(() => setReloadKey((k) => k + 1), []);
 
-  const engaged = isEngaged(values);
-  // Until the customer touches a category they are shown Prozpr's shape, fitted
-  // to whatever bar they have set. Looking is not choosing: `values` stays blank
-  // so an untouched screen still saves an empty payload — "engine decides".
-  const effective = engaged ? values : normalise(mix, recommendedValues(subs), subs);
+  const res = resolve(mix, values, catalog);
+  const only = (cls: Cls, rows: RowValues): RowValues =>
+    Object.fromEntries(classRows(catalog.cats, cls).map((r) => [r.id, rows[r.id] ?? 0]));
+  const sumOf = (cls: Cls, rows: RowValues): number =>
+    classRows(catalog.cats, cls).reduce((s, r) => s + (rows[r.id] ?? 0), 0);
 
-  // Dragging the bar moves every class budget under the distribution. Rescale it
-  // to match, so a saved preference can never be off its own split.
-  const changeMix = (m: ClassMix) => {
-    setMix(m);
-    if (engaged) setValues(normalise(m, values, subs));
-  };
+  // A group's numbers are stored as entered — nothing is rescaled, now or when
+  // the mix or the fund moves — so one that doesn't add up simply shows as
+  // `res.unbalanced` and holds Save. Only that group is handed back to Prozpr
+  // if it matches: a class with nothing left to divide always "matches", and
+  // would lose its split.
+  const edit = (cls: Cls, rows: RowValues) =>
+    setValues(followProzprWhereMatching(mix, { ...values, ...rows }, catalog, [cls]));
 
-  const dirty =
-    !sameMix(mix, initialMix) ||
-    !samePins(toSavePins(values, subs), toSavePins(initialValues, subs));
-  const canSave = dirty && !saving;
+  const unbalanced = res.unbalanced;
+  // Each class is set on its own, nothing scaled to make room, so the mix can
+  // be mid-way to 100 — and Save waits for it.
+  const mixTotal = CLASSES.reduce((s, c) => s + mix[c], 0);
+  const pins = toSavePins(values, res.rows, catalog.cats);
+  const dirty = !sameMix(mix, initialMix) || !samePins(pins, initialPins);
 
-  const handleSave = useCallback(async () => {
+  // Save says what it is waiting for, right where it is tapped — the asset mix
+  // first, as every category is a share of it.
+  let note: { id: string; text: string } | undefined;
+  const first = unbalanced[0];
+  if (mixTotal !== 100) {
+    note = {
+      id: SAVE_NOTE_ID,
+      text: `Your asset mix adds up to ${mixTotal}%. ${mixTotal < 100 ? "Add" : "Remove"} ${Math.abs(100 - mixTotal)}% to save.`,
+    };
+  } else if (first) {
+    const total = res.parts[first] + sumOf(first, res.rows);
+    const off = total - mix[first];
+    note = {
+      id: SAVE_NOTE_ID,
+      text: `${CLASS_LABEL[first]} categories add up to ${total}% of ${mix[first]}%. ${off > 0 ? "Remove" : "Add"} ${Math.abs(off)}% to save.`,
+    };
+  }
+
+  const handleSave = async () => {
     setSaving(true);
     try {
-      const resp = await saveInvestmentPreferences({
-        class_mix: mix,
-        pins: toSavePins(values, subs),
-      });
+      const resp = await saveInvestmentPreferences({ class_mix: mix, pins });
       if (resp.blocked) toast.error(resp.blocked);
       else if (resp.no_op) toast("No changes to save");
       else {
@@ -152,15 +162,48 @@ export default function InvestPreferences() {
     } finally {
       setSaving(false);
     }
-  }, [mix, values, subs, refetch]);
+  };
+
+  const renderPanel = (e: Editor) =>
+    e === "multi-asset" ? (
+      <MultiAssetPanel
+        mix={mix}
+        res={res}
+        comp={catalog.comp}
+        today={today ? (today[MULTI_ASSET_ID] ?? 0) : null}
+        onChange={(v) => setValues(followProzprWhereMatching(mix, { ...values, [MULTI_ASSET_ID]: v }, catalog, []))}
+      />
+    ) : (
+      <ClassCategoriesPanel
+        cls={e}
+        mix={mix}
+        res={res}
+        cats={catalog.cats}
+        rows={res.rows}
+        today={today}
+        onEdit={(id, v) => edit(e, { ...only(e, res.rows), [id]: v })}
+        onUseProzpr={() => edit(e, only(e, res.prozprRows))}
+      />
+    );
 
   return (
     <div
       className="mobile-container bg-background min-h-screen"
-      style={{ paddingBottom: FOOTER_H + BOTTOM_NAV_H + 16 }}
+      style={{ paddingBottom: FOOTER_CLEARANCE + (note ? FOOTER_NOTE_CLEARANCE : 0) }}
     >
-      <div className="px-5 pt-4">
-        <h1 className="font-display text-[28px] leading-tight text-foreground">Decide your own Asset Class Mix</h1>
+      <div className="px-5 pt-2">
+        <h1 tabIndex={-1} className="font-display text-[28px] leading-tight text-foreground focus:outline-none">
+          Your asset mix
+        </h1>
+        <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
+          {"Start from our plan and change only what suits your needs "}
+          {/* The ⓘ travels with the last word, never onto a line of its own. */}
+          <span className="whitespace-nowrap">
+            {"better."}
+            {/* No Today bar, nothing for its footnote to qualify. */}
+            <PreferenceScopeNotice excludedPct={today ? excludedPct : 0} />
+          </span>
+        </p>
       </div>
 
       {load === "loading" ? (
@@ -180,118 +223,46 @@ export default function InvestPreferences() {
         </div>
       ) : (
         <>
-          <section className="mx-5 mt-4 rounded-2xl border border-border bg-card p-4">
-            <h2 className="text-[15px] font-semibold text-foreground">Set your asset mix</h2>
-            <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
-              {LEGEND.map((l) => (
-                <span key={l.label} className="inline-flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full" style={{ background: l.c }} />
-                  {l.label}
-                </span>
-              ))}
-            </div>
+          <AssetMixCard
+            mix={mix}
+            rec={recommendedMix(catalog)}
+            today={today ? lookThroughMix(today, catalog) : null}
+            onChange={setMix}
+          />
 
-            <p className="mb-2 mt-4 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-foreground">
-              Your preference
-            </p>
-            <AssetMixBar mode="interactive" mix={mix} onChange={changeMix} />
-            {/* Directly under the bar it describes: with three bars in the card
-                it otherwise reads as a note about the today bar. */}
-            <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-              {"Drag the gold handles to set your split — it always totals 100%."}
-            </p>
+          <CategoriesCard
+            mine={{
+              multiAsset: res.multiAsset !== res.prozprMultiAsset,
+              equity: !matchesProzpr(res.rows, res.prozprRows, classRows(catalog.cats, "equity")),
+              debt: !matchesProzpr(res.rows, res.prozprRows, classRows(catalog.cats, "debt")),
+              // Gold is the only commodity today, so this stays Prozpr's until
+              // there is more than one to divide between.
+              others: !matchesProzpr(res.rows, res.prozprRows, classRows(catalog.cats, "others")),
+            }}
+            unbalanced={unbalanced}
+            open={open}
+            onToggle={(e) => setOpen((cur) => (cur === e ? null : e))}
+            renderPanel={renderPanel}
+          />
 
-            <p className="mb-2 mt-4 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-foreground">
-              Prozpr recommends
-            </p>
-            <AssetMixBar mode="reference" mix={rec} />
-
-            {today ? (
-              <>
-                <p className="mb-2 mt-4 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-foreground">
-                  Where you are today
-                </p>
-                <AssetMixBar mode="reference" mix={lookThroughMix(today, subs)} />
-                {/* The rescale is the surprising part, not the omission: these
-                    figures were inflated to fill the gap the excluded holdings left (spec §3.4). */}
-                <p className="mt-1.5 text-[10.5px] leading-relaxed text-muted-foreground">
-                  {excludedPct > 0
-                    ? `Excludes the ${excludedPct.toFixed(0)}% you hold outside the categories you set here, such as ELSS and direct stocks. The rest is scaled to 100%.`
-                    : "Across the categories you set here."}
-                </p>
-              </>
-            ) : null}
-          </section>
-
-          {/* Most customers are happy with our categories, so the detail stays
-              folded away until someone asks for it. */}
-          <section className="mx-5 mt-4 rounded-2xl border border-border bg-card p-4">
-            {/* The heading wraps the button (the standard accordion pattern):
-                a heading cannot sit inside a button, which takes phrasing
-                content only, so this is how the section gets a real h2. */}
-            <h2>
-              <button
-                type="button"
-                onClick={() => setOpenCats((o) => !o)}
-                aria-expanded={openCats}
-                className="flex w-full items-center gap-3 text-left"
-              >
-                <span className="min-w-0">
-                  <span className="block text-[15px] font-semibold text-foreground">
-                    Set your categories
-                  </span>
-                </span>
-                <ChevronDown
-                  className={`ml-auto h-4 w-4 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none ${
-                    openCats ? "rotate-180" : ""
-                  }`}
-                />
-              </button>
-            </h2>
-
-            {openCats ? (
-              <>
-                <p className="mt-2.5 text-[11.5px] leading-relaxed text-muted-foreground">
-                  {"Drag a divider to shift share between categories — or tap a number to type it."}
-                </p>
-                <SubcategoryPins mix={mix} values={effective} subcategories={subs} today={today} onChange={setValues} />
-              </>
-            ) : null}
-          </section>
-
-          {/* Context, not live status — so it scrolls with the page. */}
-          <PreferenceScopeNotice keys={carveOuts} />
-
-          {/* Sticky action bar, sitting directly above BottomNav so Save is
-              always in view while the page scrolls. */}
-          <div
-            className="fixed inset-x-0 z-40 border-t border-border bg-background/95 backdrop-blur-xl"
-            style={{ bottom: BOTTOM_NAV_H }}
-          >
-            <div className="mx-auto flex max-w-md gap-2.5 px-5 py-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setMix(rec);
-                  setValues({});
-                }}
-                className="h-11 flex-1 rounded-xl border border-input text-[13.5px] font-semibold text-muted-foreground hover:text-foreground"
-              >
-                Reset to Prozpr
-              </button>
-              <button
-                type="button"
-                disabled={!canSave}
-                onClick={() => void handleSave()}
-                className="h-11 flex-1 rounded-xl bg-[#D4A868] text-[13.5px] font-semibold text-[#191307] transition-[filter] hover:brightness-[1.04] disabled:opacity-40"
-              >
-                {saving ? <Loader2 className="mx-auto h-4 w-4 animate-spin" /> : "Save preferences"}
-              </button>
-            </div>
-          </div>
+          <PreferencesFooter
+            note={note}
+            secondary={{
+              label: "Prozpr Recommendation",
+              onClick: () => {
+                setMix(recommendedMix(catalog));
+                setValues({});
+              },
+            }}
+            primary={{
+              label: saving ? <Loader2 className="mx-auto h-4 w-4 animate-spin" /> : "Save Preferences",
+              onClick: () => void handleSave(),
+              disabled: !dirty || saving || unbalanced.length > 0 || mixTotal !== 100,
+              describedBy: note?.id,
+            }}
+          />
         </>
       )}
-
       <BottomNav />
     </div>
   );
