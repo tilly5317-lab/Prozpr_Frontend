@@ -446,9 +446,9 @@ const RebalanceExplanation = () => {
     }
     return buildDriftRows(detail?.subgroup_summaries ?? [], portfolio?.holdings ?? []);
   }, [detail, portfolio]);
-  // Only show the goal bar when the backend actually shipped a goal mix — runs
-  // that predate it, and the target-only AINV breakdowns, carry none.
-  const showGoalBar = useMemo(
+  // A run that ships a goal mix is compared against it (title + amber line);
+  // runs that predate it, and the target-only AINV breakdowns, carry none.
+  const hasGoal = useMemo(
     () => hasGoalMix(detail?.asset_class_breakdown),
     [detail],
   );
@@ -739,17 +739,19 @@ const RebalanceExplanation = () => {
               </p>
             </motion.section>
 
-            {/* Current / After plan / Your goal — stacked ₹ bars (shared
-                component; also used on the SIP tab). The third bar and the note
-                exist because "target" here means where THIS PLAN lands, which a
-                customer who saved an explicit preference reads as that preference.
-                A rebalance is cash-neutral and cannot sell short-term units, so the
-                two legitimately differ — `gap` is the tappable amber line that says
-                why. showGoalBar is false on older runs that ship no goal mix. */}
+            {/* Current / After plan — two stacked ₹ bars (shared component; also
+                used on the SIP tab). "Target" here means where THIS PLAN lands,
+                which a customer who saved an explicit preference reads as that
+                preference. A rebalance is cash-neutral and cannot sell short-term
+                units, so the two legitimately differ — `gap` is the tappable amber
+                line ("This plan reaches X% equity, not your Y%. Why?") whose
+                question AND answer are built per run on the backend
+                (services/plan_gap.py). The goal itself is stated in that line, so
+                no third bar is drawn. */}
             <CurrentVsTargetChart
               rows={driftRows}
-              bars={showGoalBar ? ["current", "target", "goal"] : ["current", "target"]}
-              title={showGoalBar ? "Where this plan takes you" : "Current vs target"}
+              bars={["current", "target"]}
+              title={hasGoal ? "Where this plan takes you" : "Current vs target"}
               gap={detail?.asset_class_breakdown?.gap ?? null}
             />
 
