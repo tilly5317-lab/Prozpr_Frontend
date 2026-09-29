@@ -6,6 +6,8 @@ import {
   CheckCircle2,
   ExternalLink,
   FlaskConical,
+  FolderCheck,
+  FolderPlus,
   FolderSearch,
   Lock,
   Loader2,
@@ -29,13 +31,18 @@ import {
   type UserInfo,
 } from "@/lib/api";
 import {
+  QR_ARCHIVE_FOLDER,
   ScanCancelled,
+  archiveQrCopy,
   chooseDownloadsDirectory,
+  ensureArchiveFolder,
+  ensurePermission,
   ensureReadPermission,
   forgetRememberedDirectory,
   isDirectoryScanSupported,
   loadRememberedDirectory,
   scanWithRetry,
+  watchForNewQr,
   type DirectoryHandle,
   type ScanCandidate,
 } from "@/lib/downloadScan";
@@ -55,12 +62,15 @@ import MfcStatementView from "./MfcStatementView";
  *            means the local mock) — MFC's live API has no OTP endpoint, their
  *            hosted page owns that step, and a box that accepts a code it
  *            cannot verify is worse than no box. Skipped entirely otherwise.
- *   consent  MFC's own site, in a pop-up — Summary/Detailed and the QR
- *            download. We cannot see inside it: MFC exposes no progress API, so
- *            the step ends on their postMessage or on the user telling us.
- *            `integration_mode=iframe` embeds it instead; pop-up is default.
- *   qr       the QR image reaches us. Preferably by reading it straight out of
- *            the Downloads folder; by file picker when that is not possible.
+ *   consent  MFC's own site, embedded in ours (`integration_mode=iframe`,
+ *            the default since 2026-09-29 — a second window read as leaving
+ *            the app). Summary/Detailed and the QR download happen in there.
+ *            We cannot see inside it: MFC exposes no progress API, so the step
+ *            ends on their postMessage, on the QR landing in the watched
+ *            Downloads folder, or on the user telling us. `popup` still works.
+ *   qr       the QR image reaches us. Preferably picked up by itself from the
+ *            Downloads folder the user granted once (and copied into our
+ *            `Prozpr MF Central QRs` folder there); by file picker otherwise.
  *   done     everything MFC returned, rendered
  *
  * The QR is single-use. A failed exchange is a dead end for that consent, so
@@ -147,6 +157,22 @@ const MfcCasFlow = ({
   /** The folder held images, all older than this request — so offering to look
    * past the cutoff is worth a button rather than a mystery. */
   const [scanTooOld, setScanTooOld] = useState(false);
+  // Auto-pickup. A grant held from a previous visit lets the consent step watch
+  // the folder with no click at all. `folderKnown` is "a handle exists but has
+  // lapsed to prompt" — worth a one-click re-allow rather than a full pick.
+  const [folderKnown, setFolderKnown] = useState(false);
+  const [folderWritable, setFolderWritable] = useState(false);
+  const [watching, setWatching] = useState(false);
+  const watchingRef = useRef(false);
+  /** Where the last QR copy went (relative to the granted folder), for the UI. */
+  const [archivedTo, setArchivedTo] = useState<string | null>(null);
+  // QRs already handed to redeemQr, so a watcher restart after a failure looks
+  // for a NEWER file instead of re-spending the one that just failed.
+  const seenQrRef = useRef<Set<string>>(new Set());
+  // Serialises redemption across the watcher, MFC's postMessage and a manual
+  // pick: `validating` is state and lags a tick, which was a real double-spend
+  // window for a single-use QR.
+  const redeemingRef = useRef(false);
   // A ref, not state: the click handler must reach it without an await, or the
   // user activation showDirectoryPicker needs is already spent.
   const dirRef = useRef<DirectoryHandle | null>(null);
@@ -212,7 +238,9 @@ const MfcCasFlow = ({
     loadRememberedDirectory().then((remembered) => {
       if (cancelled || !remembered) return;
       dirRef.current = remembered.handle;
+      setFolderKnown(true);
       setFolderRemembered(remembered.granted);
+      setFolderWritable(remembered.writable);
     });
     return () => {
       cancelled = true;
@@ -262,6 +290,10 @@ const MfcCasFlow = ({
   // different PAN" toggle sends the typed one instead. With no PAN on file the
   // input is the only source, so it is always shown.
   const panOnFile = me?.pan_set === true;
+  // MFC's sandbox fixtures — null everywhere except a non-production box
+  // pointed at UAT with the PAN override on, so this card cannot reach a real
+  // investor's screen.
+  const testData = config?.test_data ?? null;
   const panValue = pan.trim().toUpperCase();
   const usingTypedPan = !panOnFile || useDifferentPan;
   const panReady = usingTypedPan ? PAN_RE.test(panValue) : true;
@@ -510,7 +542,8 @@ const MfcCasFlow = ({
    */
   const redeemQr = useCallback(
     async (base64: string, label: string) => {
-      if (validating) return;
+      if (validating || redeemingRef.current) return;
+      redeemingRef.current = true;
       setQrError(null);
       setPendingNote(null);
       setQrFileName(label);
@@ -549,6 +582,7 @@ const MfcCasFlow = ({
               : "Could not read that QR code.",
         );
       } finally {
+        redeemingRef.current = false;
         setValidating(false);
         if (fileInputRef.current) fileInputRef.current.value = "";
       }
@@ -558,6 +592,7 @@ const MfcCasFlow = ({
 
   const handleQrFile = useCallback(
     async (file: File) => {
+      seenQrRef.current.add(qrKey(file));
       if (file.size > MAX_QR_BYTES) {
         setQrError(
           "That file is far bigger than MF Central's QR image. Upload the PNG they gave you rather than a photo of the screen.",
@@ -567,6 +602,31 @@ const MfcCasFlow = ({
       await redeemQr(await readAsBase64(file), file.name);
     },
     [redeemQr],
+  );
+
+  /**
+   * Keep a copy of a QR that came from the watched folder in our own
+   * sub-folder there. Best-effort and independent of the import: the QR is
+   * worth keeping whether or not this exchange succeeds, and a failed copy
+   * must never cost the import.
+   */
+  const archiveFromFolder = useCallback(
+    async (file: File) => {
+      const dir = dirRef.current;
+      if (!dir || !folderWritable) return;
+      const path = await archiveQrCopy(dir, file);
+      if (path) setArchivedTo(path);
+    },
+    [folderWritable],
+  );
+
+  /** A file found in the granted folder: archive it, then redeem it. */
+  const redeemFolderFile = useCallback(
+    async (file: File) => {
+      void archiveFromFolder(file);
+      await handleQrFile(file);
+    },
+    [archiveFromFolder, handleQrFile],
   );
 
   /**
@@ -593,7 +653,7 @@ const MfcCasFlow = ({
           // Never auto-redeem a time-unfiltered result: without the cutoff, the
           // newest matching name could be a previous consent's spent QR.
           if (!ignoreTime && likely.length === 1) {
-            await handleQrFile(likely[0].file);
+            await redeemFolderFile(likely[0].file);
             return;
           }
           setCandidates(report.candidates);
@@ -625,7 +685,7 @@ const MfcCasFlow = ({
         setScanning(false);
       }
     },
-    [startedAt, handleQrFile],
+    [startedAt, redeemFolderFile],
   );
 
   /**
@@ -656,7 +716,9 @@ const MfcCasFlow = ({
       return;
     }
     dirRef.current = dir;
+    setFolderKnown(true);
     setFolderRemembered(true);
+    void ensureArchiveFolder(dir).then((ok) => setFolderWritable(ok));
     setStep("qr");
     await runScan(dir);
   }, [scanSupported, runScan]);
@@ -675,6 +737,56 @@ const MfcCasFlow = ({
     },
     [runScan],
   );
+
+  /**
+   * One-time setup from the intro: pick the Downloads folder (readwrite) and
+   * create our archive folder in it right away, so the user can see where the
+   * QRs will go before the first one arrives. The grant is remembered, so every
+   * later import watches the folder with no click at all.
+   */
+  const setupAutoPickup = useCallback(async () => {
+    let dir: DirectoryHandle;
+    try {
+      dir = await chooseDownloadsDirectory();
+    } catch (err: unknown) {
+      // Cancelling the picker is a choice, not a fault — say nothing.
+      if (!(err instanceof ScanCancelled)) {
+        toast({
+          title: "Couldn't set up auto-pickup",
+          description: (err as Error).message,
+        });
+      }
+      return;
+    }
+    dirRef.current = dir;
+    setFolderKnown(true);
+    setFolderRemembered(true);
+    const writable = await ensureArchiveFolder(dir);
+    setFolderWritable(writable);
+    toast({
+      title: "Automatic QR pickup is on",
+      description: writable
+        ? `Your QR codes will be imported by themselves and copied to ${QR_ARCHIVE_FOLDER}.`
+        : "Your QR codes will be imported by themselves.",
+    });
+  }, []);
+
+  /** A remembered grant that lapsed to "ask": one click restores it. Tries
+   * for the archive-capable grant first and settles for read-only. */
+  const reallowFolder = useCallback(async () => {
+    const dir = dirRef.current;
+    if (!dir) return;
+    if (await ensurePermission(dir, "readwrite")) {
+      setFolderRemembered(true);
+      setFolderWritable(true);
+      void ensureArchiveFolder(dir);
+      return;
+    }
+    if (await ensurePermission(dir, "read")) {
+      setFolderRemembered(true);
+      setFolderWritable(false);
+    }
+  }, []);
 
   /**
    * Enter fires whatever the current step's highlighted button is.
@@ -700,6 +812,9 @@ const MfcCasFlow = ({
   const stopScanning = useCallback(async () => {
     dirRef.current = null;
     setFolderRemembered(false);
+    setFolderKnown(false);
+    setFolderWritable(false);
+    setArchivedTo(null);
     setCandidates(null);
     setScanNote(null);
     setScanTooOld(false);
@@ -763,7 +878,11 @@ const MfcCasFlow = ({
         // No user gesture here, so this can only use a grant already held —
         // which is the common case on a second import, and turns MFC's own
         // "done" button into the last click of the whole flow.
-        if (folderRemembered && dirRef.current) {
+        if (watchingRef.current) {
+          // The folder watch is already running and redeems the download the
+          // moment it lands; a parallel scan here would race it for the same
+          // single-use QR.
+        } else if (folderRemembered && dirRef.current) {
           void rescan();
         } else {
           toast({
@@ -791,7 +910,63 @@ const MfcCasFlow = ({
     validating,
     result,
   ]);
+  /**
+   * Auto-pickup. From the moment MFC's page is open, watch the granted folder
+   * for the QR and redeem it the instant it lands — no button, no chooser.
+   * This is what makes the in-app (iframe) flow finish on its own: in a frame
+   * MFC posts only "complete", never the image, and the download is the only
+   * way the QR reaches us. Paused while a redemption is in flight, once the
+   * statement is in, and on any state that needs the user first.
+   */
+  useEffect(() => {
+    const dir = dirRef.current;
+    if (!request || !startedAt || !folderRemembered || !dir) return;
+    if (step !== "consent" && step !== "qr") return;
+    if (validating || result || pendingNote || qrError || candidates?.length) return;
+
+    const ctrl = new AbortController();
+    setWatching(true);
+    watchingRef.current = true;
+    void watchForNewQr(dir, {
+      // The same slack runScan allows: `startedAt` is when /start returned,
+      // and a clock tick between that and the write must not cost the match.
+      since: Math.max(0, startedAt - 5000),
+      signal: ctrl.signal,
+      ignore: (c) => seenQrRef.current.has(qrKey(c.file)),
+    })
+      .then((hit) => {
+        if (ctrl.signal.aborted || !hit) return;
+        setCandidates(null);
+        setScanNote(null);
+        setStep("qr");
+        return redeemFolderFile(hit.file);
+      })
+      .finally(() => {
+        if (!ctrl.signal.aborted) {
+          setWatching(false);
+          watchingRef.current = false;
+        }
+      });
+    return () => {
+      ctrl.abort();
+      setWatching(false);
+      watchingRef.current = false;
+    };
+  }, [
+    step,
+    request,
+    startedAt,
+    folderRemembered,
+    validating,
+    result,
+    pendingNote,
+    qrError,
+    candidates,
+    redeemFolderFile,
+  ]);
+
   const restart = () => {
+    setArchivedTo(null);
     if (popupWatchRef.current) {
       window.clearInterval(popupWatchRef.current);
       popupWatchRef.current = null;
@@ -932,7 +1107,7 @@ const MfcCasFlow = ({
               title="MF Central consent"
               onLoad={() => setFrameLoaded(true)}
               className="w-full border-0 bg-white"
-              style={{ height: "min(68vh, 600px)" }}
+              style={{ height: "min(72vh, 660px)" }}
               /* MFC derives the postMessage targetOrigin from document.referrer,
                  falling back to the redirectUrl origin. Ours differs from that
                  in every deployment, so the referrer has to survive — "origin"
@@ -1065,6 +1240,186 @@ const MfcCasFlow = ({
                 </div>
               )}
             </div>
+
+            {/* Local testing against MF Central's UAT sandbox. It answers only
+                its own eight PANs, each paired with one test contact, and a
+                real account carries a real PAN — so this fills the fields above
+                for THIS request only. Nothing on the account changes, and the
+                backend only honours it off production with the override on. */}
+            {testData && (
+              <div className="mt-3 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4">
+                <div className="flex items-start gap-2.5">
+                  <FlaskConical className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[12px] font-medium text-foreground">
+                      MF Central UAT test data
+                    </p>
+                    <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                      The sandbox answers only its own PANs, each with its test
+                      contact. Pick one to fill the request above — for this
+                      request only; your account keeps its own PAN.
+                    </p>
+                    <select
+                      value={
+                        usingTypedPan && testData.pans.includes(panValue) ? panValue : ""
+                      }
+                      onChange={(e) => {
+                        const chosen = e.target.value;
+                        if (!chosen) return;
+                        setUseDifferentPan(true);
+                        setPan(chosen);
+                        setUseOtherContact(true);
+                        setContactMobile(testData.mobile);
+                        setContactEmail("");
+                      }}
+                      className="mt-2.5 w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[12px] text-foreground outline-none transition-colors focus:border-primary"
+                    >
+                      <option value="">Choose a test PAN…</option>
+                      {testData.pans.map((p) => (
+                        <option key={p} value={p}>
+                          {p}
+                        </option>
+                      ))}
+                    </select>
+                    {usingTypedPan && testData.pans.includes(panValue) && (
+                      <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+                        OTP on MF Central&apos;s page will be{" "}
+                        <span className="font-mono font-semibold text-foreground">
+                          00{panValue.slice(5, 9)}
+                        </span>
+                        , sent to +91 {testData.mobile}.
+                      </p>
+                    )}
+                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUseOtherContact(true);
+                          setContactMobile("");
+                          setContactEmail(testData.email);
+                        }}
+                        className="text-[11px] text-muted-foreground underline decoration-dotted underline-offset-2 transition-colors hover:text-foreground"
+                      >
+                        Use the test email instead ({testData.email})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUseDifferentPan(false);
+                          setPan("");
+                          setUseOtherContact(false);
+                          setContactMobile("");
+                          setContactEmail("");
+                        }}
+                        className="text-[11px] text-muted-foreground underline decoration-dotted underline-offset-2 transition-colors hover:text-foreground"
+                      >
+                        Back to my own details
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Auto-pickup. Chromium desktop only (the folder API), and the
+                thing that turns the in-app flow into one click: with the grant
+                held, the consent step watches Downloads and imports the QR the
+                moment MF Central saves it, keeping a copy in our own folder. */}
+            {scanSupported && (
+              <div className="mt-3 rounded-2xl border border-border bg-card p-4">
+                {folderRemembered ? (
+                  <div className="flex items-start gap-2.5">
+                    <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-wealth-green/10">
+                      <FolderCheck className="h-3.5 w-3.5 text-wealth-green" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[12px] font-medium text-foreground">
+                        Automatic QR pickup is on
+                      </p>
+                      <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                        {folderWritable
+                          ? `The QR is imported the moment MF Central saves it, and a copy is kept in ${QR_ARCHIVE_FOLDER} inside your Downloads folder.`
+                          : "The QR is imported the moment MF Central saves it."}
+                      </p>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                        {!folderWritable && (
+                          <button
+                            type="button"
+                            onClick={() => void reallowFolder()}
+                            className="text-[11px] text-foreground underline decoration-dotted underline-offset-2 transition-colors hover:text-primary"
+                          >
+                            Also keep copies in {QR_ARCHIVE_FOLDER}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => void setupAutoPickup()}
+                          className="text-[11px] text-muted-foreground underline decoration-dotted underline-offset-2 transition-colors hover:text-foreground"
+                        >
+                          Change folder
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void stopScanning()}
+                          className="text-[11px] text-muted-foreground underline decoration-dotted underline-offset-2 transition-colors hover:text-foreground"
+                        >
+                          Turn off
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : folderKnown ? (
+                  <div className="flex items-start gap-2.5">
+                    <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-secondary">
+                      <FolderSearch className="h-3.5 w-3.5 text-muted-foreground" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[12px] font-medium text-foreground">
+                        Automatic QR pickup needs your permission again
+                      </p>
+                      <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                        Your browser forgot the folder grant between visits. One
+                        click restores it.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => void reallowFolder()}
+                        className="mt-2 rounded-lg bg-foreground px-3 py-1.5 text-[11px] font-semibold text-background transition-all active:scale-[0.98]"
+                      >
+                        Allow again
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-start gap-2.5">
+                    <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-secondary">
+                      <FolderPlus className="h-3.5 w-3.5 text-muted-foreground" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[12px] font-medium text-foreground">
+                        Set up automatic QR pickup
+                      </p>
+                      <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                        Choose your Downloads folder once. Prozpr creates a{" "}
+                        <span className="font-medium text-foreground">
+                          {QR_ARCHIVE_FOLDER}
+                        </span>{" "}
+                        folder there, and every QR MF Central saves is imported
+                        by itself and copied into it — no upload step.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => void setupAutoPickup()}
+                        className="mt-2 flex items-center gap-1.5 rounded-lg bg-foreground px-3 py-1.5 text-[11px] font-semibold text-background transition-all active:scale-[0.98]"
+                      >
+                        <FolderPlus className="h-3.5 w-3.5" />
+                        Choose Downloads folder
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {startError && (
               <div className="mt-4">
@@ -1297,36 +1652,97 @@ const MfcCasFlow = ({
                   {popupClosed ? "Reopen MF Central" : "Reopen the window"}
                 </button>
 
-                {/* Fallback path. MFC returns the QR to us over postMessage in
-                    popup mode, but if that is blocked — or the browser saved the
-                    QR to disk instead — the investor hands it over here. This is
-                    also the whole story in redirect mode and on non-Chromium
-                    browsers, where no automatic hand-back exists. */}
-                <div className="mt-4 rounded-xl border border-dashed border-border p-3">
-                  <p className="text-[11px] leading-relaxed text-muted-foreground">
-                    Didn&apos;t come back on its own?
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => void handleDownloadedClick()}
-                    className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-foreground py-2.5 text-[12px] font-semibold text-background transition-all active:scale-[0.98]"
-                  >
-                    {scanSupported ? (
-                      <FolderSearch className="h-3.5 w-3.5" />
-                    ) : (
-                      <UploadCloud className="h-3.5 w-3.5" />
-                    )}
-                    I&apos;ve downloaded the QR code
-                  </button>
-                  {scanSupported && !folderRemembered && (
-                    <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">
-                      Your browser will ask for your Downloads folder. We only
-                      read images saved since this request started.
-                    </p>
-                  )}
-                </div>
               </>
             )}
+
+            {/* Auto-pickup status, in both containers. Under the embedded page
+                this is the honest answer to "what happens after I press
+                Download": the folder is watched, the QR is redeemed the moment
+                it lands, and a copy goes to our archive folder. Without a grant
+                it offers the one-click setup instead. */}
+            {scanSupported && (
+              <div
+                className={`${mode === "iframe" ? "mt-3" : "mt-4"} rounded-xl border border-border bg-card px-3.5 py-3`}
+              >
+                {watching ? (
+                  <div className="flex items-start gap-2.5">
+                    <span className="relative mt-1 flex h-2.5 w-2.5 shrink-0">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60" />
+                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
+                    </span>
+                    <p className="text-[11px] leading-relaxed text-muted-foreground">
+                      <span className="font-medium text-foreground">
+                        Watching your Downloads folder.
+                      </span>{" "}
+                      Press <strong className="text-foreground">Download</strong>{" "}
+                      on MF Central&apos;s page and the QR is imported by itself
+                      {folderWritable
+                        ? `, with a copy saved to ${QR_ARCHIVE_FOLDER}.`
+                        : "."}
+                    </p>
+                  </div>
+                ) : folderKnown && !folderRemembered ? (
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-[11px] leading-relaxed text-muted-foreground">
+                      Automatic pickup needs your Downloads folder again.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void reallowFolder()}
+                      className="shrink-0 rounded-lg bg-foreground px-3 py-1.5 text-[11px] font-semibold text-background transition-all active:scale-[0.98]"
+                    >
+                      Allow
+                    </button>
+                  </div>
+                ) : !folderRemembered ? (
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-[11px] leading-relaxed text-muted-foreground">
+                      Choose your Downloads folder once and the QR is imported by
+                      itself.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void setupAutoPickup()}
+                      className="flex shrink-0 items-center gap-1.5 rounded-lg bg-foreground px-3 py-1.5 text-[11px] font-semibold text-background transition-all active:scale-[0.98]"
+                    >
+                      <FolderPlus className="h-3.5 w-3.5" />
+                      Set up
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            )}
+
+            {/* Fallback path. MFC returns the QR to us over postMessage in
+                popup mode, but if that is blocked — or the browser saved the
+                QR to disk and no folder is watched — the investor hands it
+                over here. This is also the whole story in redirect mode and on
+                non-Chromium browsers, where no automatic hand-back exists. */}
+            <div className="mt-4 rounded-xl border border-dashed border-border p-3">
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                {watching
+                  ? "Downloaded it and nothing happened?"
+                  : "Didn't come back on its own?"}
+              </p>
+              <button
+                type="button"
+                onClick={() => void handleDownloadedClick()}
+                className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-foreground py-2.5 text-[12px] font-semibold text-background transition-all active:scale-[0.98]"
+              >
+                {scanSupported ? (
+                  <FolderSearch className="h-3.5 w-3.5" />
+                ) : (
+                  <UploadCloud className="h-3.5 w-3.5" />
+                )}
+                I&apos;ve downloaded the QR code
+              </button>
+              {scanSupported && !folderRemembered && (
+                <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">
+                  Your browser will ask for your Downloads folder. We only read
+                  images saved since this request started.
+                </p>
+              )}
+            </div>
           </motion.div>
         )}
 
@@ -1376,6 +1792,25 @@ const MfcCasFlow = ({
               </div>
             )}
 
+            {!scanning && !validating && watching && (
+              <div className="flex items-center gap-2.5 rounded-2xl border border-border bg-secondary/40 px-3.5 py-3">
+                <span className="relative flex h-2.5 w-2.5 shrink-0">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
+                </span>
+                <p className="text-[12px] text-muted-foreground">
+                  Watching your Downloads folder for the QR…
+                </p>
+              </div>
+            )}
+
+            {archivedTo && !qrError && (
+              <p className="mt-3 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <FolderCheck className="h-3.5 w-3.5 shrink-0 text-wealth-green" />
+                Copy saved to {archivedTo}
+              </p>
+            )}
+
             {/* More than one plausible file, so we ask rather than guess: a
                 wrong redemption spends the consent and cannot be undone. */}
             {!scanning && candidates && candidates.length > 0 && !validating && (
@@ -1390,7 +1825,7 @@ const MfcCasFlow = ({
                     <button
                       key={`${c.name}-${c.lastModified}`}
                       type="button"
-                      onClick={() => void handleQrFile(c.file)}
+                      onClick={() => void redeemFolderFile(c.file)}
                       className="flex w-full items-center gap-2.5 rounded-lg border border-border bg-card px-3 py-2.5 text-left transition-colors hover:border-primary"
                     >
                       <QrCode className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -1554,6 +1989,13 @@ const MfcCasFlow = ({
               </div>
             )}
 
+            {archivedTo && (
+              <p className="mb-4 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <FolderCheck className="h-3.5 w-3.5 shrink-0 text-wealth-green" />
+                QR copy saved to {archivedTo}
+              </p>
+            )}
+
             <MfcStatementView data={result.data} />
           </motion.div>
         )}
@@ -1677,6 +2119,12 @@ const Notice = ({
     </div>
   </div>
 );
+
+/** Identity of a folder file across scans: Chrome reuses `cas-request-qr.png`
+ * with a `(n)` suffix, so the name alone is not enough. */
+function qrKey(file: File): string {
+  return `${file.name}:${file.lastModified}:${file.size}`;
+}
 
 /** Strip the `data:image/png;base64,` prefix — the API wants the bare payload,
  * though the backend tolerates either. */

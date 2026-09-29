@@ -871,6 +871,18 @@ export interface MfcConfig {
    * Never render an OTP box on "mfc": it would accept a code and go nowhere.
    */
   otp_capture: "app" | "mfc";
+  /** True when /start honours a PAN other than the account's. Only ever true
+   * off production with MFC_ALLOW_PAN_OVERRIDE set on the server. */
+  pan_override: boolean;
+  /** MF Central's UAT fixtures (the only PANs its sandbox answers, and the one
+   * contact they pair with), present only when pan_override is on against
+   * UAT. Null in production and under the mock. */
+  test_data: {
+    mobile: string;
+    email: string;
+    pans: string[];
+    otp_rule: string;
+  } | null;
 }
 
 /** Whether this backend is wired to MF Central. Called on mount so the import
@@ -913,10 +925,16 @@ export async function startMfcCasRequest(p: {
   mobile?: string | null;
   email?: string | null;
 }): Promise<MfcStartResponse> {
-  return request<MfcStartResponse>("/mfc-cas/start", {
-    method: "POST",
-    body: JSON.stringify(p),
-  });
+  // MF Central has been seen to hold newCasRequest for ~90s before answering
+  // (their UAT, 2026-09-29). The default 45s turned every such answer — even a
+  // clear rejection — into "Request timed out", so this leg waits longer than
+  // the backend's own 150s ceiling on the MFC call, and the real reply lands.
+  return request<MfcStartResponse>(
+    "/mfc-cas/start",
+    { method: "POST", body: JSON.stringify(p) },
+    true,
+    160_000,
+  );
 }
 
 /** One position, as MFC reports it. Far richer than what our schema stores —

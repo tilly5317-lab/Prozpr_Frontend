@@ -11,6 +11,14 @@
  * Either way it replaces "now upload the file you just downloaded", which is
  * the single most confusing step in the flow.
  *
+ * Since the consent page moved INSIDE the app (iframe), this is also the
+ * happy path rather than a fallback: MFC's frame posts only "complete", and
+ * the QR still lands in Downloads. {@link watchForNewQr} polls the granted
+ * folder from the moment the consent step opens, so the download is picked up
+ * and redeemed with no click at all, and {@link archiveQrCopy} keeps a copy in
+ * a folder of ours ({@link QR_ARCHIVE_FOLDER}) inside it — the user asked for
+ * a place where their MF Central QRs live, rather than loose in Downloads.
+ *
  * Three things constrain the design:
  *
  * 1. **`showDirectoryPicker` needs transient user activation.** It has to be the
@@ -153,6 +161,10 @@ export interface RememberedDirectory {
    * grant to "ask every time"; {@link ensureReadPermission} re-asks with one
    * click, which still beats picking the folder again. */
   granted: boolean;
+  /** True when copies can be written into {@link QR_ARCHIVE_FOLDER} without a
+   * prompt. A grant given before the archive existed is read-only and stays
+   * useful for pickup; {@link ensurePermission} with "readwrite" upgrades it. */
+  writable: boolean;
 }
 
 /**
@@ -171,7 +183,8 @@ export async function loadRememberedDirectory(): Promise<RememberedDirectory | n
   if (!handle) return null;
   try {
     const state = await handle.queryPermission?.({ mode: "read" });
-    return { handle, granted: state === "granted" };
+    const write = await handle.queryPermission?.({ mode: "readwrite" });
+    return { handle, granted: state === "granted", writable: write === "granted" };
   } catch {
     return null;
   }
@@ -196,15 +209,22 @@ export async function forgetRememberedDirectory(): Promise<void> {
  * a user who does not change directory. We cannot preselect it outright — the
  * spec requires the choice to be the user's, which is exactly the property that
  * makes this safe to offer.
+ *
+ * Asks for "readwrite", not "read": the same grant has to let us create
+ * {@link QR_ARCHIVE_FOLDER} and drop a copy of each QR in it. Chrome shows one
+ * prompt either way; declining the edit half rejects the whole pick, which the
+ * caller sees as a cancel and falls back to the file input.
  */
-export async function chooseDownloadsDirectory(): Promise<DirectoryHandle> {
+export async function chooseDownloadsDirectory(
+  mode: "read" | "readwrite" = "readwrite",
+): Promise<DirectoryHandle> {
   const picker = (window as PickerWindow).showDirectoryPicker;
   if (!picker) {
     throw new ScanUnavailable("This browser cannot read a folder directly.");
   }
   let handle: DirectoryHandle;
   try {
-    handle = await picker({ id: "prozpr-downloads", mode: "read", startIn: "downloads" });
+    handle = await picker({ id: "prozpr-downloads", mode, startIn: "downloads" });
   } catch (err: unknown) {
     const name = (err as { name?: string })?.name;
     if (name === "AbortError") throw new ScanCancelled();
@@ -228,11 +248,30 @@ export async function chooseDownloadsDirectory(): Promise<DirectoryHandle> {
  * gesture, and is cheaper for the user than picking the folder again.
  */
 export async function ensureReadPermission(handle: DirectoryHandle): Promise<boolean> {
+  return ensurePermission(handle, "read");
+}
+
+/** {@link ensureReadPermission} for either mode. "readwrite" is what the
+ * archive copy needs; a user who declines it keeps a working read grant. */
+export async function ensurePermission(
+  handle: DirectoryHandle,
+  mode: "read" | "readwrite",
+): Promise<boolean> {
   try {
-    const state = await handle.queryPermission?.({ mode: "read" });
+    const state = await handle.queryPermission?.({ mode });
     if (state === "granted") return true;
-    const asked = await handle.requestPermission?.({ mode: "read" });
+    const asked = await handle.requestPermission?.({ mode });
     return asked === "granted";
+  } catch {
+    return false;
+  }
+}
+
+/** True when writes need no prompt right now. Never asks — the archive copy
+ * happens with no gesture in hand, so it can only use a grant already held. */
+export async function hasWritePermission(handle: DirectoryHandle): Promise<boolean> {
+  try {
+    return (await handle.queryPermission?.({ mode: "readwrite" })) === "granted";
   } catch {
     return false;
   }
@@ -353,4 +392,109 @@ export async function scanWithRetry(
   if (first.candidates.length || !first.readable) return first;
   await new Promise((r) => setTimeout(r, 800));
   return scanForDownloadedImages(dir, options);
+}
+
+// --------------------------------------------------------------------------- watching
+
+export interface WatchOptions extends ScanOptions {
+  /** How often to look. The download is a 2 KB PNG; a second and a half is
+   * invisible to the user and cheap on a folder with a few hundred files. */
+  intervalMs?: number;
+  /** Stops the loop. Resolves `null` once aborted. */
+  signal: AbortSignal;
+  /** Files already handed over — a QR that failed must not be redeemed twice,
+   * and the watcher should keep looking for a NEWER one instead. */
+  ignore?: (candidate: ScanCandidate) => boolean;
+}
+
+/**
+ * Wait for the QR to land in `dir`, then hand it back.
+ *
+ * Runs from the moment MFC's page opens, so by the time their download button
+ * is pressed we are already looking. Only a name-matching (`likely`) file is
+ * ever returned — the loop starts BEFORE the download, so the newest such
+ * file inside the `since` window can only be this request's QR, and "a second
+ * copy because the user clicked Download twice" is the same image again.
+ * Anything not name-matching is left for the chooser on the QR step.
+ */
+export async function watchForNewQr(
+  dir: DirectoryHandle,
+  { since, intervalMs = 1500, signal, ignore }: WatchOptions,
+): Promise<ScanCandidate | null> {
+  while (!signal.aborted) {
+    const report = await scanForDownloadedImages(dir, { since, limit: 6 });
+    if (signal.aborted) return null;
+    // Unreadable means the grant lapsed mid-flow; polling would only spin.
+    if (!report.readable) return null;
+    const hit = report.candidates.find((c) => c.likely && !ignore?.(c));
+    if (hit) return hit;
+    await new Promise<void>((resolve) => {
+      const t = setTimeout(resolve, intervalMs);
+      signal.addEventListener(
+        "abort",
+        () => {
+          clearTimeout(t);
+          resolve();
+        },
+        { once: true },
+      );
+    });
+  }
+  return null;
+}
+
+// --------------------------------------------------------------------------- archive
+
+/** The folder we keep inside the granted directory. Created on setup, so the
+ * user can see where their QRs will go before the first one arrives. */
+export const QR_ARCHIVE_FOLDER = "Prozpr MF Central QRs";
+
+/**
+ * Create {@link QR_ARCHIVE_FOLDER} inside `dir` if it is not there yet.
+ * Returns false (never throws) when the grant is read-only.
+ */
+export async function ensureArchiveFolder(dir: DirectoryHandle): Promise<boolean> {
+  if (!(await hasWritePermission(dir))) return false;
+  try {
+    await dir.getDirectoryHandle(QR_ARCHIVE_FOLDER, { create: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Copy a QR into {@link QR_ARCHIVE_FOLDER} under a timestamped name.
+ *
+ * A COPY, not a move — the File System Access API has no rename across
+ * directories, and deleting the original out of Downloads would surprise a
+ * user who expected it there. Returns the archived path for the UI, or null
+ * when nothing was written (read-only grant, disk error); the import never
+ * depends on this succeeding.
+ */
+export async function archiveQrCopy(
+  dir: DirectoryHandle,
+  file: File,
+  when: Date = new Date(),
+): Promise<string | null> {
+  if (!(await hasWritePermission(dir))) return null;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const stamp =
+    `${when.getFullYear()}${pad(when.getMonth() + 1)}${pad(when.getDate())}-` +
+    `${pad(when.getHours())}${pad(when.getMinutes())}${pad(when.getSeconds())}`;
+  const ext = (file.name.match(/[.](png|jpe?g|webp)$/i)?.[0] ?? ".png").toLowerCase();
+  const target = `mf-central-qr-${stamp}${ext}`;
+  try {
+    const folder = await dir.getDirectoryHandle(QR_ARCHIVE_FOLDER, { create: true });
+    const handle = await folder.getFileHandle(target, { create: true });
+    const writable = await handle.createWritable();
+    try {
+      await writable.write(file);
+    } finally {
+      await writable.close();
+    }
+    return `${QR_ARCHIVE_FOLDER}/${target}`;
+  } catch {
+    return null;
+  }
 }
