@@ -332,3 +332,39 @@
 .alloc-slider::-moz-range-thumb {
   border-color: var(--slider-fill, #1A3A6B) !important;
 }
+
+/* ── /earlyaccess form legibility ──────────────────────────────────────────
+   That page is a marketing page committed to ONE light look (see the header
+   comment in src/pages/EarlyAccess.tsx), but two things still leak the
+   visitor's OS dark theme into it, and both end with unreadable typed text:
+
+   - With no `color-scheme` declared, a browser in dark mode renders form
+     controls with its dark defaults, so a <select>'s options come out
+     light-on-light and the caret disappears.
+   - Chrome's autofill paints its OWN background and text colour over the
+     element, at a specificity no utility class can beat — an autofilled name
+     or email renders invisible however dark `text-` is set.
+
+   Pinning the scheme fixes the first; repainting autofill fixes the second.
+   Scoped to the page so the app's real dark mode is untouched. */
+.early-access {
+  color-scheme: light;
+}
+
+.early-access input:-webkit-autofill,
+.early-access input:-webkit-autofill:hover,
+.early-access input:-webkit-autofill:focus,
+.early-access input:-webkit-autofill:active {
+  /* Autofill's background cannot be set directly; a large inset shadow is the
+     only reliable way to cover it. */
+  -webkit-box-shadow: 0 0 0 1000px #ffffff inset;
+  box-shadow: 0 0 0 1000px #ffffff inset;
+  -webkit-text-fill-color: #111113;
+  caret-color: #111113;
+}
+
+/* Option colours are drawn by the OS, not the page, so they need saying. */
+.early-access select option {
+  background-color: #ffffff;
+  color: #111113;
+}

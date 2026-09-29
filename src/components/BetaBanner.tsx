@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Info, X } from "lucide-react";
+import { useLocation } from "react-router-dom";
 
 /**
  * Beta / test-mode banner.
@@ -17,8 +18,11 @@ const BetaBanner = () => {
   const [dismissed, setDismissed] = useState(
     () => sessionStorage.getItem(DISMISS_KEY) === "true",
   );
+  const { pathname } = useLocation();
 
-  if (dismissed) return null;
+  // The early-access page is a public landing page with its own disclaimer
+  // strip; the in-app "beta mode" bar would read as noise above it.
+  if (dismissed || pathname === "/earlyaccess") return null;
 
   const handleDismiss = () => {
     sessionStorage.setItem(DISMISS_KEY, "true");
