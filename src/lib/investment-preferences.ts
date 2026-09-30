@@ -244,8 +244,8 @@ export function recommendedValues(cats: ScreenSubcategory[]): RowValues {
 }
 
 /** The class mix a complete set of row values implies — the look-through, with
- *  the multi-asset fund split by its make-up. One function draws Prozpr's bar
- *  and the today bar, so the two stay comparable. Its callers pass whole
+ *  the multi-asset fund split by its make-up. One function gives Prozpr's and
+ *  today's class figures, so the two stay comparable. Its callers pass whole
  *  numbers summing to 100, so the result does too. */
 export function lookThroughMix(values: RowValues, catalog: Catalog): ClassMix {
   const parts = multiAssetParts(val(values, MULTI_ASSET_ID), catalog.comp);
@@ -259,14 +259,14 @@ export function recommendedMix(catalog: Catalog): ClassMix {
 }
 
 /** Today's holdings as row values, or null when the customer holds nothing
- *  here — absent, empty and all-zero payloads alike, since a set of zeros
- *  cannot be drawn as a distribution. Every settable category is present and
+ *  here — absent, empty and all-zero payloads alike, since a set of zeros is
+ *  not a mix anyone holds. Every settable category is present and
  *  one the customer holds none of reads 0: today is a complete fact, which is
  *  exactly what `fromSavedPins`'s nullable blank is not.
  *
  *  Rounding each holding independently can leave the set a point short of or
- *  over 100, which the today bar would draw as a gap or an overflow, so the
- *  set is put back on exactly 100, in proportion. */
+ *  over 100, which the Today column would print as a mix adding up to 99 or
+ *  101, so the set is put back on exactly 100, in proportion. */
 export function fromCurrentHoldings(
   holdings: ScreenCurrentHolding[],
   cats: ScreenSubcategory[],

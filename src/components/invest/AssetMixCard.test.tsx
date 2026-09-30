@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 
 import type { ClassMix } from "@/lib/api";
 import AssetMixCard from "./AssetMixCard";
@@ -29,6 +29,8 @@ const shown = () =>
     .map((l) => screen.getByRole("button", { name: new RegExp(`^${l} percentage`) }).textContent)
     .join(" / ");
 const follows = (a: Node, b: Node) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+/** A figure in a class's row, as a screen reader hears it ("Today 55%"). */
+const figure = (cls: string, text: string) => within(screen.getByTestId(`mix-row-${cls}`)).getByText(text).textContent;
 
 describe("AssetMixCard", () => {
   // No auto-scaling: when one class pulled the other two after it, a customer
@@ -37,7 +39,6 @@ describe("AssetMixCard", () => {
     render(<Harness />);
     tap("Increase", "Equity", 7);
     expect(shown()).toBe("85% / 16% / 6%");
-    expect(screen.getByTestId("bar-you-equity").style.flexGrow).toBe("85");
     tap("Decrease", "Debt", 7);
     expect(shown()).toBe("85% / 9% / 6%");
   });
@@ -72,14 +73,6 @@ describe("AssetMixCard", () => {
     expect(follows(screen.getByTestId("mix-total"), screen.getByRole("button", { name: "Decrease Equity" }))).toBe(true);
   });
 
-  // Under 100 the You bar shows what is missing, so it cannot look complete.
-  it("leaves the missing part of the You bar empty", () => {
-    render(<Harness />);
-    expect(screen.queryByTestId("bar-you-gap")).toBeNull();
-    tap("Decrease", "Debt", 5);
-    expect(screen.getByTestId("bar-you-gap").style.flexGrow).toBe("5");
-  });
-
   it("stops each class at 0% and 100%, and never at the others' total", () => {
     render(<Harness start={{ equity: 100, debt: 0, others: 0 }} />);
     expect(screen.getByRole("button", { name: "Increase Equity" })).toBeDisabled();
@@ -88,24 +81,17 @@ describe("AssetMixCard", () => {
     expect(screen.getByRole("button", { name: "Increase Debt" })).toBeEnabled();
   });
 
-  it("puts today's and Prozpr's figures under each class", () => {
+  it("puts today's and Prozpr's figures in each class's row", () => {
     render(<Harness today={TODAY} />);
-    expect(screen.getByText("Today 55% · Prozpr 70%")).toBeInTheDocument();
-    expect(screen.getByText("Today 5% · Prozpr 10%")).toBeInTheDocument();
+    expect(figure("equity", "55%")).toBe("Today 55%");
+    expect(figure("equity", "70%")).toBe("Prozpr 70%");
+    expect(figure("others", "5%")).toBe("Today 5%");
+    expect(figure("others", "10%")).toBe("Prozpr 10%");
   });
 
-  it("leaves today out of the rows and the bars when there is none", () => {
+  it("leaves the Today column out when there is none", () => {
     render(<Harness />);
-    expect(screen.getByText("Prozpr 70%")).toBeInTheDocument();
-    expect(screen.queryByTestId("bar-today")).toBeNull();
-  });
-
-  // The customer's bar sits in the grid like the other two — no gold ring
-  // wrapped around it to single it out.
-  it("draws the customer's bar like Today's and Prozpr's", () => {
-    render(<Harness today={TODAY} />);
-    const holder = (id: string) => screen.getByTestId(id).parentElement;
-    expect(holder("bar-you")).toBe(holder("bar-prozpr"));
-    expect(holder("bar-you")).toBe(holder("bar-today"));
+    expect(screen.queryByText("Today")).toBeNull();
+    expect(figure("equity", "70%")).toBe("Prozpr 70%");
   });
 });

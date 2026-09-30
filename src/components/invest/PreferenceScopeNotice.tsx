@@ -4,7 +4,7 @@ import InfoPopup, { DIRECTIONAL_TARGET, PopupText } from "@/components/invest/In
  * What a saved distribution does and does not change — behind a small ⓘ
  * beside the screen's subtitle, opened as a pop-up when the customer asks.
  *
- * Also where the Today bar owns up to what it leaves out (ELSS and the like):
+ * Also where the Today column owns up to what it leaves out (ELSS and the like):
  * the surprising part is the rescale, not the omission — those figures were
  * inflated to fill the gap.
  *
@@ -14,7 +14,7 @@ import InfoPopup, { DIRECTIONAL_TARGET, PopupText } from "@/components/invest/In
 export default function PreferenceScopeNotice({
   excludedPct,
 }: {
-  /** Share of today's holdings the Today bar leaves out; 0 when none, or no Today bar. */
+  /** Share of today's holdings the Today column leaves out; 0 when none, or no Today column. */
   excludedPct: number;
 }) {
   return (

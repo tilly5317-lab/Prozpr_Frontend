@@ -280,8 +280,8 @@ describe("fromCurrentHoldings", () => {
     expect(v.short_debt).toBe(22);
   });
 
-  // Any drift would be drawn on the today bar as a class the customer does
-  // not hold, or a bar that does not fill.
+  // Any drift would show in the Today column as a class the customer does
+  // not hold, or a mix that does not add up to 100.
   it("sums to exactly 100 whichever way the payload drifted, leaving an untouched row at 0", () => {
     for (const holdings of [
       [{ subgroup: "low_beta_equities", pct_of_total: 33.33 }, { subgroup: "short_debt", pct_of_total: 33.33 },

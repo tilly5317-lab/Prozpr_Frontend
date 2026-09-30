@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 vi.mock("@/lib/api", () => ({
@@ -24,7 +24,7 @@ const GET = {
   subcategories: PLAN,
   multi_asset_composition: COMP,
 };
-// Today is deliberately nothing like the plan, so the bars cannot be confused:
+// Today is deliberately nothing like the plan, so the figures cannot be confused:
 // 70 equity / 30 debt / 0 commodity.
 const GET_WITH_TODAY = {
   ...GET,
@@ -58,6 +58,9 @@ const tap = (name: string | RegExp, times = 1) => {
   for (let i = 0; i < times; i++) fireEvent.click(button(name));
 };
 const saveBtn = () => button(/^save preferences$/i);
+/** A figure in a class's row of the mix, as a screen reader hears it ("Today 70%"). */
+const mixFigure = (cls: string, text: string) =>
+  within(screen.getByTestId(`mix-row-${cls}`)).getByText(text).textContent;
 const ready = () => screen.findByRole("button", { name: /^save preferences$/i });
 const heading = (name: string) => screen.getByRole("heading", { level: 1, name });
 /** A group's own row in the Categories card. Its open panel can hold a
@@ -103,10 +106,10 @@ describe("InvestPreferences — the mix", () => {
     tap("Increase Equity");
     tap("Decrease Debt");
 
-    // Only now do the two bars differ, so only now can Prozpr's be told apart
-    // from a copy of the customer's.
-    expect(screen.getByTestId("bar-prozpr-equity").style.flexGrow).toBe("78");
-    expect(screen.getByTestId("bar-you-equity").style.flexGrow).toBe("79");
+    // Only now do the two figures differ, so only now can Prozpr's be told
+    // apart from a copy of the customer's.
+    expect(mixFigure("equity", "78%")).toBe("Prozpr 78%");
+    expect(button(/^Equity percentage/)).toHaveTextContent("79%");
     fireEvent.click(saveBtn());
     await waitFor(() =>
       expect(saveInvestmentPreferences).toHaveBeenCalledWith({
@@ -403,11 +406,11 @@ describe("InvestPreferences — how a preference works", () => {
 });
 
 describe("InvestPreferences — where you are today", () => {
-  it("draws a today bar from the customer's holdings", async () => {
+  it("shows today's mix from the customer's holdings", async () => {
     mockGet(GET_WITH_TODAY); renderPage(); await ready();
-    // A class held at 0 draws nothing — not a phantom sliver of gold.
-    expect(screen.getByTestId("bar-today-equity").style.flexGrow).toBe("70");
-    expect(screen.queryByTestId("bar-today-others")).toBeNull();
+    expect(mixFigure("equity", "70%")).toBe("Today 70%");
+    expect(mixFigure("debt", "30%")).toBe("Today 30%");
+    expect(mixFigure("others", "0%")).toBe("Today 0%");
   });
 
   // 20 in the fund counts as 13 / 5 / 2, alongside each class's own rows.
@@ -420,8 +423,9 @@ describe("InvestPreferences — where you are today", () => {
       { subgroup: "gold_commodities", pct_of_total: 20 },
     ];
     mockGet({ ...GET, current: { holdings, excluded_pct: 0 } }); renderPage(); await ready();
-    const widths = ["equity", "debt", "others"].map((c) => screen.getByTestId(`bar-today-${c}`).style.flexGrow);
-    expect(widths).toEqual(["43", "35", "22"]);
+    expect(mixFigure("equity", "43%")).toBe("Today 43%");
+    expect(mixFigure("debt", "35%")).toBe("Today 35%");
+    expect(mixFigure("others", "22%")).toBe("Today 22%");
   });
 
   // The rescale is the surprising part: the surviving figures were inflated to
@@ -442,7 +446,7 @@ describe("InvestPreferences — where you are today", () => {
   });
 
   // Absent, null, empty and all-zero are one state: nothing to show. A set of
-  // zeros cannot be drawn as a bar.
+  // zeros is not a mix anyone holds.
   it.each([
     ["absent", undefined],
     ["null", null],
@@ -453,7 +457,7 @@ describe("InvestPreferences — where you are today", () => {
     }],
   ])("shows nothing about today when current is %s", async (_label, current) => {
     mockGet({ ...GET, current }); renderPage(); await ready();
-    expect(screen.queryByTestId("bar-today")).toBeNull();
+    expect(screen.queryByText("Today")).toBeNull();
     tap("How your preference works");
     expect(screen.queryByText(/Today leaves out/)).toBeNull();
   });

@@ -26,8 +26,15 @@ const AT_LIMIT = "That's the most your mix allows.";
 describe("MultiAssetPanel", () => {
   it("shows where the customer is and Prozpr's figure", () => {
     view({ multi_asset: 30 });
-    expect(screen.getByText("Today 10% · Prozpr 41%")).toBeInTheDocument();
+    expect(screen.getByText("10%")).toHaveTextContent("Today 10%");
+    expect(screen.getByText("41%")).toHaveTextContent("Prozpr 41%");
     expect(button(/^Multi-asset funds percentage/)).toHaveTextContent("30%");
+  });
+
+  it("leaves the Today column out when there are no holdings", () => {
+    view({ multi_asset: 30 }, MINE, null);
+    expect(screen.queryByText("Today")).toBeNull();
+    expect(screen.getByText("41%")).toHaveTextContent("Prozpr 41%");
   });
 
   // 30 in the fund counts as 19 / 8 / 3, each figure on its own class, and the

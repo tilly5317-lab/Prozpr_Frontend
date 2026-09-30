@@ -24,7 +24,7 @@ export default function PercentStepper({
   onChange: (v: number) => void;
 }) {
   return (
-    <div className="ml-auto flex shrink-0 items-center rounded-lg border border-border">
+    <div className="flex items-center rounded-lg border border-border">
       <button
         type="button"
         aria-label={`Decrease ${label}`}

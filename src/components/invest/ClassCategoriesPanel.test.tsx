@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 
 import { resolve, type Cls, type RowValues } from "@/lib/investment-preferences";
 import { CATALOG, MINE, PLAN } from "@/test/preferences-fixtures";
@@ -13,11 +13,14 @@ const TODAY: RowValues = {
 };
 
 /** `rows` overrides the class's shown values — an edit in progress. */
-const view = (cls: Cls, { mix = MINE, values = { multi_asset: 30 } as RowValues, rows = {} as RowValues } = {}) => {
+const view = (
+  cls: Cls,
+  { mix = MINE, values = { multi_asset: 30 } as RowValues, rows = {} as RowValues, today = TODAY as RowValues | null } = {},
+) => {
   const res = resolve(mix, values, CATALOG);
   const handlers = { onEdit: vi.fn(), onUseProzpr: vi.fn() };
   render(
-    <ClassCategoriesPanel cls={cls} mix={mix} res={res} cats={PLAN} rows={{ ...res.rows, ...rows }} today={TODAY}
+    <ClassCategoriesPanel cls={cls} mix={mix} res={res} cats={PLAN} rows={{ ...res.rows, ...rows }} today={today}
       {...handlers} />,
   );
   return handlers;
@@ -68,9 +71,19 @@ describe("ClassCategoriesPanel", () => {
 
   it("shows today and Prozpr's figure for each category, and steps it", () => {
     const { onEdit } = view("equity");
-    expect(screen.getByText("Today 15% · Prozpr 37%")).toBeInTheDocument();
+    const midCap = within(screen.getByTestId("row-medium_beta_equities"));
+    // The customer's own figure is Prozpr's here too; the stepper's is a button.
+    expect(midCap.getByText("15%", { selector: "span" })).toHaveTextContent("Today 15%");
+    expect(midCap.getByText("37%", { selector: "span" })).toHaveTextContent("Prozpr 37%");
     fireEvent.click(button("Increase US"));
     expect(onEdit).toHaveBeenCalledWith("us_equities", 30);
+  });
+
+  it("leaves the Today column out when there are no holdings", () => {
+    view("equity", { today: null });
+    expect(screen.queryByText("Today")).toBeNull();
+    expect(within(screen.getByTestId("row-medium_beta_equities")).getByText("37%", { selector: "span" }))
+      .toHaveTextContent("Prozpr 37%");
   });
 
   // Stepping a category down, the total is what the customer watches — so it
@@ -106,7 +119,8 @@ describe("ClassCategoriesPanel", () => {
   // 5 with 30 in the fund: 3 through it, 2 in gold.
   it("shows commodity as gold only, with nothing to set", () => {
     view("others");
-    expect(screen.getByTestId("row-gold_commodities")).toHaveTextContent("2%");
+    // The last cell is the You column; Prozpr's figure is 2% too, so the row as a whole cannot tell.
+    expect(screen.getByTestId("row-gold_commodities").lastElementChild).toHaveTextContent(/^2%$/);
     expect(screen.queryByRole("button", { name: /Gold/ })).toBeNull();
     expect(screen.queryByRole("button", { name: "Use Prozpr's recommendation" })).toBeNull();
     expect(screen.getByText(

@@ -1,5 +1,6 @@
 import { AlertCircle, Check, Info } from "lucide-react";
 
+import FigureTable, { FigureRow } from "@/components/invest/FigureTable";
 import PercentStepper from "@/components/invest/PercentStepper";
 import type { ClassMix, ScreenSubcategory } from "@/lib/api";
 import {
@@ -12,6 +13,9 @@ import {
   type Resolved,
   type RowValues,
 } from "@/lib/investment-preferences";
+
+/** A figure in the You column that is not the customer's to set. */
+const PLAIN_FIGURE = "text-center text-[13px] font-semibold tabular-nums text-foreground";
 
 /**
  * One asset class divided across its categories, inside its dropdown. Unlike
@@ -73,27 +77,34 @@ export default function ClassCategoriesPanel({
         )}
       </div>
 
-      {part > 0 ? (
-        <div data-testid="fund-part" className="mt-3 flex min-h-[44px] items-center gap-3 border-b border-border pb-3">
-          <span className="min-w-0">
-            <span className="flex items-center gap-2 text-[13px] font-semibold text-foreground">
-              <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-muted-foreground" />
-              Multi-asset funds
-            </span>
-            <span className="mt-0.5 block text-[11.5px] text-muted-foreground">
-              {`From your ${res.multiAsset}% in multi-asset funds`}
-            </span>
-          </span>
-          <span className="ml-auto text-[13px] font-semibold tabular-nums text-foreground">{`${part}%`}</span>
-        </div>
-      ) : null}
+      <FigureTable showToday={today !== null} className="mt-3">
+        {part > 0 ? (
+          <>
+            {/* Today's and Prozpr's figures for the fund are in its own
+                group, so its part here spans those columns. */}
+            <div data-testid="fund-part" className="contents">
+              <span className="col-[1/-2] min-w-0">
+                <span className="flex items-center gap-2 text-[13px] font-semibold text-foreground">
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-muted-foreground" />
+                  Multi-asset funds
+                </span>
+                <span className="mt-0.5 block text-[11.5px] text-muted-foreground">
+                  {`From your ${res.multiAsset}% in multi-asset funds`}
+                </span>
+              </span>
+              <span className={PLAIN_FIGURE}>{`${part}%`}</span>
+            </div>
+            <div aria-hidden className="col-span-full border-b border-border" />
+          </>
+        ) : null}
 
-      <div className="mt-3 space-y-3">
         {list.map((r, i) => (
-          <div key={r.id} data-testid={`row-${r.id}`} className="flex items-center gap-3">
-            <div className="min-w-0">
-              {/* Long names wrap rather than truncate: the 44px stepper
-                  leaves a narrow column, and a clipped name is a guess. */}
+          <FigureRow
+            key={r.id}
+            testId={`row-${r.id}`}
+            name={
+              // Long names wrap rather than truncate: the stepper leaves a
+              // narrow column, and a clipped name is a guess.
               <div className="flex items-start gap-2 text-[13px] font-semibold leading-snug text-foreground">
                 {/* The class colour, lighter down the list, so rows read as one family. */}
                 <span
@@ -105,25 +116,24 @@ export default function ClassCategoriesPanel({
                 />
                 {shortLabel(r)}
               </div>
-              <p className="mt-0.5 text-[11.5px] tabular-nums text-muted-foreground">
-                {`${today ? `Today ${today[r.id] ?? 0}% · ` : ""}Prozpr ${res.prozprRows[r.id]}%`}
-              </p>
-            </div>
-            {goldOnly ? (
-              <span className="ml-auto text-[13px] font-semibold tabular-nums text-foreground">
-                {`${rows[r.id] ?? 0}%`}
-              </span>
-            ) : (
-              <PercentStepper
-                value={rows[r.id] ?? 0}
-                max={left}
-                label={shortLabel(r)}
-                onChange={(v) => onEdit(r.id, v)}
-              />
-            )}
-          </div>
+            }
+            today={today ? (today[r.id] ?? 0) : null}
+            prozpr={res.prozprRows[r.id]}
+            you={
+              goldOnly ? (
+                <span className={PLAIN_FIGURE}>{`${rows[r.id] ?? 0}%`}</span>
+              ) : (
+                <PercentStepper
+                  value={rows[r.id] ?? 0}
+                  max={left}
+                  label={shortLabel(r)}
+                  onChange={(v) => onEdit(r.id, v)}
+                />
+              )
+            }
+          />
         ))}
-      </div>
+      </FigureTable>
 
       {goldOnly ? (
         <p className="mt-3 flex gap-2 text-[11.5px] leading-relaxed text-muted-foreground">
