@@ -40,3 +40,7 @@ test-results
 conftest.py
 .claude/settings.local.json
 src/components/dashboard/CurrentAllocationCard.test.tsx
+
+# Test code stays LOCAL - not pushed to GitHub/main (team decision 2026-09-29).
+*.test.ts
+*.test.tsx

@@ -39,8 +39,12 @@ export type DriftRow = {
   color: string;
   current: number; // %
   target: number; // %
+  /** % the customer's goals + risk profile + saved preference call for. 0 when the
+   *  backend ships no goal mix (older runs, and the target-only AINV breakdowns). */
+  goal: number;
   currentInr: number; // ₹ held today
   targetInr: number; // ₹ the plan targets
+  goalInr: number; // ₹ the goal mix calls for
   amountText: string;
 };
 
@@ -53,15 +57,22 @@ function compactINR(n: number): string {
   return `${sign}₹${Math.round(a)}`;
 }
 
-/* Shared formatter: turn per-bucket current/target ₹ into rendered DriftRows
+type Agg = { current: number; target: number; goal?: number };
+
+/* Shared formatter: turn per-bucket current/target/goal ₹ into rendered DriftRows
    (percentages + overweight/underweight caption). */
-function formatDriftRows(agg: Record<Bucket, { current: number; target: number }>): DriftRow[] {
+function formatDriftRows(agg: Record<Bucket, Agg>): DriftRow[] {
   const totalCur = BUCKET_ORDER.reduce((sum, b) => sum + agg[b].current, 0);
   const totalTgt = BUCKET_ORDER.reduce((sum, b) => sum + agg[b].target, 0);
+  const totalGoal = BUCKET_ORDER.reduce((sum, b) => sum + (agg[b].goal ?? 0), 0);
 
-  return BUCKET_ORDER.filter((b) => agg[b].current > 0 || agg[b].target > 0).map((b) => {
+  return BUCKET_ORDER.filter(
+    (b) => agg[b].current > 0 || agg[b].target > 0 || (agg[b].goal ?? 0) > 0,
+  ).map((b) => {
     const currentPct = totalCur > 0 ? (agg[b].current / totalCur) * 100 : 0;
     const targetPct = totalTgt > 0 ? (agg[b].target / totalTgt) * 100 : 0;
+    const goalInr = agg[b].goal ?? 0;
+    const goalPct = totalGoal > 0 ? (goalInr / totalGoal) * 100 : 0;
     const drift = currentPct - targetPct;
     // Signed by the action the plan takes: overweight → selling, underweight → buying.
     const diffInr = agg[b].target - agg[b].current;
@@ -75,8 +86,10 @@ function formatDriftRows(agg: Record<Bucket, { current: number; target: number }
       color: BUCKET_META[b].color,
       current: Math.round(currentPct),
       target: Math.round(targetPct),
+      goal: Math.round(goalPct),
       currentInr: agg[b].current,
       targetInr: agg[b].target,
+      goalInr,
       amountText,
     };
   });
@@ -88,14 +101,15 @@ export function buildDriftRows(
   holdings: PortfolioDetail["holdings"] = [],
 ): DriftRow[] {
   if (!subs.length && !holdings.length) return [];
-  const agg: Record<Bucket, { current: number; target: number; inSubs: boolean }> = {
-    equity: { current: 0, target: 0, inSubs: false },
-    debt: { current: 0, target: 0, inSubs: false },
-    others: { current: 0, target: 0, inSubs: false },
+  const agg: Record<Bucket, Agg & { inSubs: boolean }> = {
+    equity: { current: 0, target: 0, goal: 0, inSubs: false },
+    debt: { current: 0, target: 0, goal: 0, inSubs: false },
+    others: { current: 0, target: 0, goal: 0, inSubs: false },
   };
   for (const s of subs) {
     const b = toBucket(s.asset_class);
     agg[b].current += s.current_holding_inr || 0;
+    agg[b].goal = (agg[b].goal ?? 0) + (s.goal_target_inr || 0);
     // "Target" = where THIS PLAN lands (suggested_final_holding_inr), not the
     // unconstrained goal ideal, so the bars stay consistent with the trades.
     agg[b].target += s.suggested_final_holding_inr || 0;
@@ -119,15 +133,22 @@ export function buildDriftRows(
    SIP / lump-sum "Proposed Target" bars (deployment breakdowns are target-only,
    so their rows carry current* = 0). */
 export function driftRowsFromBreakdown(breakdown: RebalancingAssetClassBreakdown): DriftRow[] {
-  const agg: Record<Bucket, { current: number; target: number }> = {
-    equity: { current: 0, target: 0 },
-    debt: { current: 0, target: 0 },
-    others: { current: 0, target: 0 },
+  const agg: Record<Bucket, Agg> = {
+    equity: { current: 0, target: 0, goal: 0 },
+    debt: { current: 0, target: 0, goal: 0 },
+    others: { current: 0, target: 0, goal: 0 },
   };
   for (const row of breakdown.rows) {
     const b = toBucket(row.asset_class);
     agg[b].current += row.current_inr || 0;
     agg[b].target += row.target_inr || 0;
+    agg[b].goal = (agg[b].goal ?? 0) + (row.goal_inr || 0);
   }
   return formatDriftRows(agg);
+}
+
+/** True when the breakdown carries a goal mix worth rendering as its own bar.
+ *  AINV deployment breakdowns and pre-2026-09-27 runs ship none. */
+export function hasGoalMix(breakdown: RebalancingAssetClassBreakdown | null | undefined): boolean {
+  return (breakdown?.goal_total_inr ?? 0) > 0;
 }
