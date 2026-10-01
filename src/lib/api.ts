@@ -1896,6 +1896,23 @@ export function inferOnboardingComplete(me: UserInfo, profile: FullProfileRespon
   return inferProfileSectionsComplete(profile);
 }
 
+/**
+ * "Your money map" is complete once annual income and monthly expense are
+ * saved — the two answers the engines cannot run without. Cash & deposits is
+ * deliberately NOT part of it: every engine reads a blank as 0 and the
+ * goal-planning inputs mark it optional, so requiring it here left the section
+ * impossible to finish for anyone with no figure to enter. One rule, shared by
+ * the dashboard unlock circles, the Profile nudge and /profile/complete.
+ */
+export function hasRequiredFinanceAnswers(
+  onboarding:
+    | Pick<OnboardingProfileResponse, "annual_income" | "monthly_household_expense">
+    | null
+    | undefined,
+): boolean {
+  return onboarding?.annual_income != null && onboarding?.monthly_household_expense != null;
+}
+
 /** Confirmation state of the four "Tell Us More About You" sections. */
 export interface AboutYouStatus {
   /** Number of confirmed sections, 0–4. */
@@ -1923,15 +1940,8 @@ export async function getAboutYouStatus(): Promise<AboutYouStatus> {
 
   const confirmed = [false, false, false, false];
 
-  // 0) Financial picture — all required finance answers: income, expense, cash & debt.
-  if (
-    onboarding &&
-    onboarding.annual_income != null &&
-    onboarding.monthly_household_expense != null &&
-    onboarding.financial_assets != null
-  ) {
-    confirmed[0] = true;
-  }
+  // 0) Financial picture — the required finance answers: income and expense.
+  if (hasRequiredFinanceAnswers(onboarding)) confirmed[0] = true;
 
   // 1) Goals — saved objectives, or at least one goal in the goal planner.
   const inv = profile?.investment_profile;

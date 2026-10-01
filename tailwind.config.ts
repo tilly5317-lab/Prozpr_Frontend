@@ -14,6 +14,13 @@ export default {
       },
     },
     extend: {
+      // `min-h-screen` follows the VISIBLE viewport. 100vh on a phone is the
+      // height with the browser's toolbars hidden, so a screen that pins its
+      // button to the bottom (sign-in, reset PIN) put it below the fold.
+      // 100vh stays as the fallback where dynamic viewport units are missing.
+      minHeight: {
+        screen: ["100vh", "100dvh"],
+      },
       fontFamily: {
         sans: ["DM Sans", "system-ui", "sans-serif"],
         display: ["Instrument Serif", "Georgia", "serif"],
