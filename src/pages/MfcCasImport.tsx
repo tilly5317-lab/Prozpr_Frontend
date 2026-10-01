@@ -84,18 +84,26 @@ const MfcCasImport = () => {
           Back
         </button>
 
-        <h1 className="mb-2 text-lg font-semibold text-foreground">
+        <h1
+          className={`${step === "consent" ? "mb-4" : "mb-2"} text-lg font-semibold text-foreground`}
+        >
           {step === "done"
             ? imported
               ? "Imported from MF Central"
               : "What MF Central sent"
-            : "Import from MF Central"}
+            : step === "consent"
+              ? "Verify with MF Central"
+              : "Import from MF Central"}
         </h1>
-        <p className="mb-6 text-xs leading-relaxed text-muted-foreground">
-          {step === "done"
-            ? "Everything the registrars returned for your PAN. Your portfolio, allocation and net-worth history have been rebuilt from it."
-            : "Your holdings and full transaction history, straight from CAMS and KFintech. Takes about a minute."}
-        </p>
+        {/* No subheading on the consent step: MF Central's own page fills the
+            screen there and explains itself, so ours only competed with it. */}
+        {step !== "consent" && (
+          <p className="mb-6 text-xs leading-relaxed text-muted-foreground">
+            {step === "done"
+              ? "Everything the registrars returned for your PAN. Your portfolio, allocation and net-worth history have been rebuilt from it."
+              : "Your holdings and full transaction history, straight from CAMS and KFintech. Takes about a minute."}
+          </p>
+        )}
 
         <MfcCasFlow
           onImported={handleImported}

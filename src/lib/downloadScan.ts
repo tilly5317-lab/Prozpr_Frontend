@@ -15,53 +15,35 @@
  * happy path rather than a fallback: MFC's frame posts only "complete", and
  * the QR still lands in Downloads. {@link watchForNewQr} polls the granted
  * folder from the moment the consent step opens, so the download is picked up
- * and redeemed with no click at all, and {@link archiveQrCopy} keeps a copy in
- * a folder of ours ({@link QR_ARCHIVE_FOLDER}) inside it — the user asked for
- * a place where their MF Central QRs live, rather than loose in Downloads.
+ * and redeemed with no click at all. Keeping a copy of the QR is NOT this
+ * module's job any more — that is `appData.ts`, the app's own folder on the
+ * device, which the MF Central flow creates inside the same Downloads grant.
  *
- * Three things constrain the design:
- *
- * 1. **`showDirectoryPicker` needs transient user activation.** It has to be the
- *    FIRST await in a click handler; an IndexedDB read before it consumes the
- *    gesture and the call throws. Hence {@link loadRememberedDirectory}, which
- *    is meant to run on mount so the click path can be synchronous up to the
- *    picker.
- * 2. **Chromium only.** Firefox and Safari (and every mobile browser) have no
- *    `showDirectoryPicker`. This is an accelerator, never the only route — the
- *    caller must always keep a plain `<input type="file">` alive.
- * 3. **The QR is single-use.** Handing back a file downloaded during an EARLIER
- *    consent burns an API call and produces an error the user cannot act on, so
- *    every scan is bounded by a `since` timestamp and never guesses across it.
+ * The picker, permission and remembered-handle plumbing live in `deviceFs.ts`;
+ * what is left here is the scan itself, and its one hard rule: **the QR is
+ * single-use.** Handing back a file downloaded during an EARLIER consent burns
+ * an API call and produces an error the user cannot act on, so every scan is
+ * bounded by a `since` timestamp and never guesses across it.
  */
 
-// --------------------------------------------------------------------------- types
+import {
+  DeviceFsCancelled,
+  DeviceFsUnavailable,
+  ensurePermission,
+  hasPermission,
+  isDeviceFsSupported,
+  loadHandle,
+  pickDirectory,
+  storeHandle,
+  type DirectoryHandle,
+  type FsPermissionMode,
+} from "./deviceFs";
 
-/** Only the slice of the API we use. The standard lib.dom types cover the
- * handles but not `showDirectoryPicker` or the permission methods, and pulling
- * `@types/wicg-file-system-access` in for six lines is not worth a dependency. */
-interface FsPermissionDescriptor {
-  mode?: "read" | "readwrite";
-}
-
-interface FsHandleWithPermission {
-  queryPermission?: (d?: FsPermissionDescriptor) => Promise<PermissionState>;
-  requestPermission?: (d?: FsPermissionDescriptor) => Promise<PermissionState>;
-}
-
-export type DirectoryHandle = FileSystemDirectoryHandle &
-  FsHandleWithPermission & {
-    values: () => AsyncIterableIterator<FileSystemHandle>;
-  };
-
-interface DirectoryPickerOptions {
-  id?: string;
-  mode?: "read" | "readwrite";
-  startIn?: "downloads" | "desktop" | "documents" | "home";
-}
-
-type PickerWindow = Window & {
-  showDirectoryPicker?: (o?: DirectoryPickerOptions) => Promise<DirectoryHandle>;
-};
+export type { DirectoryHandle } from "./deviceFs";
+export { ensurePermission } from "./deviceFs";
+// The same classes under the names this module has always thrown, so
+// `instanceof ScanCancelled` keeps working for callers.
+export { DeviceFsCancelled as ScanCancelled, DeviceFsUnavailable as ScanUnavailable };
 
 export interface ScanCandidate {
   file: File;
@@ -72,88 +54,15 @@ export interface ScanCandidate {
   likely: boolean;
 }
 
-/** The user closed the directory picker. Not an error — the caller falls back
- * to the manual file input without showing anything red. */
-export class ScanCancelled extends Error {
-  constructor() {
-    super("Directory selection was cancelled.");
-    this.name = "ScanCancelled";
-  }
-}
-
-/** The browser refused: an insecure context, a blocked directory, or a policy.
- * Distinct from cancellation because this one is worth explaining once. */
-export class ScanUnavailable extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "ScanUnavailable";
-  }
-}
-
 // --------------------------------------------------------------------------- support
 
 export function isDirectoryScanSupported(): boolean {
-  if (typeof window === "undefined") return false;
-  // Secure-context gated: on plain http the method is simply absent, except on
-  // localhost, which is what makes local development work.
-  return typeof (window as PickerWindow).showDirectoryPicker === "function";
+  return isDeviceFsSupported();
 }
 
-// --------------------------------------------------------------------------- handle store
+// --------------------------------------------------------------------------- remembered grant
 
-// A directory handle is structured-cloneable, so IndexedDB can hold it across
-// reloads and Chrome will re-grant without a second prompt if the user chose
-// "allow on every visit". localStorage cannot — it is strings only.
-const DB_NAME = "prozpr-fs";
-const STORE = "handles";
-const KEY = "downloads-dir";
-
-function openDb(): Promise<IDBDatabase | null> {
-  return new Promise((resolve) => {
-    if (typeof indexedDB === "undefined") return resolve(null);
-    let req: IDBOpenDBRequest;
-    try {
-      req = indexedDB.open(DB_NAME, 1);
-    } catch {
-      return resolve(null);
-    }
-    req.onupgradeneeded = () => {
-      if (!req.result.objectStoreNames.contains(STORE)) {
-        req.result.createObjectStore(STORE);
-      }
-    };
-    req.onsuccess = () => resolve(req.result);
-    // Private-mode browsers and blocked storage land here. A remembered handle
-    // is a convenience; losing it costs one extra prompt, so nothing throws.
-    req.onerror = () => resolve(null);
-    req.onblocked = () => resolve(null);
-  });
-}
-
-function idbGet(db: IDBDatabase): Promise<DirectoryHandle | null> {
-  return new Promise((resolve) => {
-    try {
-      const req = db.transaction(STORE, "readonly").objectStore(STORE).get(KEY);
-      req.onsuccess = () => resolve((req.result as DirectoryHandle) ?? null);
-      req.onerror = () => resolve(null);
-    } catch {
-      resolve(null);
-    }
-  });
-}
-
-function idbPut(db: IDBDatabase, handle: DirectoryHandle | null): Promise<void> {
-  return new Promise((resolve) => {
-    try {
-      const store = db.transaction(STORE, "readwrite").objectStore(STORE);
-      const req = handle ? store.put(handle, KEY) : store.delete(KEY);
-      req.onsuccess = () => resolve();
-      req.onerror = () => resolve();
-    } catch {
-      resolve();
-    }
-  });
-}
+const DOWNLOADS_KEY = "downloads-dir";
 
 export interface RememberedDirectory {
   handle: DirectoryHandle;
@@ -161,9 +70,9 @@ export interface RememberedDirectory {
    * grant to "ask every time"; {@link ensureReadPermission} re-asks with one
    * click, which still beats picking the folder again. */
   granted: boolean;
-  /** True when copies can be written into {@link QR_ARCHIVE_FOLDER} without a
-   * prompt. A grant given before the archive existed is read-only and stays
-   * useful for pickup; {@link ensurePermission} with "readwrite" upgrades it. */
+  /** True when the app data folder can be created inside this grant without a
+   * prompt. A read-only grant stays useful for pickup; {@link ensurePermission}
+   * with "readwrite" upgrades it. */
   writable: boolean;
 }
 
@@ -176,70 +85,39 @@ export interface RememberedDirectory {
  */
 export async function loadRememberedDirectory(): Promise<RememberedDirectory | null> {
   if (!isDirectoryScanSupported()) return null;
-  const db = await openDb();
-  if (!db) return null;
-  const handle = await idbGet(db);
-  db.close();
+  const handle = await loadHandle(DOWNLOADS_KEY);
   if (!handle) return null;
-  try {
-    const state = await handle.queryPermission?.({ mode: "read" });
-    const write = await handle.queryPermission?.({ mode: "readwrite" });
-    return { handle, granted: state === "granted", writable: write === "granted" };
-  } catch {
-    return null;
-  }
-}
-
-async function remember(handle: DirectoryHandle | null): Promise<void> {
-  const db = await openDb();
-  if (!db) return;
-  await idbPut(db, handle);
-  db.close();
+  return {
+    handle,
+    granted: await hasPermission(handle, "read"),
+    writable: await hasPermission(handle, "readwrite"),
+  };
 }
 
 /** Drop the remembered grant — the "stop scanning my Downloads" affordance. */
 export async function forgetRememberedDirectory(): Promise<void> {
-  await remember(null);
+  await storeHandle(DOWNLOADS_KEY, null);
 }
 
 /**
  * Ask for the Downloads folder. MUST be the first await inside a click handler.
  *
  * `startIn: "downloads"` opens the picker there, so the grant is one click for
- * a user who does not change directory. We cannot preselect it outright — the
- * spec requires the choice to be the user's, which is exactly the property that
- * makes this safe to offer.
+ * a user who does not change directory.
  *
- * Asks for "readwrite", not "read": the same grant has to let us create
- * {@link QR_ARCHIVE_FOLDER} and drop a copy of each QR in it. Chrome shows one
- * prompt either way; declining the edit half rejects the whole pick, which the
- * caller sees as a cancel and falls back to the file input.
+ * Asks for "readwrite", not "read": the same grant has to let the app create
+ * its own folder in there (see `appData.ts`) and keep a copy of each QR.
+ * Chrome shows one prompt either way; declining the edit half rejects the
+ * whole pick, which the caller sees as a cancel and falls back to the file
+ * input.
  */
 export async function chooseDownloadsDirectory(
-  mode: "read" | "readwrite" = "readwrite",
+  mode: FsPermissionMode = "readwrite",
 ): Promise<DirectoryHandle> {
-  const picker = (window as PickerWindow).showDirectoryPicker;
-  if (!picker) {
-    throw new ScanUnavailable("This browser cannot read a folder directly.");
-  }
-  let handle: DirectoryHandle;
-  try {
-    handle = await picker({ id: "prozpr-downloads", mode, startIn: "downloads" });
-  } catch (err: unknown) {
-    const name = (err as { name?: string })?.name;
-    if (name === "AbortError") throw new ScanCancelled();
-    if (name === "SecurityError") {
-      throw new ScanUnavailable(
-        "The browser blocked folder access here. Choose the file yourself instead.",
-      );
-    }
-    throw new ScanUnavailable(
-      err instanceof Error ? err.message : "Could not open the folder picker.",
-    );
-  }
+  const handle = await pickDirectory({ id: "prozpr-downloads", mode, startIn: "downloads" });
   // Persist before the permission check: even a handle sitting at "prompt" is
   // worth keeping, because re-granting it is one dialog instead of a full pick.
-  void remember(handle);
+  void storeHandle(DOWNLOADS_KEY, handle);
   return handle;
 }
 
@@ -249,32 +127,6 @@ export async function chooseDownloadsDirectory(
  */
 export async function ensureReadPermission(handle: DirectoryHandle): Promise<boolean> {
   return ensurePermission(handle, "read");
-}
-
-/** {@link ensureReadPermission} for either mode. "readwrite" is what the
- * archive copy needs; a user who declines it keeps a working read grant. */
-export async function ensurePermission(
-  handle: DirectoryHandle,
-  mode: "read" | "readwrite",
-): Promise<boolean> {
-  try {
-    const state = await handle.queryPermission?.({ mode });
-    if (state === "granted") return true;
-    const asked = await handle.requestPermission?.({ mode });
-    return asked === "granted";
-  } catch {
-    return false;
-  }
-}
-
-/** True when writes need no prompt right now. Never asks — the archive copy
- * happens with no gesture in hand, so it can only use a grant already held. */
-export async function hasWritePermission(handle: DirectoryHandle): Promise<boolean> {
-  try {
-    return (await handle.queryPermission?.({ mode: "readwrite" })) === "granted";
-  } catch {
-    return false;
-  }
 }
 
 // --------------------------------------------------------------------------- scanning
@@ -441,60 +293,4 @@ export async function watchForNewQr(
     });
   }
   return null;
-}
-
-// --------------------------------------------------------------------------- archive
-
-/** The folder we keep inside the granted directory. Created on setup, so the
- * user can see where their QRs will go before the first one arrives. */
-export const QR_ARCHIVE_FOLDER = "Prozpr MF Central QRs";
-
-/**
- * Create {@link QR_ARCHIVE_FOLDER} inside `dir` if it is not there yet.
- * Returns false (never throws) when the grant is read-only.
- */
-export async function ensureArchiveFolder(dir: DirectoryHandle): Promise<boolean> {
-  if (!(await hasWritePermission(dir))) return false;
-  try {
-    await dir.getDirectoryHandle(QR_ARCHIVE_FOLDER, { create: true });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Copy a QR into {@link QR_ARCHIVE_FOLDER} under a timestamped name.
- *
- * A COPY, not a move — the File System Access API has no rename across
- * directories, and deleting the original out of Downloads would surprise a
- * user who expected it there. Returns the archived path for the UI, or null
- * when nothing was written (read-only grant, disk error); the import never
- * depends on this succeeding.
- */
-export async function archiveQrCopy(
-  dir: DirectoryHandle,
-  file: File,
-  when: Date = new Date(),
-): Promise<string | null> {
-  if (!(await hasWritePermission(dir))) return null;
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const stamp =
-    `${when.getFullYear()}${pad(when.getMonth() + 1)}${pad(when.getDate())}-` +
-    `${pad(when.getHours())}${pad(when.getMinutes())}${pad(when.getSeconds())}`;
-  const ext = (file.name.match(/[.](png|jpe?g|webp)$/i)?.[0] ?? ".png").toLowerCase();
-  const target = `mf-central-qr-${stamp}${ext}`;
-  try {
-    const folder = await dir.getDirectoryHandle(QR_ARCHIVE_FOLDER, { create: true });
-    const handle = await folder.getFileHandle(target, { create: true });
-    const writable = await handle.createWritable();
-    try {
-      await writable.write(file);
-    } finally {
-      await writable.close();
-    }
-    return `${QR_ARCHIVE_FOLDER}/${target}`;
-  } catch {
-    return null;
-  }
 }

@@ -9,7 +9,6 @@ import {
   FolderCheck,
   FolderPlus,
   FolderSearch,
-  Lock,
   Loader2,
   MonitorSmartphone,
   QrCode,
@@ -31,11 +30,15 @@ import {
   type UserInfo,
 } from "@/lib/api";
 import {
-  QR_ARCHIVE_FOLDER,
+  adoptAppDataRootInside,
+  appDataPath,
+  archiveToArea,
+  loadAppDataRoot,
+  type AppDataRoot,
+} from "@/lib/appData";
+import {
   ScanCancelled,
-  archiveQrCopy,
   chooseDownloadsDirectory,
-  ensureArchiveFolder,
   ensurePermission,
   ensureReadPermission,
   forgetRememberedDirectory,
@@ -93,6 +96,12 @@ interface Props {
 }
 
 const MAX_QR_BYTES = 5 * 1024 * 1024;
+// "Still generating": how many automatic re-checks before we stop and ask.
+// At the server's 15s hint that is about five minutes — well past what MFC
+// has needed on UAT, and long enough that a longer wait is worth a human
+// decision rather than a silent loop.
+const PENDING_MAX_ATTEMPTS = 20;
+const PENDING_DEFAULT_RETRY_SECONDS = 15;
 const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/;
 
@@ -146,6 +155,13 @@ const MfcCasFlow = ({
   // can retry without re-downloading, and `pendingNote` drives that UI.
   const [pendingNote, setPendingNote] = useState<string | null>(null);
   const lastQrRef = useRef<{ base64: string; label: string } | null>(null);
+  // Seconds until the same QR is presented again by itself; null when no
+  // re-check is scheduled (not pending, a check in flight, or given up).
+  // Re-presenting an UNCONSUMED QR is the one retry this flow allows — MFC
+  // answers "still generating" precisely because nothing was spent.
+  const [pendingRetryIn, setPendingRetryIn] = useState<number | null>(null);
+  const pendingAttemptsRef = useRef(0);
+  const pendingExhausted = pendingAttemptsRef.current >= PENDING_MAX_ATTEMPTS;
 
   // Downloads-folder pickup. `scanSupported` is Chromium-only; everywhere else
   // the file input below is the whole story, and none of this renders.
@@ -161,7 +177,12 @@ const MfcCasFlow = ({
   // the folder with no click at all. `folderKnown` is "a handle exists but has
   // lapsed to prompt" — worth a one-click re-allow rather than a full pick.
   const [folderKnown, setFolderKnown] = useState(false);
-  const [folderWritable, setFolderWritable] = useState(false);
+  // The app's own folder on the device (`Prozpr/…`, see lib/appData.ts), where
+  // a copy of every QR is kept. Created inside the Downloads grant, so it costs
+  // no extra prompt; `folderWritable` is simply whether it can be written now.
+  const [appDataRoot, setAppDataRoot] = useState<AppDataRoot | null>(null);
+  const folderWritable = appDataRoot?.writable ?? false;
+  const QR_ARCHIVE_FOLDER = appDataPath("mfCentralQr");
   const [watching, setWatching] = useState(false);
   const watchingRef = useRef(false);
   /** Where the last QR copy went (relative to the granted folder), for the UI. */
@@ -240,7 +261,9 @@ const MfcCasFlow = ({
       dirRef.current = remembered.handle;
       setFolderKnown(true);
       setFolderRemembered(remembered.granted);
-      setFolderWritable(remembered.writable);
+    });
+    loadAppDataRoot().then((root) => {
+      if (!cancelled && root) setAppDataRoot(root);
     });
     return () => {
       cancelled = true;
@@ -545,7 +568,13 @@ const MfcCasFlow = ({
       if (validating || redeemingRef.current) return;
       redeemingRef.current = true;
       setQrError(null);
-      setPendingNote(null);
+      setPendingRetryIn(null);
+      // A different QR than the one being waited on starts the count afresh;
+      // the same one keeps its "still generating" card up while we check.
+      if (lastQrRef.current?.base64 !== base64) {
+        pendingAttemptsRef.current = 0;
+        setPendingNote(null);
+      }
       setQrFileName(label);
       setValidating(true);
       // Remember the QR so a "still generating" answer can be retried without
@@ -558,11 +587,19 @@ const MfcCasFlow = ({
           req_id: request?.req_id ?? null,
         });
         if (res.pending) {
-          // MFC is still assembling the statement. Stay on the QR step and let
-          // the user retry the same QR in a moment — not a failure, not done.
+          // MFC is still assembling the statement. Not a failure, not done:
+          // stay on the QR step and re-present the same QR by itself after
+          // the server's hint, up to PENDING_MAX_ATTEMPTS, then hand over.
+          pendingAttemptsRef.current += 1;
           setPendingNote(res.pending);
+          setPendingRetryIn(
+            pendingAttemptsRef.current < PENDING_MAX_ATTEMPTS
+              ? Math.max(3, res.retry_after_seconds ?? PENDING_DEFAULT_RETRY_SECONDS)
+              : null,
+          );
           return;
         }
+        setPendingNote(null);
         setResult(res);
         setStep("done");
         // The statement is in — the consent window (if any is still open) has
@@ -574,6 +611,7 @@ const MfcCasFlow = ({
         popupRef.current?.close();
         if (res.ingest) onImported?.(res);
       } catch (err: unknown) {
+        setPendingNote(null);
         setQrError(
           err instanceof BackendOfflineError
             ? "Backend is unreachable. Please try again in a moment."
@@ -612,12 +650,22 @@ const MfcCasFlow = ({
    */
   const archiveFromFolder = useCallback(
     async (file: File) => {
-      const dir = dirRef.current;
-      if (!dir || !folderWritable) return;
-      const path = await archiveQrCopy(dir, file);
+      if (!appDataRoot?.writable) return;
+      const path = await archiveToArea(appDataRoot, "mfCentralQr", file);
       if (path) setArchivedTo(path);
     },
-    [folderWritable],
+    [appDataRoot],
+  );
+
+  /** Give the app its folder inside a Downloads grant we just obtained. Keeps
+   * a root that already works; otherwise creates `Prozpr/` there. */
+  const adoptAppDataRoot = useCallback(
+    async (dir: DirectoryHandle) => {
+      if (appDataRoot?.writable) return;
+      const root = await adoptAppDataRootInside(dir);
+      if (root) setAppDataRoot(root);
+    },
+    [appDataRoot],
   );
 
   /** A file found in the granted folder: archive it, then redeem it. */
@@ -718,10 +766,10 @@ const MfcCasFlow = ({
     dirRef.current = dir;
     setFolderKnown(true);
     setFolderRemembered(true);
-    void ensureArchiveFolder(dir).then((ok) => setFolderWritable(ok));
+    void adoptAppDataRoot(dir);
     setStep("qr");
     await runScan(dir);
-  }, [scanSupported, runScan]);
+  }, [scanSupported, runScan, adoptAppDataRoot]);
 
   /** "Look again" on the QR step, and the no-gesture path after MFC's own
    * postMessage — only usable once a grant is already in hand. */
@@ -761,15 +809,15 @@ const MfcCasFlow = ({
     dirRef.current = dir;
     setFolderKnown(true);
     setFolderRemembered(true);
-    const writable = await ensureArchiveFolder(dir);
-    setFolderWritable(writable);
+    const root = await adoptAppDataRootInside(dir);
+    if (root) setAppDataRoot(root);
     toast({
       title: "Automatic QR pickup is on",
-      description: writable
+      description: root
         ? `Your QR codes will be imported by themselves and copied to ${QR_ARCHIVE_FOLDER}.`
         : "Your QR codes will be imported by themselves.",
     });
-  }, []);
+  }, [QR_ARCHIVE_FOLDER]);
 
   /** A remembered grant that lapsed to "ask": one click restores it. Tries
    * for the archive-capable grant first and settles for read-only. */
@@ -778,13 +826,12 @@ const MfcCasFlow = ({
     if (!dir) return;
     if (await ensurePermission(dir, "readwrite")) {
       setFolderRemembered(true);
-      setFolderWritable(true);
-      void ensureArchiveFolder(dir);
+      const root = await adoptAppDataRootInside(dir);
+      if (root) setAppDataRoot(root);
       return;
     }
     if (await ensurePermission(dir, "read")) {
       setFolderRemembered(true);
-      setFolderWritable(false);
     }
   }, []);
 
@@ -813,7 +860,8 @@ const MfcCasFlow = ({
     dirRef.current = null;
     setFolderRemembered(false);
     setFolderKnown(false);
-    setFolderWritable(false);
+    // The app data folder is left alone: it is the user's, and turning off
+    // pickup is not a request to stop keeping their files.
     setArchivedTo(null);
     setCandidates(null);
     setScanNote(null);
@@ -965,8 +1013,31 @@ const MfcCasFlow = ({
     redeemFolderFile,
   ]);
 
+  /**
+   * "Still generating" countdown. Ticks once a second and, at zero, presents
+   * the SAME QR again — the only automatic retry in this flow, and safe only
+   * because a pending answer means MFC did not consume it. Paused while a
+   * check is in flight; cleared by any other outcome.
+   */
+  useEffect(() => {
+    if (pendingRetryIn == null || validating) return;
+    if (pendingRetryIn <= 0) {
+      const q = lastQrRef.current;
+      setPendingRetryIn(null);
+      if (q) void redeemQr(q.base64, q.label);
+      return;
+    }
+    const t = window.setTimeout(
+      () => setPendingRetryIn((s) => (s == null ? null : s - 1)),
+      1000,
+    );
+    return () => window.clearTimeout(t);
+  }, [pendingRetryIn, validating, redeemQr]);
+
   const restart = () => {
     setArchivedTo(null);
+    setPendingRetryIn(null);
+    pendingAttemptsRef.current = 0;
     if (popupWatchRef.current) {
       window.clearInterval(popupWatchRef.current);
       popupWatchRef.current = null;
@@ -1065,40 +1136,38 @@ const MfcCasFlow = ({
           BELOW the frame it describes. */}
       {mode === "iframe" && request && step !== "done" && (
         <div className={step === "consent" ? "mt-4" : "hidden"}>
-          <p className="text-[13px] leading-relaxed text-muted-foreground">
-            {!captureOtpHere && (
-              <>
-                OTP sent to{" "}
-                <strong className="text-foreground">
-                  {request.otp_destination}
-                </strong>
-                .{" "}
-              </>
-            )}
-            Choose <strong className="text-foreground">Detailed</strong>, then
-            download the QR.
-          </p>
-
-          <div className="relative mt-3 overflow-hidden rounded-2xl border border-border bg-background">
-            {/* A chrome bar, because the frame below is someone else's site and
-                an unlabelled box asking for an OTP is exactly what a phishing
-                page looks like. Naming the origin is the honest stand-in for
-                the address bar this frame does not have — and it carries the
-                escape hatch, since a cross-origin frame that refuses to load
-                gives us nothing to detect. */}
-            <div className="flex items-center gap-2 border-b border-border bg-secondary/40 px-3 py-2">
-              <Lock className="h-3 w-3 shrink-0 text-muted-foreground" />
-              <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground">
-                {mfcOrigin?.replace(/^https?:\/\//, "") ?? "MF Central"}
-              </span>
+          {/* No instructions of ours above the frame: MFC's page says where the
+              OTP went and asks Summary/Detailed itself, and a second telling
+              made the screen read as two products stacked. The frame IS the
+              step; our part is the card around it and the status below. */}
+          <div className="relative overflow-hidden rounded-2xl border border-border bg-card">
+            {/* A named header, because the frame below is someone else's site
+                and an unlabelled box asking for an OTP is exactly what a
+                phishing page looks like. Styled as one of our cards rather
+                than as browser chrome, with the origin as a quiet second line
+                — and it carries the escape hatch, since a cross-origin frame
+                that refuses to load gives us nothing to detect. */}
+            <div className="flex items-center gap-2.5 border-b border-border px-3.5 py-2.5">
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-wealth-green/10">
+                <ShieldCheck className="h-3.5 w-3.5 text-wealth-green" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[12px] font-medium leading-tight text-foreground">
+                  MF Central
+                </p>
+                <p className="truncate text-[10px] leading-tight text-muted-foreground">
+                  Secure session
+                  {mfcOrigin ? ` · ${mfcOrigin.replace(/^https?:\/\//, "")}` : ""}
+                </p>
+              </div>
               <a
                 href={request.redirect_url}
                 target="_blank"
                 rel="noopener noreferrer"
                 title="Open in a new tab"
-                className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
               >
-                <ExternalLink className="h-3 w-3" />
+                <ExternalLink className="h-3.5 w-3.5" />
               </a>
             </div>
 
@@ -1106,8 +1175,8 @@ const MfcCasFlow = ({
               src={request.redirect_url}
               title="MF Central consent"
               onLoad={() => setFrameLoaded(true)}
-              className="w-full border-0 bg-white"
-              style={{ height: "min(72vh, 660px)" }}
+              className="block w-full border-0 bg-white"
+              style={{ height: "min(74vh, 700px)" }}
               /* MFC derives the postMessage targetOrigin from document.referrer,
                  falling back to the redirectUrl origin. Ours differs from that
                  in every deployment, so the referrer has to survive — "origin"
@@ -1117,7 +1186,7 @@ const MfcCasFlow = ({
             />
 
             {!frameLoaded && (
-              <div className="absolute inset-x-0 bottom-0 top-[33px] flex flex-col items-center justify-center gap-2 bg-background">
+              <div className="absolute inset-x-0 bottom-0 top-[49px] flex flex-col items-center justify-center gap-2 bg-card">
                 <Loader2 className="h-5 w-5 animate-spin text-primary" />
                 <p className="text-[12px] text-muted-foreground">
                   Opening MF Central…
@@ -1660,31 +1729,32 @@ const MfcCasFlow = ({
                 Download": the folder is watched, the QR is redeemed the moment
                 it lands, and a copy goes to our archive folder. Without a grant
                 it offers the one-click setup instead. */}
+            {/* One status line under the frame — what happens after Download,
+                and nothing else. The frame is the content of this step; a
+                stack of cards under it is what made the page read as ours and
+                theirs glued together. */}
             {scanSupported && (
               <div
-                className={`${mode === "iframe" ? "mt-3" : "mt-4"} rounded-xl border border-border bg-card px-3.5 py-3`}
+                className={`${mode === "iframe" ? "mt-3" : "mt-4"} flex items-center gap-2.5 rounded-xl border border-border bg-card px-3.5 py-2.5`}
               >
                 {watching ? (
-                  <div className="flex items-start gap-2.5">
-                    <span className="relative mt-1 flex h-2.5 w-2.5 shrink-0">
+                  <>
+                    <span className="relative flex h-2.5 w-2.5 shrink-0">
                       <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60" />
                       <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
                     </span>
-                    <p className="text-[11px] leading-relaxed text-muted-foreground">
+                    <p className="min-w-0 flex-1 text-[11px] leading-relaxed text-muted-foreground">
                       <span className="font-medium text-foreground">
-                        Watching your Downloads folder.
+                        Waiting for your QR download.
                       </span>{" "}
-                      Press <strong className="text-foreground">Download</strong>{" "}
-                      on MF Central&apos;s page and the QR is imported by itself
-                      {folderWritable
-                        ? `, with a copy saved to ${QR_ARCHIVE_FOLDER}.`
-                        : "."}
+                      It imports by itself
+                      {folderWritable ? `; a copy goes to ${QR_ARCHIVE_FOLDER}.` : "."}
                     </p>
-                  </div>
+                  </>
                 ) : folderKnown && !folderRemembered ? (
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-[11px] leading-relaxed text-muted-foreground">
-                      Automatic pickup needs your Downloads folder again.
+                  <>
+                    <p className="min-w-0 flex-1 text-[11px] leading-relaxed text-muted-foreground">
+                      Automatic QR pickup needs your permission again.
                     </p>
                     <button
                       type="button"
@@ -1693,12 +1763,11 @@ const MfcCasFlow = ({
                     >
                       Allow
                     </button>
-                  </div>
+                  </>
                 ) : !folderRemembered ? (
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-[11px] leading-relaxed text-muted-foreground">
-                      Choose your Downloads folder once and the QR is imported by
-                      itself.
+                  <>
+                    <p className="min-w-0 flex-1 text-[11px] leading-relaxed text-muted-foreground">
+                      Import the QR by itself when you download it.
                     </p>
                     <button
                       type="button"
@@ -1708,7 +1777,7 @@ const MfcCasFlow = ({
                       <FolderPlus className="h-3.5 w-3.5" />
                       Set up
                     </button>
-                  </div>
+                  </>
                 ) : null}
               </div>
             )}
@@ -1717,32 +1786,35 @@ const MfcCasFlow = ({
                 popup mode, but if that is blocked — or the browser saved the
                 QR to disk and no folder is watched — the investor hands it
                 over here. This is also the whole story in redirect mode and on
-                non-Chromium browsers, where no automatic hand-back exists. */}
-            <div className="mt-4 rounded-xl border border-dashed border-border p-3">
-              <p className="text-[11px] leading-relaxed text-muted-foreground">
-                {watching
-                  ? "Downloaded it and nothing happened?"
-                  : "Didn't come back on its own?"}
-              </p>
+                non-Chromium browsers, where no automatic hand-back exists —
+                which is why it is a real button there and a quiet link where
+                the download is picked up by itself. */}
+            {scanSupported ? (
+              <div className="mt-3 flex items-center justify-between gap-3 px-1">
+                <p className="text-[11px] text-muted-foreground">
+                  {watching
+                    ? "Downloaded it and nothing happened?"
+                    : "Already downloaded the QR?"}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void handleDownloadedClick()}
+                  className="flex shrink-0 items-center gap-1.5 text-[12px] font-medium text-foreground transition-colors hover:text-primary"
+                >
+                  <FolderSearch className="h-3.5 w-3.5" />
+                  Find it
+                </button>
+              </div>
+            ) : (
               <button
                 type="button"
                 onClick={() => void handleDownloadedClick()}
-                className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-foreground py-2.5 text-[12px] font-semibold text-background transition-all active:scale-[0.98]"
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-foreground py-3 text-[13px] font-semibold text-background transition-all active:scale-[0.98]"
               >
-                {scanSupported ? (
-                  <FolderSearch className="h-3.5 w-3.5" />
-                ) : (
-                  <UploadCloud className="h-3.5 w-3.5" />
-                )}
+                <UploadCloud className="h-4 w-4" />
                 I&apos;ve downloaded the QR code
               </button>
-              {scanSupported && !folderRemembered && (
-                <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">
-                  Your browser will ask for your Downloads folder. We only read
-                  images saved since this request started.
-                </p>
-              )}
-            </div>
+            )}
           </motion.div>
         )}
 
@@ -1756,29 +1828,60 @@ const MfcCasFlow = ({
 
             {/* MFC is still building the statement. The same QR is still valid,
                 so this is a wait-and-retry, not a failure — no "start again". */}
-            {pendingNote && !validating && (
-              <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/5 px-3.5 py-3">
-                <Loader2 className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-                <div className="min-w-0 flex-1">
-                  <p className="text-[12px] font-medium text-foreground">
-                    MF Central is still generating your statement
-                  </p>
-                  <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
-                    {pendingNote} Your QR is still valid — no need to download it
-                    again.
-                  </p>
+            {pendingNote && (
+              <div className="rounded-2xl border border-border bg-card p-4">
+                <div className="flex items-center gap-3">
+                  <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-secondary">
+                    {validating ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                    ) : (
+                      <QrCode className="h-4 w-4 text-foreground" />
+                    )}
+                    {!validating && pendingRetryIn != null && (
+                      <span className="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5">
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60" />
+                        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
+                      </span>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13px] font-semibold text-foreground">
+                      {pendingExhausted && !validating
+                        ? "MF Central is taking longer than usual"
+                        : "MF Central is preparing your statement"}
+                    </p>
+                    <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                      {validating
+                        ? "Checking with MF Central…"
+                        : pendingRetryIn != null
+                          ? `Checking again in ${pendingRetryIn}s. Your QR stays valid — nothing to do.`
+                          : "Keep this page open and check again in a moment, or start a fresh request."}
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-3.5 flex items-center gap-2 border-t border-border pt-3.5">
                   <button
                     type="button"
                     onClick={() => {
                       const q = lastQrRef.current;
+                      setPendingRetryIn(null);
                       if (q) void redeemQr(q.base64, q.label);
                     }}
-                    disabled={!lastQrRef.current}
-                    className="mt-2.5 flex items-center justify-center gap-2 rounded-lg bg-foreground px-4 py-2 text-[12px] font-semibold text-background transition-all active:scale-[0.98] disabled:opacity-40"
+                    disabled={validating || !lastQrRef.current}
+                    className="flex items-center justify-center gap-2 rounded-lg bg-foreground px-4 py-2 text-[12px] font-semibold text-background transition-all active:scale-[0.98] disabled:opacity-40"
                   >
                     <RefreshCw className="h-3.5 w-3.5" />
-                    Try the QR again
+                    Check now
                   </button>
+                  {pendingExhausted && !validating && (
+                    <button
+                      type="button"
+                      onClick={restart}
+                      className="text-[12px] text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      Start a fresh request
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -1880,6 +1983,10 @@ const MfcCasFlow = ({
               </div>
             )}
 
+            {/* Hidden while a QR is already in hand and being waited on: the
+                only thing to do then is wait, and a second drop zone reads as
+                "upload it again". */}
+            {!pendingNote && (
             <label
               className={`mt-4 flex cursor-pointer flex-col items-center gap-2 rounded-2xl border-2 border-dashed px-4 py-8 text-center transition-colors ${
                 validating
@@ -1921,6 +2028,7 @@ const MfcCasFlow = ({
                 </>
               )}
             </label>
+            )}
 
             {qrError && (
               <div className="mt-4">

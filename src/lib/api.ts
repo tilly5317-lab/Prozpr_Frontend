@@ -1088,6 +1088,8 @@ export interface MfcImportResponse {
   /** Set when MF Central is still GENERATING the statement. Not a failure: the
    * QR is unconsumed and the SAME one can be submitted again in a moment. */
   pending: string | null;
+  /** With `pending`: how long to wait before presenting the same QR again. */
+  retry_after_seconds?: number | null;
   data: MfcStatementData;
   message: string;
 }
@@ -1096,8 +1098,10 @@ export interface MfcImportResponse {
  * Exchange the QR the investor downloaded from MF Central for their statement.
  *
  * The QR is SINGLE-USE — MFC invalidates it on the first successful exchange —
- * so this must never be auto-retried. A failure here means starting over with
- * a fresh consent.
+ * so a FAILURE here must never be auto-retried; it means starting over with a
+ * fresh consent. The one exception is a `pending` answer: MFC is still
+ * generating the statement, the QR is unconsumed, and the caller re-presents
+ * the same QR after `retry_after_seconds`.
  */
 export async function validateMfcQr(p: {
   qr_code: string;
