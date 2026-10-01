@@ -31,6 +31,7 @@ import {
   Plus,
   Settings2,
   Target,
+  Trash2,
   TrendingUp,
   Trophy,
   X,
@@ -1337,7 +1338,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
     () => goals.some((g) => isPersistedGoalId(g.id)),
     [goals],
   );
-  const [expandedGoals, setExpandedGoals] = useState<Set<string>>(new Set());
+  const [expandedYears, setExpandedYears] = useState<Set<number>>(new Set());
   const [draggingGoalId, setDraggingGoalId] = useState<string | null>(null);
   const [dropTargetYear, setDropTargetYear] = useState<number | null>(null);
   // Right-side plan panel (inputs + projection) — opened from the header trigger.
@@ -1634,11 +1635,11 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   // on a blank page with no cashflow plan yet.
   const displayAffordableMonthly = affordableMonthly ?? profileAffordableMonthly;
 
-  const toggleGoalExpanded = (id: string) => {
-    setExpandedGoals((prev) => {
+  const toggleYearExpanded = (year: number) => {
+    setExpandedYears((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(year)) next.delete(year);
+      else next.add(year);
       return next;
     });
   };
@@ -1807,11 +1808,6 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
     async (id: string) => {
       const goal = goals.find((g) => g.id === id);
       setGoals((prev) => prev.filter((g) => g.id !== id));
-      setExpandedGoals((prev) => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
       if (!isPersistedGoalId(id)) {
         toast.success("Goal removed");
         return;
@@ -2724,195 +2720,152 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                       )}
                     </AnimatePresence>
 
-                    {/* Starts at the bar's centre line rather than below it, so
-                        the first card overlaps its own bar and reads as attached
-                        to that year instead of floating under it. */}
-                    {hasGoals && (
-                      <div className="mb-1.5 mt-[8px] flex flex-col gap-1">
-                        {yearGoals.map((g) => {
-                          const chip = priorityChipStyle(g.priority);
-                          const yearsAway = Math.max(0, g.year - currentYear);
-                          const fv = futureValue(
-                            g.presentValue,
-                            g.inflationRate,
-                            yearsAway,
-                          );
-                          // Dummy per-goal funding progress. Hardcoded so the demo
-                          // shows distinct numbers per goal rather than all maxing
-                          // out at 100%.
-                          const HARDCODED_ACHIEVED: Record<string, number> = {
-                            "seed-home": 72,
-                            "seed-education": 48,
-                            "seed-retirement": 25,
-                          };
-                          const computedPct =
-                            fv > 0
-                              ? Math.min(100, Math.round(((corpusClosing + withdrawal) / fv) * 100))
-                              : 0;
-                          const pctAchieved = HARDCODED_ACHIEVED[g.id] ?? computedPct;
-                          const GoalIcon = goalIconFor(g.name);
-                          const isExpanded = expandedGoals.has(g.id);
-                          const isDragging = draggingGoalId === g.id;
-                          return (
-                            <motion.div
-                              key={g.id}
-                              drag="y"
-                              dragMomentum={false}
-                              dragElastic={0.25}
-                              dragSnapToOrigin
-                              onDragStart={(e) => {
-                                setDraggingGoalId(g.id);
-                                setDropTargetYear(g.year);
-                                startAutoScroll(dragClientY(e));
-                              }}
-                              onDrag={(e) => {
-                                const y = dragClientY(e);
-                                const x = dragClientX(e);
-                                dragPointerYRef.current = y;
-                                const yr = findYearAtClientY(y, x);
-                                if (yr != null) {
-                                  setDropTargetYear(yr);
-                                  // Keep the lens out over a thinned stretch so
-                                  // its years can be dropped on.
-                                  const gap = gapAfterYear(yr);
-                                  if (gap != null) setLensGap([yr, gap]);
-                                }
-                              }}
-                              onDragEnd={(e) => {
-                                stopAutoScroll();
-                                const yr = findYearAtClientY(dragClientY(e), dragClientX(e));
-                                if (yr != null) {
-                                  // Clamp to the valid window: never into the past
-                                  // (minGoalYear), never past the currentYear + 100
-                                  // ceiling (capYear).
-                                  const target = clamp(yr, minGoalYear, capYear);
-                                  if (target !== g.year) moveGoalToYear(g.id, target);
-                                }
-                                setDraggingGoalId(null);
-                                setDropTargetYear(null);
-                                setRevealEndYear(null);
-                              }}
-                              whileDrag={{
-                                scale: 1.04,
-                                boxShadow:
-                                  "0 14px 28px rgba(0,0,0,0.18), 0 4px 10px rgba(0,0,0,0.10)",
-                                zIndex: 50,
-                                cursor: "grabbing",
-                              }}
-                              role="button"
-                              tabIndex={0}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (isDragging) return;
-                                toggleGoalExpanded(g.id);
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter" || e.key === " ") {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  toggleGoalExpanded(g.id);
-                                }
-                              }}
-                              aria-expanded={isExpanded}
-                              aria-label={`${g.name} — tap to expand, drag to change year`}
-                              // hover:bg-muted is solid on purpose: a translucent
-                              // hover let the chart bar show through the card.
-                              className="relative mr-6 max-w-[80%] touch-none cursor-grab rounded-xl border border-border bg-card px-3 py-1 transition-colors hover:border-foreground/25 hover:bg-muted focus:outline-none focus-visible:ring-1 focus-visible:ring-foreground/40 active:cursor-grabbing"
+                    {/* One line per goal year (design 8a): up to two goal names,
+                        a +N chip for the rest, and the year's total draw on the
+                        right. A goal the corpus can't fully cover says so in its
+                        own name, in red. Tapping the line opens the full list. */}
+                    {hasGoals && (() => {
+                      const goalFv = (g: TimelineGoal) =>
+                        futureValue(g.presentValue, g.inflationRate, Math.max(0, g.year - currentYear));
+                      const yearTotal = yearGoals.reduce((sum, g) => sum + goalFv(g), 0);
+                      const isYearOpen = expandedYears.has(y);
+                      const shown = yearGoals.slice(0, 2);
+                      const extra = yearGoals.length - shown.length;
+                      const shortOf = (g: TimelineGoal) => landing.shortfallById.get(g.id) ?? 0;
+                      // Spans with role=button: the whole row is already a <button>.
+                      const tapProps = (action: () => void) => ({
+                        role: "button" as const,
+                        tabIndex: 0,
+                        onClick: (e: { stopPropagation(): void }) => {
+                          e.stopPropagation();
+                          action();
+                        },
+                        onKeyDown: (e: { key: string; preventDefault(): void; stopPropagation(): void }) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            action();
+                          }
+                        },
+                      });
+                      return (
+                        <div className="mb-1.5 mr-1 mt-[8px]">
+                          {!isYearOpen && (
+                            <div
+                              {...tapProps(() => toggleYearExpanded(y))}
+                              aria-expanded={false}
+                              aria-label={`${yearGoals.length} goal${yearGoals.length === 1 ? "" : "s"} in ${y}, tap to see them`}
+                              className="flex min-h-[20px] min-w-0 cursor-pointer items-center gap-1.5 rounded-md py-0.5 focus:outline-none focus-visible:ring-1 focus-visible:ring-foreground/40"
                             >
-                              <div className="flex items-center gap-2.5">
+                              {shown.map((g, gi) => {
+                                const GoalIcon = goalIconFor(g.name);
+                                const short = shortOf(g);
+                                return (
+                                  <span key={g.id} className="flex min-w-0 items-center gap-1.5">
+                                    {gi > 0 && <span className="text-muted-foreground/50">·</span>}
+                                    <GoalIcon
+                                      className="h-3 w-3 shrink-0"
+                                      strokeWidth={1.8}
+                                      style={{ color: short > 0 ? "rgb(239,68,68)" : "#D4A868" }}
+                                      aria-hidden="true"
+                                    />
+                                    <span
+                                      className={`truncate text-[12px] ${short > 0 ? "" : "text-foreground/80"}`}
+                                      style={short > 0 ? { color: "rgb(239,68,68)" } : undefined}
+                                    >
+                                      {g.name}
+                                      {short > 0 && ` · short ${formatINRCompact(short)}`}
+                                    </span>
+                                  </span>
+                                );
+                              })}
+                              {extra > 0 && (
                                 <span
-                                  className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
-                                  style={{
-                                    backgroundColor: chip.bg,
-                                    color: chip.fg,
-                                    border: `1px solid ${chip.border}`,
-                                  }}
-                                  aria-hidden="true"
+                                  className="shrink-0 rounded-full px-1.5 py-px text-[11px] font-semibold"
+                                  style={{ color: "#D4A868", background: "rgba(212,168,104,0.14)" }}
                                 >
-                                  <GoalIcon className="h-3.5 w-3.5" strokeWidth={2} />
+                                  +{extra}
                                 </span>
-                                <p className="min-w-0 flex-1 truncate text-[13px] font-semibold leading-tight text-foreground">
-                                  {g.name}
-                                </p>
-                                {/* Just the amount. The card already sits on its
-                                    own year, so "drawn in 2039" repeated the row
-                                    it was in and crowded the name on a phone. */}
-                                <span
-                                  className="shrink-0 text-[12px] font-semibold tabular-nums text-muted-foreground"
-                                  title={`${formatINR(fv)} drawn from your portfolio in ${g.year}`}
-                                >
-                                  −{formatINRCompact(fv)}
-                                </span>
-                              </div>
-                              <AnimatePresence initial={false}>
-                                {isExpanded && (
-                                  <motion.div
-                                    key="goal-details"
-                                    initial={{ height: 0, opacity: 0 }}
-                                    animate={{ height: "auto", opacity: 1 }}
-                                    exit={{ height: 0, opacity: 0 }}
-                                    transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                                    className="overflow-hidden"
+                              )}
+                              <span
+                                className="ml-auto shrink-0 pl-2 text-[11px] tabular-nums text-muted-foreground"
+                                title={`${formatINR(yearTotal)} drawn from your portfolio in ${y}`}
+                              >
+                                −{formatINRCompact(yearTotal)}
+                              </span>
+                            </div>
+                          )}
+
+                          <AnimatePresence initial={false}>
+                            {isYearOpen && (
+                              <motion.div
+                                key="year-goals"
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: "auto", opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                                className="overflow-hidden"
+                              >
+                                <div className="flex flex-col rounded-[10px] border border-border bg-card px-2.5 py-1">
+                                  {yearGoals.map((g) => {
+                                    const GoalIcon = goalIconFor(g.name);
+                                    const short = shortOf(g);
+                                    return (
+                                      <div
+                                        key={g.id}
+                                        {...tapProps(() => {
+                                          setEditGoal(g);
+                                          setAddYear(null);
+                                        })}
+                                        aria-label={`Edit ${g.name}`}
+                                        className="flex cursor-pointer items-center gap-2 rounded-md py-1.5 hover:bg-muted/40 focus:outline-none focus-visible:ring-1 focus-visible:ring-foreground/40"
+                                      >
+                                        <GoalIcon
+                                          className="h-3.5 w-3.5 shrink-0"
+                                          strokeWidth={1.8}
+                                          style={{ color: "#D4A868" }}
+                                          aria-hidden="true"
+                                        />
+                                        <span className="min-w-0 truncate text-[12px] text-foreground">
+                                          {g.name}
+                                        </span>
+                                        <span className="shrink-0 text-[12px] tabular-nums text-muted-foreground">
+                                          {formatINRCompact(goalFv(g))}
+                                        </span>
+                                        <span
+                                          className="ml-auto shrink-0 whitespace-nowrap rounded-full px-1.5 py-px text-[11px] font-semibold"
+                                          style={
+                                            short > 0
+                                              ? { color: "rgb(239,68,68)", background: "rgba(239,68,68,0.15)" }
+                                              : { color: "rgb(16,185,129)", background: "rgba(16,185,129,0.15)" }
+                                          }
+                                        >
+                                          {short > 0 ? `Short ${formatINRCompact(short)}` : "On track"}
+                                        </span>
+                                        <span
+                                          {...tapProps(() => void handleDeleteGoal(g.id))}
+                                          aria-label={`Delete ${g.name}`}
+                                          className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-destructive"
+                                        >
+                                          <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
+                                  <span
+                                    {...tapProps(() => toggleYearExpanded(y))}
+                                    className="cursor-pointer self-start py-1 text-[12px]"
+                                    style={{ color: "#D4A868" }}
                                   >
-                                    <div className="mt-1.5 border-t border-border/60 pt-1.5 text-[11px] text-muted-foreground space-y-0.5">
-                                      <div className="flex items-center justify-between gap-2">
-                                        <span>Worth today</span>
-                                        <span
-                                          className="font-semibold tabular-nums text-foreground"
-                                          style={{
-                                            fontFamily:
-                                              "ui-monospace, SFMono-Regular, Menlo, monospace",
-                                          }}
-                                        >
-                                          {formatINR(g.presentValue)}
-                                        </span>
-                                      </div>
-                                      <div className="flex items-center justify-between gap-2">
-                                        <span>% achieved</span>
-                                        <span
-                                          className="font-semibold tabular-nums"
-                                          style={{
-                                            color:
-                                              pctAchieved >= 100
-                                                ? "rgb(16, 185, 129)"
-                                                : "hsl(var(--foreground))",
-                                          }}
-                                        >
-                                          {pctAchieved}%
-                                        </span>
-                                      </div>
-                                      <div className="flex items-center gap-2 pt-2">
-                                        <button
-                                          type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setEditGoal(g);
-                                            setAddYear(null);
-                                          }}
-                                          className="flex-1 rounded-lg border border-border py-1.5 text-[11px] font-semibold text-foreground hover:bg-muted/50"
-                                        >
-                                          Edit
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            void handleDeleteGoal(g.id);
-                                          }}
-                                          className="flex-1 rounded-lg border border-destructive/40 py-1.5 text-[11px] font-semibold text-destructive hover:bg-destructive/10"
-                                        >
-                                          Delete
-                                        </button>
-                                      </div>
-                                    </div>
-                                  </motion.div>
-                                )}
-                              </AnimatePresence>
-                            </motion.div>
-                          );
-                        })}
-                      </div>
-                    )}
+                                    Show less ↑
+                                  </span>
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </button>
 

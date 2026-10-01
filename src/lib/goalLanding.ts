@@ -27,6 +27,8 @@ export type GoalLanding = {
   counted: number;
   /** Goals beyond the projection's last year — not counted either way. */
   unknown: number;
+  /** Per counted goal: rupees the corpus is short of it when it falls due (0 = covered). */
+  shortfallById: Map<string, number>;
 };
 
 const PRIORITY_RANK: Record<LandingGoal["priority"], number> = { High: 0, Medium: 1, Low: 2 };
@@ -36,7 +38,7 @@ export function goalLanding(
   corpusByYear: Map<number, LandingCorpusRow> | null,
 ): GoalLanding {
   if (!corpusByYear || corpusByYear.size === 0) {
-    return { reached: 0, counted: 0, unknown: goals.length };
+    return { reached: 0, counted: 0, unknown: goals.length, shortfallById: new Map() };
   }
 
   // Goals sharing a year draw on the same pot, so fund them in priority order.
@@ -54,6 +56,7 @@ export function goalLanding(
 
   let reached = 0;
   let counted = 0;
+  const shortfallById = new Map<string, number>();
   for (const [year, list] of byYear) {
     const row = corpusByYear.get(year)!;
     // What was there to spend that year: the closing corpus plus what was paid out.
@@ -64,13 +67,15 @@ export function goalLanding(
       if (available >= g.futureValue) {
         reached += 1;
         available -= g.futureValue;
+        shortfallById.set(g.id, 0);
       } else {
+        shortfallById.set(g.id, g.futureValue - available);
         available = 0;
       }
     }
   }
 
-  return { reached, counted, unknown };
+  return { reached, counted, unknown, shortfallById };
 }
 
 /** The sentence under the SIP stat. Null when there is nothing to count. */
