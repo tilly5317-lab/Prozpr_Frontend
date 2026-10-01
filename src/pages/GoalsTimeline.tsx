@@ -16,11 +16,13 @@ import {
 import {
   BriefcaseBusiness,
   Car,
+  Check,
   ChevronLeft,
   Download,
   GraduationCap,
   Heart,
   Home,
+  HelpCircle,
   Landmark,
   Loader2,
   PanelRightOpen,
@@ -55,8 +57,28 @@ import {
   type GoalResponse,
 } from "@/lib/api";
 import { exportCashflowXls } from "@/lib/export-xls";
+import {
+  bandForRate,
+  clearSavedMix,
+  DEBT_RETURN,
+  EQUITY_RETURN,
+  EQUITY_STEP,
+  equityPctForRate,
+  formatMix,
+  formatRate,
+  PROJECTION_BASE_RATE,
+  rateForEquityPct,
+  readSavedMix,
+  scaleAnnualRowsToRate,
+  writeSavedMix,
+} from "@/lib/projectionScenario";
 import CashflowGate from "@/components/goals/CashflowGate";
 import CashflowInputsForm from "@/components/goals/CashflowInputsForm";
+import AssetMixDial from "@/components/goals/AssetMixDial";
+import GuidedTour, { type TourStep } from "@/components/GuidedTour";
+
+/** Marks the first-run goal-planning walkthrough as seen, per browser. */
+const GOAL_TOUR_SEEN_KEY = "goalPlanningTourSeen";
 
 type Priority = "Low" | "Medium" | "High";
 
@@ -70,7 +92,9 @@ interface TimelineGoal {
 }
 
 const INFLATION_DEFAULT = 6;
-const PRIORITIES: Priority[] = ["Low", "Medium", "High"];
+// Most important first — the order the filter chips and the goal-sheet picker
+// both read in, so "High" is where the eye lands rather than buried last.
+const PRIORITIES: Priority[] = ["High", "Medium", "Low"];
 
 // Timeline-extent assumptions. The visible timeline ends at the later of the
 // last goal year and the retirement year (age 60 by default); dragging a goal
@@ -85,6 +109,12 @@ const MAX_HORIZON_YEARS = 100;
 const FALLBACK_CURRENT_AGE = 30;
 // Always show at least this many years even if retirement is in the past.
 const MIN_HORIZON_YEARS = 5;
+// Row density. The near term is where the plan is actionable, so the first
+// DENSE_ROW_YEARS get a bar each; after that the timeline thins to one bar
+// every YEAR_ROW_STEP years. Goal years and the final year are always kept, so
+// nothing the user placed can be thinned away.
+const DENSE_ROW_YEARS = 5;
+const YEAR_ROW_STEP = 3;
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, v));
@@ -116,7 +146,10 @@ function birthYearFromDob(dob: string | null | undefined): number | null {
 
 // NAV chart spans the full row width and renders behind the row content.
 const NAV_PAD_PCT = 4; // horizontal padding (%) so the line never touches the edges
-const TORNADO_CENTER_X = 50; // viewBox x for ₹0 (symmetric tornado axis)
+const TORNADO_CENTER_X = 50; // viewBox x for ₹0 when the plan dips negative
+// No negative year in the plan? The left half would sit empty, so the ₹0 axis
+// moves left (clear of the age column) and positive bars get the extra width.
+const TORNADO_CENTER_X_POSITIVE = 20;
 
 // Earned milestones — light up the first year the projected NAV crosses each.
 interface Milestone {
@@ -124,15 +157,17 @@ interface Milestone {
   label: string;
 }
 
+/* A deliberately sparse ladder: 1Cr, then 5 / 10 / 20 / 50 / 100Cr. Each rung is
+   a real step up rather than an incremental one, so a gold badge stays rare
+   enough to feel earned — the previous ladder (3 / 5 / 7.5 / 10 / 15 / 20 / 25)
+   could light several rows on a single screen, which made the flash routine. */
 const MILESTONES: Milestone[] = [
-  { value: 3_00_00_000, label: "First ₹3Cr 🎯" },
-  { value: 5_00_00_000, label: "First ₹5Cr 🎯" },
-  { value: 7_50_00_000, label: "₹7.5Cr 🌟" },
+  { value: 1_00_00_000, label: "First ₹1Cr 🎯" },
+  { value: 5_00_00_000, label: "₹5Cr 🌟" },
   { value: 10_00_00_000, label: "₹10Cr club 🏆" },
-  { value: 15_00_00_000, label: "₹15Cr breakthrough 🌟" },
   { value: 20_00_00_000, label: "₹20Cr legend 👑" },
-  { value: 25_00_00_000, label: "₹25Cr royalty 👑" },
   { value: 50_00_00_000, label: "₹50Cr ✨" },
+  { value: 100_00_00_000, label: "₹100Cr 👑" },
 ];
 
 function mapApiPriority(p: string): Priority {
@@ -214,14 +249,18 @@ function tornadoBarScaleMax(absValues: number[]): number {
 function corpusToTornadoX(
   corpus: number,
   scaleMax: number,
-  halfSpan: number,
+  centerX: number,
 ): number {
-  if (scaleMax <= 0 || corpus === 0) return TORNADO_CENTER_X;
+  if (scaleMax <= 0 || corpus === 0) return centerX;
   const sign = corpus > 0 ? 1 : -1;
+  // Each side runs from the axis to its own edge padding — equal at a centred
+  // axis, and all of the extra room on the right once the axis shifts left.
+  const span =
+    sign > 0 ? 100 - NAV_PAD_PCT - centerX : centerX - NAV_PAD_PCT;
   let norm = Math.abs(corpus) / scaleMax;
   if (norm > 0 && norm < 0.04) norm = 0.04;
   norm = Math.min(1, norm);
-  return TORNADO_CENTER_X + sign * norm * halfSpan;
+  return centerX + sign * norm * span;
 }
 
 function priorityChipStyle(p: Priority): { bg: string; fg: string; border: string } {
@@ -469,6 +508,7 @@ function AddGoalSheet({
             className="fixed inset-0 z-[60] flex items-center justify-center px-4"
           >
             <div
+              data-tour="goal-form"
               className="w-full max-w-md rounded-2xl bg-card shadow-2xl flex flex-col overflow-hidden"
               style={{ maxHeight: "min(88dvh, 720px)" }}
               onClick={(e) => e.stopPropagation()}
@@ -708,7 +748,7 @@ function AddGoalSheet({
                   </div>
                 )}
 
-                <div>
+                <div data-tour="goal-value-kind">
                   <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">
                     Is this in today&apos;s money or at the target date?
                   </p>
@@ -907,19 +947,17 @@ interface ProjectionContentProps {
   sipMonthly: number | null;
   /** Jump to the Inputs tab when no plan exists yet. */
   onGoToInputs?: () => void;
+  /** The return rate currently driving the goal-planning page's cashflow. */
+  appliedRate: number;
+  /** Applied equity share, or null while the plan runs on the engine's return. */
+  appliedEquityPct: number | null;
+  /** Commit an asset mix to the plan — only fired by the explicit Apply button. */
+  onApplyMix: (equityPct: number) => void;
+  /** Drop the applied mix and go back to the engine's computed plan. */
+  onResetMix: () => void;
 }
 
 type WaterfallItem = { axis: string; label: string; value: number; kind: WaterfallKind };
-
-// Sensitivity scenarios for the projection — only return-on-investment reacts
-// to the assumed post-tax rate; everything else (contributions, one-offs, goals)
-// is held constant so the user sees the pure effect of returns.
-const PROJECTION_BASE_RATE = 9;
-const PROJECTION_SCENARIOS: { id: string; label: string; rate: number }[] = [
-  { id: "cons", label: "Conservative", rate: 7 },
-  { id: "base", label: "Base", rate: 9 },
-  { id: "opt", label: "Optimistic", rate: 11 },
-];
 
 type WaterfallKind = "base" | "positive" | "negative" | "total";
 
@@ -949,9 +987,31 @@ const ProjectionAxisTick = (props: { x?: number; y?: number; payload?: { value?:
   );
 };
 
-function ProjectionContent({ fundFlow, headline, sipMonthly, onGoToInputs }: ProjectionContentProps) {
-  const [scenarioId, setScenarioId] = useState("base");
-  const scenario = PROJECTION_SCENARIOS.find((s) => s.id === scenarioId) ?? PROJECTION_SCENARIOS[1];
+function ProjectionContent({
+  fundFlow,
+  headline,
+  sipMonthly,
+  onGoToInputs,
+  appliedRate,
+  appliedEquityPct,
+  onApplyMix,
+  onResetMix,
+}: ProjectionContentProps) {
+  // Moving the slider only previews here — every figure below it recalculates
+  // live. The goal-planning page's cashflow changes when, and only when, the
+  // user presses Apply, so nobody has their plan rewritten by an exploratory drag.
+  //
+  // The mix is what the user sets; the return is read off it. With no mix applied
+  // yet the slider opens on the split nearest the plan's own return, so the first
+  // drag starts from where the plan already is.
+  const openingMix = appliedEquityPct ?? equityPctForRate(appliedRate);
+  const [draftEquity, setDraftEquity] = useState(openingMix);
+  useEffect(() => {
+    setDraftEquity(openingMix);
+  }, [openingMix]);
+  const draftRate = rateForEquityPct(draftEquity);
+  const band = bandForRate(draftRate);
+  const isDirty = draftEquity !== openingMix;
 
   const currentYear = new Date().getFullYear();
   // Horizon comes from the engine: last FY-end = max(retirement, last goal).
@@ -977,10 +1037,10 @@ function ProjectionContent({ fundFlow, headline, sipMonthly, onGoToInputs }: Pro
   const horizonYears = Math.max(1, horizonYear - currentYear);
   const ROI = useMemo(() => {
     const factor =
-      Math.pow(1 + scenario.rate / 100, horizonYears) /
+      Math.pow(1 + draftRate / 100, horizonYears) /
       Math.pow(1 + PROJECTION_BASE_RATE / 100, horizonYears);
     return Math.round(ROI_BASE * factor);
-  }, [scenario.rate, horizonYears, ROI_BASE]);
+  }, [draftRate, horizonYears, ROI_BASE]);
 
   // No plan yet → don't fabricate a waterfall; prompt to complete inputs.
   if (!fundFlow) {
@@ -1047,37 +1107,94 @@ function ProjectionContent({ fundFlow, headline, sipMonthly, onGoToInputs }: Pro
   return (
     <div className="space-y-4">
       <p className="text-[11px] text-muted-foreground">
-        Through {horizonLabel} · {monthlyLabel} · {scenario.rate}% post-tax
+        Through {horizonLabel} · {monthlyLabel} · {formatMix(draftEquity)} equity-debt ·{" "}
+        {formatRate(draftRate)} post-tax
       </p>
       <div className="space-y-4">
-                {/* Sensitivity — return scenario */}
-                <div>
-                  <p className="mb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
-                    Return scenario · sensitivity
-                  </p>
-                  <div className="flex rounded-full bg-muted/60 p-0.5">
-                    {PROJECTION_SCENARIOS.map((s) => {
-                      const active = s.id === scenarioId;
-                      return (
-                        <button
-                          key={s.id}
-                          type="button"
-                          onClick={() => setScenarioId(s.id)}
-                          className={`flex-1 rounded-full py-1.5 text-[11px] font-semibold transition-colors ${
-                            active
-                              ? "bg-card text-foreground shadow-sm"
-                              : "text-muted-foreground hover:text-foreground"
-                          }`}
-                          aria-pressed={active}
-                        >
-                          {s.label}
-                          <span className="ml-1 text-[10px] font-normal tabular-nums opacity-70">
-                            {s.rate}%
-                          </span>
-                        </button>
-                      );
-                    })}
+                {/* Asset mix — the return is derived from the split, and every
+                    figure below recalculates as it moves. */}
+                <div data-tour="asset-mix">
+                  <div className="mb-3 flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                        Equity / debt mix
+                      </p>
+                      <p className="text-[11px] leading-snug text-muted-foreground/70">
+                        {band.blurb}
+                      </p>
+                    </div>
+                    {/* The wheel carries the split and the rate, so the header
+                        only names the band the mix lands in. */}
+                    <span
+                      className="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold"
+                      style={{
+                        backgroundColor: "rgba(212,168,104,0.16)",
+                        color: "#D4A868",
+                        border: "1px solid rgba(212,168,104,0.45)",
+                      }}
+                    >
+                      {band.label}
+                    </span>
                   </div>
+
+                  {/* The wheel IS the control — press or drag the ring to re-split. */}
+                  <AssetMixDial
+                    equityPct={draftEquity}
+                    step={EQUITY_STEP}
+                    onChange={setDraftEquity}
+                    centerLabel={`${formatRate(draftRate)} p.a.`}
+                    equityNote={`assumes ${formatRate(EQUITY_RETURN)} p.a.`}
+                    debtNote={`assumes ${formatRate(DEBT_RETURN)} p.a.`}
+                  />
+
+                  {/* Preview stays in this panel until applied. */}
+                  <button
+                    type="button"
+                    disabled={!isDirty}
+                    onClick={() => onApplyMix(draftEquity)}
+                    className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-xl py-2.5 text-[12px] font-bold transition-all active:scale-[0.99] disabled:cursor-not-allowed"
+                    style={
+                      isDirty
+                        ? {
+                            backgroundColor: "#D4A868",
+                            color: "#2D1F05",
+                            boxShadow: "0 2px 8px rgba(212,168,104,0.45)",
+                          }
+                        : {
+                            backgroundColor: "hsl(var(--muted) / 0.6)",
+                            color: "hsl(var(--muted-foreground))",
+                          }
+                    }
+                  >
+                    {isDirty ? (
+                      <>
+                        <Check className="h-3.5 w-3.5" />
+                        Apply {formatMix(draftEquity)} ({formatRate(draftRate)}) to my plan
+                      </>
+                    ) : appliedEquityPct != null ? (
+                      `${formatMix(appliedEquityPct)} (${formatRate(appliedRate)}) is applied to your plan`
+                    ) : (
+                      `${formatRate(appliedRate)} is applied to your plan`
+                    )}
+                  </button>
+
+                  {appliedEquityPct != null && (
+                    <button
+                      type="button"
+                      onClick={onResetMix}
+                      className="mt-1.5 w-full rounded-xl border border-border py-2 text-[11px] font-semibold text-muted-foreground hover:text-foreground"
+                    >
+                      Back to the engine&apos;s plan ({formatRate(PROJECTION_BASE_RATE)})
+                    </button>
+                  )}
+
+                  <p className="mt-1.5 text-[10.5px] leading-snug text-muted-foreground/70">
+                    {isDirty
+                      ? `The figures below are already on a ${formatMix(draftEquity)} mix. The goal-planning page keeps your applied mix until you press Apply.`
+                      : appliedEquityPct == null
+                        ? `Your plan as the engine computed it, at ${formatRate(appliedRate)} — roughly a ${formatMix(openingMix)} mix. Drag to test another split, then apply it.`
+                        : "The goal-planning page is running on this mix. Contributions, one-offs and goal payouts are unchanged — only the return the corpus earns moves."}
+                  </p>
                 </div>
 
                 {/* Closing headline (live) */}
@@ -1283,6 +1400,115 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   // readiness (its prompt would otherwise keep claiming inputs are missing).
   const [gateRefresh, setGateRefresh] = useState(0);
 
+  /* First-run walkthrough of the four things that actually drive a plan. Shown
+     once per browser; the header's "?" replays it on demand. */
+  const [tourOpen, setTourOpen] = useState(false);
+
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(GOAL_TOUR_SEEN_KEY) !== "1") setTourOpen(true);
+    } catch {
+      /* private mode — just skip the tour rather than breaking the page */
+    }
+  }, []);
+
+  const closeTour = useCallback(() => {
+    setTourOpen(false);
+    // Steps 1-2 open the goal form to explain it; leaving the tour at any point
+    // should put the page back the way it was found.
+    setAddYear(null);
+    setEditGoal(null);
+    setPanelOpen(false);
+    try {
+      localStorage.setItem(GOAL_TOUR_SEEN_KEY, "1");
+    } catch {
+      /* private mode */
+    }
+  }, []);
+
+  /* Steps 3 and 4 live inside the plan panel, so each opens the panel on the
+     right tab before the tour measures its target. */
+  /* Step-by-step walkthrough of everything that drives a plan, in the order a
+     first-timer meets it: add a goal, tell us the inputs, set the mix, then the
+     two levers (SIP, priority) that change what the projection says. */
+  const tourSteps = useMemo<TourStep[]>(
+    () => [
+      {
+        anchor: "goal-form",
+        title: "Add a goal",
+        body: "The + button opens this form. Pick a category, name the goal, set its target year and enter what it costs \u2014 you can drag it up or down the timeline later to move the year.",
+        // Opens the goal form so steps 1 and 2 explain it in place.
+        before: () => {
+          setPanelOpen(false);
+          setEditGoal(null);
+          setAddYear(new Date().getFullYear() + 5);
+        },
+      },
+      {
+        anchor: "goal-value-kind",
+        title: "Today's value vs future value",
+        body: "Today's value = what it costs at today's prices, and Prozpr inflates it to the target year for you. Future value = the amount you'll actually need by then, used exactly as entered.",
+        // Opens the goal form so the choice is spotlighted where it's made.
+        before: () => {
+          setPanelOpen(false);
+          setEditGoal(null);
+          setAddYear(new Date().getFullYear() + 5);
+        },
+      },
+      {
+        anchor: "chart-legend",
+        title: "Reading the chart",
+        body: "Each bar is your portfolio at the end of that year: green to the right is positive, red to the left means goals have outpaced your savings. The first few years show one bar each; after that it's every third year, plus any year holding a goal.",
+        before: () => {
+          setAddYear(null);
+          setEditGoal(null);
+          setPanelOpen(false);
+        },
+      },
+      {
+        anchor: "plan-button",
+        title: "Open your plan",
+        body: "Plan holds the two tabs behind every figure on this page: Inputs and Projection.",
+        before: () => {
+          setAddYear(null);
+          setEditGoal(null);
+          setPanelOpen(false);
+        },
+      },
+      {
+        anchor: "plan-inputs",
+        title: "Inputs",
+        body: "What you earn, spend and save each month. Nothing projects until these are filled in.",
+        before: () => {
+          setPanelTab("inputs");
+          setPanelOpen(true);
+        },
+      },
+      {
+        anchor: "asset-mix",
+        title: "Projection",
+        body: `Drag the wheel to split equity and debt — the return follows from it. All debt is ${formatRate(DEBT_RETURN)} a year, all equity ${formatRate(EQUITY_RETURN)}, 80/20 lands on ${formatRate(rateForEquityPct(80))}. Figures preview as you drag; Apply commits it.`,
+        before: () => {
+          setPanelTab("projection");
+          setPanelOpen(true);
+        },
+      },
+      {
+        anchor: "monthly-sip",
+        title: "Monthly SIP",
+        body: "Type a different monthly amount to see it on the timeline straight away. Apply to plan makes it real; the reset arrow restores your plan's SIP.",
+        before: () => setPanelOpen(false),
+      },
+      {
+        anchor: "priority-filter",
+        title: "Priority",
+        body: "Toggle High, Medium and Low to drop goals in and out of the projection — a quick read on what's affordable if the rest wait.",
+        before: () => setPanelOpen(false),
+      },
+    ],
+    [],
+  );
+
   // Birth year (from DOB) + retirement age drive where the timeline ends.
   const [birthYear, setBirthYear] = useState<number | null>(null);
   const [retirementAge, setRetirementAge] = useState<number>(DEFAULT_RETIREMENT_AGE);
@@ -1292,6 +1518,43 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   const [cashflowData, setCashflowData] = useState<CashflowPlanRunDetail | null>(null);
   const [cashflowLoading, setCashflowLoading] = useState(false);
   const [cashflowError, setCashflowError] = useState<string | null>(null);
+
+  // The return rate currently APPLIED to the plan. Owned here rather than in the
+  // panel because it drives this page's cashflow; the panel only previews a draft
+  // until the user presses Apply. Saved so the choice survives a reload — someone
+  // who applied 4% should not silently be back on the engine's 9%.
+  // The scenario is an equity/debt split, not a bare return: the user sets the
+  // mix and the assumed post-tax return is read off it. Null = no mix applied,
+  // so the plan is still exactly what the engine computed.
+  const [appliedEquityPct, setAppliedEquityPct] = useState<number | null>(readSavedMix);
+  const appliedRate =
+    appliedEquityPct == null ? PROJECTION_BASE_RATE : rateForEquityPct(appliedEquityPct);
+  const band = bandForRate(appliedRate);
+  const isBaseRate = appliedEquityPct == null;
+
+  const applyMix = useCallback((equityPct: number) => {
+    const next = Math.min(100, Math.max(0, Math.round(equityPct / EQUITY_STEP) * EQUITY_STEP));
+    const rate = rateForEquityPct(next);
+    setAppliedEquityPct(next);
+    writeSavedMix(next);
+    toast.success(`${formatMix(next)} equity-debt applied`, {
+      description: `Your goal plan now runs on ${formatRate(rate)} post-tax returns (${bandForRate(rate).label.toLowerCase()}) — the blended return of a ${next}% equity, ${100 - next}% debt portfolio.`,
+    });
+  }, []);
+
+  const resetMix = useCallback(() => {
+    setAppliedEquityPct(null);
+    clearSavedMix();
+    toast.success("Back to the engine's plan", {
+      description: "Your goal plan is back on the engine's computed returns.",
+    });
+  }, []);
+
+  /** Engine rows replayed at the applied return — identical to the engine at 9%. */
+  const scenarioAnnualRows = useMemo(
+    () => scaleAnnualRowsToRate(cashflowData?.annual_cashflow ?? [], appliedRate),
+    [cashflowData, appliedRate],
+  );
 
   const reloadGoals = useCallback(async () => {
     setGoalsLoading(true);
@@ -1709,14 +1972,20 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
     capYear,
     Math.max(baseEndYear, revealEndYear ?? baseEndYear),
   );
-  const years = useMemo(
-    () =>
-      Array.from(
-        { length: Math.max(1, displayEndYear - currentYear + 1) },
-        (_, i) => currentYear + i,
-      ),
-    [currentYear, displayEndYear],
-  );
+  const years = useMemo(() => {
+    const span = Math.max(1, displayEndYear - currentYear + 1);
+    const out: number[] = [];
+    for (let i = 0; i < span; i += 1) {
+      const y = currentYear + i;
+      const keep =
+        i < DENSE_ROW_YEARS ||
+        (i - DENSE_ROW_YEARS) % YEAR_ROW_STEP === 0 ||
+        y === displayEndYear ||
+        goalsByYear.has(y);
+      if (keep) out.push(y);
+    }
+    return out;
+  }, [currentYear, displayEndYear, goalsByYear]);
 
   // Kept fresh for the drag handlers so they never read stale values.
   const capYearRef = useRef(capYear);
@@ -1730,8 +1999,8 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
 
   /** FY-end corpus_closing keyed by FY end calendar year (from fy_end_date). */
   const tornadoCorpusByYear = useMemo((): Map<number, TornadoCorpusRow> | null => {
-    if (!cashflowData?.annual_cashflow?.length) return null;
-    const rows = [...cashflowData.annual_cashflow].sort(
+    if (!scenarioAnnualRows.length) return null;
+    const rows = [...scenarioAnnualRows].sort(
       (a, b) => Date.parse(a.fy_end_date) - Date.parse(b.fy_end_date),
     );
     const map = new Map<number, TornadoCorpusRow>();
@@ -1744,7 +2013,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
       });
     }
     return map.size > 0 ? map : null;
-  }, [cashflowData]);
+  }, [scenarioAnnualRows]);
 
   const cashflowProjection: ProjectionPoint[] | null = useMemo(() => {
     if (!tornadoCorpusByYear) return null;
@@ -1765,9 +2034,9 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   }, [tornadoCorpusByYear, currentYear]);
 
   // The projection is the engine's per-FY corpus path ONLY — never a client-side
-  // fabrication. Empty until the plan loads — the page then renders the scaffold
-  // only (ages + blank tornado axis, no numbers) and CashflowGate shows a
-  // dismissible prompt for the missing inputs rather than blocking.
+  // fabrication. Empty until the plan loads — the page then renders as an example
+  // (ages + blank tornado axis) and CashflowGate shows a dismissible prompt for
+  // the missing inputs rather than blocking.
   const projection = useMemo<ProjectionPoint[]>(
     () => cashflowProjection ?? [],
     [cashflowProjection],
@@ -1818,11 +2087,22 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
     [tornadoAbsValues],
   );
 
-  const tornadoHalfSpan = TORNADO_CENTER_X - NAV_PAD_PCT;
+  /** Any year underwater? Only then does the axis need a left half. */
+  const tornadoHasNegative = useMemo(
+    () =>
+      tornadoCorpusByYear
+        ? [...tornadoCorpusByYear.values()].some((r) => r.corpusClosing < 0)
+        : false,
+    [tornadoCorpusByYear],
+  );
+
+  const tornadoCenterX = tornadoHasNegative
+    ? TORNADO_CENTER_X
+    : TORNADO_CENTER_X_POSITIVE;
 
   const corpusToTornadoXCb = useCallback(
-    (corpus: number) => corpusToTornadoX(corpus, tornadoBarScale, tornadoHalfSpan),
-    [tornadoBarScale, tornadoHalfSpan],
+    (corpus: number) => corpusToTornadoX(corpus, tornadoBarScale, tornadoCenterX),
+    [tornadoBarScale, tornadoCenterX],
   );
 
   const peakAnchor = useMemo(
@@ -1907,8 +2187,20 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
               <Download className="h-3.5 w-3.5" />
             </button>
             {/* Open the right-side panel holding the cashflow inputs + projection. */}
+            {/* Replays the first-run walkthrough — it's shown once, and this is
+                the only way back to it. */}
             <button
               type="button"
+              onClick={() => setTourOpen(true)}
+              className="shrink-0 inline-flex h-8 w-8 items-center justify-center rounded-full border border-border bg-card text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+              aria-label="Show the goal planning guide"
+              title="How this page works"
+            >
+              <HelpCircle className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              data-tour="plan-button"
               onClick={() => {
                 setPanelTab("inputs");
                 setPanelOpen(true);
@@ -1958,7 +2250,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
           className="sticky z-30 -mx-5 bg-background px-5 pb-1 pt-1"
           style={{ top: "64px" }}
         >
-          <div className="rounded-xl border border-border bg-card px-3 py-2">
+          <div className="rounded-xl border border-border bg-card px-3 py-2" data-tour="monthly-sip">
           <div className="flex items-center gap-2">
           <p className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
             Monthly SIP
@@ -2051,9 +2343,9 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
         </div>
 
         {/* Priority filter — toggle which goals feed the projection */}
-        <div className="flex items-center gap-2 px-1">
+        <div className="flex items-center gap-2 px-1" data-tour="priority-filter">
           <span className="text-[11px] uppercase tracking-wide text-muted-foreground shrink-0">
-            Show
+            Goal priority
           </span>
           <div className="flex flex-wrap gap-1.5">
             {PRIORITIES.map((p) => {
@@ -2092,26 +2384,79 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
           </div>
         </div>
 
+        {/* Applied return scenario. Read-only on purpose: the plan changes only
+            via Apply in the Projection panel, never by a stray tap out here. */}
+        {tornadoCorpusByYear && !isBaseRate && (
+          <div
+            className="mx-1 rounded-xl px-3 py-2.5"
+            style={{
+              backgroundColor: "rgba(212,168,104,0.08)",
+              border: "1px solid rgba(212,168,104,0.35)",
+            }}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span
+                className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold tabular-nums"
+                style={{
+                  backgroundColor: "rgba(212,168,104,0.18)",
+                  color: "#D4A868",
+                  border: "1px solid rgba(212,168,104,0.45)",
+                }}
+              >
+                {formatMix(appliedEquityPct ?? 0)} · {formatRate(appliedRate)}
+              </span>
+              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-[#D4A868]/80">
+                {band.label}
+              </span>
+            </div>
+            <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+              Your own {appliedEquityPct}% equity / {100 - (appliedEquityPct ?? 0)}% debt mix, not
+              the engine&apos;s computed plan. Only returns move — contributions, one-offs and goal
+              payouts are unchanged.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setPanelTab("projection");
+                setPanelOpen(true);
+              }}
+              className="mt-2 text-[11px] font-semibold text-[#D4A868] underline underline-offset-2"
+            >
+              Change or reset
+            </button>
+          </div>
+        )}
+
         {isTornado && !tornadoCorpusByYear && !cashflowLoading && (
           <p className="px-1 text-[11px] text-amber-600">
             Run cashflow to load corpus closing bars from your plan.
           </p>
         )}
 
-        {/* Chart axis legend — explains what the bars mean */}
-        {isTornado && (
-          <div className="flex items-center justify-between px-1 pt-2 pb-1 text-[11px] text-muted-foreground">
-            <div className="flex items-center gap-1.5">
-              <span className="inline-block h-2 w-3 rounded-sm" style={{ backgroundColor: "rgb(239,68,68)" }} />
-              <span>Negative</span>
+        {/* Column header + chart axis legend. The left slot mirrors the row's
+            age column (px-2 + w-[48px] + gap-3) so "Age" sits directly above the
+            ages and the Negative swatch starts clear of that column. */}
+        <div
+          data-tour="chart-legend"
+          className="flex items-center gap-3 px-2 pt-2 pb-1 text-[11px] text-muted-foreground"
+        >
+          <span className="w-[48px] shrink-0 font-semibold tracking-wide text-foreground/80">
+            {birthYear != null ? "Age" : "Year"}
+          </span>
+          {isTornado && (
+            <div className="flex min-w-0 flex-1 items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <span className="inline-block h-2 w-3 rounded-sm" style={{ backgroundColor: "rgb(239,68,68)" }} />
+                <span>Negative</span>
+              </div>
+              <span className="font-semibold tracking-wide text-foreground/80">Portfolio Value</span>
+              <div className="flex items-center gap-1.5">
+                <span>Positive</span>
+                <span className="inline-block h-2 w-3 rounded-sm" style={{ backgroundColor: "rgb(16,185,129)" }} />
+              </div>
             </div>
-            <span className="font-semibold tracking-wide text-foreground/80">Portfolio Value</span>
-            <div className="flex items-center gap-1.5">
-              <span>Positive</span>
-              <span className="inline-block h-2 w-3 rounded-sm" style={{ backgroundColor: "rgb(16,185,129)" }} />
-            </div>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Integrated vertical NAV chart + goal timeline */}
         <ul className="space-y-0">
@@ -2146,11 +2491,16 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
               tornadoBarScale > 0
                 ? Math.min(1, Math.abs(corpusClosing) / tornadoBarScale)
                 : 0;
-            const tornadoX1 = Math.min(TORNADO_CENTER_X, tipX);
-            const tornadoX2 = Math.max(TORNADO_CENTER_X, tipX);
+            const tornadoX1 = Math.min(tornadoCenterX, tipX);
+            const tornadoX2 = Math.max(tornadoCenterX, tipX);
             const tornadoBaseHue = tornadoIsPositive ? "16, 185, 129" : "239, 68, 68";
             const tornadoDeepHue = tornadoIsPositive ? "5, 95, 70" : "136, 19, 55";
-            const tornadoFillOpacity = 0.35 + tornadoNorm * 0.65;
+            // Positive bars stay solid — a near-transparent green reads as washed out
+    // against the page rather than as a small number. Negatives keep the wider
+    // fade, where the lighter end is doing the work.
+    const tornadoFillOpacity = tornadoIsPositive
+      ? 0.85 + tornadoNorm * 0.15
+      : 0.35 + tornadoNorm * 0.65;
 
             const xBottom = isTornado ? tipX : xBottomLine;
 
@@ -2284,7 +2634,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                             <stop
                               offset="0%"
                               stopColor={`rgb(${tornadoIsPositive ? tornadoBaseHue : tornadoDeepHue})`}
-                              stopOpacity={tornadoIsPositive ? 0.3 : 1}
+                              stopOpacity={tornadoIsPositive ? 0.8 : 1}
                             />
                             <stop
                               offset="100%"
@@ -2296,9 +2646,9 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
 
                         {/* Zero axis — corpus_closing bars extend left (negative) or right (positive). */}
                         <line
-                          x1={TORNADO_CENTER_X}
+                          x1={tornadoCenterX}
                           y1={isFirst ? 50 : 0}
-                          x2={TORNADO_CENTER_X}
+                          x2={tornadoCenterX}
                           y2={isLast ? 50 : 100}
                           stroke="hsl(var(--foreground))"
                           strokeOpacity={0.35}
@@ -2309,36 +2659,25 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                         {hasTornadoBar && tornadoX2 > tornadoX1 && (
                           <rect
                             x={tornadoX1}
-                            y={17.5}
+                            y={isHovered ? 8 : 17.5}
                             width={Math.max(0, tornadoX2 - tornadoX1)}
-                            height={65}
+                            height={isHovered ? 84 : 65}
                             fill={`url(#tornadoBar-${y})`}
                             fillOpacity={tornadoFillOpacity}
+                            style={{ transition: "y 120ms ease-out, height 120ms ease-out" }}
                           />
                         )}
 
-                        {hasGoals && hasTornadoBar && (
+                        {/* Years with no bar still need a mark on the axis; a year
+                            that has one is read by its tip, so nothing sits there. */}
+                        {!hasTornadoBar && (
                           <circle
-                            cx={tipX}
+                            cx={tornadoCenterX}
                             cy={50}
-                            r={5}
-                            fill="none"
-                            stroke="hsl(var(--muted-foreground))"
-                            strokeOpacity={0.35}
-                            strokeWidth={1}
-                            vectorEffect="non-scaling-stroke"
+                            r={isHovered ? 4 : hasGoals ? 3 : 2}
+                            fill={nodeColor}
                           />
                         )}
-
-                        <circle
-                          cx={hasTornadoBar ? tipX : TORNADO_CENTER_X}
-                          cy={50}
-                          r={isHovered ? 4 : hasGoals ? 3 : 2}
-                          fill={nodeColor}
-                          stroke="hsl(var(--background))"
-                          strokeWidth={1.5}
-                          vectorEffect="non-scaling-stroke"
-                        />
                       </>
                     )}
                   </svg>
@@ -2420,7 +2759,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                           : "text-muted-foreground/50"
                       }`}
                     >
-                      {ageAtYear != null && ageAtYear >= 0 ? `${ageAtYear} yrs` : y}
+                      {ageAtYear != null && ageAtYear >= 0 ? ageAtYear : y}
                     </span>
                   </div>
 
@@ -2482,15 +2821,19 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                             g.inflationRate,
                             yearsAway,
                           );
-                          // Funding progress against this goal's future value,
-                          // from the engine's own corpus path. (A hardcoded
-                          // per-goal override for three demo goal ids used to
-                          // sit here; those ids never existed on a real goal,
-                          // so it only stood to fake someone's numbers.)
-                          const pctAchieved =
+                          // Dummy per-goal funding progress. Hardcoded so the demo
+                          // shows distinct numbers per goal rather than all maxing
+                          // out at 100%.
+                          const HARDCODED_ACHIEVED: Record<string, number> = {
+                            "seed-home": 72,
+                            "seed-education": 48,
+                            "seed-retirement": 25,
+                          };
+                          const computedPct =
                             fv > 0
                               ? Math.min(100, Math.round(((corpusClosing + withdrawal) / fv) * 100))
                               : 0;
+                          const pctAchieved = HARDCODED_ACHIEVED[g.id] ?? computedPct;
                           const GoalIcon = goalIconFor(g.name);
                           const isExpanded = expandedGoals.has(g.id);
                           const isDragging = draggingGoalId === g.id;
@@ -2753,8 +3096,13 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                     headline={cashflowData?.headline ?? null}
                     sipMonthly={planSip}
                     onGoToInputs={() => setPanelTab("inputs")}
+                    appliedRate={appliedRate}
+                    appliedEquityPct={appliedEquityPct}
+                    onApplyMix={applyMix}
+                    onResetMix={resetMix}
                   />
                 ) : (
+                  <div data-tour="plan-inputs">
                   <CashflowInputsForm
                     retirementGoalYear={retirementGoalYear}
                     onSaved={(ready) => {
@@ -2777,6 +3125,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                       if (ready) setPanelOpen(false);
                     }}
                   />
+                  </div>
                 )}
               </div>
             </motion.div>
@@ -2792,6 +3141,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
         <div className="flex justify-end px-5">
           <button
             type="button"
+            data-tour="add-goal"
             onClick={() => setAddYear(currentYear + 5)}
             className="pointer-events-auto inline-flex h-12 w-12 items-center justify-center rounded-full transition-transform hover:scale-105 active:scale-95"
             style={{
@@ -2809,11 +3159,14 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
       <BottomNav />
 
       {/* Never blocks the goal-planning page. When inputs are missing it shows a
-          dismissible prompt (the page stays usable, with an empty projection —
-          nothing is fabricated); when they're present it loads the real
-          projection. Every "open the inputs" request
+          dismissible prompt (the page stays usable as an example); when they're
+          present it loads the real projection. Every "open the inputs" request
           (prompt CTA, ?inputs=1 auto-open) lands on the side panel's Inputs tab.
           Remounts via gateRefresh after a save so its readiness stays fresh. */}
+      {/* First-run walkthrough — spotlights the timeline, +, Plan and the
+          asset-mix slider, opening the panel where a step needs it. */}
+      <GuidedTour steps={tourSteps} open={tourOpen} onClose={closeTour} />
+
       <CashflowGate
         key={gateRefresh}
         onReady={fetchCashflow}
