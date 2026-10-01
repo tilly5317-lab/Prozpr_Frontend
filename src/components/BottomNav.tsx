@@ -1,7 +1,7 @@
 import { Home, Compass, MessageSquare, Target, LayoutGrid, Bell, Droplet } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { listNotifications } from "@/lib/api";
 
 const tabs = [
@@ -16,6 +16,14 @@ const moreItems = [
   { icon: Bell, label: "Alerts", path: "/notifications", showBadge: true, comingSoon: false },
   { icon: Droplet, label: "Liquid funds", path: "/liquid-funds", showBadge: false, comingSoon: true },
 ];
+
+/**
+ * CSS variable (on <html>) holding this bar's measured height. The height is not
+ * a constant: the safe-area inset adds to it on a home-screen install and is
+ * zero inside a browser tab. Anything pinned directly above the bar reads this
+ * rather than assuming a number — a guess leaves a gap or an overlap.
+ */
+export const BOTTOM_NAV_HEIGHT_VAR = "--bottom-nav-h";
 
 /** Fired (window event) whenever notifications are read/changed so the badge re-syncs live. */
 export const NOTIFICATIONS_CHANGED_EVENT = "notifications:changed";
@@ -45,6 +53,22 @@ const BottomNav = () => {
       cancelled = true;
       window.removeEventListener(NOTIFICATIONS_CHANGED_EVENT, onChanged);
     };
+  }, []);
+
+  // Publish the bar's height (see BOTTOM_NAV_HEIGHT_VAR). Left in place on
+  // unmount: every screen that reads it mounts its own BottomNav, which
+  // overwrites it, and clearing here could wipe the next screen's value.
+  const navRef = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    const el = navRef.current;
+    if (!el) return;
+    const publish = () =>
+      document.documentElement.style.setProperty(BOTTOM_NAV_HEIGHT_VAR, `${el.offsetHeight}px`);
+    publish();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(publish);
+    observer.observe(el);
+    return () => observer.disconnect();
   }, []);
 
   const moreActive = moreItems.some((m) => m.path === location.pathname);
@@ -114,7 +138,7 @@ const BottomNav = () => {
         )}
       </AnimatePresence>
 
-      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-card/80 backdrop-blur-xl border-t border-border/50">
+      <nav ref={navRef} className="fixed bottom-0 left-0 right-0 z-50 bg-card/80 backdrop-blur-xl border-t border-border/50">
         <div className="max-w-md mx-auto flex items-center justify-around py-2 pb-[env(safe-area-inset-bottom,8px)]">
           {tabs.map((tab) => {
             const isActive =

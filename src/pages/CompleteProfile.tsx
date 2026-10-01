@@ -15,6 +15,7 @@ import { formatMoneyInput } from "@/lib/utils";
 import {
   getFullProfile,
   getOnboardingProfile,
+  hasRequiredFinanceAnswers,
   updatePersonalInfo,
   updatePersonalFinance,
   updateInvestmentProfile,
@@ -729,7 +730,7 @@ const CompleteProfile = () => {
           setEmergencyFund(parseNum(ip.emergency_fund?.toString()));
           if (ip.emergency_fund_months) setEmergencyTimeframe(ip.emergency_fund_months);
           // Section 0 completion is decided by the required onboarding-finance answers
-          // below (income + expense + cash & debt), not this legacy aggregate alone.
+          // below (income + expense), not this legacy aggregate alone.
           if (ip.objectives?.length) {
             setSelectedObjectives(ip.objectives);
             newStatuses[1] = "confirmed";
@@ -856,15 +857,9 @@ const CompleteProfile = () => {
             if (m) setDobMonth(String(Number(m)));
             if (d) setDobDay(String(Number(d)));
           }
-          // Section 0 is complete only with all required finance answers:
-          // income, expense and cash & debt.
-          if (
-            op.annual_income != null &&
-            op.monthly_household_expense != null &&
-            op.financial_assets != null
-          ) {
-            newStatuses[0] = "confirmed";
-          }
+          // Section 0 is complete with the required finance answers (income and
+          // expense) — the same rule the dashboard and Profile page apply.
+          if (hasRequiredFinanceAnswers(op)) newStatuses[0] = "confirmed";
         }
       } catch {
         // No onboarding profile yet — nothing to prefill.
@@ -1009,25 +1004,48 @@ const CompleteProfile = () => {
   };
 
   // A section is only "complete" once its genuinely-required fields are filled.
-  // Inherently-optional groups (property, planned expenses, expected income, other
-  // assets) are deliberately NOT required. Section 1 (goals) is managed in the goal
-  // planner, so it isn't gated here.
-  const sectionRequirementsMet = (idx: number): boolean => {
-    switch (idx) {
-      case 0:
-        return (
-          toNum(annualIncome) != null &&
-          toNum(annualExpense) != null &&
-          toNum(investableAssets) != null
-        );
-      case 2:
-        return !!investmentHorizon && !!behavQ1 && !!behavQ2 && !!behavQ3;
-      case 3:
-        return !!incomeTaxRate && !!taxRegime;
-      default:
-        return true;
+  // Inherently-optional groups (assets, property, planned expenses, expected
+  // income) are deliberately NOT required — a blank there is read as 0. Section 1
+  // (goals) is managed in the goal planner, so it isn't gated here.
+  //
+  // What one step still needs before the user may move past it — worded for a
+  // toast ("Add … to continue") — or null when the step has nothing mandatory or
+  // it is all answered. A step is held the moment it is left, not at the end of
+  // the section, so the user is never told about a blank several steps back.
+  // Section 0 must match hasRequiredFinanceAnswers, which reads the same two
+  // answers back from the server.
+  const missingOnStep = (idx: number, group: number): string | null => {
+    if (idx === 0 && group === 1) {
+      const noIncome = toNum(annualIncome) == null;
+      const noExpense = toNum(annualExpense) == null;
+      if (noIncome && noExpense) return "your annual income and monthly expense";
+      if (noIncome) return "your annual income";
+      if (noExpense) return "your monthly expense";
     }
+    if (idx === 2 && group === 0 && !investmentHorizon) return "your investment horizon";
+    if (idx === 2 && group === 1 && (!behavQ1 || !behavQ2 || !behavQ3)) return "all three risk questions";
+    if (idx === 3 && group === 0 && !incomeTaxRate) return "your marginal tax rate";
+    if (idx === 3 && group === 1 && !taxRegime) return "your tax regime";
+    return null;
   };
+
+  // The first step in [from, to) with a mandatory answer missing, or null.
+  const firstBlockingStep = (
+    idx: number,
+    from: number,
+    to: number,
+  ): { group: number; label: string } | null => {
+    for (let g = from; g < to; g++) {
+      const label = missingOnStep(idx, g);
+      if (label) return { group: g, label };
+    }
+    return null;
+  };
+
+  // The first required answer still missing anywhere in the section, or null
+  // once the section can be confirmed. Group counts mirror sectionGroups.
+  const firstMissingRequirement = (idx: number): { group: number; label: string } | null =>
+    firstBlockingStep(idx, 0, idx === 0 ? 7 : 2);
 
   // Confirm the section: the per-step saves already ran on each "Next"; here we
   // persist only the final step (if edited) and mark the section confirmed.
@@ -1041,9 +1059,14 @@ const CompleteProfile = () => {
     }
     if (!ok) return;
 
-    // Don't mark a section complete until all its required fields are answered.
-    if (!sectionRequirementsMet(idx)) {
-      toast.error("Please answer all required questions in this section first.");
+    // Don't mark a section complete until its required fields are answered —
+    // and say which one, on the step that holds it. A bare "answer all required
+    // questions" on the last step read as that step's own (optional) fields
+    // being mandatory, with no way to tell what was actually missing.
+    const missing = firstMissingRequirement(idx);
+    if (missing) {
+      toast.error(`Add ${missing.label} to complete this section.`);
+      setGroupIndex(missing.group);
       return;
     }
 
@@ -1068,6 +1091,13 @@ const CompleteProfile = () => {
     const gi = Math.min(groupIndex, total - 1);
     if (gi >= total - 1) {
       await confirmSection(openSection, gi);
+      return;
+    }
+    // A step with a mandatory answer missing is not passed — the user hears
+    // about it here, on the step that holds the field.
+    const stepMissing = missingOnStep(openSection, gi);
+    if (stepMissing) {
+      toast.error(`Add ${stepMissing} to continue.`);
       return;
     }
     // Untouched step → just advance, no API call (no lag / spinner).
@@ -1365,12 +1395,13 @@ const CompleteProfile = () => {
   };
 
   // Each section's questions are split into small groups, shown one at a time.
-  const sectionGroups = (idx: number): { label: string; body: ReactNode }[] => {
+  // `optional` steps can be left blank; the step view says so next to the title.
+  const sectionGroups = (idx: number): { label: string; optional?: boolean; body: ReactNode }[] => {
     switch (idx) {
       /* ── Section 0: Your financial picture ── */
       case 0:
         return [
-          { label: "Family situation", body: (
+          { label: "Family situation", optional: true, body: (
            <div className="space-y-3">
             <div>
               <div className="space-y-3">
@@ -1425,7 +1456,7 @@ const CompleteProfile = () => {
             </div>
            </div>
           ) },
-          { label: "Income sources", body: (
+          { label: "Income sources", optional: true, body: (
            <div className="space-y-3">
             <div>
               <FieldLabel>What makes up your primary income?</FieldLabel>
@@ -1451,7 +1482,7 @@ const CompleteProfile = () => {
             </div>
            </div>
           ) },
-          { label: "Assets & liabilities", body: (
+          { label: "Assets & liabilities", optional: true, body: (
            <div className="space-y-3">
             <div>
               <FieldLabel>Cash &amp; Deposits</FieldLabel>
@@ -1528,7 +1559,7 @@ const CompleteProfile = () => {
             </div>
            </div>
           ) },
-          { label: "Property", body: (
+          { label: "Property", optional: true, body: (
            <div className="space-y-4">
             <div>
               <FieldLabel>Do you own a home?</FieldLabel>
@@ -1606,7 +1637,7 @@ const CompleteProfile = () => {
             )}
            </div>
           ) },
-          { label: "Planned large expenses", body: (
+          { label: "Planned large expenses", optional: true, body: (
            <div className="space-y-3">
             <div>
               <FieldLabel>Planned large expenses</FieldLabel>
@@ -1653,7 +1684,7 @@ const CompleteProfile = () => {
             </div>
            </div>
           ) },
-          { label: "Expected large income", body: (
+          { label: "Expected large income", optional: true, body: (
            <div className="space-y-3">
             <div>
               <FieldLabel>Expected large income</FieldLabel>
@@ -2200,11 +2231,28 @@ const CompleteProfile = () => {
           const jumpToStep = async (target: number) => {
             if (saving || target === gi) return;
             if (!(await persistCurrentIfDirty())) return;
+            // Jumping ahead may not skip a step whose mandatory answers are
+            // missing: stop on that step instead. Going back is always free.
+            const blocking = target > gi ? firstBlockingStep(openSection, gi, target) : null;
+            if (blocking) {
+              toast.error(`Add ${blocking.label} to continue.`);
+              setGroupIndex(blocking.group);
+              return;
+            }
             setGroupIndex(target);
           };
           const saveAndExit = async () => {
             if (saving) return;
             if (!(await persistCurrentIfDirty())) return;
+            // Leaving before the last step still completes the section once its
+            // required answers are in — the dashboard and Profile page already
+            // read it that way from the server, so the cards must agree.
+            if (statuses[openSection] !== "confirmed" && !firstMissingRequirement(openSection)) {
+              const leaving = openSection;
+              setStatuses((prev) => prev.map((s, i) => (i === leaving ? "confirmed" : s)));
+              const completedName = SECTION_ANALYTICS_NAME[leaving];
+              if (completedName) trackDetailedOnboardingSectionCompleted(completedName);
+            }
             navigate(CARDS_PATH);
           };
           return (
@@ -2270,7 +2318,22 @@ const CompleteProfile = () => {
                   exit={{ opacity: 0, x: -32 }}
                   transition={{ duration: 0.22, ease: "easeOut" }}
                 >
-                  <h2 className="mb-4 text-lg font-semibold text-foreground leading-snug">{group.label}</h2>
+                  <div className="mb-4 flex items-center gap-2">
+                    <h2 className="text-lg font-semibold text-foreground leading-snug">{group.label}</h2>
+                    {/* Every step says up front whether it can be left blank. */}
+                    {group.optional ? (
+                      <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                        Optional
+                      </span>
+                    ) : (
+                      <span
+                        className="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                        style={{ backgroundColor: "hsl(var(--wealth-navy) / 0.08)", color: "hsl(var(--wealth-navy))" }}
+                      >
+                        Required
+                      </span>
+                    )}
+                  </div>
                   <div className="rounded-2xl border border-border bg-card shadow-sm p-5">
                     {group.body}
                   </div>

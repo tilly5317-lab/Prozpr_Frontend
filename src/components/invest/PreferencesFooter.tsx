@@ -1,13 +1,23 @@
 import type { ReactNode } from "react";
 
-/** Height of the app-wide BottomNav the footer sits above. */
-const BOTTOM_NAV_H = 72;
+import { BOTTOM_NAV_HEIGHT_VAR } from "@/components/BottomNav";
+
+/**
+ * Height of the app-wide BottomNav the footer sits above: the measured one,
+ * with its usual size as the value before the nav has mounted. It was a fixed
+ * 72 once, but the nav is ~58px in a phone browser — which left a strip between
+ * the two bars where the page showed through.
+ */
+const BOTTOM_NAV_H = `var(${BOTTOM_NAV_HEIGHT_VAR}, 72px)`;
 /** A fixed two-button row — h-11 buttons inside py-3. */
 const FOOTER_H = 68;
-/** Room a page leaves at its foot so the footer never covers its content. */
-export const FOOTER_CLEARANCE = FOOTER_H + BOTTOM_NAV_H + 16;
 /** Extra room while the footer shows a note above its buttons. */
-export const FOOTER_NOTE_CLEARANCE = 28;
+const FOOTER_NOTE_H = 28;
+
+/** Room a page leaves at its foot (a CSS length) so the footer never covers its content. */
+export const FOOTER_CLEARANCE = `calc(${BOTTOM_NAV_H} + ${FOOTER_H + 16}px)`;
+/** The same, while the footer shows a note above its buttons. */
+export const FOOTER_CLEARANCE_WITH_NOTE = `calc(${BOTTOM_NAV_H} + ${FOOTER_H + 16 + FOOTER_NOTE_H}px)`;
 
 /** `describedBy` names an element that says why a disabled action is waiting. */
 type Action = { label: ReactNode; onClick: () => void; disabled?: boolean; describedBy?: string };
@@ -27,10 +37,13 @@ export default function PreferencesFooter({
   primary: Action;
   note?: { id: string; text: string };
 }) {
+  // Anchored to the viewport's foot and padded by the nav's height, not floated
+  // above it: the footer's own background then runs behind the (translucent)
+  // nav, so no page content can show between or beneath the two bars.
   return (
     <div
-      className="fixed inset-x-0 z-40 border-t border-border bg-background/95 backdrop-blur-xl"
-      style={{ bottom: BOTTOM_NAV_H }}
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 backdrop-blur-xl"
+      style={{ paddingBottom: BOTTOM_NAV_H }}
     >
       {note ? (
         <p id={note.id} className="mx-auto max-w-md px-5 pt-2.5 text-[12px] font-semibold leading-snug text-[hsl(var(--warning))]">
