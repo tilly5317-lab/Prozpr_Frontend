@@ -370,3 +370,47 @@
   background-color: #ffffff;
   color: #111113;
 }
+
+/* ── Goal-plan asset-mix track ───────────────────────────────────────────
+   The range input is an invisible overlay: the painted 8px bar underneath is
+   what you see, and only the thumb shows through. The input itself stays 30px
+   tall so the thumb keeps a real touch target on a phone — the bar reads as a
+   slim rule without costing anything to grab. */
+.mix-range {
+  -webkit-appearance: none;
+  appearance: none;
+}
+.mix-range::-webkit-slider-runnable-track {
+  background: transparent;
+  height: 10px;
+}
+.mix-range::-moz-range-track {
+  background: transparent;
+  height: 30px;
+}
+.mix-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 20px;
+  width: 20px;
+  /* WebKit seats the thumb on the track's top edge, so pull it back by half
+     the overhang — (10px track − 20px thumb) / 2 — to centre it on the bar. */
+  margin-top: -5px;
+  border-radius: 9999px;
+  background: #ffffff;
+  border: 2px solid #D4A868;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.16);
+  cursor: grab;
+}
+.mix-range:active::-webkit-slider-thumb {
+  cursor: grabbing;
+}
+.mix-range::-moz-range-thumb {
+  height: 20px;
+  width: 20px;
+  border-radius: 9999px;
+  background: #ffffff;
+  border: 2px solid #D4A868;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.16);
+  cursor: grab;
+}
