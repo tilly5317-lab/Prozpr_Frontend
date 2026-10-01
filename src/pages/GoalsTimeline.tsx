@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { formatMoneyInput } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
@@ -16,7 +16,7 @@ import {
 import {
   BriefcaseBusiness,
   Car,
-  Check,
+  ChevronDown,
   ChevronLeft,
   Download,
   GraduationCap,
@@ -29,7 +29,6 @@ import {
   PiggyBank,
   Plane,
   Plus,
-  RotateCcw,
   Settings2,
   Target,
   TrendingUp,
@@ -57,24 +56,24 @@ import {
   type GoalResponse,
 } from "@/lib/api";
 import { exportCashflowXls } from "@/lib/export-xls";
+import { goalLanding, landingBlurb } from "@/lib/goalLanding";
 import {
-  bandForRate,
-  clearSavedMix,
-  DEBT_RETURN,
-  EQUITY_RETURN,
-  EQUITY_STEP,
-  equityPctForRate,
-  formatMix,
   formatRate,
   PROJECTION_BASE_RATE,
-  rateForEquityPct,
-  readSavedMix,
+  readSavedRate,
   scaleAnnualRowsToRate,
-  writeSavedMix,
+  writeSavedRate,
 } from "@/lib/projectionScenario";
+import {
+  blendedRate,
+  mixForRate,
+  readSavedMix,
+  writeSavedMix,
+  type AssetMix,
+} from "@/lib/goalAssetMix";
 import CashflowGate from "@/components/goals/CashflowGate";
+import GoalPlanStats from "@/components/goals/GoalPlanStats";
 import CashflowInputsForm from "@/components/goals/CashflowInputsForm";
-import AssetMixDial from "@/components/goals/AssetMixDial";
 import GuidedTour, { type TourStep } from "@/components/GuidedTour";
 
 /** Marks the first-run goal-planning walkthrough as seen, per browser. */
@@ -109,12 +108,6 @@ const MAX_HORIZON_YEARS = 100;
 const FALLBACK_CURRENT_AGE = 30;
 // Always show at least this many years even if retirement is in the past.
 const MIN_HORIZON_YEARS = 5;
-// Row density. The near term is where the plan is actionable, so the first
-// DENSE_ROW_YEARS get a bar each; after that the timeline thins to one bar
-// every YEAR_ROW_STEP years. Goal years and the final year are always kept, so
-// nothing the user placed can be thinned away.
-const DENSE_ROW_YEARS = 5;
-const YEAR_ROW_STEP = 3;
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, v));
@@ -136,6 +129,12 @@ function dragClientY(e: MouseEvent | TouchEvent | PointerEvent): number {
   return t ? t.clientY : 0;
 }
 
+function dragClientX(e: MouseEvent | TouchEvent | PointerEvent): number {
+  if ("clientX" in e) return e.clientX;
+  const t = e.changedTouches?.[0] ?? e.touches?.[0];
+  return t ? t.clientX : 0;
+}
+
 /** Birth year parsed from an ISO date string (YYYY-MM-DD); null if unparseable. */
 function birthYearFromDob(dob: string | null | undefined): number | null {
   if (!dob) return null;
@@ -147,9 +146,12 @@ function birthYearFromDob(dob: string | null | undefined): number | null {
 // NAV chart spans the full row width and renders behind the row content.
 const NAV_PAD_PCT = 4; // horizontal padding (%) so the line never touches the edges
 const TORNADO_CENTER_X = 50; // viewBox x for ₹0 when the plan dips negative
-// No negative year in the plan? The left half would sit empty, so the ₹0 axis
-// moves left (clear of the age column) and positive bars get the extra width.
+// With nothing below ₹0 there is no left half to reserve, so the axis sits just
+// clear of the age column and the whole width goes to the bars.
 const TORNADO_CENTER_X_POSITIVE = 20;
+
+/** How many of the nearest years are listed one by one before the axis thins. */
+const DENSE_YEARS = 5;
 
 // Earned milestones — light up the first year the projected NAV crosses each.
 interface Milestone {
@@ -201,12 +203,24 @@ function yearToTargetDate(year: number): string {
 }
 
 /** Calendar year for an annual cashflow row (matches Excel FY-end column). */
+/**
+ * The calendar year a financial-year row belongs to on the timeline.
+ *
+ * An Indian FY ending 31 Mar 2027 runs from Apr 2026, so it is 2026's row — the
+ * year it is mostly lived in. Keying it off the end date instead left the very
+ * first timeline row (the current calendar year) with no bar, because the
+ * earliest FY the engine returns already ends in the next year.
+ */
 function timelineYearFromAnnualRow(row: {
   fy_end_date: string;
   fy_label?: string;
 }): number | null {
   const parsed = Date.parse(row.fy_end_date);
-  if (!Number.isNaN(parsed)) return new Date(parsed).getFullYear();
+  if (!Number.isNaN(parsed)) {
+    const end = new Date(parsed);
+    // Jan-Mar ends belong to the year the FY started in; a Dec end is its own.
+    return end.getFullYear() - (end.getMonth() <= 2 ? 1 : 0);
+  }
   const m = row.fy_label?.match(/(\d{4})/);
   return m ? Number(m[1]) : null;
 }
@@ -250,13 +264,10 @@ function corpusToTornadoX(
   corpus: number,
   scaleMax: number,
   centerX: number,
+  span: number,
 ): number {
   if (scaleMax <= 0 || corpus === 0) return centerX;
   const sign = corpus > 0 ? 1 : -1;
-  // Each side runs from the axis to its own edge padding — equal at a centred
-  // axis, and all of the extra room on the right once the axis shifts left.
-  const span =
-    sign > 0 ? 100 - NAV_PAD_PCT - centerX : centerX - NAV_PAD_PCT;
   let norm = Math.abs(corpus) / scaleMax;
   if (norm > 0 && norm < 0.04) norm = 0.04;
   norm = Math.min(1, norm);
@@ -310,6 +321,8 @@ function suggestInflationForGoal(name: string): InflationSuggestion | null {
     return { rate: 7, reason: "Travel costs typically inflate ~7%/yr." };
   if (s.includes("car") || s.includes("vehicle"))
     return { rate: 5, reason: "Vehicle prices typically inflate ~5%/yr." };
+  if (s.includes("wealth"))
+    return { rate: 6, reason: "General CPI ~6%/yr keeps the target in today's money." };
   if (s.trim()) return { rate: 6, reason: "Use general CPI ~6%/yr." };
   return null;
 }
@@ -329,6 +342,7 @@ function goalIconFor(name: string): LucideIcon {
   if (s.includes("car") || s.includes("vehicle")) return Car;
   if (s.includes("wedding") || s.includes("marriage")) return Heart;
   if (s.includes("emergency")) return Landmark;
+  if (s.includes("wealth")) return TrendingUp;
   return Trophy;
 }
 
@@ -350,16 +364,26 @@ interface AddGoalSheetProps {
   maxYear: number;
   editingGoal: TimelineGoal | null;
   saving: boolean;
+  /** Birth year, so the target year can be shown as an age. Null if no DOB. */
+  birthYear: number | null;
   /** Year the user is projected to retire — used to prefill the Retirement goal. */
   retirementYear: number;
   onClose: () => void;
   onSubmit: (goal: Omit<TimelineGoal, "id">, editingId?: string) => void | Promise<void>;
 }
 
+/* Native <option> elements ignore Tailwind classes and paint from the OS, so the
+   dropdown list needs explicit themed colours or it is unreadable in dark mode. */
+const OPTION_STYLE: CSSProperties = {
+  backgroundColor: "hsl(var(--popover))",
+  color: "hsl(var(--popover-foreground))",
+};
+
 // Quick-pick goal categories shown as the first step of the add-goal sheet.
 // "Retirement" prefills its target year from the user's profile retirement age.
 const GOAL_CATEGORIES: { id: string; label: string; icon: LucideIcon }[] = [
   { id: "retirement", label: "Retirement", icon: PiggyBank },
+  { id: "wealth", label: "Wealth building", icon: TrendingUp },
   { id: "house", label: "Buy property", icon: Home },
   { id: "education", label: "Education", icon: GraduationCap },
   { id: "marriage", label: "Marriage", icon: Heart },
@@ -375,6 +399,7 @@ function AddGoalSheet({
   editingGoal,
   saving,
   retirementYear,
+  birthYear,
   onClose,
   onSubmit,
 }: AddGoalSheetProps) {
@@ -508,7 +533,6 @@ function AddGoalSheet({
             className="fixed inset-0 z-[60] flex items-center justify-center px-4"
           >
             <div
-              data-tour="goal-form"
               className="w-full max-w-md rounded-2xl bg-card shadow-2xl flex flex-col overflow-hidden"
               style={{ maxHeight: "min(88dvh, 720px)" }}
               onClick={(e) => e.stopPropagation()}
@@ -519,7 +543,13 @@ function AddGoalSheet({
                     {isEdit ? "Edit goal" : "New goal"}
                   </p>
                   <h2 className="text-base font-semibold text-foreground truncate">
-                    {isEdit ? editingGoal!.name : `Plan for ${year}`}
+                    {isEdit
+                      ? editingGoal!.name
+                      : `Plan for ${year}${
+                          birthYear != null && year - birthYear >= 0
+                            ? ` (${year - birthYear} years old)`
+                            : ""
+                        }`}
                   </h2>
                 </div>
                 <button
@@ -535,38 +565,52 @@ function AddGoalSheet({
               <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
                 <div>
                   <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">
-                    Goal category
+                    Goals
                   </p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {GOAL_CATEGORIES.map((c) => {
-                      const Icon = c.icon;
-                      const active = category === c.id;
+                  {/* A dropdown rather than a grid of tiles — seven categories
+                      cost four rows of the sheet, and the amount and year below
+                      are what people are actually here to fill in. */}
+                  <div className="relative">
+                    {(() => {
+                      const Icon =
+                        GOAL_CATEGORIES.find((c) => c.id === category)?.icon ?? Plus;
                       return (
-                        <button
-                          key={c.id}
-                          type="button"
-                          onClick={() => {
-                            setCategory(c.id);
-                            // Prefill the retirement goal's target year from the profile.
-                            if (c.id === "retirement") {
-                              setYear(Math.min(maxYear, Math.max(currentYear, retirementYear)));
-                            }
-                          }}
-                          className={`flex items-center gap-2 rounded-xl px-3 py-2 text-left transition-colors ${
-                            active
-                              ? "border-foreground/30 bg-muted/60 text-foreground"
-                              : "bg-card text-muted-foreground hover:bg-muted/40"
-                          }`}
-                          style={{
-                            border: `1px solid ${active ? "hsl(var(--foreground) / 0.30)" : "hsl(var(--border))"}`,
-                          }}
-                          aria-pressed={active}
-                        >
-                          <Icon className="h-3.5 w-3.5 shrink-0" />
-                          <span className="text-[11.5px] font-semibold">{c.label}</span>
-                        </button>
+                        <Icon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                       );
-                    })}
+                    })()}
+                    <select
+                      id="timeline-goal-category"
+                      value={category}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        setCategory(next);
+                        // Prefill the retirement goal's target year from the profile.
+                        if (next === "retirement") {
+                          setYear(Math.min(maxYear, Math.max(currentYear, retirementYear)));
+                        }
+                      }}
+                      className={`w-full appearance-none rounded-lg py-2 pl-9 pr-9 text-[13px] font-semibold focus:outline-none focus:ring-1 focus:ring-foreground/30 ${
+                        category ? "text-foreground" : "text-muted-foreground"
+                      }`}
+                      style={{
+                        border: "1px solid hsl(var(--border))",
+                        backgroundColor: "hsl(var(--muted))",
+                      }}
+                      aria-label="Goal category"
+                    >
+                      {/* Without this the browser shows the first category
+                          while the state is still empty — it looks chosen, but
+                          Save stays disabled until one really is. */}
+                      <option value="" disabled style={OPTION_STYLE}>
+                        Choose category
+                      </option>
+                      {GOAL_CATEGORIES.map((c) => (
+                        <option key={c.id} value={c.id} style={OPTION_STYLE}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   </div>
                   {isCustom && (
                     <input
@@ -748,7 +792,7 @@ function AddGoalSheet({
                   </div>
                 )}
 
-                <div data-tour="goal-value-kind">
+                <div>
                   <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">
                     Is this in today&apos;s money or at the target date?
                   </p>
@@ -949,12 +993,7 @@ interface ProjectionContentProps {
   onGoToInputs?: () => void;
   /** The return rate currently driving the goal-planning page's cashflow. */
   appliedRate: number;
-  /** Applied equity share, or null while the plan runs on the engine's return. */
-  appliedEquityPct: number | null;
-  /** Commit an asset mix to the plan — only fired by the explicit Apply button. */
-  onApplyMix: (equityPct: number) => void;
-  /** Drop the applied mix and go back to the engine's computed plan. */
-  onResetMix: () => void;
+  /** Commit a rate to the plan — only fired by the explicit Apply button. */
 }
 
 type WaterfallItem = { axis: string; label: string; value: number; kind: WaterfallKind };
@@ -993,25 +1032,9 @@ function ProjectionContent({
   sipMonthly,
   onGoToInputs,
   appliedRate,
-  appliedEquityPct,
-  onApplyMix,
-  onResetMix,
 }: ProjectionContentProps) {
-  // Moving the slider only previews here — every figure below it recalculates
-  // live. The goal-planning page's cashflow changes when, and only when, the
-  // user presses Apply, so nobody has their plan rewritten by an exploratory drag.
-  //
-  // The mix is what the user sets; the return is read off it. With no mix applied
-  // yet the slider opens on the split nearest the plan's own return, so the first
-  // drag starts from where the plan already is.
-  const openingMix = appliedEquityPct ?? equityPctForRate(appliedRate);
-  const [draftEquity, setDraftEquity] = useState(openingMix);
-  useEffect(() => {
-    setDraftEquity(openingMix);
-  }, [openingMix]);
-  const draftRate = rateForEquityPct(draftEquity);
-  const band = bandForRate(draftRate);
-  const isDirty = draftEquity !== openingMix;
+  // The rate is set on the goal-planning page itself (the equity/debt split and
+  // the equity call blend into it), so this panel only ever reports it.
 
   const currentYear = new Date().getFullYear();
   // Horizon comes from the engine: last FY-end = max(retirement, last goal).
@@ -1037,10 +1060,10 @@ function ProjectionContent({
   const horizonYears = Math.max(1, horizonYear - currentYear);
   const ROI = useMemo(() => {
     const factor =
-      Math.pow(1 + draftRate / 100, horizonYears) /
+      Math.pow(1 + appliedRate / 100, horizonYears) /
       Math.pow(1 + PROJECTION_BASE_RATE / 100, horizonYears);
     return Math.round(ROI_BASE * factor);
-  }, [draftRate, horizonYears, ROI_BASE]);
+  }, [appliedRate, horizonYears, ROI_BASE]);
 
   // No plan yet → don't fabricate a waterfall; prompt to complete inputs.
   if (!fundFlow) {
@@ -1106,99 +1129,24 @@ function ProjectionContent({
 
   return (
     <div className="space-y-4">
+      {/* Where the rate comes from. It is set on the goals page by the
+          equity/debt split and the equity call, not anywhere in this panel. */}
+      <p className="rounded-lg bg-muted/40 px-2.5 py-2 text-[11px] leading-snug text-muted-foreground">
+        Projected at{" "}
+        <span className="font-semibold text-foreground">
+          {formatRate(appliedRate)} post-tax
+        </span>
+        , blended from your equity/debt split and equity return. Change it on the goals page.
+      </p>
       <p className="text-[11px] text-muted-foreground">
-        Through {horizonLabel} · {monthlyLabel} · {formatMix(draftEquity)} equity-debt ·{" "}
-        {formatRate(draftRate)} post-tax
+        Through {horizonLabel} · {monthlyLabel} · {formatRate(appliedRate)} post-tax
       </p>
       <div className="space-y-4">
-                {/* Asset mix — the return is derived from the split, and every
-                    figure below recalculates as it moves. */}
-                <div data-tour="asset-mix">
-                  <div className="mb-3 flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                        Equity / debt mix
-                      </p>
-                      <p className="text-[11px] leading-snug text-muted-foreground/70">
-                        {band.blurb}
-                      </p>
-                    </div>
-                    {/* The wheel carries the split and the rate, so the header
-                        only names the band the mix lands in. */}
-                    <span
-                      className="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold"
-                      style={{
-                        backgroundColor: "rgba(212,168,104,0.16)",
-                        color: "#D4A868",
-                        border: "1px solid rgba(212,168,104,0.45)",
-                      }}
-                    >
-                      {band.label}
-                    </span>
-                  </div>
-
-                  {/* The wheel IS the control — press or drag the ring to re-split. */}
-                  <AssetMixDial
-                    equityPct={draftEquity}
-                    step={EQUITY_STEP}
-                    onChange={setDraftEquity}
-                    centerLabel={`${formatRate(draftRate)} p.a.`}
-                    equityNote={`assumes ${formatRate(EQUITY_RETURN)} p.a.`}
-                    debtNote={`assumes ${formatRate(DEBT_RETURN)} p.a.`}
-                  />
-
-                  {/* Preview stays in this panel until applied. */}
-                  <button
-                    type="button"
-                    disabled={!isDirty}
-                    onClick={() => onApplyMix(draftEquity)}
-                    className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-xl py-2.5 text-[12px] font-bold transition-all active:scale-[0.99] disabled:cursor-not-allowed"
-                    style={
-                      isDirty
-                        ? {
-                            backgroundColor: "#D4A868",
-                            color: "#2D1F05",
-                            boxShadow: "0 2px 8px rgba(212,168,104,0.45)",
-                          }
-                        : {
-                            backgroundColor: "hsl(var(--muted) / 0.6)",
-                            color: "hsl(var(--muted-foreground))",
-                          }
-                    }
-                  >
-                    {isDirty ? (
-                      <>
-                        <Check className="h-3.5 w-3.5" />
-                        Apply {formatMix(draftEquity)} ({formatRate(draftRate)}) to my plan
-                      </>
-                    ) : appliedEquityPct != null ? (
-                      `${formatMix(appliedEquityPct)} (${formatRate(appliedRate)}) is applied to your plan`
-                    ) : (
-                      `${formatRate(appliedRate)} is applied to your plan`
-                    )}
-                  </button>
-
-                  {appliedEquityPct != null && (
-                    <button
-                      type="button"
-                      onClick={onResetMix}
-                      className="mt-1.5 w-full rounded-xl border border-border py-2 text-[11px] font-semibold text-muted-foreground hover:text-foreground"
-                    >
-                      Back to the engine&apos;s plan ({formatRate(PROJECTION_BASE_RATE)})
-                    </button>
-                  )}
-
-                  <p className="mt-1.5 text-[10.5px] leading-snug text-muted-foreground/70">
-                    {isDirty
-                      ? `The figures below are already on a ${formatMix(draftEquity)} mix. The goal-planning page keeps your applied mix until you press Apply.`
-                      : appliedEquityPct == null
-                        ? `Your plan as the engine computed it, at ${formatRate(appliedRate)} — roughly a ${formatMix(openingMix)} mix. Drag to test another split, then apply it.`
-                        : "The goal-planning page is running on this mix. Contributions, one-offs and goal payouts are unchanged — only the return the corpus earns moves."}
-                  </p>
-                </div>
-
                 {/* Closing headline (live) */}
-                <div className="flex items-center justify-between rounded-xl border border-border bg-muted/30 px-3 py-2.5">
+                <div
+                  className="flex items-center justify-between rounded-xl border border-border bg-muted/30 px-3 py-2.5"
+                  data-tour="closing-assets"
+                >
                   <div className="min-w-0">
                     <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
                       Closing financial assets
@@ -1403,6 +1351,9 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   /* First-run walkthrough of the four things that actually drive a plan. Shown
      once per browser; the header's "?" replays it on demand. */
   const [tourOpen, setTourOpen] = useState(false);
+  // Lets the walkthrough open one of the stat editors, so its step shows the
+  // control rather than describing it.
+  const [tourOpenStat, setTourOpenStat] = useState<"mix" | "sip" | "returns" | null>(null);
 
   useEffect(() => {
     try {
@@ -1414,11 +1365,9 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
 
   const closeTour = useCallback(() => {
     setTourOpen(false);
-    // Steps 1-2 open the goal form to explain it; leaving the tour at any point
-    // should put the page back the way it was found.
-    setAddYear(null);
-    setEditGoal(null);
-    setPanelOpen(false);
+    // Release the walkthrough's hold on the stat row; whatever it opened stays
+    // open, but the user is in charge of it again.
+    setTourOpenStat(null);
     try {
       localStorage.setItem(GOAL_TOUR_SEEN_KEY, "1");
     } catch {
@@ -1426,84 +1375,48 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
     }
   }, []);
 
-  /* Steps 3 and 4 live inside the plan panel, so each opens the panel on the
+  /* The inputs step lives inside the plan panel, so it opens the panel on the
      right tab before the tour measures its target. */
-  /* Step-by-step walkthrough of everything that drives a plan, in the order a
-     first-timer meets it: add a goal, tell us the inputs, set the mix, then the
-     two levers (SIP, priority) that change what the projection says. */
   const tourSteps = useMemo<TourStep[]>(
     () => [
       {
-        anchor: "goal-form",
+        anchor: "add-goal",
         title: "Add a goal",
-        body: "The + button opens this form. Pick a category, name the goal, set its target year and enter what it costs \u2014 you can drag it up or down the timeline later to move the year.",
-        // Opens the goal form so steps 1 and 2 explain it in place.
-        before: () => {
-          setPanelOpen(false);
-          setEditGoal(null);
-          setAddYear(new Date().getFullYear() + 5);
-        },
+        body: "Tap + to name a goal, set its year and its amount. Once added, you can drag the goal up and down in the chart to change years.",
+        before: () => setPanelOpen(false),
       },
       {
-        anchor: "goal-value-kind",
-        title: "Today's value vs future value",
-        body: "Today's value = what it costs at today's prices, and Prozpr inflates it to the target year for you. Future value = the amount you'll actually need by then, used exactly as entered.",
-        // Opens the goal form so the choice is spotlighted where it's made.
+        anchor: "monthly-sip",
+        title: "Change your assumptions",
+        body: "These numbers drive the plan — equity/debt split, monthly SIP and equity returns. Tap any one to edit. The filter icon drops goals in and out by priority.",
         before: () => {
           setPanelOpen(false);
-          setEditGoal(null);
-          setAddYear(new Date().getFullYear() + 5);
-        },
-      },
-      {
-        anchor: "chart-legend",
-        title: "Reading the chart",
-        body: "Each bar is your portfolio at the end of that year: green to the right is positive, red to the left means goals have outpaced your savings. The first few years show one bar each; after that it's every third year, plus any year holding a goal.",
-        before: () => {
-          setAddYear(null);
-          setEditGoal(null);
-          setPanelOpen(false);
+          setTourOpenStat("mix");
         },
       },
       {
         anchor: "plan-button",
         title: "Open your plan",
-        body: "Plan holds the two tabs behind every figure on this page: Inputs and Projection.",
-        before: () => {
-          setAddYear(null);
-          setEditGoal(null);
-          setPanelOpen(false);
-        },
+        body: "Two halves: the Inputs you give, and the Projection they produce.",
+        before: () => setPanelOpen(false),
       },
       {
         anchor: "plan-inputs",
-        title: "Inputs",
-        body: "What you earn, spend and save each month. Nothing projects until these are filled in.",
+        title: "Your inputs",
+        body: "What you earn, spend and save each month. Nothing on this page projects until these are filled in.",
         before: () => {
           setPanelTab("inputs");
           setPanelOpen(true);
         },
       },
       {
-        anchor: "asset-mix",
-        title: "Projection",
-        body: `Drag the wheel to split equity and debt — the return follows from it. All debt is ${formatRate(DEBT_RETURN)} a year, all equity ${formatRate(EQUITY_RETURN)}, 80/20 lands on ${formatRate(rateForEquityPct(80))}. Figures preview as you drag; Apply commits it.`,
+        anchor: "closing-assets",
+        title: "What you end up with",
+        body: "Your closing financial assets at the end of the plan — what is left once every goal has been paid for.",
         before: () => {
           setPanelTab("projection");
           setPanelOpen(true);
         },
-      },
-      {
-        anchor: "monthly-sip",
-        title: "Monthly SIP",
-        body: "Type a different monthly amount to see it on the timeline straight away. Apply to plan makes it real; the reset arrow restores your plan's SIP.",
-        before: () => setPanelOpen(false),
-      },
-      {
-        anchor: "priority-filter",
-        title: "Priority",
-        body: "Toggle High, Medium and Low to drop goals in and out of the projection — a quick read on what's affordable if the rest wait.",
-        before: () => setPanelOpen(false),
       },
     ],
     [],
@@ -1523,32 +1436,54 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
   // panel because it drives this page's cashflow; the panel only previews a draft
   // until the user presses Apply. Saved so the choice survives a reload — someone
   // who applied 4% should not silently be back on the engine's 9%.
-  // The scenario is an equity/debt split, not a bare return: the user sets the
-  // mix and the assumed post-tax return is read off it. Null = no mix applied,
-  // so the plan is still exactly what the engine computed.
-  const [appliedEquityPct, setAppliedEquityPct] = useState<number | null>(readSavedMix);
-  const appliedRate =
-    appliedEquityPct == null ? PROJECTION_BASE_RATE : rateForEquityPct(appliedEquityPct);
-  const band = bandForRate(appliedRate);
-  const isBaseRate = appliedEquityPct == null;
+  const [appliedRate, setAppliedRate] = useState(readSavedRate);
 
-  const applyMix = useCallback((equityPct: number) => {
-    const next = Math.min(100, Math.max(0, Math.round(equityPct / EQUITY_STEP) * EQUITY_STEP));
-    const rate = rateForEquityPct(next);
-    setAppliedEquityPct(next);
-    writeSavedMix(next);
-    toast.success(`${formatMix(next)} equity-debt applied`, {
-      description: `Your goal plan now runs on ${formatRate(rate)} post-tax returns (${bandForRate(rate).label.toLowerCase()}) — the blended return of a ${next}% equity, ${100 - next}% debt portfolio.`,
-    });
-  }, []);
+  // The equity/debt split behind that rate. The engine has no asset classes —
+  // this is the user-facing way to reach the one post-tax return it projects on,
+  // so the mix is the writer and `appliedRate` is what it writes.
+  const [assetMix, setAssetMix] = useState<AssetMix>(readSavedMix);
 
-  const resetMix = useCallback(() => {
-    setAppliedEquityPct(null);
-    clearSavedMix();
-    toast.success("Back to the engine's plan", {
-      description: "Your goal plan is back on the engine's computed returns.",
-    });
-  }, []);
+  const applyMix = useCallback(
+    (next: AssetMix) => {
+      setAssetMix(next);
+      writeSavedMix(next);
+      const rate = blendedRate(next);
+      setAppliedRate(rate);
+      writeSavedRate(rate);
+    },
+    [],
+  );
+
+  // A rate applied from the projection panel's slider is the other way in, and
+  // so is the rate saved from an earlier visit. Seat the mix back on it (equity
+  // absorbs the change) so the RETURNS stat can never show a number the chart
+  // isn't running on. The rate wins over the mix here on purpose: a returning
+  // user keeps the return they applied, and a first-time one stays on the
+  // engine's own 9% rather than being moved onto a client-side blend.
+  //
+  // Keyed on the rate, not the mix: whole-percent class returns can't always
+  // land on the rate exactly (9.3% at a 25/75 split reseats to 9.25%), so
+  // reconciling off the mix would chase its own tail.
+  const reconciledRate = useRef<number | null>(null);
+  useEffect(() => {
+    if (reconciledRate.current === appliedRate) return;
+    reconciledRate.current = appliedRate;
+    if (blendedRate(assetMix) === appliedRate) return;
+
+    const next = mixForRate(assetMix, appliedRate);
+    if (blendedRate(next) === appliedRate) {
+      setAssetMix(next);
+      writeSavedMix(next);
+      return;
+    }
+    // The mix can't reach that rate — an all-debt portfolio earns the debt
+    // assumption and nothing else. The mix is the user's stated position, so it
+    // wins and the rate moves to what the portfolio actually returns.
+    const reachable = blendedRate(next);
+    reconciledRate.current = reachable;
+    setAppliedRate(reachable);
+    writeSavedRate(reachable);
+  }, [appliedRate, assetMix]);
 
   /** Engine rows replayed at the applied return — identical to the engine at 9%. */
   const scenarioAnnualRows = useMemo(
@@ -1710,7 +1645,23 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
 
   // DOM refs per year row — used to hit-test where a goal is dropped.
   const rowRefs = useRef<Map<number, HTMLLIElement | null>>(new Map());
-  const findYearAtClientY = (clientY: number): number | null => {
+  /** Year buttons inside the open lens, so a goal can be dropped on one. */
+  const lensYearRefs = useRef(new Map<number, HTMLElement>());
+
+  const findYearAtClientY = (clientY: number, clientX?: number): number | null => {
+    if (clientX != null) {
+      for (const [year, el] of lensYearRefs.current) {
+        const rect = el.getBoundingClientRect();
+        if (
+          clientY >= rect.top &&
+          clientY <= rect.bottom &&
+          clientX >= rect.left &&
+          clientX <= rect.right
+        ) {
+          return year;
+        }
+      }
+    }
     for (const [year, el] of rowRefs.current) {
       if (!el) continue;
       const rect = el.getBoundingClientRect();
@@ -1972,22 +1923,62 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
     capYear,
     Math.max(baseEndYear, revealEndYear ?? baseEndYear),
   );
-  const years = useMemo(() => {
-    const span = Math.max(1, displayEndYear - currentYear + 1);
+  const years = useMemo(
+    () =>
+      Array.from(
+        { length: Math.max(1, displayEndYear - currentYear + 1) },
+        (_, i) => currentYear + i,
+      ),
+    [currentYear, displayEndYear],
+  );
+
+  /**
+   * The rows actually drawn. The near years are listed one by one; past that the
+   * timeline thins to every fifth age (every fifth calendar year with no date of
+   * birth), which is what keeps a 40-year plan readable.
+   *
+   * A year holding a goal is always kept, and so is the last one — thinning the
+   * axis must never hide a goal or crop the end of the plan.
+   */
+  /**
+   * The thinned stretch the pointer is resting on, as [from, to] exclusive.
+   *
+   * The five-year axis is for reading; the lens is for working. Rather than
+   * pushing the chart around to expose the skipped years, a magnifier floats
+   * over the gap holding them — the rows below never move, and any year in it
+   * can be picked to start a goal there.
+   */
+  const [lensGap, setLensGap] = useState<[number, number] | null>(null);
+
+  /** The next listed year after `y` when the axis skipped some, else null. */
+  const gapAfterYear = useCallback((y: number): number | null => {
+    const i = visibleYearsRef.current.indexOf(y);
+    if (i < 0) return null;
+    const next = visibleYearsRef.current[i + 1];
+    return next != null && next > y + 1 ? next : null;
+  }, []);
+
+  const lensYears = useMemo(() => {
+    if (!lensGap) return [] as number[];
     const out: number[] = [];
-    for (let i = 0; i < span; i += 1) {
-      const y = currentYear + i;
-      const keep =
-        i < DENSE_ROW_YEARS ||
-        (i - DENSE_ROW_YEARS) % YEAR_ROW_STEP === 0 ||
-        y === displayEndYear ||
-        goalsByYear.has(y);
-      if (keep) out.push(y);
-    }
+    for (let y = lensGap[0] + 1; y < lensGap[1]; y += 1) out.push(y);
     return out;
-  }, [currentYear, displayEndYear, goalsByYear]);
+  }, [lensGap]);
+
+  const visibleYears = useMemo(() => {
+    if (!isTornado) return years;
+    const lastYear = years[years.length - 1];
+    return years.filter((y, i) => {
+      if (i < DENSE_YEARS || y === lastYear) return true;
+      if (goalsByYear.has(y)) return true;
+      const age = birthYear != null ? y - birthYear : null;
+      return (age != null && age >= 0 ? age : y) % 5 === 0;
+    });
+  }, [isTornado, years, goalsByYear, birthYear]);
 
   // Kept fresh for the drag handlers so they never read stale values.
+  const visibleYearsRef = useRef(visibleYears);
+  visibleYearsRef.current = visibleYears;
   const capYearRef = useRef(capYear);
   capYearRef.current = capYear;
   const displayEndYearRef = useRef(displayEndYear);
@@ -2012,8 +2003,22 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
         goalPayout: row.goal_payout,
       });
     }
-    return map.size > 0 ? map : null;
-  }, [scenarioAnnualRows]);
+    if (map.size === 0) return null;
+
+    // The timeline's end is set by the retirement year and the last goal, not by
+    // the engine's rows, so it can run a year past the final FY. That last row
+    // closes on the plan's final corpus — carry it so the end of the chart has a
+    // bar instead of a blank. The payout is not carried: it was already drawn in
+    // the year it happened, and repeating it would double-count the goal.
+    const lastRowYear = Math.max(...map.keys());
+    if (displayEndYear > lastRowYear) {
+      const last = map.get(lastRowYear);
+      if (last) {
+        map.set(displayEndYear, { corpusClosing: last.corpusClosing, goalPayout: 0 });
+      }
+    }
+    return map;
+  }, [scenarioAnnualRows, displayEndYear]);
 
   const cashflowProjection: ProjectionPoint[] | null = useMemo(() => {
     if (!tornadoCorpusByYear) return null;
@@ -2070,6 +2075,75 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
     return map;
   }, [projection]);
 
+  /* What the SIP currently buys: how many goals the plan's corpus actually
+     covers in the year each one falls due.
+
+     Measured against `tornadoCorpusByYear`, which is the ENGINE's plan — so it
+     reflects `planSip`, not whatever is typed into the box above. The copy
+     below says which, rather than attaching the count to a number the
+     projection has never seen. */
+  const landing = useMemo(
+    () =>
+      goalLanding(
+        visibleGoals.map((g) => ({
+          id: g.id,
+          year: g.year,
+          futureValue: futureValue(
+            g.presentValue,
+            g.inflationRate,
+            Math.max(0, g.year - currentYear),
+          ),
+          priority: g.priority,
+        })),
+        tornadoCorpusByYear,
+      ),
+    [visibleGoals, tornadoCorpusByYear, currentYear],
+  );
+  const landingLine = useMemo(() => landingBlurb(landing), [landing]);
+
+  /* The priority filter, built here so its chips keep the page's own priority
+     colours, and handed to the stat row to show under its filter icon. */
+  const priorityChips = (
+    <div data-tour="priority-filter">
+      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Goal priority</p>
+      <div className="flex flex-wrap gap-1.5">
+      {PRIORITIES.map((p) => {
+        const active = enabledPriorities.has(p);
+        const chip = priorityChipStyle(p);
+        const count = goals.filter((g) => g.priority === p).length;
+        return (
+          <button
+            key={p}
+            type="button"
+            onClick={() => togglePriority(p)}
+            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+              active ? "" : "bg-muted/50 text-muted-foreground/70 hover:text-foreground"
+            }`}
+            style={
+              active
+                ? {
+                    backgroundColor: chip.bg,
+                    color: chip.fg,
+                    border: `1px solid ${chip.border}`,
+                  }
+                : { border: "1px solid hsl(var(--border))" }
+            }
+            aria-pressed={active}
+            title={`${active ? "Hide" : "Show"} ${p.toLowerCase()}-priority goals`}
+          >
+            <span
+              className="inline-block h-1.5 w-1.5 rounded-full"
+              style={{ backgroundColor: priorityNodeColor(p) }}
+            />
+            {p}
+            <span className="opacity-70">· {count}</span>
+          </button>
+        );
+      })}
+      </div>
+    </div>
+  );
+
   const tornadoAbsValues = useMemo(() => {
     if (!tornadoCorpusByYear?.size) return [] as number[];
     return [...tornadoCorpusByYear.values()].map((r) => Math.abs(r.corpusClosing));
@@ -2087,22 +2161,28 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
     [tornadoAbsValues],
   );
 
-  /** Any year underwater? Only then does the axis need a left half. */
-  const tornadoHasNegative = useMemo(
-    () =>
-      tornadoCorpusByYear
-        ? [...tornadoCorpusByYear.values()].some((r) => r.corpusClosing < 0)
-        : false,
-    [tornadoCorpusByYear],
-  );
+  /** Does the plan ever go below ₹0? Only then is a left half worth reserving. */
+  const hasNegativeCorpus = useMemo(() => {
+    if (!tornadoCorpusByYear) return false;
+    return [...tornadoCorpusByYear.values()].some((r) => r.corpusClosing < 0);
+  }, [tornadoCorpusByYear]);
 
-  const tornadoCenterX = tornadoHasNegative
+  const tornadoCenterX = hasNegativeCorpus
     ? TORNADO_CENTER_X
     : TORNADO_CENTER_X_POSITIVE;
+  // Bars are measured against the room on their own side of the axis, so an
+  // all-positive plan uses the full width instead of half of it.
+  const tornadoSpan = 100 - NAV_PAD_PCT - tornadoCenterX;
 
   const corpusToTornadoXCb = useCallback(
-    (corpus: number) => corpusToTornadoX(corpus, tornadoBarScale, tornadoCenterX),
-    [tornadoBarScale, tornadoCenterX],
+    (corpus: number) =>
+      corpusToTornadoX(
+        corpus,
+        tornadoBarScale,
+        tornadoCenterX,
+        corpus < 0 ? tornadoCenterX - NAV_PAD_PCT : tornadoSpan,
+      ),
+    [tornadoBarScale, tornadoCenterX, tornadoSpan],
   );
 
   const peakAnchor = useMemo(
@@ -2135,8 +2215,20 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
               <ChevronLeft className="h-5 w-5" />
             </button>
           )}
+          {/* The guide sits on the title like a footnote mark — it explains
+              this page, so it belongs to its name rather than to the row of
+              actions on the right. */}
           <h1 className="min-w-0 truncate text-lg font-semibold text-foreground">
             Goal planning
+            <button
+              type="button"
+              onClick={() => setTourOpen(true)}
+              className="ml-1 inline-flex h-4 w-4 translate-y-[2px] items-center justify-center rounded-full align-baseline text-muted-foreground/70 transition-colors hover:text-foreground"
+              aria-label="Show the goal planning guide"
+              title="How this page works"
+            >
+              <HelpCircle className="h-3.5 w-3.5" />
+            </button>
           </h1>
           <div className="ml-auto flex shrink-0 items-center gap-2">
             {(goalsLoading || cashflowLoading) && (
@@ -2187,17 +2279,6 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
               <Download className="h-3.5 w-3.5" />
             </button>
             {/* Open the right-side panel holding the cashflow inputs + projection. */}
-            {/* Replays the first-run walkthrough — it's shown once, and this is
-                the only way back to it. */}
-            <button
-              type="button"
-              onClick={() => setTourOpen(true)}
-              className="shrink-0 inline-flex h-8 w-8 items-center justify-center rounded-full border border-border bg-card text-muted-foreground hover:bg-muted/40 hover:text-foreground"
-              aria-label="Show the goal planning guide"
-              title="How this page works"
-            >
-              <HelpCircle className="h-3.5 w-3.5" />
-            </button>
             <button
               type="button"
               data-tour="plan-button"
@@ -2227,11 +2308,6 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
         {goalsLoading && (
           <p className="px-1 text-[11px] text-muted-foreground">Loading goals from your plan…</p>
         )}
-        {!goalsLoading && goals.length === 0 && !fromProfile && (
-          <p className="px-1 text-[11px] text-muted-foreground">
-            No goals in your account yet. Use + to add one.
-          </p>
-        )}
         {/* Mid-profile-setup with no goal yet: spell out exactly what completes
             the "What are you trying to achieve?" section and what happens next. */}
         {!goalsLoading && fromProfile && !hasPersistedGoals && (
@@ -2243,189 +2319,31 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
             </p>
           </div>
         )}
-        {/* Monthly investment (SIP what-if). Line mode previews instantly on the
-            gold spine; in both modes "Apply to plan" re-runs the engine so the
-            corpus bars / cashflow reflect the new SIP. */}
+        {/* The plan's three levers, as three numbers. Sticky so they stay in
+            reach while the timeline scrolls; each opens its own editor, and
+            every edit applies immediately — the chart below is untouched. */}
         <div
           className="sticky z-30 -mx-5 bg-background px-5 pb-1 pt-1"
           style={{ top: "64px" }}
         >
-          <div className="rounded-xl border border-border bg-card px-3 py-2" data-tour="monthly-sip">
-          <div className="flex items-center gap-2">
-          <p className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
-            Monthly SIP
-          </p>
-          <div className="flex-1 min-w-0 flex items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1.5 focus-within:ring-1 focus-within:ring-[#D4A868]">
-            <span className="text-[12px] text-muted-foreground shrink-0">₹</span>
-            <input
-              type="text"
-              inputMode="numeric"
-              value={Number.isFinite(monthlyContrib) ? monthlyContrib.toLocaleString("en-IN") : ""}
-              onChange={(e) => {
-                const digits = e.target.value.replace(/[^\d]/g, "");
-                const v = digits === "" ? 0 : Number(digits);
-                if (Number.isFinite(v)) setMonthlyContrib(Math.max(0, v));
-              }}
-              className="w-full min-w-0 bg-transparent text-[12px] font-semibold tabular-nums text-foreground outline-none"
-              style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
-              placeholder="0"
-              aria-label="Monthly investment amount"
-            />
-            <span className="text-[10px] text-muted-foreground shrink-0">/mo</span>
-          </div>
-          {/* Apply the typed SIP to the actual plan — saves the input and re-runs
-              the engine so the whole cashflow reflects it. Shown only when the
-              amount differs from the plan's current SIP. */}
-          {planSip != null && monthlyContrib !== planSip && (
-            <button
-              type="button"
-              onClick={() => void applySipToPlan()}
-              disabled={applyingSip}
-              className="shrink-0 inline-flex items-center gap-1 rounded-full px-2.5 h-7 text-[11px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
-              style={{ backgroundColor: "#D4A868" }}
-              title="Save this SIP and recompute your cashflow plan"
-            >
-              {applyingSip ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-              {applyingSip ? "Updating…" : "Apply to plan"}
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => setMonthlyContrib(planSip ?? 0)}
-            disabled={monthlyContrib === (planSip ?? 0)}
-            className="shrink-0 inline-flex items-center justify-center rounded-full bg-muted/50 h-7 w-7 text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            style={{ border: "1px solid hsl(var(--border))" }}
-            aria-label="Reset monthly investment to your plan's SIP"
-            title="Reset to plan SIP"
-          >
-            <RotateCcw className="h-3 w-3" />
-          </button>
-          </div>
-          {/* Helper line — yearly equivalent plus the cashflow headroom hint
-              (absorbs the old marquee banner); "Use" fills the input with it. */}
-          <div className="mt-1 flex items-center gap-1.5 px-0.5">
-            <p className="min-w-0 truncate text-[11px] text-muted-foreground">
-              {formatINRCompact(monthlyContrib * 12)}/yr
-              {!sipCapped &&
-                displayAffordableMonthly != null &&
-                displayAffordableMonthly > 0 && (
-                  <>
-                    {" "}· you can invest up to{" "}
-                    <span className="font-semibold text-foreground">
-                      {formatINRCompact(displayAffordableMonthly)}/mo
-                    </span>{" "}
-                    from your cashflow
-                  </>
-                )}
-            </p>
-            {!sipCapped &&
-              displayAffordableMonthly != null &&
-              displayAffordableMonthly > 0 &&
-              Math.round(displayAffordableMonthly) !== monthlyContrib && (
-                <button
-                  type="button"
-                  onClick={() => setMonthlyContrib(Math.round(displayAffordableMonthly))}
-                  className="ml-auto shrink-0 rounded-full border border-[#D4A868]/50 px-2 py-0.5 text-[10px] font-semibold text-[#D4A868] hover:bg-[#D4A868]/10"
-                  title="Set your SIP to what your cashflow allows"
-                >
-                  Use {formatINRCompact(displayAffordableMonthly)}
-                </button>
-              )}
-          </div>
-          </div>
-          {sipCapped && affordableMonthly != null && (
-            <p className="mt-1 px-1 text-[11px] leading-snug text-amber-600 dark:text-amber-400">
-              You can invest about {formatINRCompact(affordableMonthly)}/mo from your income
-              (after tax, expenses &amp; EMIs). A higher SIP is capped to that — it won't grow
-              your corpus further, since the plan never invests more than you can save.
-            </p>
-          )}
+          <GoalPlanStats
+            sip={monthlyContrib}
+            onSipChange={setMonthlyContrib}
+            planSip={planSip}
+            onApplySip={() => void applySipToPlan()}
+            applyingSip={applyingSip}
+            affordableMonthly={affordableMonthly}
+            suggestedMonthly={displayAffordableMonthly}
+            sipCapped={sipCapped}
+            landingLine={landingLine}
+            landingUnknown={landing.unknown}
+            mix={assetMix}
+            onMixChange={applyMix}
+            formatMoney={formatINRCompact}
+            priorityEditor={priorityChips}
+            openStatOverride={tourOpenStat}
+          />
         </div>
-
-        {/* Priority filter — toggle which goals feed the projection */}
-        <div className="flex items-center gap-2 px-1" data-tour="priority-filter">
-          <span className="text-[11px] uppercase tracking-wide text-muted-foreground shrink-0">
-            Goal priority
-          </span>
-          <div className="flex flex-wrap gap-1.5">
-            {PRIORITIES.map((p) => {
-              const active = enabledPriorities.has(p);
-              const chip = priorityChipStyle(p);
-              const count = goals.filter((g) => g.priority === p).length;
-              return (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => togglePriority(p)}
-                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors ${
-                    active ? "" : "bg-muted/50 text-muted-foreground/70 hover:text-foreground"
-                  }`}
-                  style={
-                    active
-                      ? {
-                          backgroundColor: chip.bg,
-                          color: chip.fg,
-                          border: `1px solid ${chip.border}`,
-                        }
-                      : { border: "1px solid hsl(var(--border))" }
-                  }
-                  aria-pressed={active}
-                  title={`${active ? "Hide" : "Show"} ${p.toLowerCase()}-priority goals`}
-                >
-                  <span
-                    className="inline-block h-1.5 w-1.5 rounded-full"
-                    style={{ backgroundColor: priorityNodeColor(p) }}
-                  />
-                  {p}
-                  <span className="opacity-70">· {count}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Applied return scenario. Read-only on purpose: the plan changes only
-            via Apply in the Projection panel, never by a stray tap out here. */}
-        {tornadoCorpusByYear && !isBaseRate && (
-          <div
-            className="mx-1 rounded-xl px-3 py-2.5"
-            style={{
-              backgroundColor: "rgba(212,168,104,0.08)",
-              border: "1px solid rgba(212,168,104,0.35)",
-            }}
-          >
-            <div className="flex items-center justify-between gap-2">
-              <span
-                className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold tabular-nums"
-                style={{
-                  backgroundColor: "rgba(212,168,104,0.18)",
-                  color: "#D4A868",
-                  border: "1px solid rgba(212,168,104,0.45)",
-                }}
-              >
-                {formatMix(appliedEquityPct ?? 0)} · {formatRate(appliedRate)}
-              </span>
-              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-[#D4A868]/80">
-                {band.label}
-              </span>
-            </div>
-            <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-              Your own {appliedEquityPct}% equity / {100 - (appliedEquityPct ?? 0)}% debt mix, not
-              the engine&apos;s computed plan. Only returns move — contributions, one-offs and goal
-              payouts are unchanged.
-            </p>
-            <button
-              type="button"
-              onClick={() => {
-                setPanelTab("projection");
-                setPanelOpen(true);
-              }}
-              className="mt-2 text-[11px] font-semibold text-[#D4A868] underline underline-offset-2"
-            >
-              Change or reset
-            </button>
-          </div>
-        )}
 
         {isTornado && !tornadoCorpusByYear && !cashflowLoading && (
           <p className="px-1 text-[11px] text-amber-600">
@@ -2433,35 +2351,40 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
           </p>
         )}
 
-        {/* Column header + chart axis legend. The left slot mirrors the row's
-            age column (px-2 + w-[48px] + gap-3) so "Age" sits directly above the
-            ages and the Negative swatch starts clear of that column. */}
-        <div
-          data-tour="chart-legend"
-          className="flex items-center gap-3 px-2 pt-2 pb-1 text-[11px] text-muted-foreground"
-        >
-          <span className="w-[48px] shrink-0 font-semibold tracking-wide text-foreground/80">
-            {birthYear != null ? "Age" : "Year"}
-          </span>
-          {isTornado && (
-            <div className="flex min-w-0 flex-1 items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <span className="inline-block h-2 w-3 rounded-sm" style={{ backgroundColor: "rgb(239,68,68)" }} />
-                <span>Negative</span>
-              </div>
-              <span className="font-semibold tracking-wide text-foreground/80">Portfolio Value</span>
-              <div className="flex items-center gap-1.5">
-                <span>Positive</span>
-                <span className="inline-block h-2 w-3 rounded-sm" style={{ backgroundColor: "rgb(16,185,129)" }} />
-              </div>
+        {/* Chart axis legend — explains what the bars mean */}
+        {isTornado && (
+          <div className="flex items-center px-2 pt-2 pb-1 text-[11px] text-muted-foreground">
+            {/* Sits over the age column, matching the rows' own 48px gutter. */}
+            <span className="w-[48px] shrink-0 font-medium text-foreground/70">
+              {birthYear != null ? "Age" : "Year"}
+            </span>
+            {/* Clear of the age label rather than flush against it. */}
+            <div className="flex shrink-0 items-center gap-1.5 pl-3">
+              <span
+                className="inline-block h-2 w-3 rounded-sm"
+                style={{ backgroundColor: "rgb(239,68,68)" }}
+              />
+              <span>Negative</span>
             </div>
-          )}
-        </div>
+            <span className="flex-1 text-center font-semibold tracking-wide text-foreground/80">
+              Portfolio Value
+            </span>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <span>Positive</span>
+              <span
+                className="inline-block h-2 w-3 rounded-sm"
+                style={{ backgroundColor: "rgb(16,185,129)" }}
+              />
+            </div>
+          </div>
+        )}
 
         {/* Integrated vertical NAV chart + goal timeline */}
-        <ul className="space-y-0">
+        {/* Leaving the timeline lets the zoomed stretch collapse, so the chart
+            settles back to its five-year rhythm without needing a second click. */}
+        <ul className="space-y-0" onPointerLeave={() => setLensGap(null)}>
           <AnimatePresence initial={false}>
-          {years.map((y, i) => {
+          {visibleYears.map((y, i) => {
             const yearGoals = goalsByYear.get(y) ?? [];
             const hasGoals = yearGoals.length > 0;
             const isMilestone = y % 5 === 0;
@@ -2480,7 +2403,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
             const xTop = navToX(prevProj?.endNav ?? corpusClosing);
             const xBottomLine = navToX(corpusClosing);
             const isFirst = i === 0;
-            const isLast = i === years.length - 1;
+            const isLast = i === visibleYears.length - 1;
 
             // Tornado: centre = ₹0; bar tip at corpus_closing (width vs tornadoBarScale).
             const tipX = corpusToTornadoXCb(corpusClosing);
@@ -2495,12 +2418,6 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
             const tornadoX2 = Math.max(tornadoCenterX, tipX);
             const tornadoBaseHue = tornadoIsPositive ? "16, 185, 129" : "239, 68, 68";
             const tornadoDeepHue = tornadoIsPositive ? "5, 95, 70" : "136, 19, 55";
-            // Positive bars stay solid — a near-transparent green reads as washed out
-    // against the page rather than as a small number. Negatives keep the wider
-    // fade, where the lighter end is doing the work.
-    const tornadoFillOpacity = tornadoIsPositive
-      ? 0.85 + tornadoNorm * 0.15
-      : 0.35 + tornadoNorm * 0.65;
 
             const xBottom = isTornado ? tipX : xBottomLine;
 
@@ -2511,6 +2428,9 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
               : "#D4A868";
 
             const isHovered = hoveredYear === y;
+            // Hovering deepens the bar rather than tinting it a new colour: the
+            // row under the cursor reads as the solid red or green it already is.
+            const tornadoFillOpacity = isHovered ? 1 : 0.35 + tornadoNorm * 0.65;
             const rowMilestones = milestonesByYear.get(y) ?? [];
             const hasMilestone = rowMilestones.length > 0;
 
@@ -2518,6 +2438,9 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
             // Rows past the settled timeline end are the transient tail that
             // appears/collapses as the user drags a goal — animate those.
             const isRevealTail = y > baseEndYear;
+            // Years the five-year axis skipped between this row and the next.
+            const nextVisibleYear = visibleYears[i + 1];
+            const gapTo = nextVisibleYear != null && nextVisibleYear > y + 1 ? nextVisibleYear : null;
             return (
               <motion.li
                 key={y}
@@ -2531,7 +2454,10 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                 transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
                 className={`relative ${isFirst ? "sticky z-[15] bg-background" : ""} ${isDropTarget ? "rounded-lg ring-2 ring-[#D4A868]/70" : ""}`}
                 style={{
-                  ...(isFirst ? { top: "108px" } : {}),
+                  // Clears the header (64px) plus the collapsed stat row above.
+                  // An open editor overlays this row while it is out — it closes
+                  // on the next tap, so it never sits on top of the timeline.
+                  ...(isFirst ? { top: "146px" } : {}),
                   ...(isRevealTail ? { overflow: "hidden" } : {}),
                 }}
               >
@@ -2544,7 +2470,11 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                   // Pointer events cover mouse hover AND touch press, so the
                   // year/value readout works on mobile (mouseenter never fires
                   // reliably on touch).
-                  onPointerEnter={() => setHoveredYear(y)}
+                  onPointerEnter={() => {
+                    setHoveredYear(y);
+                    // Rows that precede a thinned stretch bring up the lens.
+                    setLensGap(gapTo != null ? [y, gapTo] : null);
+                  }}
                   onPointerLeave={() =>
                     setHoveredYear((h) => (h === y ? null : h))
                   }
@@ -2553,7 +2483,11 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                     setHoveredYear((h) => (h === y ? null : h))
                   }
                   className="group relative w-full text-left flex items-stretch gap-3 px-2 transition-colors hover:bg-muted/20 focus:outline-none focus-visible:ring-1 focus-visible:ring-foreground/40 rounded-lg"
-                  style={{ minHeight: hasGoals ? (isTornado ? 36 : 48) : isTornado ? 12 : 18 }}
+                  // One rhythm for every year. A goal year is taller only by
+                  // the height of its own card, which hangs below the bar —
+                  // the bar itself sits at the same offset on every row, so
+                  // 22-23 and 26-30 are spaced identically.
+                  style={{ minHeight: hasGoals ? (isTornado ? 19 : 24) : isTornado ? 19 : 24 }}
                   aria-label={`Show ${y} projected corpus`}
                 >
                   {/* Full-width background chart — gold curve in line mode, tornado bar in tornado mode */}
@@ -2623,78 +2557,68 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
 
                     {isTornado && (
                       <>
-                        <defs>
-                          <linearGradient
-                            id={`tornadoBar-${y}`}
-                            x1="0"
-                            y1="0"
-                            x2="1"
-                            y2="0"
-                          >
-                            <stop
-                              offset="0%"
-                              stopColor={`rgb(${tornadoIsPositive ? tornadoBaseHue : tornadoDeepHue})`}
-                              stopOpacity={tornadoIsPositive ? 0.8 : 1}
-                            />
-                            <stop
-                              offset="100%"
-                              stopColor={`rgb(${tornadoIsPositive ? tornadoDeepHue : tornadoBaseHue})`}
-                              stopOpacity={tornadoIsPositive ? 1 : 0.3}
-                            />
-                          </linearGradient>
-                        </defs>
-
-                        {/* Zero axis — corpus_closing bars extend left (negative) or right (positive). */}
+                        {/* Zero axis — corpus_closing bars extend left (negative)
+                            or right (positive). Full height on every row so the
+                            rows join into one continuous line with no stub
+                            hanging off the top or bottom of the chart. */}
                         <line
                           x1={tornadoCenterX}
-                          y1={isFirst ? 50 : 0}
+                          y1={0}
                           x2={tornadoCenterX}
-                          y2={isLast ? 50 : 100}
+                          y2={100}
                           stroke="hsl(var(--foreground))"
                           strokeOpacity={0.35}
                           strokeWidth={1}
                           vectorEffect="non-scaling-stroke"
                         />
 
-                        {hasTornadoBar && tornadoX2 > tornadoX1 && (
-                          <rect
-                            x={tornadoX1}
-                            y={isHovered ? 8 : 17.5}
-                            width={Math.max(0, tornadoX2 - tornadoX1)}
-                            height={isHovered ? 84 : 65}
-                            fill={`url(#tornadoBar-${y})`}
-                            fillOpacity={tornadoFillOpacity}
-                            style={{ transition: "y 120ms ease-out, height 120ms ease-out" }}
-                          />
-                        )}
-
-                        {/* Years with no bar still need a mark on the axis; a year
-                            that has one is read by its tip, so nothing sits there. */}
-                        {!hasTornadoBar && (
-                          <circle
-                            cx={tornadoCenterX}
-                            cy={50}
-                            r={isHovered ? 4 : hasGoals ? 3 : 2}
-                            fill={nodeColor}
-                          />
-                        )}
                       </>
                     )}
                   </svg>
+
+                  {/* Fixed-height bar: a year with a goal is a taller row, and
+                      the bar must not grow with it. Hover still thickens it.
+
+                      Pinned to the year label's own line rather than centred in
+                      the row: a row holding goal cards runs far taller than its
+                      label, and centring left the bar floating well below the
+                      year it belongs to. The offsets track the label's padding
+                      (pt-2 when goals are present) plus half its line box. */}
+                  {isTornado && hasTornadoBar && tornadoX2 > tornadoX1 && (
+                    <div
+                      className="pointer-events-none absolute -translate-y-1/2 rounded-[1px] transition-[height]"
+                      style={{
+                        top: 7.5,
+                        left: `${tornadoX1}%`,
+                        width: `${Math.max(0, tornadoX2 - tornadoX1)}%`,
+                        height: isHovered ? 20 : 12,
+                        opacity: tornadoFillOpacity,
+                        background: `linear-gradient(to right, rgb(${
+                          isHovered || !tornadoIsPositive ? tornadoDeepHue : tornadoBaseHue
+                        }) 0%, rgb(${
+                          isHovered || tornadoIsPositive ? tornadoDeepHue : tornadoBaseHue
+                        }) 100%)`,
+                      }}
+                      aria-hidden="true"
+                    />
+                  )}
 
 
                   {isHovered && (!isTornado || hasTornadoBar) && (
                     <div
                       className="pointer-events-none absolute z-20"
                       style={{
+                        // Same line as the year label and the bar, centred on
+                        // it — it used to be lifted clear of the row, which read
+                        // as floating above the year it describes.
                         left: `${Math.min(95, Math.max(5, xBottom))}%`,
-                        top: "50%",
+                        top: 7.5,
                         transform:
                           xBottom > 75
-                            ? "translate(-100%, -120%)"
+                            ? "translate(-100%, -50%)"
                             : xBottom < 25
-                              ? "translate(0, -120%)"
-                              : "translate(-50%, -120%)",
+                              ? "translate(0, -50%)"
+                              : "translate(-50%, -50%)",
                       }}
                     >
                       <div
@@ -2749,14 +2673,18 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                   {/* The user's age that year. Hover shows the calendar year.
                       Falls back to the year when we have no date of birth. */}
                   <div
-                    className={`relative z-10 w-[48px] shrink-0 flex flex-col items-start leading-tight ${hasGoals ? "pt-2" : "pt-0"}`}
+                    className="relative z-10 flex w-[48px] shrink-0 flex-col items-start leading-tight"
                   >
                     <span
                       title={ageAtYear != null && ageAtYear >= 0 ? `Year ${y}` : undefined}
-                      className={`text-[12px] tabular-nums ${
-                        isMilestone || hasGoals
-                          ? "font-semibold text-foreground"
-                          : "text-muted-foreground/50"
+                      // Only the row under the cursor is bold. Everything else
+                      // stays quiet, so the eye has one place to land.
+                      className={`text-[13px] tabular-nums transition-colors ${
+                        isHovered
+                          ? "font-bold text-foreground"
+                          : hasGoals
+                            ? "text-foreground/70"
+                            : "text-muted-foreground/50"
                       }`}
                     >
                       {ageAtYear != null && ageAtYear >= 0 ? ageAtYear : y}
@@ -2765,7 +2693,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
 
                   {/* Right side: NAV figure + goal cards (empty years stay as a thin tick) */}
                   <div
-                    className={`relative z-10 min-w-0 flex-1 ${hasGoals ? "py-1.5" : "py-0"}`}
+                    className="relative z-10 min-w-0 flex-1 py-0"
                   >
                     {/* Milestone badge — floats above the row, doesn't push layout */}
                     <AnimatePresence>
@@ -2796,23 +2724,11 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                       )}
                     </AnimatePresence>
 
-                    {hasGoals && (!isTornado || hasTornadoBar) && (
-                      <div className="flex items-center justify-between gap-2">
-                        <span
-                          className="text-[11px] tabular-nums text-muted-foreground"
-                          style={{
-                            fontFamily:
-                              "ui-monospace, SFMono-Regular, Menlo, monospace",
-                          }}
-                        >
-                          {isTornado ? "Close " : ""}
-                          {formatINRCompact(corpusClosing)}
-                        </span>
-                      </div>
-                    )}
-
+                    {/* Starts at the bar's centre line rather than below it, so
+                        the first card overlaps its own bar and reads as attached
+                        to that year instead of floating under it. */}
                     {hasGoals && (
-                      <div className="mt-1.5 flex flex-col gap-1.5">
+                      <div className="mb-1.5 mt-[8px] flex flex-col gap-1">
                         {yearGoals.map((g) => {
                           const chip = priorityChipStyle(g.priority);
                           const yearsAway = Math.max(0, g.year - currentYear);
@@ -2851,13 +2767,20 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                               }}
                               onDrag={(e) => {
                                 const y = dragClientY(e);
+                                const x = dragClientX(e);
                                 dragPointerYRef.current = y;
-                                const yr = findYearAtClientY(y);
-                                if (yr != null) setDropTargetYear(yr);
+                                const yr = findYearAtClientY(y, x);
+                                if (yr != null) {
+                                  setDropTargetYear(yr);
+                                  // Keep the lens out over a thinned stretch so
+                                  // its years can be dropped on.
+                                  const gap = gapAfterYear(yr);
+                                  if (gap != null) setLensGap([yr, gap]);
+                                }
                               }}
                               onDragEnd={(e) => {
                                 stopAutoScroll();
-                                const yr = findYearAtClientY(dragClientY(e));
+                                const yr = findYearAtClientY(dragClientY(e), dragClientX(e));
                                 if (yr != null) {
                                   // Clamp to the valid window: never into the past
                                   // (minGoalYear), never past the currentYear + 100
@@ -2892,31 +2815,33 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                               }}
                               aria-expanded={isExpanded}
                               aria-label={`${g.name} — tap to expand, drag to change year`}
-                              className="relative touch-none cursor-grab rounded-xl border border-border bg-card/95 backdrop-blur-[1px] px-3 py-1.5 transition-colors hover:bg-card focus:outline-none focus-visible:ring-1 focus-visible:ring-foreground/40 active:cursor-grabbing"
+                              // hover:bg-muted is solid on purpose: a translucent
+                              // hover let the chart bar show through the card.
+                              className="relative mr-6 max-w-[80%] touch-none cursor-grab rounded-xl border border-border bg-card px-3 py-1 transition-colors hover:border-foreground/25 hover:bg-muted focus:outline-none focus-visible:ring-1 focus-visible:ring-foreground/40 active:cursor-grabbing"
                             >
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="flex min-w-0 items-center gap-2">
-                                  <span
-                                    className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
-                                    style={{
-                                      backgroundColor: chip.bg,
-                                      color: chip.fg,
-                                      border: `1px solid ${chip.border}`,
-                                    }}
-                                    aria-hidden="true"
-                                  >
-                                    <GoalIcon className="h-3.5 w-3.5" strokeWidth={2} />
-                                  </span>
-                                  <p className="min-w-0 truncate text-[13px] font-semibold text-foreground">
-                                    {g.name}
-                                  </p>
-                                </div>
+                              <div className="flex items-center gap-2.5">
                                 <span
-                                  className="shrink-0 text-[11px] font-semibold tabular-nums"
-                                  style={{ color: "rgb(239,68,68)" }}
-                                  title="Drawn from portfolio at target year"
+                                  className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
+                                  style={{
+                                    backgroundColor: chip.bg,
+                                    color: chip.fg,
+                                    border: `1px solid ${chip.border}`,
+                                  }}
+                                  aria-hidden="true"
                                 >
-                                  {formatINRCompact(fv)} drawn in {g.year}
+                                  <GoalIcon className="h-3.5 w-3.5" strokeWidth={2} />
+                                </span>
+                                <p className="min-w-0 flex-1 truncate text-[13px] font-semibold leading-tight text-foreground">
+                                  {g.name}
+                                </p>
+                                {/* Just the amount. The card already sits on its
+                                    own year, so "drawn in 2039" repeated the row
+                                    it was in and crowded the name on a phone. */}
+                                <span
+                                  className="shrink-0 text-[12px] font-semibold tabular-nums text-muted-foreground"
+                                  title={`${formatINR(fv)} drawn from your portfolio in ${g.year}`}
+                                >
+                                  −{formatINRCompact(fv)}
                                 </span>
                               </div>
                               <AnimatePresence initial={false}>
@@ -2990,6 +2915,41 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                     )}
                   </div>
                 </button>
+
+                {/* A thinned stretch. Resting here expands the years it hides —
+                    an invisible zone, so nothing is drawn across the chart. */}
+                {/* The lens, hung on the seam below this row. It floats over
+                    the chart and takes no space of its own, so consecutive
+                    listed years stay flush with nothing drawn between them. */}
+                {lensGap?.[0] === y && lensYears.length > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.82 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                    className="pointer-events-auto absolute left-0 top-full z-40 flex h-[132px] w-[132px] -translate-y-1/2 flex-col items-center justify-center gap-0.5 rounded-full border bg-background/95 shadow-xl backdrop-blur-sm"
+                    style={{ borderColor: "rgba(212,168,104,0.32)" }}
+                  >
+                    {lensYears.map((gy) => (
+                      <button
+                        key={gy}
+                        type="button"
+                        ref={(el: HTMLButtonElement | null) => {
+                          if (el) lensYearRefs.current.set(gy, el);
+                          else lensYearRefs.current.delete(gy);
+                        }}
+                        onClick={() => setAddYear(gy)}
+                        className="rounded-md px-2 py-[1px] text-[13px] font-semibold tabular-nums text-muted-foreground transition-colors hover:bg-[#D4A868]/15 hover:text-[#D4A868]"
+                        title={
+                          birthYear != null
+                            ? `Add a goal at age ${gy - birthYear} (${gy})`
+                            : `Add a goal in ${gy}`
+                        }
+                      >
+                        {birthYear != null ? gy - birthYear : gy}
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
               </motion.li>
             );
           })}
@@ -2998,11 +2958,15 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
 
         <p className="px-1 text-[10px] leading-snug text-muted-foreground/70">
           {isTornado
-            ? "Each bar = total net worth at the end of that year. Green = positive net worth (you still have money). Red = negative net worth (goals have outpaced what you've saved). Wider = larger amount."
+            ? "Each bar = total value at the end of that year. Directional guide only."
             : "Gold spine = projected NAV (today's portfolio, ₹2L/mo, 9% p.a.). Red ticks = goal-draw years."}
-          <span className="ml-1 text-muted-foreground/60">
-            Directional guide, not a forecast.
-          </span>
+          {/* The tornado copy carries its own caveat, so this only rides along
+              with the line variant. */}
+          {!isTornado && (
+            <span className="ml-1 text-muted-foreground/60">
+              Directional guide, not a forecast.
+            </span>
+          )}
         </p>
 
       </motion.main>
@@ -3011,6 +2975,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
         open={goalSheetOpen}
         initialYear={goalSheetYear}
         maxYear={capYear}
+        birthYear={birthYear}
         editingGoal={editGoal}
         saving={goalSaving}
         retirementYear={retirementYear}
@@ -3089,7 +3054,7 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                   })}
                 </div>
               </div>
-              <div className="flex-1 overflow-y-auto px-4 py-4">
+              <div className="flex-1 overflow-y-auto px-4 py-4" data-tour="plan-inputs">
                 {panelTab === "projection" ? (
                   <ProjectionContent
                     fundFlow={cashflowData?.fund_flow_summary ?? null}
@@ -3097,12 +3062,8 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                     sipMonthly={planSip}
                     onGoToInputs={() => setPanelTab("inputs")}
                     appliedRate={appliedRate}
-                    appliedEquityPct={appliedEquityPct}
-                    onApplyMix={applyMix}
-                    onResetMix={resetMix}
                   />
                 ) : (
-                  <div data-tour="plan-inputs">
                   <CashflowInputsForm
                     retirementGoalYear={retirementGoalYear}
                     onSaved={(ready) => {
@@ -3125,7 +3086,6 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
                       if (ready) setPanelOpen(false);
                     }}
                   />
-                  </div>
                 )}
               </div>
             </motion.div>
@@ -3163,8 +3123,8 @@ const GoalsTimeline = ({ variant = "line" }: GoalsTimelineProps) => {
           present it loads the real projection. Every "open the inputs" request
           (prompt CTA, ?inputs=1 auto-open) lands on the side panel's Inputs tab.
           Remounts via gateRefresh after a save so its readiness stays fresh. */}
-      {/* First-run walkthrough — spotlights the timeline, +, Plan and the
-          asset-mix slider, opening the panel where a step needs it. */}
+      {/* First-run walkthrough — spotlights +, the assumptions row, Plan and
+          the cashflow inputs, opening the panel where a step needs it. */}
       <GuidedTour steps={tourSteps} open={tourOpen} onClose={closeTour} />
 
       <CashflowGate
