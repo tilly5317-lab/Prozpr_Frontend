@@ -6,7 +6,10 @@ vi.mock("@/lib/api", () => ({
   getInvestmentPreferences: vi.fn(),
   saveInvestmentPreferences: vi.fn(),
 }));
-vi.mock("@/components/BottomNav", () => ({ default: () => null }));
+vi.mock("@/components/BottomNav", () => ({
+  default: () => null,
+  BOTTOM_NAV_HEIGHT_VAR: "--bottom-nav-h",
+}));
 vi.mock("sonner", () => ({
   toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
 }));
