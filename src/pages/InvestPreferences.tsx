@@ -8,7 +8,7 @@ import CategoriesCard, { type Editor } from "@/components/invest/CategoriesCard"
 import ClassCategoriesPanel from "@/components/invest/ClassCategoriesPanel";
 import MultiAssetPanel from "@/components/invest/MultiAssetPanel";
 import PreferenceScopeNotice from "@/components/invest/PreferenceScopeNotice";
-import PreferencesFooter, { FOOTER_CLEARANCE, FOOTER_NOTE_CLEARANCE } from "@/components/invest/PreferencesFooter";
+import PreferencesFooter, { FOOTER_CLEARANCE, FOOTER_CLEARANCE_WITH_NOTE } from "@/components/invest/PreferencesFooter";
 import {
   getInvestmentPreferences,
   saveInvestmentPreferences,
@@ -189,7 +189,7 @@ export default function InvestPreferences() {
   return (
     <div
       className="mobile-container bg-background min-h-screen"
-      style={{ paddingBottom: FOOTER_CLEARANCE + (note ? FOOTER_NOTE_CLEARANCE : 0) }}
+      style={{ paddingBottom: note ? FOOTER_CLEARANCE_WITH_NOTE : FOOTER_CLEARANCE }}
     >
       <div className="px-5 pt-2">
         <h1 tabIndex={-1} className="font-display text-[28px] leading-tight text-foreground focus:outline-none">
