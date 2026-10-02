@@ -1,5 +1,6 @@
 import { Fragment } from "react";
 
+import FigureTable, { FigureRow } from "@/components/invest/FigureTable";
 import InfoPopup, { PopupText } from "@/components/invest/InfoPopup";
 import PercentStepper from "@/components/invest/PercentStepper";
 import type { ClassMix } from "@/lib/api";
@@ -53,23 +54,27 @@ export default function MultiAssetPanel({
 
   return (
     <div>
-      <div className="flex items-center gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 text-[13px] font-semibold text-foreground">
-            <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-muted-foreground" />
-            Multi-asset funds
-          </div>
-          <p className="mt-0.5 text-[11.5px] tabular-nums text-muted-foreground">
-            {`${today != null ? `Today ${today}% · ` : ""}Prozpr ${res.prozprMultiAsset}%`}
-          </p>
-        </div>
-        <PercentStepper
-          value={res.multiAsset}
-          max={res.limit}
-          label="Multi-asset funds"
-          onChange={onChange}
+      <FigureTable showToday={today !== null}>
+        <FigureRow
+          name={
+            // Wraps beside the Today column, so the dot keeps to the first line.
+            <div className="flex items-start gap-2 text-[13px] font-semibold leading-snug text-foreground">
+              <span className="mt-[5px] h-2.5 w-2.5 shrink-0 rounded-full bg-muted-foreground" />
+              Multi-asset funds
+            </div>
+          }
+          today={today}
+          prozpr={res.prozprMultiAsset}
+          you={
+            <PercentStepper
+              value={res.multiAsset}
+              max={res.limit}
+              label="Multi-asset funds"
+              onChange={onChange}
+            />
+          }
         />
-      </div>
+      </FigureTable>
 
       <p data-testid="counts-as" className="mt-3 text-[12px] leading-relaxed text-muted-foreground">
         {"Counts as "}

@@ -73,7 +73,7 @@ export default function InvestPreferences() {
       .then((data) => {
         if (cancelled) return;
         const cat: Catalog = { cats: data.subcategories, comp: data.multi_asset_composition };
-        // Prozpr's bar is the look-through of the catalog's own rows, not the
+        // Prozpr's mix is the look-through of the catalog's own rows, not the
         // engine's separate class figure — so Reset lands exactly on the plan.
         const startMix = data.saved?.class_mix ? roundMix(data.saved.class_mix) : recommendedMix(cat);
         // A class saved on Prozpr's exact numbers follows Prozpr from here on,
@@ -200,7 +200,7 @@ export default function InvestPreferences() {
           {/* The ⓘ travels with the last word, never onto a line of its own. */}
           <span className="whitespace-nowrap">
             {"better."}
-            {/* No Today bar, nothing for its footnote to qualify. */}
+            {/* No Today column, nothing for its footnote to qualify. */}
             <PreferenceScopeNotice excludedPct={today ? excludedPct : 0} />
           </span>
         </p>
